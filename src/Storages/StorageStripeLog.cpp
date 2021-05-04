@@ -59,7 +59,7 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_end)
     {
         if (index_begin == index_end)
-            return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
+            return storage.getSampleBlockForColumns(metadata_snapshot, column_names);
 
         /// TODO: check if possible to always return storage.getSampleBlock()
 
@@ -330,7 +330,7 @@ Pipe StorageStripeLog::read(
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
+    check(metadata_snapshot, column_names);
 
     NameSet column_names_set(column_names.begin(), column_names.end());
 
@@ -339,7 +339,7 @@ Pipe StorageStripeLog::read(
     String index_file = table_path + "index.mrk";
     if (!disk->exists(index_file))
     {
-        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+        return Pipe(std::make_shared<NullSource>(getSampleBlockForColumns(metadata_snapshot, column_names)));
     }
 
     CompressedReadBufferFromFile index_in(disk->readFile(index_file, 4096));

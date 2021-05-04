@@ -4556,25 +4556,6 @@ NamesAndTypesList MergeTreeData::expandObjectColumns(const NamesAndTypesList & c
     return expandObjectColumnsImpl(getDataPartsVector(), columns_list, requested_to_expand, with_subcolumns);
 }
 
-/// TODO: bad code.
-NamesAndTypesList MergeTreeData::getExpandedObjects() const
-{
-    return getExpandedObjects(getDataPartsVector());
-}
-
-NamesAndTypesList MergeTreeData::getExpandedObjects(const DataPartsVector & parts) const
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto columns = metadata_snapshot->getColumns().getAllPhysical();
-
-    NamesAndTypesList result_columns;
-    for (const auto & column : columns)
-        if (isObject(column.type))
-            result_columns.push_back(column);
-
-    return expandObjectColumns(parts, result_columns, false);
-}
-
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
 {
     std::lock_guard lock(storage.currently_submerging_emerging_mutex);

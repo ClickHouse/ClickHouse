@@ -497,9 +497,9 @@ Pipe StorageJoin::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
+    check(metadata_snapshot, column_names);
 
-    Block source_sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    Block source_sample_block = getSampleBlockForColumns(metadata_snapshot, column_names);
     return Pipe(std::make_shared<JoinSource>(join, rwlock, max_block_size, source_sample_block));
 }
 

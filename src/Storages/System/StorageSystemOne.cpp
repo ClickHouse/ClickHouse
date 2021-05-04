@@ -29,7 +29,7 @@ Pipe StorageSystemOne::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
+    check(metadata_snapshot, column_names);
 
     Block header{ColumnWithTypeAndName(
             DataTypeUInt8().createColumn(),

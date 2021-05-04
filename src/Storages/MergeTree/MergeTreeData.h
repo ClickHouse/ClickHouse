@@ -619,8 +619,6 @@ public:
 
     NamesAndTypesList expandObjectColumns(const NamesAndTypesList & columns_list, bool with_subcolumns) const override;
     static NamesAndTypesList expandObjectColumns(const DataPartsVector & parts, const NamesAndTypesList & columns_list, bool with_subcolumns);
-    NamesAndTypesList getExpandedObjects() const override;
-    NamesAndTypesList getExpandedObjects(const DataPartsVector & parts) const;
 
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;

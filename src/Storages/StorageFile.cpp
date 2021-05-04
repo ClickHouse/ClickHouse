@@ -273,7 +273,7 @@ public:
         const FilesInfoPtr & files_info)
     {
         if (storage->isColumnOriented())
-            return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
+            return storage->getSampleBlockForColumns(metadata_snapshot, columns_description.getNamesOfPhysical());
         else
             return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
     }
@@ -369,7 +369,7 @@ public:
                 auto get_block_for_format = [&]() -> Block
                 {
                     if (storage->isColumnOriented())
-                        return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+                        return storage->getSampleBlockForColumns(metadata_snapshot, columns_description.getNamesOfPhysical());
                     return metadata_snapshot->getSampleBlock();
                 };
 
@@ -458,7 +458,7 @@ Pipe StorageFile::read(
         if (paths.size() == 1 && !Poco::File(paths[0]).exists())
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
-                return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+                return Pipe(std::make_shared<NullSource>(getSampleBlockForColumns(metadata_snapshot, column_names)));
             else
                 throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
         }
@@ -489,7 +489,7 @@ Pipe StorageFile::read(
         {
             if (isColumnOriented())
                 return ColumnsDescription{
-                    metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
+                    getSampleBlockForColumns(metadata_snapshot, column_names).getNamesAndTypesList()};
             else
                 return metadata_snapshot->getColumns();
         };

@@ -44,7 +44,7 @@ Pipe StorageSystemStoragePolicies::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
+    check(metadata_snapshot, column_names);
 
     MutableColumnPtr col_policy_name = ColumnString::create();
     MutableColumnPtr col_volume_name = ColumnString::create();

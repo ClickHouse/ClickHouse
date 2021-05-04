@@ -28,9 +28,8 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
     , sample_block(non_virtual_header)
-    , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"},
-                storage.getVirtuals(), storage.getStorageID()))
+    , virtual_header(storage.getSampleBlockForColumns(metadata_snapshot,
+                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"}))
 {
     for (const auto & column : virtual_header)
         sample_block.insert(column);

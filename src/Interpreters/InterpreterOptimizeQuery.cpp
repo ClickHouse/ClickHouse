@@ -46,7 +46,7 @@ BlockIO InterpreterOptimizeQuery::execute()
                 column_names.emplace_back(col->getColumnName());
         }
 
-        metadata_snapshot->check(column_names, NamesAndTypesList{}, table_id, {});
+        table->check(metadata_snapshot, column_names);
         Names required_columns;
         {
             required_columns = metadata_snapshot->getColumnsRequiredForSortingKey();

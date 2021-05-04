@@ -573,7 +573,7 @@ Pipe StorageRabbitMQ::read(
     if (num_created_consumers == 0)
         return {};
 
-    auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto sample_block = getSampleBlockForColumns(metadata_snapshot, column_names);
     auto modified_context = addSettings(local_context);
     auto block_size = getMaxBlockSize();
 
@@ -812,7 +812,7 @@ bool StorageRabbitMQ::streamToViews()
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto column_names = block_io.out->getHeader().getNames();
-    auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto sample_block = getSampleBlockForColumns(metadata_snapshot, column_names);
 
     auto block_size = getMaxBlockSize();
 

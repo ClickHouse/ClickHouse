@@ -23,7 +23,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     size_t num_streams_,
     ReadType read_type_)
     : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
-        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID(), storage_.getExpandedObjects()),
+        storage_.getSampleBlockForColumns(metadata_snapshot_, required_columns_),
         prewhere_info_,
         virt_column_names_)})
     , storage(storage_)

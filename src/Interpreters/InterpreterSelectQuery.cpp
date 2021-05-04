@@ -475,8 +475,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 }
             }
 
-            source_header = metadata_snapshot->getSampleBlockForColumns(
-                required_columns, storage->getVirtuals(), storage->getStorageID(), storage->getExpandedObjects());
+            source_header = storage->getSampleBlockForColumns(metadata_snapshot, required_columns);
         }
 
         /// Calculate structure of the result.
@@ -1736,8 +1735,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
-            auto header = metadata_snapshot->getSampleBlockForColumns(
-                    required_columns, storage->getVirtuals(), storage->getStorageID(), storage->getExpandedObjects());
+            auto header = storage->getSampleBlockForColumns(metadata_snapshot, required_columns);
             addEmptySourceToQueryPlan(query_plan, header, query_info);
         }
 

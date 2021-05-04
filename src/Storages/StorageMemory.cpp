@@ -34,7 +34,7 @@ public:
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
+        : SourceWithProgress(storage.getSampleBlockForColumns(metadata_snapshot, column_names_))
         , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
@@ -183,7 +183,7 @@ Pipe StorageMemory::read(
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
+    check(metadata_snapshot, column_names);
 
     if (delay_read_for_global_subqueries)
     {
