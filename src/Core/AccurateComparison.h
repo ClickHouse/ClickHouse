@@ -26,9 +26,8 @@ bool lessOp(A a, B b)
         return a < b;
 
     /// anything vs NaN
-    if constexpr (std::is_floating_point_v<A> || std::is_floating_point_v<B>)
-        if (isNaN(a) || isNaN(b))
-            return false;
+    if (isNaN(a) || isNaN(b))
+        return false;
 
     /// int vs int
     if constexpr (is_integer_v<A> && is_integer_v<B>)
@@ -40,10 +39,10 @@ bool lessOp(A a, B b)
         /// different signedness
 
         if constexpr (is_signed_v<A> && !is_signed_v<B>)
-            return a < 0 || static_cast<B>(a) < b;
+            return a < 0 || static_cast<make_unsigned_t<A>>(a) < b;
 
         if constexpr (!is_signed_v<A> && is_signed_v<B>)
-            return b >= 0 && a < static_cast<A>(b);
+            return b >= 0 && a < static_cast<make_unsigned_t<B>>(b);
     }
 
     /// int vs float
@@ -176,8 +175,8 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         }
     }
 
-    if (accurate::greaterOp(value, std::numeric_limits<To>::max())
-        || accurate::greaterOp(std::numeric_limits<To>::lowest(), value))
+    if (greaterOp(value, std::numeric_limits<To>::max())
+        || lessOp(value, std::numeric_limits<To>::lowest()))
     {
         return false;
     }
