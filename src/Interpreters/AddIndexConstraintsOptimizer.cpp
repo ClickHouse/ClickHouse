@@ -86,7 +86,7 @@ namespace
     bool canBeSequence(const ComparisonGraph::CompareResult left, const ComparisonGraph::CompareResult right)
     {
         using CR = ComparisonGraph::CompareResult;
-        if (left == CR::UNKNOWN || right == CR::UNKNOWN)
+        if (left == CR::UNKNOWN || right == CR::UNKNOWN || left == CR::NOT_EQUAL || right == CR::NOT_EQUAL)
             return false;
         if ((left == CR::GREATER || left == CR::GREATER_OR_EQUAL) && (right == CR::LESS || right == CR::LESS_OR_EQUAL))
             return false;
@@ -110,7 +110,7 @@ namespace
             return left;
         if (right == CR::EQUAL)
             return right;
-        return left;
+        return CR::UNKNOWN;
     }
 
     /// Create OR-group for index_hint

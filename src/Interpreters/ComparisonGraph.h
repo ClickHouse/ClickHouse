@@ -25,8 +25,12 @@ public:
         EQUAL,
         GREATER_OR_EQUAL,
         GREATER,
+        NOT_EQUAL,
         UNKNOWN,
     };
+
+    static CompareResult getCompareResult(const std::string & name);
+    static CompareResult inverseCompareResult(const CompareResult result);
 
     CompareResult compare(const ASTPtr & left, const ASTPtr & right) const;
 
@@ -114,6 +118,7 @@ private:
 
     Graph graph;
     std::map<std::pair<size_t, size_t>, Path> dists;
+    std::set<std::pair<size_t, size_t>> not_equal;
     std::vector<ssize_t> ast_const_lower_bound;
     std::vector<ssize_t> ast_const_upper_bound;
 };
