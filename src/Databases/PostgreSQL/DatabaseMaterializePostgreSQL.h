@@ -51,7 +51,7 @@ public:
 
     void createTable(ContextPtr context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void dropTable(ContextPtr context_, const String & name, bool no_delay) override;
+    void dropTable(ContextPtr local_context, const String & name, bool no_delay) override;
 
     void drop(ContextPtr local_context) override;
 

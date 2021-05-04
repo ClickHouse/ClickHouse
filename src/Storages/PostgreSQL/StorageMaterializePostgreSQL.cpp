@@ -91,7 +91,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(const StorageID & tab
 }
 
 
-/// Costructor for MaterializePostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
+/// Constructor for MaterializePostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
 /// This storage is ready to handle read queries.
 StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(StoragePtr nested_storage_, ContextPtr context_)
@@ -200,7 +200,7 @@ void StorageMaterializePostgreSQL::startup()
 
         if (is_attach)
         {
-            /// In case of attach table use background startup in a separate thread. First wait untill connection is reachable,
+            /// In case of attach table use background startup in a separate thread. First wait until connection is reachable,
             /// then check for nested table -- it should already be created.
             replication_handler->startup();
         }

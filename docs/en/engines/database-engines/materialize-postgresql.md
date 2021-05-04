@@ -7,7 +7,35 @@ toc_title: MaterializePostgreSQL
 
 ## Creating a Database {#creating-a-database}
 
+``` sql
+CREATE DATABASE test_database
+ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+
+SELECT * FROM test_database.postgres_table;
+```
+
+
+## Settings {#settings}
+
+1. `materialize_postgresql_max_block_size` - Number of rows collected before flushing data into table. Default: `65536`.
+
+2. `materialize_postgresql_tables_list` - List of tables for MaterializePostgreSQL database engine. Default: `whole database`.
+
+3. `materialize_postgresql_allow_automatic_update` - Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`).
+
+``` sql
+CREATE DATABASE test_database
+ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+SETTINGS materialize_postgresql_max_block_size = 65536,
+         materialize_postgresql_tables_list = 'table1,table2,table3';
+
+SELECT * FROM test_database.table1;
+```
+
+
 ## Requirements {#requirements}
+
+- Setting `wal_level`to `logical` and `max_replication_slots` to at least `2` in the postgresql config file.
 
 - Each replicated table must have one of the following **replica identity**:
 
@@ -36,6 +64,3 @@ postgres# SELECT CASE relreplident
 FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
-
-- Setting `wal_level`to `logical` and `max_replication_slots` to at least `2` in the postgresql config file.
-
