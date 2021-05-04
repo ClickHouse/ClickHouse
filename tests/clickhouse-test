@@ -333,6 +333,7 @@ def run_tests_array(all_tests_with_params):
 
         if failed_to_check or clickhouse_proc.returncode != 0:
             if increment_failures:
+                global failures
                 failures += 1
 
             print("Server did not respond to query", query_to_run)

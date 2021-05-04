@@ -35,13 +35,7 @@ struct StringHash
     size_t operator()(std::string const& str) const { return hash_type{}(str); }
 };
 
-static inline std::string_view getNameFromPath(std::string_view path)
-{
-    return path.substr(path.rfind('/') + 1);
-}
-
-// These two functions should have distinct names not to allow implicit conversions.
-static inline std::string getNameFromPathStr(const std::string& path)
+static inline std::string getNameFromPath(const std::string& path)
 {
     return path.substr(path.rfind('/') + 1);
 }
@@ -199,16 +193,49 @@ private:
     /// Symbolized data
     struct AddrSym
     {
-        size_t line;
-        EdgeIndex index;
-        AddrSym(size_t line_, EdgeIndex index_): line(line_), index(index_) {}
+        /**
+         * Multiple callbacks can be called for a single line, e.g. ternary operator
+         * a = foo ? bar() : baz() may produce two callbacks as it's basically an if-else block.
+         * However, we track _lines_ coverage, not _addresses_ coverage, so we should hash the local cache items by
+         * their unique lines.
+         *
+         * N.B. It's possible to track per-address coverage, LCov's .info format refers to it as _branch_ coverage.
+         */
+        using Container = std::unordered_map<size_t/*line*/, AddrSym>;
+
+        EdgeIndex index; // will likely be optimized so as AdddSym ~ EdgeIndex.
     };
 
     struct FuncSym // Although it looks like FuncSym : AddrSym, inheritance bring more cons than pros
     {
+        /**
+         * Template instantiations get mangled into different names, e.g.
+         * FN:151,_ZNK2DB7DecimalIiE9convertToIlEET_v
+         * FNDA:0,_ZNK2DB7DecimalIiE9convertToIlEET_v
+         * FN:151,_ZNK2DB7DecimalIlE9convertToIlEET_v
+         * FNDA:0,_ZNK2DB7DecimalIlE9convertToIlEET_v
+         * FN:151,_ZNK2DB7DecimalInE9convertToIlEET_v
+         * FNDA:0,_ZNK2DB7DecimalInE9convertToIlEET_v
+         *
+         * We can't use predicate "all functions with same line are considered same" as it's easily
+         * contradicted -- multiple functions can be invoked in the same source line, e.g. foo(bar(baz)):
+         *
+         * FN:166,_ZN2DB7DecimalInEmLERKn
+         * FNDA:0,_ZN2DB7DecimalInEmLERKn
+         * FN:166,_ZN2DB7DecimalIN4wide7integerILm256EiEEEmLERKS3_
+         * FNDA:0,_ZN2DB7DecimalIN4wide7integerILm256EiEEEmLERKS3_
+         *
+         * However, instantiations are located in different binary parts, so it's safe to use edge_index
+         * as a hashing key (current solution is to just use a vector to avoid hash calculation).
+         *
+         * As a bonus, functions report view in HTML will show distinct counts for each instantiated template.
+         */
+        using Container = std::vector<FuncSym>;
+
         size_t line;
         EdgeIndex index;
         std::string_view name;
+
         FuncSym(size_t line_, EdgeIndex index_, std::string_view name_): line(line_), index(index_), name(name_) {}
     };
 
@@ -216,11 +243,11 @@ private:
     struct LocalCacheItem
     {
        std::string full_path;
-       std::vector<CacheItem> items;
+       typename CacheItem::Container items;
     };
 
     template <class CacheItem>
-    using LocalCache = std::unordered_map<std::string/* source name*/, LocalCacheItem<CacheItem>>;
+    using LocalCache = std::unordered_map<std::string/*source name*/, LocalCacheItem<CacheItem>>;
 
     template <class CacheItem, size_t ArraySize = thread_pool_symbolizing>
     using LocalCachesArray = std::array<LocalCache<CacheItem>, ArraySize>;
@@ -269,7 +296,7 @@ private:
                      * Getting source name as a string (reverse search + allocation) is a bit cheaper than hashing
                      * the full path.
                      */
-                    std::string source_name = getNameFromPathStr(source.full_path); //non-const so we could move it
+                    std::string source_name = getNameFromPath(source.full_path); //non-const so we could move it
                     auto cache_it = cache.find(source_name);
 
                     if constexpr (is_func_cache)
@@ -285,10 +312,10 @@ private:
                     else
                     {
                         if (cache_it != cache.end())
-                            cache_it->second.items.emplace_back(source.line, edge_index);
+                            cache_it->second.items[source.line] = {edge_index};
                         else
                             cache[std::move(source_name)] =
-                                {std::move(source.full_path), {{source.line, edge_index}}};
+                                {std::move(source.full_path), {{source.line, {edge_index}}}};
                     }
 
                     if (time_t current = time(nullptr); current > elapsed)
@@ -302,7 +329,8 @@ private:
 
     /// Merge local caches' symbolized data [obtained from multiple threads] into global caches.
     template<bool is_func_cache, class CacheItem>
-    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data) {
+    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data)
+    {
         LOG_INFO(base_log, "Started merging {} data to caches", thread_name<is_func_cache>);
 
         for (const auto& cache : data)
@@ -333,10 +361,10 @@ private:
                 }
                 else
                 {
-                    for (auto [line, edge_index] : addrs_data)
+                    for (auto [line, addr_sym] : addrs_data)
                     {
                         info.instrumented_lines.push_back(line);
-                        addr_cache[edge_index] = {line, source_index};
+                        addr_cache[addr_sym.index] = {line, source_index};
                     }
                 }
             }

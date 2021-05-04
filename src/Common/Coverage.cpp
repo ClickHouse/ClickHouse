@@ -163,16 +163,15 @@ void Writer::loadCacheOrSymbolizeInstrumentedData()
 
     LOG_INFO(base_log, "Symbolized all functions");
 
-    LocalCachesArray<AddrSym> addr_caches{}; // TODO try x2 size for stragglers
+    LocalCachesArray<AddrSym> addr_caches{};
 
     LOG_INFO(base_log, "Populating address caches");
 
     /// Pre-populate addr_caches with already found source files.
-    for (auto& local_func_cache : func_caches)
-        for (auto& [source_name, data] : local_func_cache)
+    for (const auto& local_func_cache : func_caches)
+        for (const auto& [source_name, data] : local_func_cache)
             for (auto & local_addr_cache : addr_caches)
-                // Can't std::move(source_name), looks like a false positive use-after-move
-                local_addr_cache[source_name] = {std::move(data.full_path), {}};
+                local_addr_cache[source_name] = {data.full_path, {}};
 
     LOG_INFO(base_log, "Finished populating address caches");
 
@@ -394,20 +393,20 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 
     for (size_t i = 0; i < test_data.size(); ++i)
     {
-        const auto& [functions_hit, lines_hit] = test_data.at(i);
-        const auto& [path, functions_instrumented, lines_instrumented] = source_files_cache.at(i);
+        const auto& [funcs_hit, lines_hit] = test_data.at(i);
+        const auto& [path, funcs_instrumented, lines_instrumented] = source_files_cache.at(i);
 
         fmt::format_to(mb, "SF:{}\n", path);
 
-        for (EdgeIndex index : functions_instrumented)
+        for (EdgeIndex index : funcs_instrumented)
         {
             const FunctionInfo& func_info = function_cache.at(index);
-            const size_t call_count = valueOr(functions_hit, index, 0);
+            const size_t call_count = valueOr(funcs_hit, index, 0);
 
             fmt::format_to(mb, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
         }
 
-        fmt::format_to(mb, "FNF:{}\nFNH:{}\n", functions_instrumented.size(), functions_hit.size());
+        fmt::format_to(mb, "FNF:{}\nFNH:{}\n", funcs_instrumented.size(), funcs_hit.size());
 
         for (size_t line : lines_instrumented)
         {
