@@ -21,9 +21,9 @@ uint16_t getTerminalWidth()
         if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
             DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);
     }
-    else if (isatty(STDOUT_FILENO))
+    else if (isatty(STDERR_FILENO))
     {
-        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &terminal_size))
+        if (ioctl(STDERR_FILENO, TIOCGWINSZ, &terminal_size))
             DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);
     }
     /// Default - 0.
