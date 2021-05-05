@@ -101,9 +101,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (projection_definition->name.empty())
         throw Exception("Projection must have name in definition.", ErrorCodes::INCORRECT_QUERY);
 
-    if (projection_definition->type.empty())
-        throw Exception("TYPE is required for projection", ErrorCodes::INCORRECT_QUERY);
-
     if (!projection_definition->query)
         throw Exception("QUERY is required for projection", ErrorCodes::INCORRECT_QUERY);
 
@@ -111,27 +108,13 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
 
-    if (projection_definition->type == "normal")
-        result.type = ProjectionDescription::Type::Normal;
-    else if (projection_definition->type == "aggregate")
-        result.type = ProjectionDescription::Type::Aggregate;
-    else
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "Unknown Projection type {}. Available types: normal, aggregate", projection_definition->type);
-
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
-        result.query_ast,
-        query_context,
-        storage,
-        {},
-        SelectQueryOptions{result.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState}
-            .modify()
-            .ignoreAlias());
+        result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
@@ -159,14 +142,9 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     metadata.partition_key = KeyDescription::getSortingKeyFromAST({}, metadata.columns, query_context, {});
 
     const auto & query_select = result.query_ast->as<const ASTSelectQuery &>();
-    if (result.type == ProjectionDescription::Type::Aggregate && !query_select.groupBy())
-        throw Exception("When TYPE aggregate is specified, there should be a non-constant GROUP BY clause", ErrorCodes::ILLEGAL_PROJECTION);
-
     if (select.hasAggregation())
     {
-        if (result.type == ProjectionDescription::Type::Normal)
-            throw Exception(
-                "When aggregation is used in projection, TYPE aggregate should be specified", ErrorCodes::ILLEGAL_PROJECTION);
+        result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
         {
             ASTPtr order_expression;
@@ -200,6 +178,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     }
     else
     {
+        result.type = ProjectionDescription::Type::Normal;
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query_select.orderBy(), metadata.columns, query_context, {});
         metadata.primary_key = KeyDescription::getKeyFromAST(query_select.orderBy(), metadata.columns, query_context);
     }
