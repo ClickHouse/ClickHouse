@@ -3,6 +3,7 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <optional>
+#include <stack>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
