@@ -27,6 +27,9 @@ struct SizeLimits;
 
 struct ExpressionActionsSettings;
 
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
+
 class QueryPipeline
 {
 public:
@@ -52,6 +55,7 @@ public:
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
+    void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
@@ -89,6 +93,15 @@ public:
             std::vector<std::unique_ptr<QueryPipeline>> pipelines,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
+
+    /// Join two pipelines together using JoinPtr.
+    /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
+    static std::unique_ptr<QueryPipeline> joinPipelines(
+        std::unique_ptr<QueryPipeline> left,
+        std::unique_ptr<QueryPipeline> right,
+        JoinPtr join,
+        size_t max_block_size,
+        Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
