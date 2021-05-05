@@ -14,6 +14,7 @@ def feature(self, distributed, node="clickhouse1"):
     """Check window functions behavior using non-distributed or
     distributed tables.
     """
+    self.context.distributed = distributed
     self.context.node = self.context.cluster.node(node)
 
     with Given("I allow experimental window functions"):

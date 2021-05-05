@@ -92,8 +92,12 @@ def error_select_from_window(self):
 def error_window_function_in_alter_delete_where(self):
     """Check that trying to use window function in `ALTER DELETE`'s `WHERE` clause returns an error.
     """
-    exitcode = 184
-    message = "DB::Exception: Window function rank() OVER (ORDER BY random() ASC) is found in WHERE in query"
+    if self.context.distributed:
+        exitcode = 48
+        message = "Exception: Table engine Distributed doesn't support mutations"
+    else:
+        exitcode = 184
+        message = "DB::Exception: Window function rank() OVER (ORDER BY random() ASC) is found in WHERE in query"
 
     sql = ("ALTER TABLE empsalary DELETE WHERE (rank() OVER (ORDER BY random())) > 10")
 

@@ -32,8 +32,8 @@ xfails = {
         [(Fail, "exception on conversion")],
     "tests/:/misc/subquery expr preceding":
         [(Fail, "subquery is not supported as offset")],
-    "tests/distributed":
-        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22121")],
+        "tests/distributed/misc/query with order by and one window":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
     "tests/non distributed/frame clause/range errors/error negative preceding offset":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22442")],
     "tests/non distributed/frame clause/range errors/error negative following offset":
@@ -42,14 +42,10 @@ xfails = {
         [(Fail, "not supported, https://github.com/ClickHouse/ClickHouse/issues/19857")],
     "tests/:/misc/window functions in subquery":
         [(Fail, "not supported, https://github.com/ClickHouse/ClickHouse/issues/19857")],
-    "tests/:/misc/groups frame":
-        [(Fail, "DB::Exception: Window frame 'GROUPS' is not implemented")],
     "tests/non distributed/frame clause/range frame/order by decimal":
         [(Fail, "Exception: The RANGE OFFSET frame for 'DB::ColumnDecimal<DB::Decimal<long> >' ORDER BY column is not implemented")],
     "tests/non distributed/frame clause/range frame/with nulls":
         [(Fail, "DB::Exception: The RANGE OFFSET frame for 'DB::ColumnNullable' ORDER BY column is not implemented")],
-    "tests/non distributed/misc/exclude clause":
-        [(Fail, "exclude clause not supported")],
     "tests/:/aggregate funcs/aggregate funcs over rows frame/func='mannWhitneyUTest(salary, 1)'":
         [(Fail, "need to investigate")],
     "tests/:/aggregate funcs/aggregate funcs over rows frame/func='rankCorr(salary, 0.5)'":
