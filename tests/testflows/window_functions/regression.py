@@ -58,8 +58,8 @@ xfails = {
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
     "tests/distributed/frame clause/range frame/:":
         [(Fail, "need to investigate")],
-    "/window functions/tests/distributed/frame clause/range datetime/:":
-        [(Fail, "need to investigate")],
+    "tests/distributed/frame clause/range datetime/:":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
 }
 
 xflags = {
