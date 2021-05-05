@@ -148,7 +148,7 @@ private:
     void loopingFunc();
     void connectionFunc();
 
-    static Names parseSettings(String routing_key_list);
+    static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 

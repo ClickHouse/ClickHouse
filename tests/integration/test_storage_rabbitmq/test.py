@@ -2082,7 +2082,6 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq_queue (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'drop',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'rabbit_queue',
                      rabbitmq_queue_consume = 1;
