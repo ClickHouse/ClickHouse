@@ -9,7 +9,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
-#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
+#include <Storages/PostgreSQL/ConnectionHolder.h>
 
 
 namespace DB
@@ -46,7 +46,7 @@ private:
     const UInt64 max_block_size;
     ExternalResultDescription description;
 
-    postgres::ConnectionHolderPtr connection;
+    postgres::ConnectionHolderPtr entry;
     std::unique_ptr<pqxx::read_transaction> tx;
     std::unique_ptr<pqxx::stream_from> stream;
 

@@ -4,7 +4,6 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
@@ -98,10 +97,10 @@ class PostgreSQLBlockOutputStream : public IBlockOutputStream
 public:
     explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
-        postgres::ConnectionHolderPtr connection_,
+        postgres::ConnectionHolderPtr entry_,
         const std::string & remote_table_name_)
         : metadata_snapshot(metadata_snapshot_)
-        , connection(std::move(connection_))
+        , entry(std::move(entry_))
         , remote_table_name(remote_table_name_)
     {
     }
@@ -111,7 +110,7 @@ public:
 
     void writePrefix() override
     {
-        work = std::make_unique<pqxx::work>(connection->conn());
+        work = std::make_unique<pqxx::work>(entry->get());
     }
 
 
@@ -277,7 +276,7 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
-    postgres::ConnectionHolderPtr connection;
+    postgres::ConnectionHolderPtr entry;
     std::string remote_table_name;
 
     std::unique_ptr<pqxx::work> work;
