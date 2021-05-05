@@ -2,7 +2,7 @@
 #include <Columns/ColumnString.h>
 //#include <Poco/UTF8Encoding.h>
 #include <Common/UTF8Helpers.h>
-#include "sphinxstemen.cpp"
+#include <sphinxstemen.cpp>
 
 namespace DB
 {

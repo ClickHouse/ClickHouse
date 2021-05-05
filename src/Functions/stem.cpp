@@ -12,8 +12,8 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/castTypeToEither.h>
 
-#include "sphinxstemen.cpp"
-#include "sphinxstemru.cpp"
+#include <sphinxstemen.cpp>
+#include <sphinxstemru.cpp>
 
 
 namespace DB
@@ -98,7 +98,7 @@ class FunctionStem : public IFunction
 
 public:
     static constexpr auto name = "stem";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStem>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStem>(); }
 
     String getName() const override { return name; }
 
