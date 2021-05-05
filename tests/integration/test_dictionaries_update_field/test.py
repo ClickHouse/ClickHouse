@@ -58,7 +58,7 @@ def test_update_field(started_cluster, dictionary_name, dictionary_type):
     assert query_result == '1\tFirst\n'
 
     node.query("INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());")
-    time.sleep(5)
+    time.sleep(10)
 
     query_result = node.query("SELECT key, value FROM {dictionary_name} ORDER BY key ASC".format(dictionary_name=dictionary_name))
 
@@ -67,7 +67,7 @@ def test_update_field(started_cluster, dictionary_name, dictionary_type):
     node.query("INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());")
     node.query("INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());")
 
-    time.sleep(5)
+    time.sleep(10)
 
     query_result = node.query("SELECT key, value FROM {dictionary_name} ORDER BY key ASC".format(dictionary_name=dictionary_name))
 
