@@ -23,7 +23,6 @@ void ASTProjectionDeclaration::formatImpl(const FormatSettings & settings, Forma
     ++frame_nested.indent;
     query->formatImpl(settings, state, frame_nested);
     settings.ostr << nl_or_nothing << indent_str << ")";
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " TYPE " << (settings.hilite ? hilite_none : "") << type;
 }
 
 }

@@ -12,7 +12,6 @@ class ASTProjectionDeclaration : public IAST
 {
 public:
     String name;
-    String type;
     ASTPtr query;
 
     /** Get the text that identifies this element. */

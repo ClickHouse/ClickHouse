@@ -160,10 +160,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserProjectionSelectQuery query_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserKeyword s_type("TYPE");
-
     ASTPtr name;
-    ASTPtr type;
     ASTPtr query;
 
     if (!name_p.parse(pos, name, expected))
@@ -178,15 +175,8 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!s_rparen.ignore(pos, expected))
         return false;
 
-    if (!s_type.ignore(pos, expected))
-        return false;
-
-    if (!name_p.parse(pos, type, expected))
-        return false;
-
     auto projection = std::make_shared<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
-    projection->type = type->as<ASTIdentifier &>().name();
     projection->query = query;
     projection->children.emplace_back(projection->query);
     node = projection;

@@ -541,6 +541,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Add prewhere actions with alias columns and record needed columns from storage.
+    if (storage)
+    {
+        addPrewhereAliasActions();
+        analysis_result.required_columns = required_columns;
+    }
+
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
@@ -622,13 +629,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             options.only_analyze,
             filter_info,
             source_header);
-
-    /// Add prewhere actions with alias columns and record needed columns from storage.
-    if (storage)
-    {
-        addPrewhereAliasActions();
-        analysis_result.required_columns = required_columns;
-    }
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
