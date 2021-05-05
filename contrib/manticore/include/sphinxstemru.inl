@@ -437,7 +437,7 @@ void LOC_PREFIX(stem_ru_init)() {
 }
 
 
-void LOC_PREFIX(stem_ru)(LOC_CHAR_TYPE *word) {
+void LOC_PREFIX(stem_ru)(LOC_CHAR_TYPE *word, int) {
     int r1, r2;
     int i, len;
 
