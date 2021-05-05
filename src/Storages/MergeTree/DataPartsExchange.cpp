@@ -230,7 +230,7 @@ void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuf
     {
         String file_name = it.first;
 
-        String path = part->getFullRelativePath() + file_name;
+        String path = fs::path(part->getFullRelativePath()) / file_name;
 
         UInt64 size = disk->getFileSize(path);
 
@@ -279,7 +279,7 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
     {
         String file_name = it.first;
 
-        String metadata_file = disk->getPath() + part->getFullRelativePath() + file_name;
+        String metadata_file = fs::path(disk->getPath()) / part->getFullRelativePath() / file_name;
 
         fs::path metadata(metadata_file);
 
@@ -480,7 +480,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         readUUIDText(part_uuid, in);
 
     auto storage_id = data.getStorageID();
-    String new_part_path = part_type == "InMemory" ? "memory" : data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
+    String new_part_path = part_type == "InMemory" ? "memory" : fs::path(data.getFullPathOnDisk(reservation->getDisk())) / part_name / "";
     auto entry = data.getContext()->getReplicatedFetchList().insert(
         storage_id.getDatabaseName(), storage_id.getTableName(),
         part_info.partition_id, part_name, new_part_path,
@@ -551,7 +551,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         throw Exception("Logical error: tmp_prefix and part_name cannot be empty or contain '.' or '/' characters.", ErrorCodes::LOGICAL_ERROR);
 
     String part_relative_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String part_download_path = data.getRelativeDataPath() + part_relative_path + "/";
+    String part_download_path = fs::path(data.getRelativeDataPath()) / part_relative_path / "";
 
     if (disk->exists(part_download_path))
     {
@@ -583,7 +583,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
                 " This may happen if we are trying to download part from malicious replica or logical error.",
                 ErrorCodes::INSECURE_PATH);
 
-        auto file_out = disk->writeFile(part_download_path + file_name);
+        auto file_out = disk->writeFile(fs::path(part_download_path) / file_name);
         HashingWriteBuffer hashing_out(*file_out);
         copyData(in, hashing_out, file_size, blocker.getCounter());
 
@@ -600,7 +600,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         readPODBinary(expected_hash, in);
 
         if (expected_hash != hashing_out.getHash())
-            throw Exception("Checksum mismatch for file " + fullPath(disk, part_download_path + file_name) + " transferred from " + replica_path,
+            throw Exception("Checksum mismatch for file " + fullPath(disk, (fs::path(part_download_path) / file_name).string()) + " transferred from " + replica_path,
                 ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
         if (file_name != "checksums.txt" &&
@@ -654,7 +654,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String part_relative_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String part_download_path = data.getRelativeDataPath() + part_relative_path + "/";
+    String part_download_path = fs::path(data.getRelativeDataPath()) / part_relative_path / "";
 
     if (disk->exists(part_download_path))
         throw Exception("Directory " + fullPath(disk, part_download_path) + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
@@ -677,7 +677,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        String data_path = new_data_part->getFullRelativePath() + file_name;
+        String data_path = fs::path(new_data_part->getFullRelativePath()) / file_name;
         String metadata_file = fullPath(disk, data_path);
 
         {

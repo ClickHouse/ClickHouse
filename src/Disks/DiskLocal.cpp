@@ -69,13 +69,7 @@ public:
 
     bool isValid() const override { return entry != fs::directory_iterator(); }
 
-    String path() const override
-    {
-        if (entry->is_directory())
-            return dir_path / entry->path().filename() / "";
-        else
-            return dir_path / entry->path().filename();
-    }
+    String path() const override { return dir_path / entry->path().filename(); }
 
     String name() const override { return entry->path().filename(); }
 
@@ -119,9 +113,9 @@ UInt64 DiskLocal::getTotalSpace() const
 {
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS(fs::path(disk_path / "data/").string());
+        fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
-        fs = getStatVFS(disk_path.string());
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -134,9 +128,9 @@ UInt64 DiskLocal::getAvailableSpace() const
     /// available for superuser only and for system purposes
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS(fs::path(disk_path / "data/").string());
+        fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
-        fs = getStatVFS(disk_path.string());
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -153,64 +147,64 @@ UInt64 DiskLocal::getUnreservedSpace() const
 
 bool DiskLocal::exists(const String & path) const
 {
-    return fs::exists(disk_path / path);
+    return fs::exists(fs::path(disk_path) / path);
 }
 
 bool DiskLocal::isFile(const String & path) const
 {
-    return fs::is_regular_file(disk_path / path);
+    return fs::is_regular_file(fs::path(disk_path) / path);
 }
 
 bool DiskLocal::isDirectory(const String & path) const
 {
-    return fs::is_directory(disk_path / path);
+    return fs::is_directory(fs::path(disk_path) / path);
 }
 
 size_t DiskLocal::getFileSize(const String & path) const
 {
-    return fs::file_size(disk_path / path);
+    return fs::file_size(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createDirectory(const String & path)
 {
-    fs::create_directory(disk_path / path);
+    fs::create_directory(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createDirectories(const String & path)
 {
-    fs::create_directories(disk_path / path);
+    fs::create_directories(fs::path(disk_path) / path);
 }
 
 void DiskLocal::clearDirectory(const String & path)
 {
-    for (const auto & entry : fs::directory_iterator(disk_path / path))
+    for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
         fs::remove(entry.path());
 }
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 {
-    fs::rename(disk_path / from_path, disk_path / to_path);
+    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
-    return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
+    return std::make_unique<DiskLocalDirectoryIterator>(fs::path(disk_path), path);
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    fs::rename(disk_path / from_path, disk_path / to_path);
+    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
-    fs::path from_file = disk_path / from_path;
-    fs::path to_file = disk_path / to_path;
+    fs::path from_file = fs::path(disk_path) / from_path;
+    fs::path to_file = fs::path(disk_path) / to_path;
     if (fs::exists(to_file))
     {
         fs::path tmp_file(to_file.string() + ".old");
         fs::rename(to_file, tmp_file);
-        fs::rename(from_file, disk_path / to_path);
+        fs::rename(from_file, fs::path(disk_path) / to_path);
         fs::remove(tmp_file);
     }
     else
@@ -223,33 +217,33 @@ std::unique_ptr<ReadBufferFromFileBase>
 DiskLocal::readFile(
     const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return createReadBufferFromFileBase(disk_path / path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
 DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(disk_path / path, buf_size, flags);
+    return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
 }
 
 void DiskLocal::removeFile(const String & path)
 {
-    auto fs_path = disk_path / path;
+    auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()))
         throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::removeFileIfExists(const String & path)
 {
-    auto fs_path = disk_path / path;
+    auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
         throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::removeDirectory(const String & path)
 {
-    auto fs_path = disk_path / path;
+    auto fs_path = fs::path(disk_path) / path;
     if (0 != rmdir(fs_path.c_str()))
         throwFromErrnoWithPath("Cannot rmdir " + fs_path.string(), fs_path, ErrorCodes::CANNOT_RMDIR);
 }
@@ -262,42 +256,42 @@ void DiskLocal::removeRecursive(const String & path)
 void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
 {
     file_names.clear();
-    for (const auto & entry : fs::directory_iterator(disk_path / path))
+    for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
         file_names.emplace_back(entry.path().filename());
 }
 
 void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    fs::last_write_time(disk_path / path, static_cast<fs::file_time_type>(std::chrono::microseconds(timestamp.epochMicroseconds())));
+    fs::last_write_time(fs::path(disk_path) / path, static_cast<fs::file_time_type>(std::chrono::microseconds(timestamp.epochMicroseconds())));
 }
 
 Poco::Timestamp DiskLocal::getLastModified(const String & path)
 {
-    fs::file_time_type fs_time = fs::last_write_time(disk_path / path);
+    fs::file_time_type fs_time = fs::last_write_time(fs::path(disk_path) / path);
     auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
     return Poco::Timestamp(micro_sec.count());
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
-    DB::createHardLink(disk_path / src_path, disk_path / dst_path);
+    DB::createHardLink(fs::path(disk_path) / src_path, fs::path(disk_path) / dst_path);
 }
 
 void DiskLocal::truncateFile(const String & path, size_t size)
 {
-    int res = truncate((disk_path / path).string().data(), size);
+    int res = truncate((fs::path(disk_path) / path).string().data(), size);
     if (-1 == res)
         throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 void DiskLocal::createFile(const String & path)
 {
-    Poco::File(disk_path / path).createFile();
+    Poco::File(fs::path(disk_path) / path).createFile();
 }
 
 void DiskLocal::setReadOnly(const String & path)
 {
-    Poco::File(disk_path / path).setReadOnly(true);
+    Poco::File(fs::path(disk_path) / path).setReadOnly(true);
 }
 
 bool inline isSameDiskType(const IDisk & one, const IDisk & another)
@@ -308,14 +302,14 @@ bool inline isSameDiskType(const IDisk & one, const IDisk & another)
 void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     if (isSameDiskType(*this, *to_disk))
-        Poco::File(disk_path / from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
+        Poco::File(fs::path(disk_path) / from_path).copyTo(fs::path(to_disk->getPath()) / to_path); /// Use more optimal way.
     else
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 {
-    return std::make_unique<LocalDirectorySyncGuard>(disk_path / path);
+    return std::make_unique<LocalDirectorySyncGuard>(fs::path(disk_path) / path);
 }
 
 DiskPtr DiskLocalReservation::getDisk(size_t i) const

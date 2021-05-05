@@ -213,10 +213,10 @@ public:
     virtual DiskType::Type getType() const = 0;
 
     /// Invoked when Global Context is shutdown.
-    virtual void shutdown() { }
+    virtual void shutdown() {}
 
     /// Performs action on disk startup.
-    virtual void startup() { }
+    virtual void startup() {}
 
     /// Return some uniq string for file, overrode for S3
     /// Required for distinguish different copies of the same part on S3
@@ -234,7 +234,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) { }
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) {}
 
 protected:
     friend class DiskDecorator;
@@ -295,7 +295,7 @@ public:
 /// Return full path to a file on disk.
 inline String fullPath(const DiskPtr & disk, const String & path)
 {
-    return disk->getPath() + path;
+    return fs::path(disk->getPath()) / path;
 }
 
 /// Return parent path for the specified path.
@@ -313,7 +313,7 @@ inline String fileName(const String & path)
 /// Return directory path for the specified path.
 inline String directoryPath(const String & path)
 {
-    return fs::is_directory(path) ? path : fs::path(path).parent_path().string();
+    return Poco::Path(path).setFileName("").toString();
 }
 
 }
