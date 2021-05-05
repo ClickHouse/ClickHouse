@@ -121,7 +121,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
             throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                 + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
+        auto count_out = volume->getDisk()->writeFile(fs::path(part_path) / "count.txt", 4096);
         HashingWriteBuffer count_out_hashing(*count_out);
         writeIntText(rows_count, count_out_hashing);
         count_out_hashing.next();
@@ -135,7 +135,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     if (!new_part->ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
-        auto out = volume->getDisk()->writeFile(part_path + "ttl.txt", 4096);
+        auto out = volume->getDisk()->writeFile(fs::path(part_path) / "ttl.txt", 4096);
         HashingWriteBuffer out_hashing(*out);
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -149,7 +149,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     {
         /// Write a file with a description of columns.
-        auto out = volume->getDisk()->writeFile(part_path + "columns.txt", 4096);
+        auto out = volume->getDisk()->writeFile(fs::path(part_path) / "columns.txt", 4096);
         part_columns.writeText(*out);
         out->finalize();
         if (sync)
@@ -170,7 +170,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     {
         /// Write file with checksums.
-        auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", 4096);
+        auto out = volume->getDisk()->writeFile(fs::path(part_path) / "checksums.txt", 4096);
         checksums.write(*out);
         out->finalize();
         if (sync)

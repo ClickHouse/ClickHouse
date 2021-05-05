@@ -117,12 +117,12 @@ struct DiskS3::Metadata
     using PathAndSize = std::pair<String, size_t>;
 
     /// S3 root path.
-    const String & s3_root_path;
+    fs::path s3_root_path;
 
     /// Disk path.
-    const String & disk_path;
+    fs::path disk_path;
     /// Relative path to metadata file on local FS.
-    String metadata_file_path;
+    fs::path metadata_file_path;
     /// Total size of all S3 objects.
     size_t total_size;
     /// S3 objects paths and their sizes.
@@ -141,14 +141,14 @@ struct DiskS3::Metadata
 
         try
         {
-            ReadBufferFromFile buf(disk_path + metadata_file_path, 1024); /* reasonable buffer size for small file */
+            ReadBufferFromFile buf(disk_path / metadata_file_path, 1024); /* reasonable buffer size for small file */
 
             UInt32 version;
             readIntText(version, buf);
 
             if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
                 throw Exception(
-                    "Unknown metadata file version. Path: " + disk_path + metadata_file_path
+                    "Unknown metadata file version. Path: " + (disk_path / metadata_file_path).string()
                     + " Version: " + std::to_string(version) + ", Maximum expected version: " + std::to_string(VERSION_READ_ONLY_FLAG),
                     ErrorCodes::UNKNOWN_FORMAT);
 
@@ -169,12 +169,12 @@ struct DiskS3::Metadata
                 readEscapedString(s3_object_path, buf);
                 if (version == VERSION_ABSOLUTE_PATHS)
                 {
-                    if (!boost::algorithm::starts_with(s3_object_path, s3_root_path))
+                    if (!boost::algorithm::starts_with(s3_object_path, s3_root_path.string()))
                         throw Exception(
                             "Path in metadata does not correspond S3 root path. Path: " + s3_object_path
-                            + ", root path: " + s3_root_path + ", disk path: " + disk_path_,
+                            + ", root path: " + s3_root_path.string() + ", disk path: " + disk_path_,
                             ErrorCodes::UNKNOWN_FORMAT);
-                    s3_object_path = s3_object_path.substr(s3_root_path.size());
+                    s3_object_path = s3_object_path.substr(s3_root_path.string().size());
                 }
                 assertChar('\n', buf);
                 s3_objects[i] = {s3_object_path, s3_object_size};
@@ -207,7 +207,7 @@ struct DiskS3::Metadata
     /// Fsync metadata file if 'sync' flag is set.
     void save(bool sync = false)
     {
-        WriteBufferFromFile buf(disk_path + metadata_file_path, 1024);
+        WriteBufferFromFile buf(disk_path / metadata_file_path, 1024);
 
         writeIntText(VERSION_RELATIVE_PATHS, buf);
         writeChar('\n', buf);
@@ -338,7 +338,7 @@ private:
             const auto & [path, size] = metadata.s3_objects[i];
             if (size > offset)
             {
-                auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.s3_root_path + path, s3_max_single_read_retries, buf_size);
+                auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.s3_root_path / path, s3_max_single_read_retries, buf_size);
                 buf->seek(offset, SEEK_SET);
                 return buf;
             }
@@ -367,7 +367,7 @@ private:
 
         ++current_buf_idx;
         const auto & path = metadata.s3_objects[current_buf_idx].first;
-        current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.s3_root_path + path, s3_max_single_read_retries, buf_size);
+        current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.s3_root_path / path, s3_max_single_read_retries, buf_size);
         current_buf->next();
         working_buffer = current_buf->buffer();
         absolute_position += working_buffer.size();
@@ -447,16 +447,16 @@ public:
     String path() const override
     {
         if (fs::is_directory(iter->path()))
-            return folder_path + iter->path().filename().string() + '/';
+            return folder_path / iter->path().filename().string() / "";
         else
-            return folder_path + iter->path().filename().string();
+            return folder_path / iter->path().filename().string();
     }
 
     String name() const override { return iter->path().filename(); }
 
 private:
     fs::directory_iterator iter;
-    String folder_path;
+    fs::path folder_path;
 };
 
 
@@ -623,13 +623,13 @@ String DiskS3::getUniqueId(const String & path) const
     Metadata metadata(s3_root_path, metadata_path, path);
     String id;
     if (!metadata.s3_objects.empty())
-        id = metadata.s3_root_path + metadata.s3_objects[0].first;
+        id = metadata.s3_root_path / metadata.s3_objects[0].first;
     return id;
 }
 
 DiskDirectoryIteratorPtr DiskS3::iterateDirectory(const String & path)
 {
-    return std::make_unique<DiskS3DirectoryIterator>(metadata_path + path, path);
+    return std::make_unique<DiskS3DirectoryIterator>(fs::path(metadata_path) / path, path);
 }
 
 void DiskS3::clearDirectory(const String & path)
@@ -683,7 +683,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
     auto metadata = readMeta(path);
 
     LOG_DEBUG(log, "Read from file by path: {}. Existing S3 objects: {}",
-        backQuote(metadata_path + path), metadata.s3_objects.size());
+        backQuote((fs::path(metadata_path) / path).string()), metadata.s3_objects.size());
 
     auto reader = std::make_unique<ReadIndirectBufferFromS3>(settings->client, bucket, metadata, settings->s3_max_single_read_retries, buf_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
@@ -708,12 +708,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     }
 
     LOG_DEBUG(log, "{} to file by path: {}. S3 path: {}",
-              mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), s3_root_path + s3_path);
+              mode == WriteMode::Rewrite ? "Write" : "Append", backQuote((fs::path(metadata_path) / path).string()), (fs::path(s3_root_path) / s3_path).string());
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
         bucket,
-        metadata.s3_root_path + s3_path,
+        fs::path(metadata.s3_root_path) / s3_path,
         settings->s3_min_upload_part_size,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
@@ -724,7 +724,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
 
 void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
 {
-    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
+    LOG_DEBUG(log, "Remove file by path: {}", backQuote((fs::path(metadata_path) / path).string()));
 
     fs::path file = fs::path(metadata_path) / path;
 
@@ -741,7 +741,7 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
             fs::remove(file);
 
             for (const auto & [s3_object_path, _] : metadata.s3_objects)
-                keys.addKey(s3_root_path + s3_object_path);
+                keys.addKey(fs::path(s3_root_path) / s3_object_path);
         }
         else /// In other case decrement number of references, save metadata and delete file.
         {
@@ -904,7 +904,7 @@ void DiskS3::createHardLink(const String & src_path, const String & dst_path, bo
     src.save();
 
     /// Create FS hardlink to metadata file.
-    DB::createHardLink(metadata_path + src_path, metadata_path + dst_path);
+    DB::createHardLink(fs::path(metadata_path) / src_path, fs::path(metadata_path) / dst_path);
 }
 
 void DiskS3::createFile(const String & path)
@@ -940,7 +940,7 @@ void DiskS3::createFileOperationObject(const String & operation_name, UInt64 rev
     WriteBufferFromS3 buffer(
         settings->client,
         bucket,
-        s3_root_path + key,
+        fs::path(s3_root_path) / key,
         settings->s3_min_upload_part_size,
         settings->s3_max_single_part_upload_size,
         metadata);
@@ -993,14 +993,14 @@ void DiskS3::findLastRevision()
 int DiskS3::readSchemaVersion(const String & source_bucket, const String & source_path)
 {
     int version = 0;
-    if (!checkObjectExists(source_bucket, source_path + SCHEMA_VERSION_OBJECT))
+    if (!checkObjectExists(source_bucket, fs::path(source_path) / SCHEMA_VERSION_OBJECT))
         return version;
 
     auto settings = current_settings.get();
     ReadBufferFromS3 buffer(
         settings->client,
         source_bucket,
-        source_path + SCHEMA_VERSION_OBJECT,
+        fs::path(source_path) / SCHEMA_VERSION_OBJECT,
         settings->s3_max_single_read_retries);
 
     readIntText(version, buffer);
@@ -1015,7 +1015,7 @@ void DiskS3::saveSchemaVersion(const int & version)
     WriteBufferFromS3 buffer(
         settings->client,
         bucket,
-        s3_root_path + SCHEMA_VERSION_OBJECT,
+        fs::path(s3_root_path) / SCHEMA_VERSION_OBJECT,
         settings->s3_min_upload_part_size,
         settings->s3_max_single_part_upload_size);
 
@@ -1027,7 +1027,7 @@ void DiskS3::updateObjectMetadata(const String & key, const ObjectMetadata & met
 {
     auto settings = current_settings.get();
     Aws::S3::Model::CopyObjectRequest request;
-    request.SetCopySource(bucket + "/" + key);
+    request.SetCopySource(fs::path(bucket) / key);
     request.SetBucket(bucket);
     request.SetKey(key);
     request.SetMetadata(metadata);
@@ -1039,7 +1039,7 @@ void DiskS3::updateObjectMetadata(const String & key, const ObjectMetadata & met
 
 void DiskS3::migrateFileToRestorableSchema(const String & path)
 {
-    LOG_DEBUG(log, "Migrate file {} to restorable schema", metadata_path + path);
+    LOG_DEBUG(log, "Migrate file {} to restorable schema", (fs::path(metadata_path) / path).string());
 
     auto meta = readMeta(path);
 
@@ -1048,7 +1048,7 @@ void DiskS3::migrateFileToRestorableSchema(const String & path)
         ObjectMetadata metadata {
             {"path", path}
         };
-        updateObjectMetadata(s3_root_path + key, metadata);
+        updateObjectMetadata(fs::path(s3_root_path) / key, metadata);
     }
 }
 
@@ -1056,7 +1056,7 @@ void DiskS3::migrateToRestorableSchemaRecursive(const String & path, Futures & r
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-    LOG_DEBUG(log, "Migrate directory {} to restorable schema", metadata_path + path);
+    LOG_DEBUG(log, "Migrate directory {} to restorable schema", (fs::path(metadata_path) / path).string());
 
     bool dir_contains_only_files = true;
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
@@ -1105,7 +1105,7 @@ void DiskS3::migrateToRestorableSchema()
 
         for (const auto & root : data_roots)
             if (exists(root))
-                migrateToRestorableSchemaRecursive(root + '/', results);
+                migrateToRestorableSchemaRecursive(root, results);
 
         for (auto & result : results)
             result.wait();
@@ -1194,7 +1194,7 @@ void DiskS3::copyObject(const String & src_bucket, const String & src_key, const
 {
     auto settings = current_settings.get();
     Aws::S3::Model::CopyObjectRequest request;
-    request.SetCopySource(src_bucket + "/" + src_key);
+    request.SetCopySource(fs::path(src_bucket) / src_key);
     request.SetBucket(dst_bucket);
     request.SetKey(dst_key);
 
@@ -1212,7 +1212,7 @@ struct DiskS3::RestoreInformation
 
 void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_information)
 {
-    ReadBufferFromFile buffer(metadata_path + RESTORE_FILE_NAME, 512);
+    ReadBufferFromFile buffer(fs::path(metadata_path) / RESTORE_FILE_NAME, 512);
     buffer.next();
 
     try
@@ -1302,7 +1302,7 @@ void DiskS3::restore()
         bool cleanup_s3 = information.source_bucket != bucket || information.source_path != s3_root_path;
         for (const auto & root : data_roots)
             if (exists(root))
-                removeSharedRecursive(root + '/', !cleanup_s3);
+                removeSharedRecursive(root, !cleanup_s3);
 
         restoreFiles(information);
         restoreFileOperations(information);
@@ -1393,8 +1393,8 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         auto relative_key = shrinkKey(source_path, key);
 
         /// Copy object if we restore to different bucket / path.
-        if (bucket != source_bucket || s3_root_path != source_path)
-            copyObject(source_bucket, key, bucket, s3_root_path + relative_key);
+        if (bucket != source_bucket || fs::path(s3_root_path) != fs::path(source_path))
+            copyObject(source_bucket, key, bucket, fs::path(s3_root_path) / relative_key);
 
         metadata.addObject(relative_key, head_result.GetContentLength());
         metadata.save();
@@ -1482,7 +1482,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
     };
 
     /// Execute.
-    listObjects(restore_information.source_bucket, restore_information.source_path + "operations/", restore_file_operations);
+    listObjects(restore_information.source_bucket, fs::path(restore_information.source_path) / "operations/", restore_file_operations);
 
     if (restore_information.detached)
     {
@@ -1505,7 +1505,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
 
             LOG_DEBUG(log, "Move directory to 'detached' {} -> {}", path, detached_path);
 
-            fs::rename(fs::path(metadata_path) / path, fs::path(metadata_path) / detached_path);
+            Poco::File(fs::path(metadata_path) / path).moveTo(fs::path(metadata_path) / detached_path);
         }
     }
 
@@ -1537,13 +1537,13 @@ String DiskS3::revisionToString(UInt64 revision)
 
 String DiskS3::pathToDetached(const String & source_path)
 {
-    return fs::path(source_path).parent_path() / "detached" / "";
+    return Poco::Path(source_path).parent().append(Poco::Path("detached")).toString() + '/';
 }
 
 void DiskS3::onFreeze(const String & path)
 {
     createDirectories(path);
-    WriteBufferFromFile revision_file_buf(metadata_path + path + "revision.txt", 32);
+    WriteBufferFromFile revision_file_buf(fs::path(metadata_path) / path / "revision.txt", 32);
     writeIntText(revision_counter.load(), revision_file_buf);
     revision_file_buf.finalize();
 }
