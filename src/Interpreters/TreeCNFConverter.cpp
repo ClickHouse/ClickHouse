@@ -38,6 +38,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     {
         if (add_negation)
         {
+            ASSERT(func->arguments->size() == 2)
             /// apply De Morgan's Law
             node = makeASTFunction(
                 (func->name == "and" ? "or" : "and"),
@@ -51,6 +52,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     }
     else if (func && func->name == "not")
     {
+        ASSERT(func->arguments->size() == 1)
         /// delete NOT
         node = func->arguments->children[0]->clone();
 
@@ -91,6 +93,7 @@ void pushOr(ASTPtr & query)
         auto * or_func = or_node.get()->as<ASTFunction>();
         ASSERT(or_func)
         ASSERT(or_func->name == "or")
+        ASSERT(or_func->arguments->children.size() == 2)
 
         /// find or upper than and
         size_t and_node_id = or_func->arguments->children.size();
@@ -110,6 +113,7 @@ void pushOr(ASTPtr & query)
         auto and_func = or_func->arguments->children[and_node_id]->as<ASTFunction>();
         ASSERT(and_func)
         ASSERT(and_func->name == "and")
+        ASSERT(and_func->arguments->children.size() == 2)
 
         auto a = or_func->arguments->children[other_node_id];
         auto b = and_func->arguments->children[0];
@@ -298,6 +302,52 @@ CNFQuery & CNFQuery::pushNotInFuntions()
                        return result;
                    });
     return *this;
+}
+
+namespace
+{
+    CNFQuery::AndGroup reduceOnce(const CNFQuery::AndGroup & groups)
+    {
+        CNFQuery::AndGroup result;
+        for (const CNFQuery::OrGroup & group : groups)
+        {
+            CNFQuery::OrGroup copy(group);
+            bool inserted = false;
+            for (const CNFQuery::AtomicFormula & atom : group)
+            {
+                copy.erase(atom);
+                CNFQuery::AtomicFormula negative_atom(atom);
+                negative_atom.negative = !atom.negative;
+                copy.insert(negative_atom);
+
+                if (groups.contains(copy))
+                {
+                    copy.erase(negative_atom);
+                    result.insert(copy);
+                    inserted = true;
+                    break;
+                }
+
+                copy.erase(negative_atom);
+                copy.insert(atom);
+            }
+            if (!inserted)
+                result.insert(group);
+        }
+        return result;
+    }
+}
+
+CNFQuery & CNFQuery::reduce()
+{
+    while (true)
+    {
+        AndGroup new_statements = reduceOnce(statements);
+        if (statements == new_statements)
+            return *this;
+        else
+            statements = new_statements;
+    }
 }
 
 std::string CNFQuery::dump() const

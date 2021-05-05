@@ -95,4 +95,8 @@ SELECT count() FROM constraint_test_constants WHERE 10 < a; ---> assumption -> 0
 SELECT count() FROM constraint_test_constants WHERE 9 <= a; ---> assumption -> 1
 SELECT count() FROM constraint_test_constants WHERE 11 <= a; ---> assumption -> 0
 
+-- A AND NOT A
+EXPLAIN SYNTAX SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100);
+EXPLAIN SYNTAX SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100);
+
 DROP TABLE constraint_test_constants;
