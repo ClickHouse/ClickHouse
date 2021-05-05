@@ -32,26 +32,34 @@ xfails = {
         [(Fail, "exception on conversion")],
     "tests/:/misc/subquery expr preceding":
         [(Fail, "subquery is not supported as offset")],
-    "tests/distributed/misc/query with order by and one window":
-        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
-    "tests/distributed/over clause/empty named window":
-        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
-    "tests/non distributed/frame clause/range errors/error negative preceding offset":
+    "tests/:/frame clause/range errors/error negative preceding offset":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22442")],
-    "tests/non distributed/frame clause/range errors/error negative following offset":
+    "tests/:/frame clause/range errors/error negative following offset":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22442")],
     "tests/:/misc/window functions in select expression":
         [(Fail, "not supported, https://github.com/ClickHouse/ClickHouse/issues/19857")],
     "tests/:/misc/window functions in subquery":
         [(Fail, "not supported, https://github.com/ClickHouse/ClickHouse/issues/19857")],
-    "tests/non distributed/frame clause/range frame/order by decimal":
+    "tests/:/frame clause/range frame/order by decimal":
         [(Fail, "Exception: The RANGE OFFSET frame for 'DB::ColumnDecimal<DB::Decimal<long> >' ORDER BY column is not implemented")],
-    "tests/non distributed/frame clause/range frame/with nulls":
+    "tests/:/frame clause/range frame/with nulls":
         [(Fail, "DB::Exception: The RANGE OFFSET frame for 'DB::ColumnNullable' ORDER BY column is not implemented")],
     "tests/:/aggregate funcs/aggregate funcs over rows frame/func='mannWhitneyUTest(salary, 1)'":
         [(Fail, "need to investigate")],
     "tests/:/aggregate funcs/aggregate funcs over rows frame/func='rankCorr(salary, 0.5)'":
-        [(Fail, "need to investigate")]
+        [(Fail, "need to investigate")],
+    "tests/distributed/misc/query with order by and one window":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/distributed/over clause/empty named window":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/distributed/over clause/empty":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/distributed/over clause/adhoc window":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/distributed/frame clause/range frame/:":
+        [(Fail, "need to investigate")],
+    "/window functions/tests/distributed/frame clause/range datetime/:":
+        [(Fail, "need to investigate")],
 }
 
 xflags = {

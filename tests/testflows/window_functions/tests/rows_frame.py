@@ -37,20 +37,20 @@ def start_current_row(self):
     expected = convert_output("""
       empno | salary | sum
     --------+--------+-------
-       1    |  5000  | 5000 
-       2    |  3900  | 3900 
-       3    |  4800  | 4800 
-       4    |  4800  | 4800 
-       5    |  3500  | 3500 
-       7    |  4200  | 4200 
-       8    |  6000  | 6000 
-       9    |  4500  | 4500 
-      10    |  5200  | 5200 
-      11    |  5200  | 5200 
+       1    |  5000  | 5000
+       2    |  3900  | 3900
+       3    |  4800  | 4800
+       4    |  4800  | 4800
+       5    |  3500  | 3500
+       7    |  4200  | 4200
+       8    |  6000  | 6000
+       9    |  4500  | 4500
+      10    |  5200  | 5200
+      11    |  5200  | 5200
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS CURRENT ROW) AS sum FROM empsalary ORDER BY empno",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS CURRENT ROW) AS sum FROM empsalary ORDER BY empno",
         expected=expected
     )
 
@@ -64,20 +64,20 @@ def start_unbounded_preceding(self):
     expected = convert_output("""
       empno | salary | sum
     --------+--------+-------
-          1 |   5000 |  5000
-          2 |   3900 | 14900
-          3 |   4800 | 24900
-          4 |   4800 | 29700
-          5 |   3500 | 38400
-          7 |   4200 | 42600
-          8 |   6000 | 11000
-          9 |   4500 | 47100
-         10 |   5200 | 20100
-         11 |   5200 | 34900
+        1   |  5000  | 5000
+        2   |  3900  | 8900
+        3   |  4800  | 13700
+        4   |  4800  | 18500
+        5   |  3500  | 22000
+        7   |  4200  | 26200
+        8   |  6000  | 32200
+        9   |  4500  | 36700
+        10  |  5200  | 41900
+        11  |  5200  | 47100
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS UNBOUNDED PRECEDING) AS sum FROM empsalary ORDER BY empno",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS UNBOUNDED PRECEDING) AS sum FROM empsalary ORDER BY empno",
         expected=expected
     )
 
@@ -90,21 +90,21 @@ def start_expr_preceding(self):
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+--------  
-          1 |   5000 |  5000
-          2 |   3900 |  9900
-          3 |   4800 | 10000
-          4 |   4800 |  9600
-          5 |   3500 |  8700
-          7 |   4200 |  7700
-          8 |   6000 | 11000
-          9 |   4500 |  8700
-         10 |   5200 |  9100
-         11 |   5200 | 10000
+    --------+--------+--------
+       1    |  5000  | 5000
+       2    |  3900  | 8900
+       3    |  4800  | 8700
+       4    |  4800  | 9600
+       5    |  3500  | 8300
+       7    |  4200  | 7700
+       8    |  6000  | 10200
+       9    |  4500  | 10500
+       10   |  5200  | 9700
+       11   |  5200  | 10400
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS 1 PRECEDING) AS sum FROM empsalary ORDER BY empno",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS 1 PRECEDING) AS sum FROM empsalary ORDER BY empno",
         expected=expected
     )
 
@@ -143,21 +143,21 @@ def between_current_row_and_current_row(self):
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-          1 |   5000 | 5000 
-          8 |   6000 | 6000 
-          2 |   3900 | 3900 
-         10 |   5200 | 5200 
-          3 |   4800 | 4800 
-          4 |   4800 | 4800 
-         11 |   5200 | 5200 
-          5 |   3500 | 3500 
-          7 |   4200 | 4200 
-          9 |   4500 | 4500 
+    --------+--------+--------
+        1   |  5000  | 5000
+        2   |  3900  | 3900
+        3   |  4800  | 4800
+        4   |  4800  | 4800
+        5   |  3500  | 3500
+        7   |  4200  | 4200
+        8   |  6000  | 6000
+        9   |  4500  | 4500
+        10  |  5200  | 5200
+        11  |  5200  | 5200
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS sum FROM empsalary",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS sum FROM empsalary",
         expected=expected
     )
 
@@ -193,22 +193,22 @@ def between_current_row_and_unbounded_following(self):
     """Check rows between current row and unbounded following.
     """
     expected = convert_output("""
-         sum | unique1 | four 
+         sum | unique1 | four
         -----+---------+------
-          45 |       4 |    0
-          41 |       2 |    2
-          39 |       1 |    1
-          38 |       6 |    2
-          32 |       9 |    1
-          23 |       8 |    0
-          15 |       5 |    1
-          10 |       3 |    3
-           7 |       7 |    3
-           0 |       0 |    0
+         45	 |    0    |   0
+         45	 |    1    |   1
+         44	 |    2    |   2
+         42	 |    3    |   3
+         39	 |    4    |   0
+         35	 |    5    |   1
+         30	 |    6    |   2
+         24	 |    7    |   3
+         17	 |    8    |   0
+         9   |    9    |   1
         """)
 
     execute_query(
-        "SELECT sum(unique1) over (rows between current row and unbounded following) AS sum,"
+        "SELECT sum(unique1) over (order by unique1 rows between current row and unbounded following) AS sum,"
         "unique1, four "
         "FROM tenk1 WHERE unique1 < 10",
         expected=expected
@@ -222,7 +222,7 @@ def between_current_row_and_expr_following(self):
     """Check rows between current row and expr following.
     """
     expected = convert_output("""
-     i | b | bool_and | bool_or 
+     i | b | bool_and | bool_or
     ---+---+----------+---------
      1 | 1 | 1        | 1
      2 | 1 | 0        | 1
@@ -247,7 +247,7 @@ def between_unbounded_preceding_and_current_row(self):
     """Check rows between unbounded preceding and current row.
     """
     expected = convert_output("""
-         four | two | sum | last_value 
+         four | two | sum | last_value
         ------+-----+-----+------------
             0 |   0 |   0 |          0
             0 |   0 |   0 |          0
@@ -300,21 +300,21 @@ def between_unbounded_preceding_and_expr_preceding(self):
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-         1  |  5000  |      0 
-         8  |  6000  |   5000 
-         2  |  3900  |  11000 
-        10  |  5200  |  14900 
-         3  |  4800  |  20100 
-         4  |  4800  |  24900 
-        11  |  5200  |  29700 
-         5  |  3500  |  34900 
-         7  |  4200  |  38400 
-         9  |  4500  |  42600 
+    --------+--------+--------
+       1    |  5000  | 0
+       2    |  3900  | 5000
+       3    |  4800  | 8900
+       4    |  4800  | 13700
+       5    |  3500  | 18500
+       7    |  4200  | 22000
+       8    |  6000  | 26200
+       9    |  4500  | 32200
+       10   |  5200  | 36700
+       11   |  5200  | 41900
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS sum FROM empsalary",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS sum FROM empsalary",
         expected=expected
     )
 
@@ -327,21 +327,21 @@ def between_unbounded_preceding_and_unbounded_following(self):
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-        1   |   5000 | 47100 
-        8   |   6000 | 47100 
-        2   |   3900 | 47100 
-       10   |   5200 | 47100 
-        3   |   4800 | 47100 
-        4   |   4800 | 47100 
-       11   |   5200 | 47100 
-        5   |   3500 | 47100 
-        7   |   4200 | 47100 
-        9   |   4500 | 47100 
+    --------+--------+--------
+       1    |  5000  | 47100
+       2    |  3900  | 47100
+       3    |  4800  | 47100
+       4    |  4800  | 47100
+       5    |  3500  | 47100
+       7    |  4200  | 47100
+       8    |  6000  | 47100
+       9    |  4500  | 47100
+       10   |  5200  | 47100
+       11   |  5200  | 47100
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary",
         expected=expected
     )
 
@@ -353,22 +353,22 @@ def between_unbounded_preceding_and_expr_following(self):
     """Check rows between unbounded preceding and expr following.
     """
     expected = convert_output("""
-         sum | unique1 | four 
+         sum | unique1 | four
         -----+---------+------
-           6 |       4 |    0
-           7 |       2 |    2
-          13 |       1 |    1
-          22 |       6 |    2
-          30 |       9 |    1
-          35 |       8 |    0
-          38 |       5 |    1
-          45 |       3 |    3
-          45 |       7 |    3
-          45 |       0 |    0
+          1  |    0    |  0
+          3  |    1    |  1
+          6  |    2    |  2
+          10 |    3    |  3
+          15 |    4    |  0
+          21 |    5    |  1
+          28 |    6    |  2
+          36 |    7    |  3
+          45 |    8    |  0
+          45 |    9    |  1
         """)
 
     execute_query(
-        "SELECT sum(unique1) over (rows between unbounded preceding and 1 following) AS sum,"
+        "SELECT sum(unique1) over (order by unique1 rows between unbounded preceding and 1 following) AS sum,"
         "unique1, four "
         "FROM tenk1 WHERE unique1 < 10",
         expected=expected
@@ -425,26 +425,26 @@ def between_expr_following_and_expr_following_error(self):
 @Requirements(
     RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_UnboundedFollowing("1.0")
 )
-def between_exp_following_and_unbounded_following(self):
+def between_expr_following_and_unbounded_following(self):
     """Check rows between exp following and unbounded following frame.
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-          1 |   5000 | 27000
-          8 |   6000 | 22200
-          2 |   3900 | 17400
-         10 |   5200 | 12200
-          3 |   4800 |  8700
-          4 |   4800 |  4500
-         11 |   5200 |     0
-          5 |   3500 |     0
-          7 |   4200 |     0
-          9 |   4500 |     0
+    --------+--------+--------
+        1   |  5000  | 28600
+        2   |  3900  | 25100
+        3   |  4800  | 20900
+        4   |  4800  | 14900
+        5   |  3500  | 10400
+        7   |  4200  | 5200
+        8   |  6000  | 0
+        9   |  4500  | 0
+        10  |  5200  | 0
+        11  |  5200  | 0
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN 4 FOLLOWING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN 4 FOLLOWING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary",
         expected=expected
     )
 
@@ -452,27 +452,27 @@ def between_exp_following_and_unbounded_following(self):
 @Requirements(
     RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprFollowing_ExprFollowing("1.0")
 )
-def between_exp_following_and_expr_following(self):
+def between_expr_following_and_expr_following(self):
     """Check rows between exp following and expr following frame when end of the frame is greater than
     the start of the frame.
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-          1 |   5000 | 19900
-          8 |   6000 | 18700
-          2 |   3900 | 20000
-         10 |   5200 | 18300
-          3 |   4800 | 17700
-          4 |   4800 | 17400
-         11 |   5200 | 12200
-          5 |   3500 |  8700
-          7 |   4200 |  4500
-          9 |   4500 |     0
+    --------+--------+--------
+        1   |  5000  | 17000
+        2   |  3900  | 17300
+        3   |  4800  | 18500
+        4   |  4800  | 18200
+        5   |  3500  | 19900
+        7   |  4200  | 20900
+        8   |  6000  | 14900
+        9   |  4500  | 10400
+        10  |  5200  | 5200
+        11  |  5200  | 0
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN 1 FOLLOWING AND 4 FOLLOWING) AS sum FROM empsalary",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN 1 FOLLOWING AND 4 FOLLOWING) AS sum FROM empsalary",
         expected=expected
     )
 
@@ -480,19 +480,19 @@ def between_exp_following_and_expr_following(self):
 @Requirements(
     RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_CurrentRow("1.0")
 )
-def between_exp_preceding_and_current_row(self):
+def between_expr_preceding_and_current_row(self):
     """Check rows between exp preceding and current row frame.
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-         8  |   6000 |  6000 
-        10  |   5200 | 11200 
-        11  |   5200 | 10400 
+    --------+--------+--------
+         8  |   6000 |  6000
+        10  |   5200 | 11200
+        11  |   5200 | 10400
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS sum FROM empsalary WHERE salary > 5000",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS sum FROM empsalary WHERE salary > 5000",
         expected=expected
     )
 
@@ -512,19 +512,19 @@ def between_expr_preceding_and_unbounded_preceding_error(self):
 @Requirements(
     RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_UnboundedFollowing("1.0")
 )
-def between_exp_preceding_and_unbounded_following(self):
+def between_expr_preceding_and_unbounded_following(self):
     """Check rows between exp preceding and unbounded following frame.
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
+    --------+--------+--------
         8   |   6000 | 16400
        10   |   5200 | 16400
        11   |   5200 | 10400
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary WHERE salary > 5000",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary WHERE salary > 5000",
         expected=expected
     )
 
@@ -545,26 +545,26 @@ def between_expr_preceding_and_expr_preceding_error(self):
 @Requirements(
     RQ_SRS_019_ClickHouse_WindowFunctions_RowsFrame_Between_ExprPreceding_ExprPreceding("1.0")
 )
-def between_expr_preceding_and_expr_preceding_following(self):
+def between_expr_preceding_and_expr_preceding(self):
     """Check rows between expr preceding and expr preceding frame when frame end is after or at frame start.
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-         1  |   5000 |  5000
-         8  |   6000 | 11000
-         2  |   3900 |  9900
-        10  |   5200 |  9100
-         3  |   4800 | 10000
-         4  |   4800 |  9600
-        11  |   5200 | 10000
-         5  |   3500 |  8700
-         7  |   4200 |  7700
-         9  |   4500 |  8700
+    --------+--------+--------
+       1    | 5000   | 5000
+       2    | 3900   | 8900
+       3    | 4800   | 8700
+       4    | 4800   | 9600
+       5    | 3500   | 8300
+       7    | 4200   | 7700
+       8    | 6000   | 10200
+       9    | 4500   | 10500
+       10   | 5200   | 9700
+       11   | 5200   | 10400
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN 1 PRECEDING AND 0 PRECEDING) AS sum FROM empsalary",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN 1 PRECEDING AND 0 PRECEDING) AS sum FROM empsalary",
         expected=expected
     )
 
@@ -577,14 +577,14 @@ def between_expr_preceding_and_expr_following(self):
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-       8    |   6000 | 11200 
-      10    |   5200 | 16400 
-      11    |   5200 | 10400     
+    --------+--------+--------
+       8    |   6000 | 11200
+      10    |   5200 | 16400
+      11    |   5200 | 10400
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS sum FROM empsalary WHERE salary > 5000",
+        "SELECT empno, salary, sum(salary) OVER (ORDER BY empno ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS sum FROM empsalary WHERE salary > 5000",
         expected=expected
     )
 
@@ -597,22 +597,22 @@ def between_expr_following_and_expr_following_ref(self):
     """Check reference result for rows between expr following and expr following range.
     """
     expected = convert_output("""
-     sum | unique1 | four 
+     sum | unique1 | four
     -----+---------+------
-       9 |       4 |    0
-      16 |       2 |    2
-      23 |       1 |    1
-      22 |       6 |    2
-      16 |       9 |    1
-      15 |       8 |    0
-      10 |       5 |    1
-       7 |       3 |    3
-       0 |       7 |    3
-       0 |       0 |    0
+      6  |    0    |  0
+      9  |    1    |  1
+      12 |    2    |  2
+      15 |    3    |  3
+      18 |    4    |  0
+      21 |    5    |  1
+      24 |    6    |  2
+      17 |    7    |  3
+      9  |    8    |  0
+      0  |    9    |  1
     """)
 
     execute_query(
-        "SELECT sum(unique1) over (rows between 1 following and 3 following) AS sum,"
+        "SELECT sum(unique1) over (order by unique1 rows between 1 following and 3 following) AS sum,"
         "unique1, four "
         "FROM tenk1 WHERE unique1 < 10",
         expected=expected
@@ -626,22 +626,22 @@ def between_expr_preceding_and_expr_preceding_ref(self):
     """Check reference result for rows between expr preceding and expr preceding frame.
     """
     expected = convert_output("""
-     sum | unique1 | four 
+     sum | unique1 | four
     -----+---------+------
-       0 |       4 |    0
-       4 |       2 |    2
-       6 |       1 |    1
-       3 |       6 |    2
-       7 |       9 |    1
-      15 |       8 |    0
-      17 |       5 |    1
-      13 |       3 |    3
-       8 |       7 |    3
-      10 |       0 |    0
+      0  |   0     |  0
+      0  |   1     |  1
+      1  |   2     |  2
+      3  |   3     |  3
+      5  |   4     |  0
+      7  |   5     |  1
+      9  |   6     |  2
+      11 |   7     |  3
+      13 |   8     |  0
+      15 |   9     |  1
     """)
 
     execute_query(
-        "SELECT sum(unique1) over (rows between 2 preceding and 1 preceding) AS sum,"
+        "SELECT sum(unique1) over (order by unique1 rows between 2 preceding and 1 preceding) AS sum,"
         "unique1, four "
         "FROM tenk1 WHERE unique1 < 10",
         expected=expected
@@ -655,22 +655,22 @@ def between_expr_preceding_and_expr_following_ref(self):
     """Check reference result for rows between expr preceding and expr following frame.
     """
     expected = convert_output("""
-     sum | unique1 | four 
+     sum | unique1 | four
     -----+---------+------
-       7 |       4 |    0
-      13 |       2 |    2
-      22 |       1 |    1
-      26 |       6 |    2
-      29 |       9 |    1
-      31 |       8 |    0
-      32 |       5 |    1
-      23 |       3 |    3
-      15 |       7 |    3
-      10 |       0 |    0
+      3  |   0     |  0
+      6  |   1     |  1
+      10 |   2     |  2
+      15 |   3     |  3
+      20 |   4     |  0
+      25 |   5     |  1
+      30 |   6     |  2
+      35 |   7     |  3
+      30 |   8     |  0
+      24 |   9     |  1
     """)
 
     execute_query(
-        "SELECT sum(unique1) over (rows between 2 preceding and 2 following) AS sum, "
+        "SELECT sum(unique1) over (order by unique1 rows between 2 preceding and 2 following) AS sum, "
         "unique1, four "
         "FROM tenk1 WHERE unique1 < 10",
         expected=expected
