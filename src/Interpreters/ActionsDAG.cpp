@@ -507,9 +507,9 @@ NameSet ActionsDAG::foldActionsByProjection(
         }
     }
 
-    nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
     std::erase_if(inputs, [&](const Node * node) { return visited_nodes.count(node) == 0; });
     std::erase_if(index, [&](const Node * node) { return visited_index_names.count(node->result_name) == 0; });
+    nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
 
     NameSet next_required_columns;
     for (const auto & input : inputs)

@@ -1161,24 +1161,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             if (expressions.need_aggregate)
             {
-                if (query_info.projection)
-                {
-                    executeAggregation(
-                        query_plan,
-                        expressions.before_aggregation,
-                        aggregate_overflow_row,
-                        aggregate_final,
-                        query_info.projection->input_order_info);
-                    /// We need to reset input order info, so that executeOrder can't use  it
-                    query_info.projection->input_order_info.reset();
-                }
-                else
-                {
-                    executeAggregation(
-                        query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
-                    /// We need to reset input order info, so that executeOrder can't use  it
-                    query_info.input_order_info.reset();
-                }
+                executeAggregation(
+                    query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
+                /// We need to reset input order info, so that executeOrder can't use  it
+                query_info.input_order_info.reset();
             }
 
             // Now we must execute:
