@@ -1,5 +1,7 @@
 #include "compileFunction.h"
 
+#if USE_EMBEDDED_COMPILER
+
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
@@ -29,6 +31,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 ColumnData getColumnData(const IColumn * column)
 {
@@ -158,3 +165,5 @@ CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBaseImpl &
 }
 
 }
+
+#endif
