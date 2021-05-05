@@ -57,7 +57,7 @@ struct LemmatizeImpl
 private:
 
     static void stemImpl(UInt8 * dst, UInt64 length) {
-        stem_en(reinterpret_cast<unsigned char *>(dst), length);
+        stem_en(reinterpret_cast<unsigned short *>(dst), length);
     }
 
 };
