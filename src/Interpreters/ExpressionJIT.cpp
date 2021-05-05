@@ -367,25 +367,25 @@ static CompileDAG getCompilableDAG(
             break;
         }
 
-        bool should_visit_children_first = frame.next_child_to_visit < node->children.size();
+        bool all_children_visited = frame.next_child_to_visit == node->children.size();
 
-        if (should_visit_children_first)
+        if (all_children_visited)
             continue;
 
         CompileDAG::Node compile_node;
         compile_node.function = node->function_base;
         compile_node.result_type = node->result_type;
 
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (isCompilableConstant(*node))
+        {
+            compile_node.type = CompileDAG::CompileType::CONSTANT;
+            compile_node.column = node->column;
+        }
+        else if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             compile_node.type = CompileDAG::CompileType::FUNCTION;
             for (const auto * child : node->children)
                 compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
-        }
-        else if (isCompilableConstant(*node))
-        {
-            compile_node.type = CompileDAG::CompileType::CONSTANT;
-            compile_node.column = node->column;
         }
         else
         {
@@ -431,9 +431,9 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     std::stack<Frame> stack;
     std::unordered_set<const Node *> visited_nodes;
 
-    /** Algorithm is go throught each node in ActionsDAG, and for each node iterate thought all children.
-      * and update data with their compilable status.
-      * After this procedure in data for each node is initialized.
+    /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable status.
+      * Node is compilable if all its children are compilable and node is also compilable.
+      * After this procedure data for each node is initialized.
       */
 
     for (auto & node : nodes)
@@ -462,9 +462,9 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
                 break;
             }
 
-            bool should_visit_children_first = current_frame.next_child_to_visit < current_node->children.size();
+            bool all_children_visited = current_frame.next_child_to_visit == current_node->children.size();
 
-            if (should_visit_children_first)
+            if (!all_children_visited)
                 continue;
 
             auto & current_node_data = node_to_data[current_node];

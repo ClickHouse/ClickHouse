@@ -103,7 +103,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
     Values arguments;
     arguments.reserve(arg_types.size());
 
-    for (size_t i = 0; i < arg_types.size(); ++i) // NOLINT
+    for (size_t i = 0; i < arg_types.size(); ++i)
     {
         auto & column = columns[i];
         auto type = arg_types[i];
