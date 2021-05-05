@@ -81,7 +81,7 @@ def adhoc_window(self):
     """)
 
     execute_query(
-        "SELECT depname, empno, salary, sum(salary) OVER (PARTITION BY depname) AS sum FROM empsalary ORDER BY depname, salary",
+        "SELECT depname, empno, salary, sum(salary) OVER (PARTITION BY depname) AS sum FROM empsalary ORDER BY depname, salary, empno",
         expected=expected
     )
 

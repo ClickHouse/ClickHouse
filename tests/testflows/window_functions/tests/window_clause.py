@@ -8,22 +8,22 @@ def single_window(self):
     """Check defining a single named window using window clause.
     """
     expected = convert_output("""
-      depname  | empno | salary |  sum  
+      depname  | empno | salary |  sum
     -----------+-------+--------+-------
-     develop   |     8 |   6000 | 25100
-     develop   |    10 |   5200 | 25100
-     develop   |    11 |   5200 | 25100
-     develop   |     7 |   4200 | 25100
-     develop   |     9 |   4500 | 25100
-     personnel |     2 |   3900 |  7400
-     personnel |     5 |   3500 |  7400
-     sales     |     1 |   5000 | 14600
-     sales     |     3 |   4800 | 14600
-     sales     |     4 |   4800 | 14600
+     develop   |   7   |  4200  | 4200
+     develop   |   8   |  6000  | 10200
+     develop   |   9   |  4500  | 14700
+     develop   |   10  |  5200  | 19900
+     develop   |   11  |  5200  | 25100
+     personnel |   2   |  3900  | 3900
+     personnel |   5   |  3500  | 7400
+     sales     |   1   |  5000  | 5000
+     sales     |   3   |  4800  | 9800
+     sales     |   4   |  4800  | 14600
     """)
 
     execute_query(
-        "SELECT depname, empno, salary, sum(salary) OVER w AS sum FROM empsalary WINDOW w AS (PARTITION BY depname)",
+        "SELECT depname, empno, salary, sum(salary) OVER w AS sum FROM empsalary WINDOW w AS (PARTITION BY depname ORDER BY empno)",
         expected=expected
     )
 
@@ -32,7 +32,7 @@ def unused_window(self):
     """Check unused window.
     """
     expected = convert_output("""
-    four 
+    four
     -------
     """)
 
@@ -49,7 +49,7 @@ def multiple_identical_windows(self):
     """Check defining multiple windows using window clause.
     """
     expected = convert_output("""
-      sum  | count 
+      sum  | count
     -------+-------
       3500 |     1
       7400 |     2
@@ -78,21 +78,21 @@ def multiple_windows(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum1  | sum2
-    --------+-----------+--------+-------+--------  
-         8  | develop   |   6000 | 25100 |  6000 
-        10  | develop   |   5200 | 25100 | 11200 
-        11  | develop   |   5200 | 25100 | 10400 
-         7  | develop   |   4200 | 25100 |  9400 
-         9  | develop   |   4500 | 25100 |  8700 
-         2  | personnel |   3900 |  7400 |  8400 
-         5  | personnel |   3500 |  7400 |  7400 
-         1  | sales     |   5000 | 14600 |  8500 
-         3  | sales     |   4800 | 14600 |  9800 
-         4  | sales     |   4800 | 14600 |  9600 
+    --------+-----------+--------+-------+--------
+        1   | sales     | 5000   | 5000  | 5000
+        2   | personnel | 3900   | 3900  | 8900
+        3   | sales     | 4800   | 9800  | 8700
+        4   | sales     | 4800   | 14600 | 9600
+        5   | personnel | 3500   | 7400  | 8300
+        7   | develop   | 4200   | 4200  | 7700
+        8   | develop   | 6000   | 10200 | 10200
+        9   | develop   | 4500   | 14700 | 10500
+        10  | develop   | 5200   | 19900 | 9700
+        11  | develop   | 5200   | 25100 | 10400
     """)
 
     execute_query("SELECT empno, depname, salary, sum(salary) OVER w1 AS sum1, sum(salary) OVER w2 AS sum2 "
-        "FROM empsalary WINDOW w1 AS (PARTITION BY depname), w2 AS (ROWS 1 PRECEDING)",
+        "FROM empsalary WINDOW w1 AS (PARTITION BY depname ORDER BY empno), w2 AS (ORDER BY empno ROWS 1 PRECEDING)",
         expected=expected
     )
 
