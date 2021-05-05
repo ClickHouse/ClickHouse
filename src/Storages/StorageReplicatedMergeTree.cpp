@@ -3128,7 +3128,6 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.merge_type = merge_type;
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
-    entry.merge_type = merge_type;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -5215,11 +5214,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
         {
             auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
 
-            if (log_entries.empty())
-            {
-                res.log_max_index = 0;
-            }
-            else
+            if (!log_entries.empty())
             {
                 const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
                 res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
@@ -5231,7 +5226,6 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
             auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
             res.total_replicas = all_replicas.size();
 
-            res.active_replicas = 0;
             for (const String & replica : all_replicas)
                 if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
                     ++res.active_replicas;
@@ -5365,7 +5359,7 @@ void StorageReplicatedMergeTree::fetchPartition(
     ContextPtr query_context)
 {
     Macros::MacroExpansionInfo info;
-    info.expand_special_macros_only = false;
+    info.expand_special_macros_only = false; //-V1048
     info.table_id = getStorageID();
     info.table_id.uuid = UUIDHelpers::Nil;
     auto expand_from = query_context->getMacros()->expand(from_, info);
@@ -6317,7 +6311,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         entry_delete.type = LogEntry::DROP_RANGE;
         entry_delete.source_replica = replica_name;
         entry_delete.new_part_name = drop_range_fake_part_name;
-        entry_delete.detach = false;
+        entry_delete.detach = false; //-V1048
         entry_delete.create_time = time(nullptr);
     }
 
