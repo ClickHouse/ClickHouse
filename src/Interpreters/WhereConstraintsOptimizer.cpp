@@ -43,33 +43,20 @@ MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
     return MatchState::NONE;
 }
 
-bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
+bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const ConstraintsDescription & constraints_description)
 {
-    for (const auto & constraint : constraints)
+    for (const auto & atom : group)
     {
-        bool group_always_true = true;
-        for (const auto & constraint_ast : constraint)
+        const auto constraint_atom_ids = constraints_description.getAtomIds(atom.ast);
+        if (constraint_atom_ids)
         {
-            bool found_match = false;
-            for (const auto & atom_ast : group)
+            for (const auto & constraint_atom : constraints_description.getAtomsById(constraint_atom_ids.value()))
             {
-                const auto match_result = match(constraint_ast, atom_ast);
-
+                const auto match_result = match(constraint_atom, atom);
                 if (match_result == MatchState::FULL_MATCH)
-                {
-                    found_match = true;
-                    break;
-                }
-            }
-            if (!found_match)
-            {
-                group_always_true = false;
-                break;
+                    return true;
             }
         }
-
-        if (group_always_true)
-            return true;
     }
     return false;
 }
@@ -103,19 +90,16 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
 }
 
 
-bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
+bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const ConstraintsDescription & constraints_description)
 {
-    for (const auto & constraint : constraints)
+    const auto constraint_atom_ids = constraints_description.getAtomIds(atom.ast);
+    if (constraint_atom_ids)
     {
-        if (constraint.size() > 1)
-            continue;
-
-        for (const auto & constraint_atoms : constraint)
+        for (const auto & constraint_atom : constraints_description.getAtomsById(constraint_atom_ids.value()))
         {
-            const auto match_result = match(constraint_atoms, atom);
-
-            if (match_result != MatchState::NONE)
-                return match_result == MatchState::NOT_MATCH;
+            const auto match_result = match(constraint_atom, atom);
+            if (match_result == MatchState::NOT_MATCH)
+                return true;
         }
     }
 
@@ -164,21 +148,21 @@ void WhereConstraintsOptimizer::perform()
 {
     if (select_query->where() && metadata_snapshot)
     {
-        const auto & constraint_data = metadata_snapshot->getConstraints().getConstraintData();
+        //const auto & constraint_data = metadata_snapshot->getConstraints().getConstraintData();
         const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
         Poco::Logger::get("BEFORE CNF ").information(select_query->where()->dumpTree());
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
         Poco::Logger::get("BEFORE OPT").information(cnf.dump());
         cnf.pullNotOutFunctions()
-            .filterAlwaysTrueGroups([&constraint_data, &compare_graph](const auto & group)
+            .filterAlwaysTrueGroups([&compare_graph, this](const auto & group)
             {
                 /// remove always true groups from CNF
-                return !checkIfGroupAlwaysTrueFullMatch(group, constraint_data) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+                return !checkIfGroupAlwaysTrueFullMatch(group, metadata_snapshot->getConstraints()) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
             })
-            .filterAlwaysFalseAtoms([&constraint_data, &compare_graph](const auto & atom)
+            .filterAlwaysFalseAtoms([&compare_graph, this](const auto & atom)
             {
                 /// remove always false atoms from CNF
-                return !checkIfAtomAlwaysFalseFullMatch(atom, constraint_data) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
+                return !checkIfAtomAlwaysFalseFullMatch(atom, metadata_snapshot->getConstraints()) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
             })
             .transformAtoms([&compare_graph](const auto & atom)
             {
