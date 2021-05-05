@@ -15,6 +15,9 @@ struct ConstraintsDescription
 public:
     ConstraintsDescription() { update(); }
 
+    ConstraintsDescription(const ConstraintsDescription & other);
+    ConstraintsDescription & operator=(const ConstraintsDescription & other);
+
     bool empty() const { return constraints.empty(); }
     String toString() const;
 
@@ -40,8 +43,16 @@ public:
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
-    ConstraintsDescription(const ConstraintsDescription & other);
-    ConstraintsDescription & operator=(const ConstraintsDescription & other);
+    struct AtomId
+    {
+        size_t and_group;
+        size_t atom;
+    };
+
+    using AtomIds = std::vector<AtomId>;
+
+    std::optional<AtomIds> getAtomIds(const ASTPtr & ast) const;
+    std::vector<CNFQuery::AtomicFormula> getAtomsById(const AtomIds & ids) const;
 
 private:
     std::vector<std::vector<CNFQuery::AtomicFormula>> buildConstraintData() const;
@@ -50,6 +61,7 @@ private:
 
     std::vector<ASTPtr> constraints;
     std::vector<std::vector<CNFQuery::AtomicFormula>> cnf_constraints;
+    std::map<IAST::Hash, AtomIds> ast_to_atom_ids;
     std::unique_ptr<ComparisonGraph> graph;
 };
 

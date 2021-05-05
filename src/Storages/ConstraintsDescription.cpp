@@ -89,7 +89,7 @@ std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomicConstraint
     {
         Poco::Logger::get("atomic_formula: initial:").information(constraint->as<ASTConstraintDeclaration>()->expr->ptr()->dumpTree());
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
-            .pullNotOutFunctions();
+             .pullNotOutFunctions();
         for (const auto & group : cnf.getStatements())
         {
             if (group.size() == 1)
@@ -158,6 +158,22 @@ const std::vector<ASTPtr> & ConstraintsDescription::getConstraints() const
     return constraints;
 }
 
+std::optional<ConstraintsDescription::AtomIds> ConstraintsDescription::getAtomIds(const ASTPtr & ast) const
+{
+    const auto hash = ast->getTreeHash();
+    if (ast_to_atom_ids.contains(hash))
+        return ast_to_atom_ids.at(hash);
+    return std::nullopt;
+}
+
+std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomsById(const ConstraintsDescription::AtomIds & ids) const
+{
+    std::vector<CNFQuery::AtomicFormula> result;
+    for (const auto & id : ids)
+        result.push_back(cnf_constraints[id.and_group][id.atom]);
+    return result;
+}
+
 void ConstraintsDescription::updateConstraints(const std::vector<ASTPtr> & constraints_)
 {
     constraints = constraints_;
@@ -184,6 +200,14 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
 void ConstraintsDescription::update()
 {
     cnf_constraints = buildConstraintData();
+    ast_to_atom_ids.clear();
+    for (size_t i = 0; i < cnf_constraints.size(); ++i)
+    {
+        for (size_t j = 0; j < cnf_constraints[i].size(); ++j)
+        {
+            ast_to_atom_ids[cnf_constraints[i][j].ast->getTreeHash()].push_back({i, j});
+        }
+    }
     graph = buildGraph();
 }
 
