@@ -105,7 +105,7 @@ using UnsignedOfSize = typename SelectType
     uint16_t,
     uint32_t,
     uint64_t,
-    UInt128
+    __uint128_t
 >::Result;
 
 /// Holds the result of dividing an unsigned N-byte variable by 10^N resulting in
@@ -349,6 +349,8 @@ static inline int digits10(T x)
 template <typename T>
 static inline char * writeUIntText(T x, char * p)
 {
+    static_assert(is_unsigned_v<T>);
+
     int len = digits10(x);
     auto pp = p + len;
     while (x >= 100)
@@ -418,25 +420,25 @@ inline char * itoa(char8_t i, char * p)
 }
 
 template <>
-inline char * itoa<UInt128>(UInt128 i, char * p)
+inline char * itoa(UInt128 i, char * p)
 {
     return impl::writeUIntText(i, p);
 }
 
 template <>
-inline char * itoa<Int128>(Int128 i, char * p)
+inline char * itoa(Int128 i, char * p)
 {
     return impl::writeSIntText(i, p);
 }
 
 template <>
-inline char * itoa<UInt256>(UInt256 i, char * p)
+inline char * itoa(UInt256 i, char * p)
 {
     return impl::writeUIntText(i, p);
 }
 
 template <>
-inline char * itoa<Int256>(Int256 i, char * p)
+inline char * itoa(Int256 i, char * p)
 {
     return impl::writeSIntText(i, p);
 }
