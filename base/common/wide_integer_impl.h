@@ -195,7 +195,7 @@ struct integer<Bits, Signed>::_impl
     template <size_t B, class S>
     constexpr static integer<B, S> make_positive(const integer<B, S> & n) noexcept
     {
-        return is_negative(n) ? operator_unary_minus(n) : n;
+        return is_negative(n) ? integer<B, S>(operator_unary_minus(n)) : n;
     }
 
     template <typename T>
