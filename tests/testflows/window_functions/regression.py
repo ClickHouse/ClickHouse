@@ -32,7 +32,9 @@ xfails = {
         [(Fail, "exception on conversion")],
     "tests/:/misc/subquery expr preceding":
         [(Fail, "subquery is not supported as offset")],
-        "tests/distributed/misc/query with order by and one window":
+    "tests/distributed/misc/query with order by and one window":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/distributed/over clause/empty named window":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
     "tests/non distributed/frame clause/range errors/error negative preceding offset":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22442")],

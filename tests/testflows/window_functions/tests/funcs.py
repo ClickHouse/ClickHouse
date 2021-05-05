@@ -11,7 +11,7 @@ def first_value(self):
     """Check `first_value` function.
     """
     expected = convert_output("""
-     first_value | ten | four 
+     first_value | ten | four
     -------------+-----+------
                0 |   0 |    0
                0 |   0 |    0
@@ -48,29 +48,29 @@ def last_value(self):
         Check that last_value returns the last row of the frame that is CURRENT ROW in ORDER BY window
         """):
         expected = convert_output("""
-         last_value | ten | four 
+         last_value | ten | four
         ------------+-----+------
-                  2 |   0 |    0
-                  2 |   0 |    0
-                  2 |   0 |    2
-                  1 |   1 |    3
-                  1 |   1 |    1
-                  1 |   1 |    1
-                  3 |   3 |    3
-                  0 |   4 |    0
-                  1 |   7 |    1
-                  1 |   9 |    1
+               0    |  0  |  0
+               0    |  0  |  0
+               2    |  0  |  2
+               1    |  1  |  1
+               1    |  1  |  1
+               3    |  1  |  3
+               3    |  3  |  3
+               0    |  4  |  0
+               1    |  7  |  1
+               1    |  9  |  1
         """)
 
         with Check("using last_value"):
             execute_query(
-                "SELECT last_value(four) OVER (ORDER BY ten) AS last_value, ten, four FROM tenk1 WHERE unique2 < 10",
+                "SELECT last_value(four) OVER (ORDER BY ten, four) AS last_value, ten, four FROM tenk1 WHERE unique2 < 10",
                 expected=expected
             )
 
         with Check("using anyLast() equivalent"):
             execute_query(
-                "SELECT anyLast(four) OVER (ORDER BY ten) AS last_value, ten, four FROM tenk1 WHERE unique2 < 10",
+                "SELECT anyLast(four) OVER (ORDER BY ten, four) AS last_value, ten, four FROM tenk1 WHERE unique2 < 10",
                 expected=expected
             )
 
@@ -78,7 +78,7 @@ def last_value(self):
             Check that last_value returns the last row of the frame that is CURRENT ROW in ORDER BY window
             """):
         expected = convert_output("""
-         last_value | ten | four 
+         last_value | ten | four
         ------------+-----+------
                   4 |   0 |    0
                   4 |   0 |    0
@@ -250,7 +250,7 @@ def lead(self):
 
     with Example("subquery as offset"):
         expected = convert_output("""
-         lead 
+         lead
         ------
             0
             0
@@ -258,10 +258,10 @@ def lead(self):
             1
             7
             9
-          \\N  
+          \\N
             0
             3
-          \\N   
+          \\N
         """)
 
         execute_query(
@@ -278,7 +278,7 @@ def row_number(self):
     """Check `row_number` function.
     """
     expected = convert_output("""
-     row_number 
+     row_number
     ------------
               1
               2
@@ -305,7 +305,7 @@ def rank(self):
     """Check `rank` function.
     """
     expected = convert_output("""
-     rank_1 | ten | four 
+     rank_1 | ten | four
     --------+-----+------
           1 |   0 |    0
           1 |   0 |    0
@@ -332,7 +332,7 @@ def dense_rank(self):
     """Check `dense_rank` function.
     """
     expected = convert_output("""
-     dense_rank | ten | four 
+     dense_rank | ten | four
     ------------+-----+------
               1 |   0 |    0
               1 |   0 |    0
@@ -356,7 +356,7 @@ def last_value_with_no_frame(self):
     """Check last_value function with no frame.
     """
     expected = convert_output("""
-     four | ten | sum | last_value 
+     four | ten | sum | last_value
     ------+-----+-----+------------
         0 |   0 |   0 |          0
         0 |   2 |   2 |          2
@@ -396,7 +396,7 @@ def last_value_with_lag_workaround(self):
     """Check last value with lag workaround.
     """
     expected = convert_output("""
-     last_value | lag  | salary 
+     last_value | lag  | salary
     ------------+------+--------
            4500 |    0 |   3500
            4800 | 3500 |   3900
@@ -426,7 +426,7 @@ def first_value_with_lead_workaround(self):
     """Check first value with lead workaround.
     """
     expected = convert_output("""
-     first_value | lead | salary 
+     first_value | lead | salary
     -------------+------+--------
             3500 | 3900 |   3500
             3500 | 4200 |   3900

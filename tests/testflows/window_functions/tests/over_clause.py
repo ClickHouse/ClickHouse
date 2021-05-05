@@ -11,7 +11,7 @@ def empty(self):
     """Check using empty over clause.
     """
     expected = convert_output("""
-     count 
+     count
     -------
         10
         10
@@ -39,7 +39,7 @@ def empty_named_window(self):
     """Check using over clause with empty window.
     """
     expected = convert_output("""
-     count 
+     count
     -------
         10
         10
@@ -66,7 +66,7 @@ def adhoc_window(self):
     """Check running aggregating `sum` function over an adhoc window.
     """
     expected = convert_output("""
-      depname  | empno | salary |  sum  
+      depname  | empno | salary |  sum
     -----------+-------+--------+-------
      develop   |     7 |   4200 | 25100
      develop   |     9 |   4500 | 25100
