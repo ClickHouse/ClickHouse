@@ -562,8 +562,9 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.writeSuffix();
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
+        e.addMessage(fmt::format("While sending {}", file_path));
         maybeMarkAsBroken(file_path, e);
         throw;
     }
@@ -711,7 +712,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             if (remote)
                 remote->writeSuffix();
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
             {
@@ -719,7 +720,14 @@ struct StorageDistributedDirectoryMonitor::Batch
                 batch_broken = true;
             }
             else
+            {
+                std::vector<std::string> files(file_index_to_path.size());
+                for (const auto & [index, name] : file_index_to_path)
+                    files.push_back(name);
+                e.addMessage(fmt::format("While sending batch {}", fmt::join(files, "\n")));
+
                 throw;
+            }
         }
 
         if (!batch_broken)

@@ -43,6 +43,9 @@ def setup_teardown():
 
 
 def test_load_all(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
     instance.query('''
         CREATE DICTIONARY lib_dict (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key
@@ -81,6 +84,9 @@ def test_load_all(ch_cluster):
 
 
 def test_load_ids(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
     instance.query('''
         CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
@@ -101,6 +107,9 @@ def test_load_ids(ch_cluster):
 
 
 def test_load_keys(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
     instance.query('''
         CREATE DICTIONARY lib_dict_ckc (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key
@@ -117,6 +126,9 @@ def test_load_keys(ch_cluster):
 
 
 def test_load_all_many_rows(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
     num_rows = [1000, 10000, 100000, 1000000]
     for num in num_rows:
         instance.query('''
@@ -136,6 +148,9 @@ def test_load_all_many_rows(ch_cluster):
 
 
 def test_null_values(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
     instance.query('SYSTEM RELOAD DICTIONARY dict2')
     instance.query("""
         CREATE TABLE IF NOT EXISTS `dict2_table` (
