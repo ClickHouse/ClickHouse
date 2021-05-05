@@ -38,7 +38,13 @@ llvm::Value * CompileDAG::compile(llvm::IRBuilderBase & builder, Values input_no
         {
             case CompileType::CONSTANT:
             {
-                compiled_values[compiled_values_index] = getColumnNativeValue(b, node.result_type, *node.column, 0);
+                auto * native_value = getColumnNativeValue(b, node.result_type, *node.column, 0);
+                if (!native_value)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot native value for constant column with type {}",
+                    node.result_type->getName());
+
+                compiled_values[compiled_values_index] = native_value;
                 break;
             }
             case CompileType::FUNCTION:
@@ -47,7 +53,10 @@ llvm::Value * CompileDAG::compile(llvm::IRBuilderBase & builder, Values input_no
                 temporary_values.reserve(node.arguments.size());
 
                 for (auto argument_index : node.arguments)
+                {
+                    assert(compiled_values[argument_index] != nullptr);
                     temporary_values.emplace_back(compiled_values[argument_index]);
+                }
 
                 compiled_values[compiled_values_index] = node.function->compile(builder, temporary_values);
                 break;
@@ -95,8 +104,11 @@ std::string CompileDAG::dump() const
                 for (auto argument_index : node.arguments)
                     function_dump += dumped_values[argument_index] += ", ";
 
-                function_dump.pop_back();
-                function_dump.pop_back();
+                if (!node.arguments.empty())
+                {
+                    function_dump.pop_back();
+                    function_dump.pop_back();
+                }
 
                 function_dump += ')';
 
