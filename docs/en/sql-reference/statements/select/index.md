@@ -47,6 +47,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [SELECT clause](#select-clause)
 -   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
+-   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)
 -   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 -   [FORMAT clause](../../../sql-reference/statements/select/format.md)
@@ -56,6 +57,9 @@ Specifics of each optional clause are covered in separate sections, which are li
 [Expressions](../../../sql-reference/syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](../../../sql-reference/statements/select/group-by.md) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
+
+
+### COLUMNS expression {#columns-expression}
 
 To match some columns in the result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
 

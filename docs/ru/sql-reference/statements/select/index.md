@@ -1,8 +1,8 @@
 ---
-title: "\u0421\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441\u0020\u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432\u0020\u0053\u0045\u004c\u0045\u0043\u0054"
+title: "Синтаксис запросов SELECT"
 toc_folder_title: SELECT
 toc_priority: 32
-toc_title: "\u041e\u0431\u0437\u043e\u0440"
+toc_title: "Обзор"
 ---
 
 # Синтаксис запросов SELECT {#select-queries-syntax}
@@ -45,6 +45,7 @@ SELECT [DISTINCT] expr_list
 -   [Секция SELECT](#select-clause)
 -   [Секция DISTINCT](distinct.md)
 -   [Секция LIMIT](limit.md)
+    [Секция OFFSET](offset.md)
 -   [Секция UNION ALL](union.md)
 -   [Секция INTO OUTFILE](into-outfile.md)
 -   [Секция FORMAT](format.md)
@@ -280,4 +281,3 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/)<!--hide-->

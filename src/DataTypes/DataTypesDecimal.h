@@ -42,20 +42,9 @@ public:
     bool canBePromoted() const override { return true; }
     DataTypePtr promoteNumericType() const override;
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
-    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
-
     bool equals(const IDataType & rhs) const override;
-
     T parseFromString(const String & str) const;
-    void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, this->precision, this->scale, csv); }
-
-    static void readText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false);
-    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_);
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 template <typename T>
@@ -273,7 +262,7 @@ tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale
 template <typename T>
 inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
 {
-    return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::maxPrecision<T>(), scale);
+    return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::max_precision<T>, scale);
 }
 
 }

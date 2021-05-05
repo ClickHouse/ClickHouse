@@ -206,6 +206,13 @@ size_t ThreadPoolImpl<Thread>::active() const
 }
 
 template <typename Thread>
+bool ThreadPoolImpl<Thread>::finished() const
+{
+    std::unique_lock lock(mutex);
+    return shutdown;
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
     DENY_ALLOCATIONS_IN_SCOPE;

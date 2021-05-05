@@ -1,24 +1,8 @@
 # 使用建议 {#usage-recommendations}
 
-## CPU {#cpu}
+## CPU频率调节器 {#cpu-scaling-governor}
 
-必须支持SSE4.2指令集。 现代处理器（自2008年以来）支持它。
-
-选择处理器时，与较少的内核和较高的时钟速率相比，更喜欢大量内核和稍慢的时钟速率。
-例如，具有2600MHz的16核心比具有3600MHz的8核心更好。
-
-## 超线程 {#hyper-threading}
-
-不要禁用超线程。 它有助于某些查询，但不适用于其他查询。
-
-## 超频 {#turbo-boost}
-
-强烈推荐超频(turbo-boost)。 它显着提高了典型负载的性能。
-您可以使用 `turbostat` 要查看负载下的CPU的实际时钟速率。
-
-## CPU缩放调控器 {#cpu-scaling-governor}
-
-始终使用 `performance` 缩放调控器。 该 `on-demand` 随着需求的不断增加，缩放调节器的工作要糟糕得多。
+始终使用 `performance` 频率调节器。  `on-demand` 频率调节器在持续高需求的情况下，效果更差。
 
 ``` bash
 echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
@@ -26,68 +10,70 @@ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gover
 
 ## CPU限制 {#cpu-limitations}
 
-处理器可能会过热。 使用 `dmesg` 看看CPU的时钟速率是否由于过热而受到限制。
-此限制也可以在数据中心级别的外部设置。 您可以使用 `turbostat` 在负载下监视它。
+处理器可能会过热。 使用 `dmesg` 查看CPU的时钟速率是否由于过热而受到限制。
+该限制也可以在数据中心级别外部设置。 您可以使用 `turbostat` 在负载下对其进行监控。
 
 ## RAM {#ram}
 
-对于少量数据（高达-200GB压缩），最好使用与数据量一样多的内存。
-对于大量数据和处理交互式（在线）查询时，应使用合理数量的RAM（128GB或更多），以便热数据子集适合页面缓存。
-即使对于每台服务器约50TB的数据量，使用128GB的RAM与64GB相比显着提高了查询性能。
+对于少量数据（压缩后约200GB），最好使用与数据量一样多的内存。
+对于大量数据，以及在处理交互式（在线）查询时，应使用合理数量的RAM（128GB或更多），以便热数据子集适合页面缓存。
+即使对于每台服务器约50TB的数据量，与64GB相比，使用128GB的RAM也可以显着提高查询性能。
 
-## 交换文件 {#swap-file}
+不要禁用 overcommit。`cat /proc/sys/vm/overcommit_memory` 的值应该为0或1。运行
 
-始终禁用交换文件。 不这样做的唯一原因是，如果您使用的ClickHouse在您的个人笔记本电脑。
+``` bash
+$ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```
 
 ## 大页(Huge Pages) {#huge-pages}
 
-始终禁用透明大页(transparent huge pages)。 它会干扰内存分alloc，从而导致显着的性能下降。
+始终禁用透明大页(transparent huge pages)。 它会干扰内存分配器，从而导致显着的性能下降。
 
 ``` bash
 echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
-使用 `perf top` 观察内核中用于内存管理的时间。
+使用 `perf top` 来查看内核在内存管理上花费的时间。
 永久大页(permanent huge pages)也不需要被分配。
 
-## 存储系统 {#storage-subsystem}
+## 存储子系统 {#storage-subsystem}
 
 如果您的预算允许您使用SSD，请使用SSD。
 如果没有，请使用硬盘。 SATA硬盘7200转就行了。
 
-优先选择带有本地硬盘驱动器的大量服务器，而不是带有附加磁盘架的小量服务器。
-但是对于存储具有罕见查询的档案，货架将起作用。
+优先选择许多带有本地硬盘驱动器的服务器，而不是少量带有附加磁盘架的服务器。
+但是对于存储极少查询的档案，架子可以使用。
 
 ## RAID {#raid}
 
 当使用硬盘，你可以结合他们的RAID-10，RAID-5，RAID-6或RAID-50。
-对于Linux，软件RAID更好（与 `mdadm`). 我们不建议使用LVM。
+对于Linux，软件RAID更好（使用 `mdadm`). 我们不建议使用LVM。
 当创建RAID-10，选择 `far` 布局。
 如果您的预算允许，请选择RAID-10。
 
-如果您有超过4个磁盘，请使用RAID-6（首选）或RAID-50，而不是RAID-5。
+如果您有4个以上的磁盘，请使用RAID-6（首选）或RAID-50，而不是RAID-5。
 当使用RAID-5、RAID-6或RAID-50时，始终增加stripe_cache_size，因为默认值通常不是最佳选择。
 
 ``` bash
 echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 ```
 
-使用以下公式，从设备数量和块大小计算确切数量: `2 * num_devices * chunk_size_in_bytes / 4096`.
+使用以下公式从设备数量和块大小中计算出确切的数量: `2 * num_devices * chunk_size_in_bytes / 4096`。
 
-1025KB的块大小足以满足所有RAID配置。
+1024KB的块大小足以满足所有RAID配置。
 切勿将块大小设置得太小或太大。
 
 您可以在SSD上使用RAID-0。
-无论使用何种RAID，始终使用复制来保证数据安全。
+无论使用哪种RAID，始终使用复制来保证数据安全。
 
-使用长队列启用NCQ。 对于HDD，选择CFQ调度程序，对于SSD，选择noop。 不要减少 ‘readahead’ 设置。
+启用有长队列的NCQ。 对于HDD，选择CFQ调度程序，对于SSD，选择noop。 不要减少 ‘readahead’ 设置。
 对于HDD，启用写入缓存。
 
 ## 文件系统 {#file-system}
 
 Ext4是最可靠的选择。 设置挂载选项 `noatime, nobarrier`.
-XFS也是合适的，但它还没有经过ClickHouse的彻底测试。
-大多数其他文件系统也应该正常工作。 具有延迟分配的文件系统工作得更好。
+XFS也是合适的，但它还没有经过ClickHouse的全面测试。
+大多数其他文件系统也应该可以正常工作。 具有延迟分配的文件系统工作得更好。
 
 ## Linux内核 {#linux-kernel}
 
@@ -95,26 +81,43 @@ XFS也是合适的，但它还没有经过ClickHouse的彻底测试。
 
 ## 网络 {#network}
 
-如果您使用的是IPv6，请增加路由缓存的大小。
-3.2之前的Linux内核在IPv6实现方面遇到了许多问题。
+如果使用的是IPv6，请增加路由缓存的大小。
+3.2之前的Linux内核在IPv6实现方面存在许多问题。
 
-如果可能的话，至少使用一个10GB的网络。 1Gb也可以工作，但对于使用数十tb的数据修补副本或处理具有大量中间数据的分布式查询，情况会更糟。
+如果可能的话，至少使用10GB的网络。1GB也可以工作，但对于使用数十TB的数据修补副本或处理具有大量中间数据的分布式查询，情况会更糟。
+
+## 虚拟机监视器(Hypervisor)配置
+
+如果您使用的是OpenStack，请在nova.conf中设置
+```
+cpu_mode=host-passthrough
+```
+。
+
+如果您使用的是libvirt，请在XML配置中设置
+```
+<cpu mode='host-passthrough'/>
+```
+。
+
+这对于ClickHouse能够通过 `cpuid` 指令获取正确的信息非常重要。
+否则，当在旧的CPU型号上运行虚拟机监视器时，可能会导致 `Illegal instruction` 崩溃。
 
 ## Zookeeper {#zookeeper}
 
-您可能已经将ZooKeeper用于其他目的。 您可以使用相同的zookeeper安装，如果它还没有超载。
+您可能已经将ZooKeeper用于其他目的。 如果它还没有超载，您可以使用相同的zookeeper。
 
-最好使用新版本的 Zookeeper – 3.4.9 或之后的版本. 稳定 Liunx 发行版中的 Zookeeper 版本可能是落后的。
+最好使用新版本的Zookeeper – 3.4.9 或更高的版本. 稳定的Liunx发行版中的Zookeeper版本可能已过时。
 
-你永远不该使用自己手写的脚本在不同的 Zookeeper 集群之间转移数据, 这可能会导致序列节点的数据不正确。出于同样的原因，永远不要使用 zkcopy 工具: https://github.com/ksprojects/zkcopy/issues/15
+你永远不要使用手动编写的脚本在不同的Zookeeper集群之间传输数据, 这可能会导致序列节点的数据不正确。出于相同的原因，永远不要使用 zkcopy 工具: https://github.com/ksprojects/zkcopy/issues/15
 
-如果要将现有ZooKeeper集群分为两个，正确的方法是增加其副本的数量，然后将其重新配置为两个独立的集群。
+如果要将现有的ZooKeeper集群分为两个，正确的方法是增加其副本的数量，然后将其重新配置为两个独立的集群。
 
-不要在与ClickHouse相同的服务器上运行ZooKeeper。 因为ZooKeeper对延迟非常敏感，而ClickHouse可能会占用所有可用的系统资源。
+不要在ClickHouse所在的服务器上运行ZooKeeper。 因为ZooKeeper对延迟非常敏感，而ClickHouse可能会占用所有可用的系统资源。
 
 默认设置下，ZooKeeper 就像是一个定时炸弹:
 
-当使用默认配置时，ZooKeeper服务不会从旧快照和日志中删除文件（请参阅autopurge），这是操作员的责任。
+当使用默认配置时，ZooKeeper服务器不会从旧的快照和日志中删除文件（请参阅autopurge），这是操作员的责任。
 
 必须拆除炸弹。
 
@@ -222,7 +225,7 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
 -XX:+CMSParallelRemarkEnabled"
 ```
 
-Salt init:
+初始化:
 
     description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
 

@@ -32,4 +32,3 @@ Strings are compared by bytes. A shorter string is smaller than all strings that
 
 ## greaterOrEquals, \>= operator {#function-greaterorequals}
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->

@@ -21,7 +21,9 @@ RUN addgroup -S -g 101 clickhouse \
     && chown clickhouse:clickhouse /var/lib/clickhouse \
     && chown root:clickhouse /var/log/clickhouse-server \
     && chmod +x /entrypoint.sh \
-    && apk add --no-cache su-exec bash \
+    && apk add --no-cache su-exec bash tzdata \
+    && cp /usr/share/zoneinfo/UTC /etc/localtime \
+    && echo "UTC" > /etc/timezone \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
 
 # we need to allow "others" access to clickhouse folder, because docker container
