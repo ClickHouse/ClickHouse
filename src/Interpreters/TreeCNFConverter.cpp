@@ -39,6 +39,8 @@ void traversePushNot(ASTPtr & node, bool add_negation)
         if (add_negation)
         {
             ASSERT(func->arguments->size() == 2)
+            if (func->arguments->children.size() != 2)
+                throw Exception("Bad AND or OR function.", ErrorCodes::LOGICAL_ERROR);
             /// apply De Morgan's Law
             node = makeASTFunction(
                 (func->name == "and" ? "or" : "and"),
@@ -53,6 +55,8 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     else if (func && func->name == "not")
     {
         ASSERT(func->arguments->size() == 1)
+        if (func->arguments->children.size() != 1)
+            throw Exception("Bad NOT function.", ErrorCodes::LOGICAL_ERROR);
         /// delete NOT
         node = func->arguments->children[0]->clone();
 
@@ -94,6 +98,8 @@ void pushOr(ASTPtr & query)
         ASSERT(or_func)
         ASSERT(or_func->name == "or")
         ASSERT(or_func->arguments->children.size() == 2)
+        if (or_func->arguments->children.size() != 2)
+            throw Exception("Bad OR function.", ErrorCodes::LOGICAL_ERROR);
 
         /// find or upper than and
         size_t and_node_id = or_func->arguments->children.size();
@@ -114,6 +120,8 @@ void pushOr(ASTPtr & query)
         ASSERT(and_func)
         ASSERT(and_func->name == "and")
         ASSERT(and_func->arguments->children.size() == 2)
+        if (and_func->arguments->children.size() != 2)
+            throw Exception("Bad AND function.", ErrorCodes::LOGICAL_ERROR);
 
         auto a = or_func->arguments->children[other_node_id];
         auto b = and_func->arguments->children[0];
