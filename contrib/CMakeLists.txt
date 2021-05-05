@@ -18,6 +18,14 @@ if (WITH_COVERAGE)
     add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
     message(STATUS "Building contrib without coverage and with -O3")
     message(STATUS "Contrib CXX flags: ${CMAKE_CXX_FLAGS}")
+
+    set_source_files_properties(
+        pdqsort/pdqsort.h
+        miniselect/include/miniselect/floyd_rivest_select.h
+        libdivide/libdivide.h
+        libcxx/include/optional
+        boost/boost/context/fiber_fcontext.hpp
+        PROPERTIES COMPILE_FLAGS "-O3 -finline-functions ${WITHOUT_COVERAGE}")
 endif()
 
 if (SANITIZE STREQUAL "undefined")

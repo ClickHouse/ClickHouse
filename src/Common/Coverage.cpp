@@ -47,7 +47,8 @@ inline auto getInstanceAndInitGlobalCounters()
 }
 
 Writer::Writer()
-    : functions_count(0),
+    : hardware_concurrency(std::thread::hardware_concurrency()),
+      functions_count(0),
       addrs_count(0),
       edges_count(0),
       base_log(nullptr),
@@ -55,7 +56,8 @@ Writer::Writer()
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
       // 0 -- unlimited queue e.g. functor insertion to thread pool won't lock.
-      pool(Writer::thread_pool_test_processing, 1000, 0)
+      // Set the initial pool size to all thread as we'll need all resources to symbolize fast.
+      pool(hardware_concurrency, 1000, 0)
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
     {
@@ -137,29 +139,25 @@ void Writer::symbolizeInstrumentedData()
     std::vector<EdgeIndex> function_indices(functions_count);
     std::vector<EdgeIndex> addr_indices(addrs_count);
 
+    LocalCaches<FuncSym> func_caches(hardware_concurrency);
+    LocalCaches<AddrSym> addr_caches(hardware_concurrency);
+
     for (size_t i = 0, j = 0, k = 0; i < edges_count; ++i)
         if (edge_is_func_entry[i])
             function_indices[j++] = i;
         else
             addr_indices[k++] = i;
 
-    LOG_INFO(base_log, "Split addresses into function entries ({}) and normal ones ({}), {} total",
-        functions_count, addrs_count, edges_to_addrs.size());
+    LOG_INFO(base_log,
+        "Split addresses into function entries ({}) and normal ones ({}), {} total."
+        "Started symbolizing addresses, using thread pool of size {}",
+        functions_count, addrs_count, edges_to_addrs.size(), hardware_concurrency);
 
-    LOG_INFO(base_log, "Started symbolizing addresses");
-
-    pool.setMaxThreads(thread_pool_symbolizing);
-
-    LocalCachesArray<FuncSym> func_caches{};
     scheduleSymbolizationJobs<true>(func_caches, function_indices);
 
     pool.wait();
 
-    LOG_INFO(base_log, "Symbolized all functions");
-
-    LocalCachesArray<AddrSym> addr_caches{};
-
-    LOG_INFO(base_log, "Populating address caches");
+    LOG_INFO(base_log, "Symbolized all functions, populating address cache");
 
     /// Pre-populate addr_caches with already found source files.
     for (const auto& local_func_cache : func_caches)
@@ -178,7 +176,7 @@ void Writer::symbolizeInstrumentedData()
 
     mergeDataToCaches<false>(addr_caches);
 
-    pool.setMaxThreads(thread_pool_test_processing);
+    pool.setMaxThreads(hardware_concurrency / 2);
 
     LOG_INFO(base_log, "Symbolized all addresses");
 }

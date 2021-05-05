@@ -102,11 +102,11 @@ private:
     static constexpr std::string_view coverage_dir_relative_path = "../../coverage";
     static constexpr std::string_view coverage_global_report_name = "global_report";
 
-    /// How many tests are converted to LCOV in parallel.
-    static constexpr size_t thread_pool_test_processing = 10;
-
-    /// How may threads concurrently symbolize the addresses on binary startup if cache was not present.
-    static constexpr size_t thread_pool_symbolizing = 16;
+    /**
+     * We use all threads (including hyper-threading) for symbolization as server does nothing else.
+     * For test processing, we divide the pool size by 2 as
+     */
+    const size_t hardware_concurrency;
 
     size_t functions_count;
     size_t addrs_count;
@@ -263,13 +263,16 @@ private:
     template <class CacheItem>
     using LocalCache = std::unordered_map<std::string/*source name*/, LocalCacheItem<CacheItem>>;
 
-    template <class CacheItem, size_t ArraySize = thread_pool_symbolizing>
-    using LocalCachesArray = std::array<LocalCache<CacheItem>, ArraySize>;
+    template <class CacheItem>
+    using LocalCaches = std::vector<LocalCache<CacheItem>>;
 
     template <bool is_func_cache>
     static constexpr const std::string_view thread_name = is_func_cache
         ? "func"
         : "addr";
+
+    /// each LocalCache pre-allocates this / pool_size for a small speedup;
+    static constexpr size_t total_source_files_hint = 3000;
 
     /**
      * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
@@ -282,24 +285,23 @@ private:
      * take some extra time.
      */
     template <bool is_func_cache, class CacheItem>
-    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
+    void scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data) const
     {
-        constexpr auto pool_size = thread_pool_symbolizing;
-
+        const size_t pool_size = hardware_concurrency;
         const size_t step = data.size() / pool_size;
 
         for (size_t thread_index = 0; thread_index < pool_size; ++thread_index)
-            pool.scheduleOrThrowOnError([this, &local_caches, &data, thread_index, step]
+            pool.scheduleOrThrowOnError([this, &local_caches, &data, thread_index, step, pool_size]
             {
                 const size_t start_index = thread_index * step;
                 const size_t end_index = std::min(start_index + step, data.size() - 1);
+                const size_t count = end_index - start_index;
 
                 const Poco::Logger * const log = &Poco::Logger::get(
                     fmt::format("{}.{}{}", logger_base_name, thread_name<is_func_cache>, thread_index));
 
                 LocalCache<CacheItem>& cache = local_caches[thread_index];
-
-                time_t elapsed = time(nullptr);
+                cache.reserve(total_source_files_hint / pool_size);
 
                 for (size_t i = start_index; i < end_index; ++i)
                 {
@@ -332,11 +334,8 @@ private:
                                 {std::move(source.full_path), {{source.line, edge_index}}};
                     }
 
-                    if (time_t current = time(nullptr); current > elapsed)
-                    {
-                        LOG_DEBUG(log, "{}/{}", i - start_index, end_index - start_index);
-                        elapsed = current;
-                    }
+                    if (i % 128 == 0)
+                        LOG_DEBUG(log, "{}/{}", i - start_index, count);
                 }
             });
     }
@@ -352,7 +351,7 @@ private:
 
     /// Merge local caches' symbolized data [obtained from multiple threads] into global caches.
     template<bool is_func_cache, class CacheItem>
-    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data)
+    void mergeDataToCaches(const LocalCaches<CacheItem>& data)
     {
         LOG_INFO(base_log, "Started merging {} data to caches", thread_name<is_func_cache>);
 

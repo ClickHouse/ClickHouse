@@ -36,6 +36,16 @@ add_library (common ${SRCS})
 
 if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
+    target_compile_options(common PRIVATE -O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
+
+    set_source_files_properties(
+        DateLUT.h
+        constexpr_helpers.h
+        find_symbols.h
+        itoa.h
+        sort.h
+        PROPERTIES COMPILE_FLAGS "-O3 -finline-functions ${WITHOUT_COVERAGE}")
+
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
