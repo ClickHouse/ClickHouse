@@ -905,13 +905,11 @@ String decimalFractional(const T & x, UInt32 scale)
 {
     if constexpr (std::is_same_v<T, Int256>)
     {
-        static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
-
         if (x <= std::numeric_limits<UInt32>::max())
             return decimalFractional(static_cast<UInt32>(x), scale);
         else if (x <= std::numeric_limits<UInt64>::max())
             return decimalFractional(static_cast<UInt64>(x), scale);
-        else if (x <= max_int128)
+        else if (x <= std::numeric_limits<UInt128>::max())
             return decimalFractional(static_cast<Int128>(x), scale);
     }
     else if constexpr (std::is_same_v<T, Int128>)

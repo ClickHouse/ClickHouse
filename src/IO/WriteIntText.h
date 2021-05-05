@@ -32,8 +32,8 @@ namespace detail
     void NO_INLINE writeUIntTextFallback(T x, WriteBuffer & buf)
     {
         char tmp[max_int_width<T>];
-        int len = itoa(x, tmp) - tmp;
-        buf.write(tmp, len);
+        char * end = itoa(x, tmp);
+        buf.write(tmp, end - tmp);
     }
 }
 
