@@ -106,5 +106,9 @@ select * from dist_01247 group by key, value;
 select 'GROUP BY ..., sharding_key';
 select * from dist_01247 group by value, key;
 
+-- window functions
+select 'window functions';
+select key, sum(sum(value)) over (rows unbounded preceding) from dist_01247 group by key settings allow_experimental_window_functions=1;
+
 drop table dist_01247;
 drop table data_01247;

@@ -578,6 +578,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
 
     query_info.query = query_ptr;
+    query_info.has_window = query_analyzer->hasWindow();
 
     if (storage && !options.only_analyze)
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, query_info);
