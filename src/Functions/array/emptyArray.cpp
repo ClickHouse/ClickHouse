@@ -45,21 +45,6 @@ private:
     }
 };
 
-
-using FunctionEmptyArrayUInt8 = FunctionEmptyArray<DataTypeUInt8>;
-using FunctionEmptyArrayUInt16 = FunctionEmptyArray<DataTypeUInt16>;
-using FunctionEmptyArrayUInt32 = FunctionEmptyArray<DataTypeUInt32>;
-using FunctionEmptyArrayUInt64 = FunctionEmptyArray<DataTypeUInt64>;
-using FunctionEmptyArrayInt8 = FunctionEmptyArray<DataTypeInt8>;
-using FunctionEmptyArrayInt16 = FunctionEmptyArray<DataTypeInt16>;
-using FunctionEmptyArrayInt32 = FunctionEmptyArray<DataTypeInt32>;
-using FunctionEmptyArrayInt64 = FunctionEmptyArray<DataTypeInt64>;
-using FunctionEmptyArrayFloat32 = FunctionEmptyArray<DataTypeFloat32>;
-using FunctionEmptyArrayFloat64 = FunctionEmptyArray<DataTypeFloat64>;
-using FunctionEmptyArrayDate = FunctionEmptyArray<DataTypeDate>;
-using FunctionEmptyArrayDateTime = FunctionEmptyArray<DataTypeDateTime>;
-using FunctionEmptyArrayString = FunctionEmptyArray<DataTypeString>;
-
 template <typename F>
 void registerFunction(FunctionFactory & factory)
 {
@@ -70,19 +55,19 @@ void registerFunction(FunctionFactory & factory)
 
 void registerFunctionsEmptyArray(FunctionFactory & factory)
 {
-    registerFunction<FunctionEmptyArrayUInt8>(factory);
-    registerFunction<FunctionEmptyArrayUInt16>(factory);
-    registerFunction<FunctionEmptyArrayUInt32>(factory);
-    registerFunction<FunctionEmptyArrayUInt64>(factory);
-    registerFunction<FunctionEmptyArrayInt8>(factory);
-    registerFunction<FunctionEmptyArrayInt16>(factory);
-    registerFunction<FunctionEmptyArrayInt32>(factory);
-    registerFunction<FunctionEmptyArrayInt64>(factory);
-    registerFunction<FunctionEmptyArrayFloat32>(factory);
-    registerFunction<FunctionEmptyArrayFloat64>(factory);
-    registerFunction<FunctionEmptyArrayDate>(factory);
-    registerFunction<FunctionEmptyArrayDateTime>(factory);
-    registerFunction<FunctionEmptyArrayString>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeUInt8>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeUInt16>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeUInt32>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeUInt64>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeInt8>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeInt16>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeInt32>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeInt64>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeFloat32>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeFloat64>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeDate>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeDateTime>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeString>>(factory);
 }
 
 }
