@@ -37,3 +37,8 @@ WHERE (c > 100) OR (b > 100)
 SELECT count()
 FROM constraint_test_constants
 WHERE c > 100
+SELECT count()
+FROM constraint_test_constants
+WHERE c > 100
+SELECT count()
+FROM constraint_test_constants
