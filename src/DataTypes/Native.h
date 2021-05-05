@@ -144,30 +144,6 @@ static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr 
     return nativeCast(b, from, value, n_to);
 }
 
-static inline llvm::Constant * getColumnNativeConstant(llvm::Type * native_type, WhichDataType column_data_type, const IColumn & column)
-{
-    llvm::Constant * result = nullptr;
-
-    if (column_data_type.isFloat32())
-    {
-        result = llvm::ConstantFP::get(native_type, column.getFloat32(0));
-    }
-    else if (column_data_type.isFloat64())
-    {
-        result = llvm::ConstantFP::get(native_type, column.getFloat64(0));
-    }
-    else if (column_data_type.isNativeInt())
-    {
-        result = llvm::ConstantInt::get(native_type, column.getInt(0));
-    }
-    else if (column_data_type.isNativeUInt())
-    {
-        result = llvm::ConstantInt::get(native_type, column.getUInt(0));
-    }
-
-    return result;
-}
-
 static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index)
 {
     WhichDataType column_data_type(column_type);
@@ -209,8 +185,6 @@ static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builde
 
     return nullptr;
 }
-
-
 
 }
 
