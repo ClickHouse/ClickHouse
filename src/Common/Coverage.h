@@ -89,10 +89,10 @@ public:
         if (copying_test_hits.load())
         {
             auto lck = std::lock_guard(edges_mutex);
-            edges_hit.at(edge_index)->fetch_add(1);
+            edges_hit[edge_index]->fetch_add(1);
         }
         else
-            edges_hit.at(edge_index)->fetch_add(1);
+            edges_hit[edge_index]->fetch_add(1);
     }
 
 private:
@@ -110,6 +110,9 @@ private:
 
     size_t functions_count;
     size_t addrs_count;
+
+    ///Basically, a sum of two above == edges_hit.size() == edges_to_addrs.size() == edge_is_func_entry.size()
+    size_t edges_count;
 
     const Poco::Logger * base_log; /// do not use the logger before call of serverHasInitialized.
 
@@ -150,25 +153,18 @@ private:
     using SourceFileIndex = decltype(source_files_cache)::size_type;
     std::unordered_map<std::string, SourceFileIndex, StringHash, std::equal_to<>> source_name_to_index;
 
-    struct AddrInfo
+    struct EdgeInfo
     {
-        Line line;
-        SourceFileIndex index;
-    };
-
-    struct FunctionInfo
-    {
-        // Although it looks like FunctionInfo : AddrInfo, inheritance bring more cons than pros
-
         Line line;
         SourceFileIndex index;
         std::string_view name;
+
+        constexpr bool isFunctionEntry() const { return !name.empty(); }
     };
 
-    /// Two caches filled in symbolizeAllInstrumentedAddrs being read-only by the tests start.
-    /// Never cleared.
-    std::unordered_map<EdgeIndex, AddrInfo> addr_cache;
-    std::unordered_map<EdgeIndex, FunctionInfo> function_cache;
+    /// Cache filled in symbolizeAllInstrumentedAddrs being read-only by the tests start, never cleared.
+    /// vector index = edge_index.
+    std::vector<EdgeInfo> edges_cache;
 
     struct SourceLocation
     {
@@ -179,13 +175,13 @@ private:
     inline SourceLocation getSourceLocation(EdgeIndex index) const
     {
         /// This binary gets loaded first, so binary_virtual_offset = 0
-        const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs.at(index)));
+        const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[index]));
         return {loc.file.toString(), loc.line};
     }
 
     inline std::string_view symbolize(EdgeIndex index) const
     {
-        return symbol_index->findSymbol(edges_to_addrs.at(index))->name;
+        return symbol_index->findSymbol(edges_to_addrs[index])->name;
     }
 
     void dumpAndChangeTestName(std::string_view test_name);
@@ -218,21 +214,10 @@ private:
         /**
          * Multiple callbacks can be called for a single line, e.g. ternary operator
          * a = foo ? bar() : baz() may produce two callbacks as it's basically an if-else block.
-         * We track _lines_ coverage, not _addresses_ coverage, so we should hash the local cache items by
-         * their unique lines.
-         *
-         * However, the test may register both of the callbacks, so we have multiple options:
-         * 1. Change index to vector<EdgeIndex> -- bad as we'll allocate for each AddrSym (although most AddrSym
-         * instances would have only one element, vector does not implement Small String Optimization).
-         * 2. Change index to array<EdgeIndex, N> -- no allocations, but still unnecessary space wasted. Also,
-         * N is non-portable as when CH will grow, one would need to recompile to store more indices per line.
-         * 3. Use an multimap instead of map. No additional allocations for AddrSym instance.
-         *
-         * N.B. It's possible to track per-address coverage, LCov's .info format refers to it as _branch_ coverage.
+         * We track _lines_ coverage, not _addresses_ coverage, so we can hash local cache items by their unique lines.
+         * However, test may register both of the callbacks, so we need to process all edge indices per line.
          */
-        using Container = std::unordered_multimap<Line, AddrSym>;
-
-        EdgeIndex index; // will likely be optimized so as AddrSym ~ EdgeIndex.
+        using Container = std::unordered_multimap<Line, EdgeIndex>;
     };
 
     struct FuncSym
@@ -318,7 +303,7 @@ private:
 
                 for (size_t i = start_index; i < end_index; ++i)
                 {
-                    const EdgeIndex edge_index = data.at(i);
+                    const EdgeIndex edge_index = data[i];
                     SourceLocation source = getSourceLocation(edge_index);
 
                     /**
@@ -341,10 +326,10 @@ private:
                     else
                     {
                         if (cache_it != cache.end())
-                            cache_it->second.items.emplace(source.line, AddrSym{edge_index});
+                            cache_it->second.items.emplace(source.line, edge_index);
                         else
                             cache[std::move(source_name)] =
-                                {std::move(source.full_path), {{source.line, {edge_index}}}};
+                                {std::move(source.full_path), {{source.line, edge_index}}};
                     }
 
                     if (time_t current = time(nullptr); current > elapsed)
@@ -354,6 +339,15 @@ private:
                     }
                 }
             });
+    }
+
+    template <bool is_func_cache>
+    static inline auto& getInstrumented(SourceFileInfo& info)
+    {
+        if constexpr (is_func_cache)
+            return info.instrumented_functions;
+        else
+            return info.instrumented_lines;
     }
 
     /// Merge local caches' symbolized data [obtained from multiple threads] into global caches.
@@ -379,29 +373,26 @@ private:
                 }
 
                 SourceFileInfo& info = source_files_cache[source_index];
+                auto& instrumented = getInstrumented<is_func_cache>(info);
+
+                instrumented.reserve(addrs_data.size());
 
                 if constexpr (is_func_cache)
-                {
-                    info.instrumented_functions.reserve(addrs_data.size());
-
                     for (auto [line, edge_index, name] : addrs_data)
                     {
-                        info.instrumented_functions.push_back(edge_index);
-                        function_cache[edge_index] = {line, source_index, name};
+                        instrumented.push_back(edge_index);
+                        edges_cache[edge_index] = {line, source_index, name};
                     }
-                }
                 else
                 {
-                    info.instrumented_lines.reserve(addrs_data.size());
-
                     std::unordered_set<Line> lines;
 
-                    for (auto [line, addr_sym] : addrs_data)
+                    for (auto [line, edge_index] : addrs_data)
                     {
                         if (!lines.contains(line))
-                            info.instrumented_lines.push_back(line);
+                            instrumented.push_back(line);
 
-                        addr_cache[addr_sym.index] = {line, source_index};
+                        edges_cache[edge_index] = {line, source_index, {}};
                         lines.insert(line);
                     }
                 }

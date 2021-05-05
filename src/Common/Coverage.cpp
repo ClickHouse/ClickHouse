@@ -49,6 +49,7 @@ inline auto getInstanceAndInitGlobalCounters()
 Writer::Writer()
     : functions_count(0),
       addrs_count(0),
+      edges_count(0),
       base_log(nullptr),
       coverage_dir(std::filesystem::current_path() / Writer::coverage_dir_relative_path),
       symbol_index(getInstanceAndInitGlobalCounters()),
@@ -82,14 +83,16 @@ Writer::Writer()
 void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_array_end)
 {
     const size_t edges_pairs = pc_array_end - pc_array;
-    const size_t edges = edges_pairs / 2;
+    edges_count = edges_pairs / 2;
 
-    edges_hit.resize(edges);
+    edges_hit.resize(edges_count);
+    edges_cache.resize(edges_count);
+
     for (auto & e : edges_hit)
         e = std::make_unique<AtomicCounter>(0);
 
-    edges_to_addrs.resize(edges);
-    edge_is_func_entry.resize(edges);
+    edges_to_addrs.resize(edges_count);
+    edge_is_func_entry.resize(edges_count);
 
     for (size_t i = 0; i < edges_pairs; i += 2)
     {
@@ -134,8 +137,8 @@ void Writer::symbolizeInstrumentedData()
     std::vector<EdgeIndex> function_indices(functions_count);
     std::vector<EdgeIndex> addr_indices(addrs_count);
 
-    for (size_t i = 0, j = 0, k = 0; i < edges_to_addrs.size(); ++i)
-        if (edge_is_func_entry.at(i))
+    for (size_t i = 0, j = 0, k = 0; i < edges_count; ++i)
+        if (edge_is_func_entry[i])
             function_indices[j++] = i;
         else
             addr_indices[k++] = i;
@@ -203,9 +206,9 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         LOG_INFO(log, "Started copying data");
 
         // Can't do it in multiple threads as atomics aren't copy constructible
-        for (size_t i = 0; i < edges_hit.size(); ++i)
+        for (size_t i = 0; i < edges_count; ++i)
         {
-            auto& ptr = edges_hit.at(i);
+            auto& ptr = edges_hit[i];
             const CallCount hit = ptr->exchange(0);
 
             if (!hit)
@@ -255,25 +258,10 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits)
     TestData test_data(source_files_cache.size());
 
     for (auto [edge_index, hit] : hits)
-    {
-        if (auto it = function_cache.find(edge_index); it != function_cache.end())
-        {
-            auto& functions = test_data[it->second.index].functions_hit;
-            setOrIncrement(functions, edge_index, hit);
-            continue;
-        }
-
-        if (addr_cache.find(edge_index) == addr_cache.end())
-        {
-            // BUG No fault addresses should be present.
-            LOG_ERROR(test_info.log, "Fault edge index {}", edge_index);
-            continue;
-        }
-
-        const AddrInfo& addr_cache_entry = addr_cache.at(edge_index);
-        auto& lines = test_data[addr_cache_entry.index].lines_hit;
-        setOrIncrement(lines, addr_cache_entry.line, hit);
-    }
+        if (const EdgeInfo& info = edges_cache[edge_index]; info.isFunctionEntry())
+            setOrIncrement(test_data[info.index].functions_hit, edge_index, hit);
+        else
+            setOrIncrement(test_data[info.index].lines_hit, info.line, hit);
 
     LOG_INFO(test_info.log, "Finished filling internal structures");
     convertToLCOVAndDump(test_info, test_data);
@@ -373,14 +361,14 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 
     for (size_t i = 0; i < test_data.size(); ++i)
     {
-        const auto& [funcs_hit, lines_hit] = test_data.at(i);
-        const auto& [path, funcs_instrumented, lines_instrumented] = source_files_cache.at(i);
+        const auto& [funcs_hit, lines_hit] = test_data[i];
+        const auto& [path, funcs_instrumented, lines_instrumented] = source_files_cache[i];
 
         fmt::format_to(mb, "SF:{}\n", path);
 
         for (EdgeIndex index : funcs_instrumented)
         {
-            const FunctionInfo& func_info = function_cache.at(index);
+            const EdgeInfo& func_info = edges_cache[index];
             const CallCount call_count = valueOr(funcs_hit, index, 0);
 
             fmt::format_to(mb, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
