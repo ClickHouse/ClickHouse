@@ -13,6 +13,7 @@
 #include <type_traits>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <Poco/Logger.h>
 
 #include "common/logger_useful.h"
@@ -99,7 +100,7 @@ private:
 
     static constexpr std::string_view logger_base_name = "Coverage";
     static constexpr std::string_view coverage_dir_relative_path = "../../coverage";
-    //static constexpr std::string_view coverage_cache_file_path = "../../symbolized.cache";
+    static constexpr std::string_view coverage_global_report_name = "global_report";
 
     /// How many tests are converted to LCOV in parallel.
     static constexpr size_t thread_pool_test_processing = 10;
@@ -217,12 +218,19 @@ private:
         /**
          * Multiple callbacks can be called for a single line, e.g. ternary operator
          * a = foo ? bar() : baz() may produce two callbacks as it's basically an if-else block.
-         * However, we track _lines_ coverage, not _addresses_ coverage, so we should hash the local cache items by
+         * We track _lines_ coverage, not _addresses_ coverage, so we should hash the local cache items by
          * their unique lines.
+         *
+         * However, the test may register both of the callbacks, so we have multiple options:
+         * 1. Change index to vector<EdgeIndex> -- bad as we'll allocate for each AddrSym (although most AddrSym
+         * instances would have only one element, vector does not implement Small String Optimization).
+         * 2. Change index to array<EdgeIndex, N> -- no allocations, but still unnecessary space wasted. Also,
+         * N is non-portable as when CH will grow, one would need to recompile to store more indices per line.
+         * 3. Use an multimap instead of map. No additional allocations for AddrSym instance.
          *
          * N.B. It's possible to track per-address coverage, LCov's .info format refers to it as _branch_ coverage.
          */
-        using Container = std::unordered_map<Line, AddrSym>;
+        using Container = std::unordered_multimap<Line, AddrSym>;
 
         EdgeIndex index; // will likely be optimized so as AddrSym ~ EdgeIndex.
     };
@@ -333,7 +341,7 @@ private:
                     else
                     {
                         if (cache_it != cache.end())
-                            cache_it->second.items[source.line] = {edge_index};
+                            cache_it->second.items.emplace(source.line, AddrSym{edge_index});
                         else
                             cache[std::move(source_name)] =
                                 {std::move(source.full_path), {{source.line, {edge_index}}}};
@@ -374,6 +382,8 @@ private:
 
                 if constexpr (is_func_cache)
                 {
+                    info.instrumented_functions.reserve(addrs_data.size());
+
                     for (auto [line, edge_index, name] : addrs_data)
                     {
                         info.instrumented_functions.push_back(edge_index);
@@ -382,10 +392,17 @@ private:
                 }
                 else
                 {
+                    info.instrumented_lines.reserve(addrs_data.size());
+
+                    std::unordered_set<Line> lines;
+
                     for (auto [line, addr_sym] : addrs_data)
                     {
-                        info.instrumented_lines.push_back(line);
+                        if (!lines.contains(line))
+                            info.instrumented_lines.push_back(line);
+
                         addr_cache[addr_sym.index] = {line, source_index};
+                        lines.insert(line);
                     }
                 }
             }

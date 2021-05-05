@@ -184,6 +184,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
     std::string old_test_name;
     EdgesHashmap edges_hashmap;
+    //bool dump_global_report {false};
 
     const Poco::Logger * log {nullptr};
 
@@ -224,8 +225,8 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
             test = test_name;
         else
         {
-            // Dump global report;
             test = std::nullopt;
+            //dump_global_report = true;
         }
 
         copying_test_hits.store(false);
@@ -242,6 +243,9 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
     // The functor insertion itself is thread-safe.
     pool.scheduleOrThrowOnError(std::move(f));
+
+    //if (!dump_global_report)
+    //    return;
 }
 
 void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits)
