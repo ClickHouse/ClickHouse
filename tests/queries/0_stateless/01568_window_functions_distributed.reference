@@ -49,4 +49,12 @@ select groupArray(groupArray(number)) over (rows unbounded preceding) from remot
 [[0,3,6,0,3,6]]
 [[0,3,6,0,3,6],[1,4,7,1,4,7]]
 [[0,3,6,0,3,6],[1,4,7,1,4,7],[2,5,8,2,5,8]]
+select groupArray(groupArray(number)) over (rows unbounded preceding) from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3) settings distributed_group_by_no_merge=1;
+[[0,3,6]]
+[[0,3,6],[1,4,7]]
+[[0,3,6],[1,4,7],[2,5,8]]
+[[0,3,6]]
+[[0,3,6],[1,4,7]]
+[[0,3,6],[1,4,7],[2,5,8]]
+select groupArray(groupArray(number)) over (rows unbounded preceding) from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3) settings distributed_group_by_no_merge=2; -- { serverError 48 }
 drop table t_01568;
