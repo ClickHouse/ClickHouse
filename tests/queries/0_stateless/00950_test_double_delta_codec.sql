@@ -22,7 +22,7 @@ CREATE TABLE codecTest (
     valueI8  Int8     CODEC(DoubleDelta),
     valueDT  DateTime CODEC(DoubleDelta),
     valueD   Date     CODEC(DoubleDelta)
-) Engine = MergeTree ORDER BY key;
+) Engine = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 0;
 
 
 -- checking for overflow
@@ -154,7 +154,8 @@ SELECT
     round(u/c,3) ratio
 FROM system.columns
 WHERE
-    table == 'codecTest'
+    table = 'codecTest'
+    AND database = currentDatabase()
 AND
     compression_codec != ''
 AND
