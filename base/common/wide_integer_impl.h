@@ -1127,7 +1127,7 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
     using UnsignedT = std::make_unsigned_t<T>;
 
     UnsignedT res{};
-    for (unsigned i = 0; i < _impl::item_count && i <= sizeof(T) / sizeof(base_type); ++i)
+    for (unsigned i = 0; i < _impl::item_count && i < (sizeof(T) + sizeof(base_type) - 1) / sizeof(base_type); ++i)
         res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i);
 
     return res;
