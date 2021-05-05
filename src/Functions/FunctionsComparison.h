@@ -1243,7 +1243,7 @@ public:
         WhichDataType data_type_lhs(types[0]);
         WhichDataType data_type_rhs(types[1]);
 
-        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64() || type.isUUID(); };
+        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64(); };
 
         if ((is_big_integer(data_type_lhs) && data_type_rhs.isFloat())
             || (is_big_integer(data_type_rhs) && data_type_lhs.isFloat())
