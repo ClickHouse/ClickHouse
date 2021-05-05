@@ -19,7 +19,7 @@ OwnPatternFormatter::OwnPatternFormatter(bool color_)
 }
 
 
-void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text)
+void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const
 {
     DB::WriteBufferFromString wb(text);
 
