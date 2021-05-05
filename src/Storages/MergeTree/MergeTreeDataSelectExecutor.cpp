@@ -255,65 +255,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         auto many_data = std::make_shared<ManyAggregatedData>(projection_pipe.numOutputPorts() + ordinary_pipe.numOutputPorts());
         size_t counter = 0;
 
-        if (!projection_pipe.empty())
+        // TODO apply in_order_optimization here
+        auto build_aggregate_pipe = [&](Pipe & pipe, bool projection)
         {
-            const auto & header_before_merge = projection_pipe.getHeader();
-            std::cerr << "============ header before merge" << std::endl;
-            std::cerr << header_before_merge.dumpStructure() << std::endl;
-            ColumnNumbers keys;
-            for (const auto & key : query_info.projection->aggregation_keys)
-                keys.push_back(header_before_merge.getPositionByName(key.name));
-
-            /// Aggregates are needed to calc proper header for AggregatingTransform result.
-            /// However, they are not filled cause header from projection pipe already contain aggregate functions.
-            const AggregateDescriptions & aggregates = query_info.projection->aggregate_descriptions;
-
-            /// Aggregator::Params params(header_before_merge, keys, query_info.aggregate_descriptions, overflow_row, settings.max_threads);
-            Aggregator::Params params(
-                header_before_merge,
-                keys,
-                aggregates,
-                query_info.projection->aggregate_overflow_row,
-                settings.max_rows_to_group_by,
-                settings.group_by_overflow_mode,
-                settings.group_by_two_level_threshold,
-                settings.group_by_two_level_threshold_bytes,
-                settings.max_bytes_before_external_group_by,
-                settings.empty_result_for_aggregation_by_empty_set,
-                context->getTemporaryVolume(),
-                settings.max_threads,
-                settings.min_free_disk_space_for_temporary_data);
-
-            auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
-            /// This part is hacky.
-            /// We want AggregatingTransform to work with aggregate states instead of normal columns.
-            /// It is almost the same, just instead of adding new data to aggregation state we merge it with existing.
-            ///
-            /// It is needed because data in projection:
-            /// * is not merged completely (we may have states with the same key in different parts)
-            /// * is not split into buckets (so if we just use MergingAggregated, it will use single thread)
-            transform_params->only_merge = true;
-
-            projection_pipe.resize(projection_pipe.numOutputPorts(), true, true);
-
-            auto merge_threads = num_streams;
-            auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
-                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
-                : static_cast<size_t>(settings.max_threads);
-
-            projection_pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<AggregatingTransform>(
-                    header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
-            });
-
-            std::cerr << "========== header after merge" << std::endl;
-            std::cerr << projection_pipe.getHeader().dumpStructure() << std::endl;
-        }
-
-        if (!ordinary_pipe.empty())
-        {
-            const auto & header_before_aggregation = ordinary_pipe.getHeader();
+            const auto & header_before_aggregation = pipe.getHeader();
 
             std::cerr << "============ header before aggregation" << std::endl;
             std::cerr << header_before_aggregation.dumpStructure() << std::endl;
@@ -323,10 +268,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 keys.push_back(header_before_aggregation.getPositionByName(key.name));
 
             AggregateDescriptions aggregates = query_info.projection->aggregate_descriptions;
-            for (auto & descr : aggregates)
-                if (descr.arguments.empty())
-                    for (const auto & name : descr.argument_names)
-                        descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
+            if (!projection)
+            {
+                for (auto & descr : aggregates)
+                    if (descr.arguments.empty())
+                        for (const auto & name : descr.argument_names)
+                            descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
+            }
 
             Aggregator::Params params(
                 header_before_aggregation,
@@ -345,22 +293,39 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
             auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
 
-            ordinary_pipe.resize(ordinary_pipe.numOutputPorts(), true, true);
+            if (projection)
+            {
+                /// This part is hacky.
+                /// We want AggregatingTransform to work with aggregate states instead of normal columns.
+                /// It is almost the same, just instead of adding new data to aggregation state we merge it with existing.
+                ///
+                /// It is needed because data in projection:
+                /// * is not merged completely (we may have states with the same key in different parts)
+                /// * is not split into buckets (so if we just use MergingAggregated, it will use single thread)
+                transform_params->only_merge = true;
+            }
+
+            pipe.resize(pipe.numOutputPorts(), true, true);
 
             auto merge_threads = num_streams;
             auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                 : static_cast<size_t>(settings.max_threads);
 
-            ordinary_pipe.addSimpleTransform([&](const Block & header)
+            pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<AggregatingTransform>(
                     header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
             });
 
             std::cerr << "============ header after aggregation" << std::endl;
-            std::cerr << ordinary_pipe.getHeader().dumpStructure() << std::endl;
-        }
+            std::cerr << pipe.getHeader().dumpStructure() << std::endl;
+        };
+
+        if (!projection_pipe.empty())
+            build_aggregate_pipe(projection_pipe, true);
+        if (!ordinary_pipe.empty())
+            build_aggregate_pipe(ordinary_pipe, false);
     }
 
     pipes.emplace_back(std::move(projection_pipe));
