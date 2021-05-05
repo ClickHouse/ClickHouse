@@ -195,7 +195,7 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 std::shared_ptr<Context> StorageRabbitMQ::addSettings(ContextPtr local_context) const
 {
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("input_format_skip_unknown_fields", true);
+    modified_context->setSetting("input_format_skip_unknown_fields", 1);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
 
@@ -325,8 +325,8 @@ void StorageRabbitMQ::initExchange(RabbitMQChannel & rabbit_channel)
     AMQP::Table binding_arguments;
 
     /// Default routing key property in case of hash exchange is a routing key, which is required to be an integer.
-    /// Support for arbitrary exchange type (i.e. arbitary pattern of routing keys) requires to eliminate this dependency.
-    /// This settings changes hash propery to message_id.
+    /// Support for arbitrary exchange type (i.e. arbitrary pattern of routing keys) requires to eliminate this dependency.
+    /// This settings changes hash property to message_id.
     binding_arguments["hash-property"] = "message_id";
 
     /// Declare hash exchange for sharding.
@@ -470,7 +470,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channe
             std::unordered_set<String> string_settings = {"x-overflow", "x-dead-letter-exchange", "x-queue-type"};
 
             if (integer_settings.find(key) != integer_settings.end())
-                queue_settings[key] = parse<size_t>(value);
+                queue_settings[key] = parse<uint64_t>(value);
             else if (string_settings.find(key) != string_settings.end())
                 queue_settings[key] = value;
             else
@@ -498,7 +498,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channe
     /// maximize performance - via setting `rabbitmq_num_queues`.
     const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
 
-    /// AMQP::autodelete setting is not allowd, because in case of server restart there will be no consumers
+    /// AMQP::autodelete setting is not allowed, because in case of server restart there will be no consumers
     /// and deleting queues should not take place.
     rabbit_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
     event_handler->startBlockingLoop();
@@ -713,7 +713,7 @@ void StorageRabbitMQ::shutdown()
 
 
 /// The only thing publishers are supposed to be aware of is _exchanges_ and queues are a responsibility of a consumer.
-/// Therefore, if a table is droppped, a clean up is needed.
+/// Therefore, if a table is dropped, a clean up is needed.
 void StorageRabbitMQ::cleanupRabbitMQ() const
 {
     if (use_user_setup)
@@ -1038,7 +1038,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         // Check arguments and settings
         #define CHECK_RABBITMQ_STORAGE_ARGUMENT(ARG_NUM, ARG_NAME)                                           \
             /* One of the three required arguments is not specified */                                       \
-            if (args_count < (ARG_NUM) && (ARG_NUM) <= 3 && !rabbitmq_settings->ARG_NAME.changed)            \
+            if (args_count < (ARG_NUM) && (ARG_NUM) <= 2 && !rabbitmq_settings->ARG_NAME.changed)            \
             {                                                                                                \
                 throw Exception("Required parameter '" #ARG_NAME "' for storage RabbitMQ not specified",     \
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);                                           \
@@ -1053,8 +1053,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
 
         CHECK_RABBITMQ_STORAGE_ARGUMENT(1, rabbitmq_host_port)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(2, rabbitmq_exchange_name)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(3, rabbitmq_format)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(2, rabbitmq_format)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(3, rabbitmq_exchange_name)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(4, rabbitmq_exchange_type)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(5, rabbitmq_routing_key_list)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(6, rabbitmq_row_delimiter)

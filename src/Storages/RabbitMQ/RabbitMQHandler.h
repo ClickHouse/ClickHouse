@@ -44,7 +44,7 @@ public:
 
     /// Loop to wait for small tasks in a blocking mode.
     /// No synchronization is done with the main loop thread.
-    int startBlockingLoop();
+    void startBlockingLoop();
 
     void stopLoop();
 
