@@ -135,6 +135,9 @@ public:
     /// Revert pullNotOutFunctions actions
     CNFQuery & pushNotInFuntions();
 
+    /// (a OR b OR ...) AND (NOT a OR b OR ...) -> (b OR ...)
+    CNFQuery & reduce();
+
 private:
     AndGroup statements;
 };

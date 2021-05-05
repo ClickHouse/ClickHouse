@@ -36,8 +36,7 @@ MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
 {
     bool match_means_ok = true ^ a.negative ^ b.negative;
 
-    if (a.ast->getTreeHash() == b.ast->getTreeHash() &&
-        a.ast->getColumnName() == b.ast->getColumnName())
+    if (a.ast->getTreeHash() == b.ast->getTreeHash())
     {
         return match_means_ok ? MatchState::FULL_MATCH : MatchState::NOT_MATCH;
     }
@@ -109,7 +108,7 @@ bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const
     for (const auto & constraint : constraints)
     {
         if (constraint.size() > 1)
-            continue; /// TMP
+            continue;
 
         for (const auto & constraint_atoms : constraint)
         {
@@ -185,6 +184,7 @@ void WhereConstraintsOptimizer::perform()
             {
                 return replaceTermsToConstants(atom, compare_graph);
             })
+            .reduce()
             .pushNotInFuntions();
 
         if (optimize_append_index)
