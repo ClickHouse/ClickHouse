@@ -336,6 +336,38 @@ namespace
         }
         return result;
     }
+
+    bool isSubset(const CNFQuery::OrGroup & left, const CNFQuery::OrGroup & right)
+    {
+        if (left.size() > right.size())
+            return false;
+        for (const auto & elem : left)
+            if (!right.contains(elem))
+                return false;
+        return true;
+    }
+
+    CNFQuery::AndGroup filterSubsets(const CNFQuery::AndGroup & groups)
+    {
+        CNFQuery::AndGroup result;
+        for (const CNFQuery::OrGroup & group : groups)
+        {
+            bool insert = true;
+
+            for (const CNFQuery::OrGroup & other_group : groups)
+            {
+                if (isSubset(other_group, group) && group != other_group)
+                {
+                    insert = false;
+                    break;
+                }
+            }
+
+            if (insert)
+                result.insert(group);
+        }
+        return result;
+    }
 }
 
 CNFQuery & CNFQuery::reduce()
@@ -344,7 +376,10 @@ CNFQuery & CNFQuery::reduce()
     {
         AndGroup new_statements = reduceOnce(statements);
         if (statements == new_statements)
+        {
+            statements = filterSubsets(statements);
             return *this;
+        }
         else
             statements = new_statements;
     }
