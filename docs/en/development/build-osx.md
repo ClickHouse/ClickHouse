@@ -124,4 +124,10 @@ Reboot.
 
 To check if it’s working, you can use `ulimit -n` command.
 
+## Run ClickHouse server:
+
+```
+~/ClickHouse/build/programs/clickhouse-server --config-file ~/ClickHouse/programs/server/config.xml
+```
+
 [Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
