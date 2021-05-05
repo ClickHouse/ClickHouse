@@ -51,21 +51,8 @@ static inline auto valueOr(auto& container, auto key, decltype(container.at(key)
 using EdgeIndex = uint32_t;
 using Addr = void *;
 
-struct SourceFileData
-{
-    std::unordered_map<EdgeIndex, size_t /* call count */> functions_hit;
-    std::unordered_map<size_t /* line */, size_t /* call_count */> lines_hit;
-};
-
-struct SourceFileInfo
-{
-    std::string path;
-    std::vector<EdgeIndex> instrumented_functions;
-    std::vector<size_t> instrumented_lines;
-
-    explicit SourceFileInfo(std::string path_)
-        : path(std::move(path_)), instrumented_functions(), instrumented_lines() {}
-};
+using CallCount = size_t;
+using Line = size_t;
 
 class Writer
 {
@@ -82,7 +69,7 @@ public:
     {
         /// Before server has initialized, we can't log data to Poco.
         base_log = &Poco::Logger::get(std::string{logger_base_name});
-        loadCacheOrSymbolizeInstrumentedData();
+        symbolizeInstrumentedData();
     }
 
     inline void hit(EdgeIndex edge_index)
@@ -121,8 +108,9 @@ private:
 
     FreeThreadPool pool;
 
-    using EdgesHit = std::vector<std::unique_ptr<std::atomic_size_t>>;
-    using EdgesHashmap = std::unordered_map<EdgeIndex, size_t>;
+    using AtomicCounter = std::atomic<CallCount>;
+    using EdgesHit = std::vector<std::unique_ptr<AtomicCounter>>;
+    using EdgesHashmap = std::unordered_map<EdgeIndex, CallCount>;
 
     EdgesHit edges_hit;
     std::optional<std::string> test;
@@ -136,19 +124,32 @@ private:
 
     /// Four caches filled in symbolizeAllInstrumentedAddrs being read-only by the tests start.
     /// Never cleared.
-    using SourceFileIndex = size_t;
-    std::unordered_map<std::string, SourceFileIndex, StringHash, std::equal_to<>> source_name_to_index;
+
+    struct SourceFileInfo
+    {
+        std::string path;
+        std::vector<EdgeIndex> instrumented_functions;
+        std::vector<Line> instrumented_lines;
+
+        explicit SourceFileInfo(std::string path_)
+            : path(std::move(path_)), instrumented_functions(), instrumented_lines() {}
+    };
+
     std::vector<SourceFileInfo> source_files_cache;
+    using SourceFileIndex = decltype(source_files_cache)::size_type;
+    std::unordered_map<std::string, SourceFileIndex, StringHash, std::equal_to<>> source_name_to_index;
 
     struct AddrInfo
     {
-        size_t line;
+        Line line;
         SourceFileIndex index;
     };
 
-    struct FunctionInfo // Although it looks like FunctionInfo : AddrInfo, inheritance bring more cons than pros
+    struct FunctionInfo
     {
-        size_t line;
+        // Although it looks like FunctionInfo : AddrInfo, inheritance bring more cons than pros
+
+        Line line;
         SourceFileIndex index;
         std::string_view name;
     };
@@ -159,7 +160,7 @@ private:
     struct SourceLocation
     {
         std::string full_path;
-        size_t line;
+        Line line;
     };
 
     inline SourceLocation getSourceLocation(EdgeIndex index) const
@@ -182,13 +183,19 @@ private:
         const Poco::Logger * log;
     };
 
+    struct SourceFileData
+    {
+        std::unordered_map<EdgeIndex, CallCount> functions_hit;
+        std::unordered_map<Line, CallCount> lines_hit;
+    };
+
     using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
 
     void prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
 
     /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
-    void loadCacheOrSymbolizeInstrumentedData();
+    void symbolizeInstrumentedData();
 
     /// Symbolized data
     struct AddrSym
@@ -201,12 +208,12 @@ private:
          *
          * N.B. It's possible to track per-address coverage, LCov's .info format refers to it as _branch_ coverage.
          */
-        using Container = std::unordered_map<size_t/*line*/, AddrSym>;
+        using Container = std::unordered_map<Line, AddrSym>;
 
-        EdgeIndex index; // will likely be optimized so as AdddSym ~ EdgeIndex.
+        EdgeIndex index; // will likely be optimized so as AddrSym ~ EdgeIndex.
     };
 
-    struct FuncSym // Although it looks like FuncSym : AddrSym, inheritance bring more cons than pros
+    struct FuncSym
     {
         /**
          * Template instantiations get mangled into different names, e.g.
@@ -232,11 +239,11 @@ private:
          */
         using Container = std::vector<FuncSym>;
 
-        size_t line;
+        Line line;
         EdgeIndex index;
         std::string_view name;
 
-        FuncSym(size_t line_, EdgeIndex index_, std::string_view name_): line(line_), index(index_), name(name_) {}
+        FuncSym(Line line_, EdgeIndex index_, std::string_view name_): line(line_), index(index_), name(name_) {}
     };
 
     template <class CacheItem>

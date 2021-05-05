@@ -86,7 +86,7 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
 
     edges_hit.resize(edges);
     for (auto & e : edges_hit)
-        e = std::make_unique<std::atomic_size_t>(0);
+        e = std::make_unique<AtomicCounter>(0);
 
     edges_to_addrs.resize(edges);
     edge_is_func_entry.resize(edges);
@@ -129,7 +129,7 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
     /// If starting now, we won't be able to log to Poco or std::cout;
 }
 
-void Writer::loadCacheOrSymbolizeInstrumentedData()
+void Writer::symbolizeInstrumentedData()
 {
     std::vector<EdgeIndex> function_indices(functions_count);
     std::vector<EdgeIndex> addr_indices(addrs_count);
@@ -142,15 +142,6 @@ void Writer::loadCacheOrSymbolizeInstrumentedData()
 
     LOG_INFO(base_log, "Split addresses into function entries ({}) and normal ones ({}), {} total",
         functions_count, addrs_count, edges_to_addrs.size());
-
-    // LOG_INFO(base_log, "Trying to load cache");
-
-    // if (std::filesystem::exists(coverage_cache_file_path))
-    // {
-
-    // }
-    // else
-    //     LOG_INFO(base_log, "Cache not found");
 
     LOG_INFO(base_log, "Started symbolizing addresses");
 
@@ -214,7 +205,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         for (size_t i = 0; i < edges_hit.size(); ++i)
         {
             auto& ptr = edges_hit.at(i);
-            const size_t hit = ptr->load();
+            const CallCount hit = ptr->load();
 
             if (!hit)
                 continue;
@@ -370,20 +361,27 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
      *         FNDA:<call-count>, <function-name>
      *
      *     if >0 functions instrumented:
-     *         FNF:<number of functions instrumented (found)>
-     *         FNH:<number of functions executed (hit)>
+     *         FNF:<number of functions instrumented>
+     *         FNH:<number of functions hit>
      *
      *     for each instrumented line:
-     *         // note -- there's third parameter "line contents", but looks like it's useless
-     *         DA:<line number>,<execution count>
+     *         DA:<line number>,<execution count> [, <line checksum, we don't use it>]
      *
-     *     LF:<number of lines instrumented (found)>
-     *     LH:<number of lines executed (hit)>
+     *     LF:<number of lines instrumented>
+     *     LH:<number of lines hit>
      *     end_of_record
      */
+
     LOG_INFO(test_info.log, "Started dumping");
 
-    const std::string test_path = (coverage_dir / (std::string{test_info.name} + ".gz")).string();
+    const std::string test_path =
+        (coverage_dir / (std::string{test_info.name} + ".gz"))
+        // common use case is to run CH from build/programs directory. All source files paths look like
+        // /home/user/ch/build/programs../../src/, so we can slightly reduce their size by removing
+        // /build/programs/../../
+        .lexically_normal()
+        .string();
+
     constexpr size_t formatted_buffer_size = 10 * (1 >> 21); //20 MB
 
     fmt::memory_buffer mb;
@@ -401,7 +399,7 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
         for (EdgeIndex index : funcs_instrumented)
         {
             const FunctionInfo& func_info = function_cache.at(index);
-            const size_t call_count = valueOr(funcs_hit, index, 0);
+            const CallCount call_count = valueOr(funcs_hit, index, 0);
 
             fmt::format_to(mb, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
         }
@@ -410,7 +408,7 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 
         for (size_t line : lines_instrumented)
         {
-            const size_t call_count = valueOr(lines_hit, line, 0);
+            const CallCount call_count = valueOr(lines_hit, line, 0);
             fmt::format_to(mb, "DA:{},{}\n", line, call_count);
         }
 

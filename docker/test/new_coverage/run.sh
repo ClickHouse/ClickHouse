@@ -95,11 +95,14 @@ clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --co
 # tmp to get reports
 cp coverage/* ${OUTPUT_DIR}
 
-genhtml \
+time genhtml \
   --ignore-errors source \
   --output-directory "${OUTPUT_DIR}" \
   --num-spaces 4 \
   --legend \
-  --show-details \ # Per-test coverage info
-  --demangle-cpp \ # Demangling names by c++filt here is cheaper than demangling names in binary
-  coverage/*
+  --show-details \
+  # Demangling names by c++filt here is cheaper than demangling names in binary
+  --demangle-cpp \
+  ../2689_tests/coverage/* | gawk '{
+      t = "tee genhtml_log.log"
+      print strftime("%H:%M:%S") " " $0 | t }'
