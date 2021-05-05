@@ -210,6 +210,8 @@ struct integer<Bits, Signed>::_impl
     template <typename Integral>
     constexpr static void wide_integer_from_bultin(integer<Bits, Signed> & self, Integral rhs) noexcept
     {
+        static_assert(sizeof(Integral) <= sizeof(base_type));
+
         self.items[0] = _impl::to_Integral(rhs);
 
         if constexpr (std::is_signed_v<Integral>)
@@ -664,7 +666,7 @@ public:
     }
 
     template <typename T>
-    constexpr static bool operator_more(const integer<Bits, Signed> & lhs, const T & rhs) noexcept
+    constexpr static bool operator_greater(const integer<Bits, Signed> & lhs, const T & rhs) noexcept
     {
         if constexpr (should_keep_size<T>())
         {
@@ -684,7 +686,7 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, T>::_impl::operator_more(T(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, T>::_impl::operator_greater(T(lhs), rhs);
         }
     }
 
@@ -799,7 +801,7 @@ private:
         T x = 1;
         T quotient = 0;
 
-        while (!operator_more(d, n) && operator_eq(operator_amp(shift_right(d, base_bits * item_count - 1), 1), 0))
+        while (!operator_greater(d, n) && operator_eq(operator_amp(shift_right(d, base_bits * item_count - 1), 1), 0))
         {
             x = shift_left(x, 1);
             d = shift_left(d, 1);
@@ -807,7 +809,7 @@ private:
 
         while (!operator_eq(x, 0))
         {
-            if (!operator_more(d, n))
+            if (!operator_greater(d, n))
             {
                 n = operator_minus(n, d);
                 quotient = operator_pipe(quotient, x);
@@ -1119,7 +1121,20 @@ template <class T, class>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
     static_assert(std::numeric_limits<T>::is_integer);
-    return items[0];
+
+    /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
+
+    using UnsignedT = std::make_unsigned_t<T>;
+
+    UnsignedT res{};
+    for (unsigned i = 0; i < _impl::item_count; ++i)
+    {
+        if constexpr (sizeof(T) > sizeof(base_type))
+            res <<= (sizeof(base_type) * 8);
+        res += items[i];
+    }
+
+    return res;
 }
 
 template <size_t Bits, typename Signed>
@@ -1312,7 +1327,7 @@ constexpr bool operator<(const Arithmetic & lhs, const Arithmetic2 & rhs)
 template <size_t Bits, typename Signed, size_t Bits2, typename Signed2>
 constexpr bool operator>(const integer<Bits, Signed> & lhs, const integer<Bits2, Signed2> & rhs)
 {
-    return std::common_type_t<integer<Bits, Signed>, integer<Bits2, Signed2>>::_impl::operator_more(lhs, rhs);
+    return std::common_type_t<integer<Bits, Signed>, integer<Bits2, Signed2>>::_impl::operator_greater(lhs, rhs);
 }
 template <typename Arithmetic, typename Arithmetic2, class>
 constexpr bool operator>(const Arithmetic & lhs, const Arithmetic2 & rhs)
@@ -1335,7 +1350,7 @@ constexpr bool operator<=(const Arithmetic & lhs, const Arithmetic2 & rhs)
 template <size_t Bits, typename Signed, size_t Bits2, typename Signed2>
 constexpr bool operator>=(const integer<Bits, Signed> & lhs, const integer<Bits2, Signed2> & rhs)
 {
-    return std::common_type_t<integer<Bits, Signed>, integer<Bits2, Signed2>>::_impl::operator_more(lhs, rhs)
+    return std::common_type_t<integer<Bits, Signed>, integer<Bits2, Signed2>>::_impl::operator_greater(lhs, rhs)
         || std::common_type_t<integer<Bits, Signed>, integer<Bits2, Signed2>>::_impl::operator_eq(lhs, rhs);
 }
 template <typename Arithmetic, typename Arithmetic2, class>
