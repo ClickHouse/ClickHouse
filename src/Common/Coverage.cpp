@@ -189,7 +189,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
     {
         auto lck = std::lock_guard(edges_mutex);
-        dumping.store(true);
+        copying_test_hits.store(true);
 
         if (!test)
         {
@@ -205,17 +205,12 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         for (size_t i = 0; i < edges_hit.size(); ++i)
         {
             auto& ptr = edges_hit.at(i);
-            const CallCount hit = ptr->load();
+            const CallCount hit = ptr->exchange(0);
 
             if (!hit)
                 continue;
 
-            if (auto it = edges_hashmap.find(i); it != edges_hashmap.end())
-                it->second += hit;
-            else
-                edges_hashmap[i] = hit;
-
-            ptr->store(0);
+            setOrIncrement(edges_hashmap, i, hit);
         }
 
         LOG_INFO(log, "Copied data into hashtable, {} unique addrs", edges_hashmap.size());
@@ -225,12 +220,15 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         /// genhtml doesn't allow '.' in test names
         std::replace(old_test_name.begin(), old_test_name.end(), '.', '_');
 
-        if (test_name.empty())
-            test = std::nullopt;
-        else
+        if (!test_name.empty())
             test = test_name;
+        else
+        {
+            // Dump global report;
+            test = std::nullopt;
+        }
 
-        dumping.store(false);
+        copying_test_hits.store(false);
     }
 
     LOG_INFO(log, "Copied shared data");
@@ -252,28 +250,12 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits)
 
     TestData test_data(source_files_cache.size());
 
-    time_t elapsed = time(nullptr);
-    size_t i = 0;
-
     for (auto [edge_index, hit] : hits)
     {
-        ++i;
-
-        if (const time_t current = time(nullptr); current > elapsed)
-        {
-            LOG_DEBUG(test_info.log, "Processed {}/{}", i, hits.size());
-            elapsed = current;
-        }
-
         if (auto it = function_cache.find(edge_index); it != function_cache.end())
         {
             auto& functions = test_data[it->second.index].functions_hit;
-
-            if (auto it2 = functions.find(edge_index); it2 == functions.end())
-                functions[edge_index] = hit;
-            else
-                it2->second += hit;
-
+            setOrIncrement(functions, edge_index, hit);
             continue;
         }
 
@@ -286,11 +268,7 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits)
 
         const AddrInfo& addr_cache_entry = addr_cache.at(edge_index);
         auto& lines = test_data[addr_cache_entry.index].lines_hit;
-
-        if (auto it = lines.find(addr_cache_entry.line); it == lines.end())
-            lines[addr_cache_entry.line] = hit;
-        else
-            it->second += hit;
+        setOrIncrement(lines, addr_cache_entry.line, hit);
     }
 
     LOG_INFO(test_info.log, "Finished filling internal structures");

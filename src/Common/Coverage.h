@@ -10,6 +10,7 @@
 #include <shared_mutex>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 #include <unordered_map>
 #include <Poco/Logger.h>
@@ -40,11 +41,21 @@ static inline std::string getNameFromPath(const std::string& path)
     return path.substr(path.rfind('/') + 1);
 }
 
-static inline auto valueOr(auto& container, auto key, decltype(container.at(key)) default_value)
+static inline auto valueOr(auto& container, auto key,
+    std::remove_cvref_t<decltype(container.at(key))> default_value)
 {
     if (auto it = container.find(key); it != container.end())
         return it->second;
     return default_value;
+}
+
+static inline void setOrIncrement(auto& container, auto key,
+    std::remove_cvref_t<decltype(container.at(key))> value)
+{
+    if (auto it = container.find(key); it != container.end())
+        it->second += value;
+    else
+        container[key] = value;
 }
 
 
@@ -74,7 +85,7 @@ public:
 
     inline void hit(EdgeIndex edge_index)
     {
-        if (dumping.load())
+        if (copying_test_hits.load())
         {
             auto lck = std::lock_guard(edges_mutex);
             edges_hit.at(edge_index)->fetch_add(1);
@@ -114,16 +125,13 @@ private:
 
     EdgesHit edges_hit;
     std::optional<std::string> test;
-    std::atomic_bool dumping = false;
+    std::atomic_bool copying_test_hits = false;
     std::mutex edges_mutex; // protects test, edges_hit
 
     /// Two caches filled on binary startup from PC table created by clang.
     using EdgesToAddrs = std::vector<Addr>;
     EdgesToAddrs edges_to_addrs;
     std::vector<bool> edge_is_func_entry;
-
-    /// Four caches filled in symbolizeAllInstrumentedAddrs being read-only by the tests start.
-    /// Never cleared.
 
     struct SourceFileInfo
     {
@@ -135,6 +143,8 @@ private:
             : path(std::move(path_)), instrumented_functions(), instrumented_lines() {}
     };
 
+    /// Two caches filled in symbolizeAllInstrumentedAddrs being read-only by the tests start.
+    /// Never cleared.
     std::vector<SourceFileInfo> source_files_cache;
     using SourceFileIndex = decltype(source_files_cache)::size_type;
     std::unordered_map<std::string, SourceFileIndex, StringHash, std::equal_to<>> source_name_to_index;
@@ -154,6 +164,8 @@ private:
         std::string_view name;
     };
 
+    /// Two caches filled in symbolizeAllInstrumentedAddrs being read-only by the tests start.
+    /// Never cleared.
     std::unordered_map<EdgeIndex, AddrInfo> addr_cache;
     std::unordered_map<EdgeIndex, FunctionInfo> function_cache;
 
@@ -190,6 +202,8 @@ private:
     };
 
     using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
+
+    // TODO TestData global_report;
 
     void prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
@@ -297,13 +311,13 @@ private:
                 for (size_t i = start_index; i < end_index; ++i)
                 {
                     const EdgeIndex edge_index = data.at(i);
-                    SourceLocation source = getSourceLocation(edge_index); //non-const so we could move .full_path
+                    SourceLocation source = getSourceLocation(edge_index);
 
                     /**
                      * Getting source name as a string (reverse search + allocation) is a bit cheaper than hashing
                      * the full path.
                      */
-                    std::string source_name = getNameFromPath(source.full_path); //non-const so we could move it
+                    std::string source_name = getNameFromPath(source.full_path);
                     auto cache_it = cache.find(source_name);
 
                     if constexpr (is_func_cache)
