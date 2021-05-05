@@ -9,7 +9,7 @@ select max(identity(dummy + 1)) over () from remote('127.0.0.{1,2}', system, one
 
 drop table if exists t_01568;
 
-create table t_01568 engine Log as select intDiv(number, 3) p, number from numbers(9);
+create table t_01568 engine Memory as select intDiv(number, 3) p, number from numbers(9);
 
 select sum(number) over w, max(number) over w from t_01568 window w as (partition by p);
 
