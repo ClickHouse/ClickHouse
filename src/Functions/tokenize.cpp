@@ -40,7 +40,7 @@ class FunctionTokenize : public IFunction
 
 public:
     static constexpr auto name = "tokenize";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTokenize>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokenize>(); }
 
     String getName() const override { return name; }
 
