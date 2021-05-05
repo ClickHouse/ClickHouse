@@ -69,7 +69,14 @@ public:
 
     bool isValid() const override { return entry != fs::directory_iterator(); }
 
-    String path() const override { return dir_path / entry->path().filename(); }
+    String path() const override
+    {
+        if (entry->is_directory())
+            return dir_path / entry->path().filename() / "";
+        else
+            return dir_path / entry->path().filename();
+    }
+
 
     String name() const override { return entry->path().filename(); }
 
