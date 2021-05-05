@@ -656,34 +656,6 @@ func
 6000
 """
 
-func__quantileTiming_salary__ = r"""
-func
-4800
-4800
-5000
-5000
-5200
-5200
-5200
-5200
-6000
-6000
-"""
-
-func__median_salary__ = r"""
-func
-4800
-4800
-4900
-5000
-5100
-5200
-5200
-5200
-5600
-6000
-"""
-
 func__quantileExactWeighted_salary__1__ = r"""
 func
 4800
@@ -695,6 +667,20 @@ func
 5200
 5200
 5200
+6000
+"""
+
+func__quantileTiming_salary__ = r"""
+func
+4800
+4800
+5000
+5000
+5200
+5200
+5200
+5200
+6000
 6000
 """
 
@@ -723,6 +709,34 @@ func
 5200
 5200
 5600
+6000
+"""
+
+func__quantileTDigest_salary__ = r"""
+func
+4800
+4800
+4800
+5000
+5000
+5200
+5200
+5200
+5200
+6000
+"""
+
+func__quantileTDigestWeighted_salary__1__ = r"""
+func
+4800
+4800
+4800
+5000
+5000
+5200
+5200
+5200
+5200
 6000
 """
 
@@ -796,31 +810,17 @@ func
 (nan,0)
 """
 
-func__quantileTDigest_salary__ = r"""
+func__median_salary__ = r"""
 func
 4800
 4800
-4800
+4900
 5000
-5000
+5100
 5200
 5200
 5200
-5200
-6000
-"""
-
-func__quantileTDigestWeighted_salary__1__ = r"""
-func
-4800
-4800
-4800
-5000
-5000
-5200
-5200
-5200
-5200
+5600
 6000
 """
 

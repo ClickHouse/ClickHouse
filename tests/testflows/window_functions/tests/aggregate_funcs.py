@@ -77,7 +77,7 @@ def aggregate_funcs_over_rows_frame(self, func):
     """Checking aggregate funcs over rows frame.
     """
     execute_query(f"""
-        SELECT {func} OVER (ORDER BY salary ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS func
+        SELECT {func} OVER (ORDER BY salary, empno ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS func
           FROM empsalary
         """
     )
@@ -87,12 +87,12 @@ def avg_with_nulls(self):
     """Check `avg` aggregate function using a window that contains NULLs.
     """
     expected = convert_output("""
-         i |        avg         
+         i |        avg
         ---+--------------------
          1 | 1.5
          2 | 2
-         3 | \\N                  
-         4 | \\N 
+         3 | \\N
+         4 | \\N
     """)
 
     execute_query("""
@@ -107,7 +107,7 @@ def var_pop(self):
     """Check `var_pop` aggregate function ove a window.
     """
     expected = convert_output("""
-            var_pop        
+            var_pop
     -----------------------
         21704
         13868.75
@@ -128,13 +128,13 @@ def var_samp(self):
     """Check `var_samp` aggregate function ove a window.
     """
     expected = convert_output("""
-          var_samp        
+          var_samp
     -----------------------
         27130
         18491.666666666668
         16900
         8450
-        nan                  
+        nan
     """)
 
     execute_query("""
@@ -149,19 +149,19 @@ def stddevpop(self):
     """Check `stddevPop` aggregate function ove a window.
     """
     expected = convert_output("""
-             stddev_pop      
+             stddev_pop
     ---------------------
         147.32277488562318
         147.32277488562318
         117.76565713313877
         106.14455552060438
         65
-        0        
+        0
     """)
 
     execute_query("""
         SELECT stddevPop(n) OVER (ORDER BY i ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS stddev_pop
-          FROM VALUES('i Int8, n Nullable(Int16)',(1,NULL),(2,600),(3,470),(4,170),(5,430),(6,300)) 
+          FROM VALUES('i Int8, n Nullable(Int16)',(1,NULL),(2,600),(3,470),(4,170),(5,430),(6,300))
         """,
         expected=expected
     )
@@ -171,7 +171,7 @@ def stddevsamp(self):
     """Check `stddevSamp` aggregate function ove a window.
     """
     expected = convert_output("""
-         stddev_samp     
+         stddev_samp
     ---------------------
         164.7118696390761
         164.7118696390761
@@ -193,7 +193,7 @@ def aggregate_function_recovers_from_nan(self):
     """Check that aggregate function can recover from `nan` value inside a window.
     """
     expected = convert_output("""
-         a |  b  | sum 
+         a |  b  | sum
         ---+-----+-----
          1 |   1 |   1
          2 |   2 |   3
@@ -215,7 +215,7 @@ def bit_functions(self):
     """Check trying to use bitwise functions over a window.
     """
     expected = convert_output("""
-     i | b | bool_and | bool_or 
+     i | b | bool_and | bool_or
     ---+---+----------+---------
      1 | 1 | 1        | 1
      2 | 1 | 0        | 1
@@ -237,7 +237,7 @@ def sum(self):
     """Check calculation of sum over a window.
     """
     expected = convert_output("""
-     sum_1 | ten | four 
+     sum_1 | ten | four
     -------+-----+------
          0 |   0 |    0
          0 |   0 |    0
@@ -261,7 +261,7 @@ def nested_aggregates(self):
     """Check using nested aggregates over a window.
     """
     expected = convert_output("""
-     ten | two | gsum  |  wsum  
+     ten | two | gsum  |  wsum
     -----+-----+-------+--------
        0 |   0 | 45000 |  45000
        2 |   0 | 47000 |  92000
@@ -285,7 +285,7 @@ def aggregate_and_window_function_in_the_same_window(self):
     """Check using aggregate and window function in the same window.
     """
     expected = convert_output("""
-      sum  | rank 
+      sum  | rank
     -------+------
       6000 |    1
      16400 |    2
@@ -309,7 +309,7 @@ def ungrouped_aggregate_over_empty_row_set(self):
     """Check using window function with ungrouped aggregate over an empty row set.
     """
     expected = convert_output("""
-    sum 
+    sum
     -----
        0
     """)

@@ -8,7 +8,7 @@ def subquery_expr_preceding(self):
     """Check using subquery expr in preceding.
     """
     expected = convert_output("""
-     sum | unique1 
+     sum | unique1
     -----+---------
        0 |       0
        1 |       1
@@ -35,7 +35,7 @@ def window_functions_in_select_expression(self):
     """Check using multiple window functions in an expression.
     """
     expected = convert_output("""
-     cntsum 
+     cntsum
     --------
      22
      22
@@ -61,7 +61,7 @@ def window_functions_in_subquery(self):
     """Check using window functions in a subquery.
     """
     expected = convert_output("""
-     total | fourcount | twosum 
+     total | fourcount | twosum
     -------+-----------+--------
     """)
 
@@ -81,7 +81,7 @@ def group_by_and_one_window(self):
     """Check running window function with group by and one window.
     """
     expected = convert_output("""
-     four | ten | sum  |          avg           
+     four | ten | sum  |          avg
     ------+-----+------+------------------------
         0 |   0 |    0 |     0
         0 |   2 |    0 |     2
@@ -115,7 +115,7 @@ def group_by_and_multiple_windows(self):
     """Check running window function with group by and multiple windows.
     """
     expected = convert_output("""
-      sum1 | row_number |  sum2  
+      sum1 | row_number |  sum2
     -------+------------+-------
      25100 |          1 | 47100
       7400 |          2 | 22000
@@ -136,21 +136,19 @@ def query_with_order_by_and_one_window(self):
     expected = convert_output("""
      depname   |    empno | salary |  rank
      ----------+----------+--------+---------
-     sales     |    3     | 4800   |    1
-     sales     |    4     | 4800   |    1
-     personnel |    5     | 3500   |    1
-     develop   |    7     | 4200   |    1
-     personnel |    2     | 3900   |    2
-     develop   |    9     | 4500   |    2
-     sales     |    1     | 5000   |    3
-     develop   |    10    | 5200   |    3
-     develop   |    11    | 5200   |    3
-     develop   |    8     | 6000   |    5
-
+    sales      |    3     | 4800   |    1
+    personnel  |    5     | 3500   |    1
+    develop    |    7     | 4200   |    1
+    personnel  |    2     | 3900   |    2
+    sales      |    4     | 4800   |    2
+    develop    |    9     | 4500   |    2
+    sales      |    1     | 5000   |    3
+    develop    |    10    | 5200   |    3
+    develop    |    11    | 5200   |    4
+    develop    |    8     | 6000   |    5
     """)
-
     execute_query(
-        "SELECT depname, empno, salary, rank() OVER w AS rank FROM empsalary WINDOW w AS (PARTITION BY depname ORDER BY salary) ORDER BY rank() OVER w, empno",
+        "SELECT depname, empno, salary, rank() OVER w AS rank FROM empsalary WINDOW w AS (PARTITION BY depname ORDER BY salary, empno) ORDER BY rank() OVER w, empno",
         expected=expected
     )
 
@@ -159,7 +157,7 @@ def with_union_all(self):
     """Check using window over rows obtained with `UNION ALL`.
     """
     expected = convert_output("""
-     count 
+     count
     -------
     """)
 
@@ -173,7 +171,7 @@ def empty_table(self):
     """Check using an empty table with a window function.
     """
     expected = convert_output("""
-     count 
+     count
     -------
     """)
 
@@ -187,7 +185,7 @@ def from_subquery(self):
     """Check using a window function over data from subquery.
     """
     expected = convert_output("""
-     count | four 
+     count | four
     -------+------
          4 |    1
          4 |    1
@@ -206,8 +204,10 @@ def from_subquery(self):
 def groups_frame(self):
     """Check using `GROUPS` frame.
     """
+    exitcode, message = groups_frame_error()
+
     expected = convert_output("""
-     sum | unique1 | four 
+     sum | unique1 | four
     -----+---------+------
       12 |       0 |    0
       12 |       8 |    0
@@ -226,7 +226,7 @@ def groups_frame(self):
             unique1, four
         FROM tenk1 WHERE unique1 < 10
         """,
-        expected=expected
+        exitcode=exitcode, message=message
     )
 
 @TestScenario
@@ -301,7 +301,7 @@ def subquery_with_multiple_windows_filtering(self):
     """
     expected = convert_output("""
     depname   | empno |  salary  |  enroll_date |   first_emp |  last_emp
-    ----------+-------+----------+--------------+-------------+---------- 
+    ----------+-------+----------+--------------+-------------+----------
     develop   |  8    |    6000  | 2006-10-01   |      1      |  5
     develop   |  7    |    4200  | 2008-01-01   |      4      |  1
     personnel |  2    |    3900  | 2006-12-23   |      1      |  2
@@ -316,8 +316,8 @@ def subquery_with_multiple_windows_filtering(self):
                   empno,
                   salary,
                   enroll_date,
-                  row_number() OVER (PARTITION BY depname ORDER BY enroll_date) AS first_emp,
-                  row_number() OVER (PARTITION BY depname ORDER BY enroll_date DESC) AS last_emp
+                  row_number() OVER (PARTITION BY depname ORDER BY enroll_date, empno) AS first_emp,
+                  row_number() OVER (PARTITION BY depname ORDER BY enroll_date DESC, empno) AS last_emp
            FROM empsalary) emp
         WHERE first_emp = 1 OR last_emp = 1
         """,
@@ -328,8 +328,10 @@ def subquery_with_multiple_windows_filtering(self):
 def exclude_clause(self):
     """Check if exclude clause is supported.
     """
+    exitcode, message = syntax_error()
+
     expected = convert_output("""
-     sum | unique1 | four 
+     sum | unique1 | four
     -----+---------+------
        7 |       4 |    0
       13 |       2 |    2
@@ -347,7 +349,7 @@ def exclude_clause(self):
         "SELECT sum(unique1) over (rows between 2 preceding and 2 following exclude no others) AS sum,"
         "unique1, four "
         "FROM tenk1 WHERE unique1 < 10",
-        expected=expected
+        exitcode=exitcode, message=message
     )
 
 @TestScenario
@@ -358,12 +360,12 @@ def in_view(self):
         sql = """
         CREATE VIEW v_window AS
         SELECT number, sum(number) over (order by number rows between 1 preceding and 1 following) as sum_rows
-        FROM numbers(1, 10) 
+        FROM numbers(1, 10)
         """
         create_table(name="v_window", statement=sql)
 
     expected = convert_output("""
-     number  | sum_rows 
+     number  | sum_rows
     ---------+----------
       1 |        3
       2 |        6

@@ -32,6 +32,9 @@ def frame_requires_order_by_error():
 def syntax_error():
     return (62, "Exception: Syntax error")
 
+def groups_frame_error():
+    return (48, "Exception: Window frame 'GROUPS' is not implemented")
+
 def getuid():
     if current().subtype == TestSubType.Example:
         testname = f"{basename(parentname(current().name)).replace(' ', '_').replace(',','')}"
@@ -44,21 +47,22 @@ def convert_output(s):
     """
     return '\n'.join([l.strip() for i, l in enumerate(re.sub('\s+\|\s+', '\t', s).strip().splitlines()) if i != 1])
 
-def execute_query(sql, expected=None, format="TabSeparatedWithNames"):
+def execute_query(sql, expected=None, exitcode=None, message=None, format="TabSeparatedWithNames"):
     """Execute SQL query and compare the output to the snapshot.
     """
     name = basename(current().name)
 
     with When("I execute query", description=sql):
-        r = current().context.node.query(sql + " FORMAT " + format)
+        r = current().context.node.query(sql + " FORMAT " + format, exitcode=exitcode, message=message)
 
-    if expected is not None:
-        with Then("I check output against expected"):
-            assert r.output.strip() == expected, error()
-    else:
-        with Then("I check output against snapshot"):
-            with values() as that:
-                assert that(snapshot("\n" + r.output.strip() + "\n", "tests", name=name, encoder=str)), error()
+    if message is None:
+        if expected is not None:
+            with Then("I check output against expected"):
+                assert r.output.strip() == expected, error()
+        else:
+            with Then("I check output against snapshot"):
+                with values() as that:
+                    assert that(snapshot("\n" + r.output.strip() + "\n", "tests", name=name, encoder=str)), error()
 
 @TestStep(Given)
 def t1_table(self, name="t1", distributed=False):
@@ -343,7 +347,7 @@ def empsalary_table(self, name="empsalary", distributed=False):
                     empno  UInt64,
                     salary Int32,
                     enroll_date Date
-                    ) 
+                    )
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{name}', '{{replica}}') ORDER BY enroll_date
                 """
                 create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
