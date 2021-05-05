@@ -1,5 +1,4 @@
-#include "PostgreSQLPoolWithFailover.h"
-#include "PostgreSQLConnection.h"
+#include <Storages/PostgreSQL/PoolWithFailover.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
@@ -17,11 +16,13 @@ namespace postgres
 {
 
 PoolWithFailover::PoolWithFailover(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        const size_t max_tries_)
+        const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+        size_t pool_size, size_t pool_wait_timeout, size_t max_tries_)
         : max_tries(max_tries_)
 {
+    LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
+              pool_size, pool_wait_timeout, max_tries_);
+
     auto db = config.getString(config_prefix + ".db", "");
     auto host = config.getString(config_prefix + ".host", "");
     auto port = config.getUInt(config_prefix + ".port", 0);
@@ -45,13 +46,15 @@ PoolWithFailover::PoolWithFailover(
                 auto replica_user = config.getString(replica_name + ".user", user);
                 auto replica_password = config.getString(replica_name + ".password", password);
 
-                replicas_with_priority[priority].emplace_back(std::make_shared<ConnectionPool>(db, replica_host, replica_port, replica_user, replica_password));
+                auto connection_string = formatConnectionString(db, replica_host, replica_port, replica_user, replica_password);
+                replicas_with_priority[priority].emplace_back(connection_string, pool_size, pool_wait_timeout);
             }
         }
     }
     else
     {
-        replicas_with_priority[0].emplace_back(std::make_shared<ConnectionPool>(db, host, port, user, password));
+        auto connection_string = formatConnectionString(db, host, port, user, password);
+        replicas_with_priority[0].emplace_back(connection_string, pool_size, pool_wait_timeout);
     }
 }
 
@@ -59,18 +62,19 @@ PoolWithFailover::PoolWithFailover(
 PoolWithFailover::PoolWithFailover(
         const std::string & database,
         const RemoteDescription & addresses,
-        const std::string & user,
-        const std::string & password,
-        size_t pool_size,
-        int64_t pool_wait_timeout,
-        size_t max_tries_)
+        const std::string & user, const std::string & password,
+        size_t pool_size, size_t pool_wait_timeout, size_t max_tries_)
     : max_tries(max_tries_)
 {
+    LOG_TRACE(&Poco::Logger::get("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
+              pool_size, pool_wait_timeout, max_tries_);
+
     /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
     for (const auto & [host, port] : addresses)
     {
         LOG_DEBUG(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
-        replicas_with_priority[0].emplace_back(std::make_shared<ConnectionPool>(database, host, port, user, password, pool_size, pool_wait_timeout));
+        auto connection_string = formatConnectionString(database, host, port, user, password);
+        replicas_with_priority[0].emplace_back(connection_string, pool_size, pool_wait_timeout);
     }
 }
 
@@ -93,12 +97,14 @@ ConnectionHolderPtr PoolWithFailover::get()
             auto & replicas = priority.second;
             for (size_t i = 0; i < replicas.size(); ++i)
             {
-                auto connection = replicas[i]->get();
-                if (connection->isConnected())
+                const auto & pool_entry = replicas[i];
+                auto entry = std::make_unique<ConnectionHolder>(pool_entry.connection_string, pool_entry.pool, pool_entry.pool_wait_timeout);
+
+                if (entry->isConnected())
                 {
                     /// Move all traversed replicas to the end.
                     std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
-                    return connection;
+                    return entry;
                 }
             }
         }

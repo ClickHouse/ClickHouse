@@ -144,7 +144,7 @@ def test_dictionary_with_replicas(started_cluster):
     result = node1.query("SELECT * FROM `test`.`dict_table_test1` ORDER BY id")
 
     # priority 0 - non running port
-    assert node1.contains_in_log('Unable to setup connection to postgres2:5433*')
+    assert node1.contains_in_log('PostgreSQLConnection: Connection error*')
 
     # priority 1 - postgres2, table contains rows with values 100-200
     # priority 2 - postgres1, table contains rows with values 0-100

@@ -5,7 +5,8 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/ConnectionHolder.h>
+#include <Core/NamesAndTypes.h>
 
 
 namespace DB
