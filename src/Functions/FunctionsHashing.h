@@ -973,7 +973,7 @@ private:
         else if (which.isUInt16()) executeIntType<UInt16, first>(icolumn, vec_to);
         else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
         else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
-        else if (which.isUInt128() || which.isUUID()) executeBigIntType<UInt128, first>(icolumn, vec_to);
+        else if (which.isUInt128()) executeBigIntType<UInt128, first>(icolumn, vec_to);
         else if (which.isUInt256()) executeBigIntType<UInt256, first>(icolumn, vec_to);
         else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
