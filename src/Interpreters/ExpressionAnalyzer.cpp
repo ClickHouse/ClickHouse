@@ -813,8 +813,6 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
 
     /// Use StorageJoin if any.
     JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
-    if (join && syntax->analyzed_join->hasOn())
-        throw DB::Exception("`JOIN ON` with `Join` table engine not supported, use `USING` syntax", ErrorCodes::NOT_IMPLEMENTED);
 
     if (!join)
     {
