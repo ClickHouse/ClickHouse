@@ -5,7 +5,7 @@ toc_title: generateRandom
 
 # generateRandom {#generaterandom}
 
-生成具用给定的模式的随机数据。
+生成具有给定的模式的随机数据。
 允许用数据来填充测试表。
 支持所有可以存储在表中的数据类型， `LowCardinality` 和 `AggregateFunction`除外。
 
