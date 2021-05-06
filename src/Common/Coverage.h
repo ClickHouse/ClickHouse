@@ -69,6 +69,8 @@ using Line = size_t;
 class Writer
 {
 public:
+    static constexpr std::string_view coverage_test_name_setting_name = "coverage_test_name";
+
     static inline Writer& instance()
     {
         static Writer w;
@@ -89,10 +91,16 @@ public:
         /**
          * If we are not copying data: it's like multithreaded value increment -- will probably get less hits, but
          * it's still good approximation.
-         * If we are copying data: it's just pointer swap, so the hit will count for the old test, not for the new one.
+         *
+         * If we are copying data: the only place where edges_hit is used is pointer swap with a temporary vector.
+         * In -O3 this code will surely be optimized to something like https://godbolt.org/z/8rerbshzT,
+         * where only lines 32-36 swap the pointers, so we'll just probably count some new hits for old test.
          */
         ++edges_hit[edge_index];
     }
+
+    /// String is passed by value as it's swapped with _test_.
+    void dumpAndChangeTestName(std::string old_test_name);
 
 private:
     Writer();
@@ -103,7 +111,7 @@ private:
 
     /**
      * We use all threads (including hyper-threading) for symbolization as server does nothing else.
-     * For test processing, we divide the pool size by 2 as
+     * For test processing, we divide the pool size by 2 as some test spawn many threads.
      */
     const size_t hardware_concurrency;
 
@@ -126,7 +134,6 @@ private:
 
     EdgesHit edges_hit;
     std::string test;
-    std::mutex copying_data_mutex;
 
     /// Two caches filled on binary startup from PC table created by clang.
     using EdgesToAddrs = std::vector<Addr>;
@@ -179,8 +186,6 @@ private:
     {
         return symbol_index->findSymbol(edges_to_addrs[index])->name;
     }
-
-    void dumpAndChangeTestName(std::string_view test_name);
 
     struct TestInfo
     {

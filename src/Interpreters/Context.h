@@ -185,15 +185,6 @@ private:
 
     Settings settings;                                  /// Setting for query execution.
 
-    using SettingHook = std::function<void(const Field& /*new_value*/)>;
-    using SettingsHooksHolder = std::unordered_multimap<std::string_view, SettingHook>;
-
-    static SettingsHooksHolder& getHooksHolderInstance()
-    {
-        static SettingsHooksHolder h;
-        return h;
-    }
-
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -501,11 +492,6 @@ public:
     void setSetting(const StringRef & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
-
-    static inline void setSettingHook(std::string_view setting_name, SettingHook f)
-    {
-        getHooksHolderInstance().emplace(setting_name, std::move(f));
-    }
 
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change) const;

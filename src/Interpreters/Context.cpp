@@ -75,6 +75,10 @@
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
+#if WITH_COVERAGE
+#include <Common/Coverage.h>
+#endif
+
 
 namespace ProfileEvents
 {
@@ -1093,18 +1097,26 @@ void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
 
+    const std::string_view name_view {name};
+
+#if WITH_COVERAGE
+    if (name_view == ::detail::Writer::coverage_test_name_setting_name)
+    {
+        /// Note that we just use setting mechanism to notify coverage runtime, setting is not actually set but it's ok
+        /// as we're not using it anywhere else.
+        /// We don't move this check up the stack to ensure that dumpAndChangeTestName is called under exclusive lock.
+        ::detail::Writer::instance().dumpAndChangeTestName(value);
+        return;
+    }
+#endif
+
     if (name == "profile")
     {
         setProfile(value);
         return;
     }
 
-    const std::string_view name_view {name};
     settings.set(name_view, value);
-
-    const auto hooks = getHooksHolderInstance().equal_range(name_view);
-    for (auto it = hooks.first; it != hooks.second; ++it)
-        it->second(value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
@@ -1122,10 +1134,6 @@ void Context::setSetting(const StringRef & name, const Field & value)
 
     const std::string_view name_view {name};
     settings.set(name_view, value);
-
-    const auto hooks = getHooksHolderInstance().equal_range(name_view);
-    for (auto it = hooks.first; it != hooks.second; ++it)
-        it->second(value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();

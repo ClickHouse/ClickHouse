@@ -19,8 +19,6 @@
 
 #include "Common/ProfileEvents.h"
 
-#include <Interpreters/Context.h>
-
 namespace detail
 {
 namespace
@@ -57,12 +55,6 @@ Writer::Writer()
       // Set the initial pool size to all thread as we'll need all resources to symbolize fast.
       pool(hardware_concurrency, 1000, 0)
 {
-    Context::setSettingHook("coverage_test_name", [this](const Field& value)
-    {
-        const std::string& name = value.get<String>();
-        dumpAndChangeTestName(name);
-    });
-
     //if (std::filesystem::exists(coverage_dir))
     //{
     //    size_t suffix = 1;
@@ -176,24 +168,27 @@ void Writer::symbolizeInstrumentedData()
     LOG_INFO(base_log, "Symbolized all addresses");
 }
 
-void Writer::dumpAndChangeTestName(std::string_view test_name)
+void Writer::dumpAndChangeTestName(std::string old_test_name)
 {
-    std::string test_swap = {test_name.data(), test_name.size()};
+    /// In Context.cpp :: setSetting() setting is set under a unique lock. That means the hook also calls this function
+    /// under a lock, so no mutex is needed.
+    /// Note: this function slows down setSetting, so it should be as fast as possible.
+
+    /// https://godbolt.org/z/qqTYdr5Gz, explicit 0 state generates slightly better assembly than without it.
     EdgesHit edges_hit_swap(edges_count, 0);
 
-    {
-        auto lk = std::lock_guard(copying_data_mutex);
-        test.swap(test_swap);
+    test.swap(old_test_name);
 
-        if (test_swap.empty())
-            return;
+    if (old_test_name.empty())
+        return;
 
-        edges_hit.swap(edges_hit_swap);
-    }
+    edges_hit.swap(edges_hit_swap);
 
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
-    /// The move is evaluated within current function's lifetime during function constructor call.
-    auto f = [this, test_name = std::move(test_swap), edges_copied = std::move(edges_hit_swap)] () mutable
+    /// Move is evaluated within current function's lifetime during function constructor call.
+    /// Functor insertion itself is thread-safe.
+    pool.scheduleOrThrowOnError(
+        [this, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_swap)] () mutable
     {
         /// genhtml doesn't allow '.' in test names
         std::replace(test_name.begin(), test_name.end(), '.', '_');
@@ -201,10 +196,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         const Poco::Logger * log = &Poco::Logger::get(std::string{logger_base_name} + "." + test_name);
 
         prepareDataAndDump({test_name, log}, edges_copied);
-    };
-
-    // The functor insertion itself is thread-safe.
-    pool.scheduleOrThrowOnError(std::move(f));
+    });
 }
 
 void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
