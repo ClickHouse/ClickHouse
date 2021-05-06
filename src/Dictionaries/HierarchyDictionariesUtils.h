@@ -455,21 +455,27 @@ ColumnPtr getKeysDescendantsArray(
 
 /** Default getHierarchy implementation for dictionaries that does not have structure with child to parent representation.
   * Implementation will build such structure with getColumn calls, and then getHierarchy for such structure.
-  * Returns ColumnArray with hierarchy arrays for keys from key_column.
+  *
+  * @param valid_keys - number of keys (from @key_column) for which information about parent exists.
+  * @return ColumnArray with hierarchy arrays for keys from key_column.
   */
 ColumnPtr getKeysHierarchyDefaultImplementation(
     const IDictionary * dictionary,
     ColumnPtr key_column,
-    const DataTypePtr & key_type);
+    const DataTypePtr & key_type,
+    size_t & valid_keys);
 
 /** Default isInHierarchy implementation for dictionaries that does not have structure with child to parent representation.
   * Implementation will build such structure with getColumn calls, and then getHierarchy for such structure.
-  * Returns UInt8 column if key from in_key_column is in key hierarchy from key_column.
+  *
+  * @param valid_keys - number of keys (from @key_column) for which information about parent exists.
+  * @return UInt8 column if key from in_key_column is in key hierarchy from key_column.
   */
 ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     const IDictionary * dictionary,
     ColumnPtr key_column,
     ColumnPtr in_key_column,
-    const DataTypePtr & key_type);
+    const DataTypePtr & key_type,
+    size_t & valid_keys);
 
 }

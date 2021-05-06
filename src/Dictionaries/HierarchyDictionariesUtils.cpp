@@ -84,8 +84,14 @@ namespace
     }
 }
 
-ColumnPtr getKeysHierarchyDefaultImplementation(const IDictionary * dictionary, ColumnPtr key_column, const DataTypePtr & key_type)
+ColumnPtr getKeysHierarchyDefaultImplementation(
+    const IDictionary * dictionary,
+    ColumnPtr key_column,
+    const DataTypePtr & key_type,
+    size_t & valid_keys)
 {
+    valid_keys = 0;
+
     key_column = key_column->convertToFullColumnIfConst();
     const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*key_column);
     if (!key_column_typed)
@@ -104,6 +110,7 @@ ColumnPtr getKeysHierarchyDefaultImplementation(const IDictionary * dictionary, 
     {
         auto it = key_to_parent_key.find(key);
         std::optional<UInt64> result = (it != nullptr ? std::make_optional(it->getMapped()) : std::nullopt);
+        valid_keys += result.has_value();
         return result;
     };
 
@@ -117,8 +124,11 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     const IDictionary * dictionary,
     ColumnPtr key_column,
     ColumnPtr in_key_column,
-    const DataTypePtr & key_type)
+    const DataTypePtr & key_type,
+    size_t & valid_keys)
 {
+    valid_keys = 0;
+
     key_column = key_column->convertToFullColumnIfConst();
     in_key_column = in_key_column->convertToFullColumnIfConst();
 
@@ -143,6 +153,7 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     {
         auto it = key_to_parent_key.find(key);
         std::optional<UInt64> result = (it != nullptr ? std::make_optional(it->getMapped()) : std::nullopt);
+        valid_keys += result.has_value();
         return result;
     };
 
