@@ -670,7 +670,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
+            if (std::is_signed_v<T> && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(rhs);
 
             for (unsigned i = 0; i < item_count; ++i)
@@ -695,7 +695,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
+            if (std::is_signed_v<T> && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(lhs);
 
             for (unsigned i = 0; i < item_count; ++i)
@@ -1120,7 +1120,7 @@ template <size_t Bits, typename Signed>
 template <class T, class>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    static_assert(std::numeric_limits<T>::is_integer);
+    static_assert(std::is_integral_v<T>);
 
     /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
 
