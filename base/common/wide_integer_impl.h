@@ -1125,10 +1125,11 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
     /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
 
     using UnsignedT = std::make_unsigned_t<T>;
+    using UnsignedBaseType = std::make_unsigned_t<base_type>;
 
     UnsignedT res{};
     for (unsigned i = 0; i < _impl::item_count && i < (sizeof(T) + sizeof(base_type) - 1) / sizeof(base_type); ++i)
-        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i);
+        res += UnsignedT(UnsignedBaseType(items[i])) << (sizeof(base_type) * 8 * i);
 
     return res;
 }
