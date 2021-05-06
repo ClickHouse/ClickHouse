@@ -39,21 +39,21 @@ def start_current_row_without_order_by(self):
     """
     expected = convert_output("""
       empno | salary | sum
-    --------+--------+-------- 
-       1    |   5000 | 47100 
-       8    |   6000 | 47100 
-       2    |   3900 | 47100 
-      10    |   5200 | 47100 
-       3    |   4800 | 47100 
-       4    |   4800 | 47100 
-      11    |   5200 | 47100 
-       5    |   3500 | 47100 
-       7    |   4200 | 47100 
-       9    |   4500 | 47100 
+    --------+--------+--------
+       1    | 5000   | 47100
+       2    | 3900   | 47100
+       3    | 4800   | 47100
+       4    | 4800   | 47100
+       5    | 3500   | 47100
+       7    | 4200   | 47100
+       8    | 6000   | 47100
+       9    | 4500   | 47100
+       10   | 5200   | 47100
+       11   | 5200   | 47100
     """)
 
     execute_query(
-        "SELECT empno, salary, sum(salary) OVER (RANGE CURRENT ROW) AS sum FROM empsalary",
+        "SELECT * FROM (SELECT empno, salary, sum(salary) OVER (RANGE CURRENT ROW) AS sum FROM empsalary) ORDER BY empno",
         expected=expected
     )
 
@@ -68,21 +68,21 @@ def start_current_row_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-        8   | develop   |  6000  | 25100
-       10   | develop   |  5200  | 25100
-       11   | develop   |  5200  | 25100
-        7   | develop   |  4200  | 25100
-        9   | develop   |  4500  | 25100
-        2   | personnel |  3900  |  7400
-        5   | personnel |  3500  |  7400
-        1   | sales     |  5000  | 14600
-        3   | sales     |  4800  | 14600
-        4   | sales     |  4800  | 14600
+    --------+-----------+--------+---------
+       1    | sales     | 5000   | 14600
+       2    | personnel | 3900   | 7400
+       3    | sales     | 4800   | 14600
+       4    | sales     | 4800   | 14600
+       5    | personnel | 3500   | 7400
+       7    | develop   | 4200   | 25100
+       8    | develop   | 6000   | 25100
+       9    | develop   | 4500   | 25100
+       10   | develop   | 5200   | 25100
+       11   | develop   | 5200   | 25100
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY depname RANGE CURRENT ROW) AS sum FROM empsalary",
+        "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (ORDER BY depname RANGE CURRENT ROW) AS sum FROM empsalary) ORDER BY empno",
         expected=expected
     )
 
@@ -112,16 +112,16 @@ def start_unbounded_preceding_without_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          8 | develop   |  6000  | 25100
-         10 | develop   |  5200  | 25100
-         11 | develop   |  5200  | 25100
-          7 | develop   |  4200  | 25100
-          9 | develop   |  4500  | 25100
+    --------+-----------+--------+---------
+       7    | develop   |  4200  | 25100
+       8    | develop   |  6000  | 25100
+       9    | develop   |  4500  | 25100
+       10   | develop   |  5200  | 25100
+       11   | develop   |  5200  | 25100
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (RANGE UNBOUNDED PRECEDING) AS sum FROM empsalary WHERE depname = 'develop'",
+        "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (RANGE UNBOUNDED PRECEDING) AS sum FROM empsalary WHERE depname = 'develop') ORDER BY empno",
         expected=expected
     )
 
@@ -134,21 +134,21 @@ def start_unbounded_preceding_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          8 | develop   |  6000  | 25100
-         10 | develop   |  5200  | 25100
-         11 | develop   |  5200  | 25100
-          7 | develop   |  4200  | 25100
-          9 | develop   |  4500  | 25100
-          2 | personnel |  3900  | 32500
-          5 | personnel |  3500  | 32500
-          1 | sales     |  5000  | 47100
-          3 | sales     |  4800  | 47100
-          4 | sales     |  4800  | 47100
+    --------+-----------+--------+---------
+       1    | sales     | 5000   | 47100
+       2    | personnel | 3900   | 32500
+       3    | sales     | 4800   | 47100
+       4    | sales     | 4800   | 47100
+       5    | personnel | 3500   | 32500
+       7    | develop   | 4200   | 25100
+       8    | develop   | 6000   | 25100
+       9    | develop   | 4500   | 25100
+       10   | develop   | 5200   | 25100
+       11   | develop   | 5200   | 25100
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY depname RANGE UNBOUNDED PRECEDING) AS sum FROM empsalary",
+        "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (ORDER BY depname RANGE UNBOUNDED PRECEDING) AS sum FROM empsalary) ORDER BY empno",
         expected=expected
     )
 
@@ -185,21 +185,21 @@ def start_expr_preceding_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          5 | personnel |  3500  |  3500
-          2 | personnel |  3900  |  3900
-          7 | develop   |  4200  |  4200
-          9 | develop   |  4500  |  4500
-          3 | sales     |  4800  |  9600
-          4 | sales     |  4800  |  9600
-          1 | sales     |  5000  |  5000
-         10 | develop   |  5200  | 10400
-         11 | develop   |  5200  | 10400
-          8 | develop   |  6000  |  6000
+    --------+-----------+--------+---------
+        1   | sales     | 5000   | 5000
+        2   | personnel | 3900   | 3900
+        3   | sales     | 4800   | 9600
+        4   | sales     | 4800   | 9600
+        5   | personnel | 3500   | 3500
+        7   | develop   | 4200   | 4200
+        8   | develop   | 6000   | 6000
+        9   | develop   | 4500   | 4500
+        10  | develop   | 5200   | 10400
+        11  | develop   | 5200   | 10400
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE 1 PRECEDING) AS sum FROM empsalary",
+        "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE 1 PRECEDING) AS sum FROM empsalary) ORDER BY empno",
         expected=expected
     )
 
@@ -237,32 +237,32 @@ def between_current_row_and_current_row(self):
     with Example("without order by"):
         expected = convert_output("""
           empno | depname   | salary | sum
-        --------+-----------+--------+--------- 
-              8 | develop   |   6000 | 25100
-             10 | develop   |   5200 | 25100
-             11 | develop   |   5200 | 25100
-              7 | develop   |   4200 | 25100
-              9 | develop   |   4500 | 25100
+        --------+-----------+--------+---------
+           7    | develop   | 4200   | 25100
+           8    | develop   | 6000   | 25100
+           9    | develop   | 4500   | 25100
+           10   | develop   | 5200   | 25100
+           11   | develop   | 5200   | 25100
         """)
 
         execute_query(
-            "SELECT empno, depname, salary, sum(salary) OVER (RANGE BETWEEN CURRENT ROW AND CURRENT ROW) AS sum FROM empsalary WHERE depname = 'develop'",
+            "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (RANGE BETWEEN CURRENT ROW AND CURRENT ROW) AS sum FROM empsalary WHERE depname = 'develop') ORDER BY empno",
             expected=expected
         )
 
     with Example("with order by"):
         expected = convert_output("""
           empno | depname   | salary | sum
-        --------+-----------+--------+--------- 
-              7 | develop   |   4200 |  4200
-              9 | develop   |   4500 |  4500
-             10 | develop   |   5200 | 10400
-             11 | develop   |   5200 | 10400
-              8 | develop   |   6000 |  6000
+        --------+-----------+--------+------
+           7	| develop   |  4200  | 4200
+           8	| develop   |  6000  | 6000
+           9	| develop   |  4500  | 4500
+           10	| develop   |  5200  | 5200
+           11	| develop   |  5200  | 5200
         """)
 
         execute_query(
-            "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN CURRENT ROW AND CURRENT ROW) AS sum FROM empsalary WHERE depname = 'develop'",
+            "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY empno RANGE BETWEEN CURRENT ROW AND CURRENT ROW) AS sum FROM empsalary WHERE depname = 'develop'",
             expected=expected
         )
 
@@ -293,55 +293,55 @@ def between_current_row_and_unbounded_following(self):
     with Example("without order by"):
         expected = convert_output("""
           empno | depname   | salary | sum
-        --------+-----------+--------+--------- 
-              8 | develop   |   6000 | 25100 
-             10 | develop   |   5200 | 25100 
-             11 | develop   |   5200 | 25100 
-              7 | develop   |   4200 | 25100 
-              9 | develop   |   4500 | 25100 
+        --------+-----------+--------+---------
+            7   |  develop  | 4200   | 25100
+            8   |  develop  | 6000   | 25100
+            9   |  develop  | 4500   | 25100
+            10  |  develop  | 5200   | 25100
+            11  |  develop  | 5200   | 25100
         """)
 
         execute_query(
-            "SELECT empno, depname, salary, sum(salary) OVER (RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS sum FROM empsalary WHERE depname = 'develop'",
+            "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS sum FROM empsalary WHERE depname = 'develop') ORDER BY empno",
             expected=expected
         )
 
     with Example("with order by"):
         expected = convert_output("""
           empno | depname   | salary | sum
-        --------+-----------+--------+--------- 
-              7 | develop   |   4200 | 25100 
-              9 | develop   |   4500 | 20900 
-             10 | develop   |   5200 | 16400 
-             11 | develop   |   5200 | 16400 
-              8 | develop   |   6000 |  6000 
+        --------+-----------+--------+---------
+           7    | develop   | 4200   | 25100
+           8    | develop   | 6000   | 20900
+           9    | develop   | 4500   | 14900
+           10   | develop   | 5200   | 10400
+           11   | develop   | 5200   | 5200
         """)
 
         execute_query(
-            "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS sum FROM empsalary WHERE depname = 'develop'",
+            "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY empno RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS sum FROM empsalary WHERE depname = 'develop'",
             expected=expected
         )
 
     with Example("with order by from tenk1"):
         expected = convert_output("""
-         sum | unique1 | four 
+         sum | unique1 | four
         -----+---------+------
-          45 |       4 |    0
-          45 |       8 |    0
-          45 |       0 |    0
-          33 |       1 |    1
-          33 |       9 |    1
-          33 |       5 |    1
-          18 |       2 |    2
-          18 |       6 |    2
-          10 |       3 |    3
-          10 |       7 |    3
+          45 |    0    |  0
+          33 |    1    |  1
+          18 |    2    |  2
+          10 |    3    |  3
+          45 |    4    |  0
+          33 |    5    |  1
+          18 |    6    |  2
+          10 |    7    |  3
+          45 |    8    |  0
+          33 |    9    |  1
         """)
 
         execute_query(
-            "SELECT sum(unique1) over (order by four range between current row and unbounded following) AS sum,"
+            "SELECT * FROM (SELECT sum(unique1) over (order by four range between current row and unbounded following) AS sum,"
             "unique1, four "
-            "FROM tenk1 WHERE unique1 < 10",
+            "FROM tenk1 WHERE unique1 < 10) ORDER BY unique1",
             expected=expected
         )
 
@@ -366,21 +366,21 @@ def between_current_row_and_expr_following_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          5 | personnel |   3500 |  3500
-          2 | personnel |   3900 |  3900
-          7 | develop   |   4200 |  4200
-          9 | develop   |   4500 |  4500
-          3 | sales     |   4800 |  9600
-          4 | sales     |   4800 |  9600
-          1 | sales     |   5000 |  5000
-         10 | develop   |   5200 | 10400
-         11 | develop   |   5200 | 10400
-          8 | develop   |   6000 |  6000
+    --------+-----------+--------+---------
+       1    | sales     | 5000   | 8900
+       2    | personnel | 3900   | 8700
+       3    | sales     | 4800   | 9600
+       4    | sales     | 4800   | 8300
+       5    | personnel | 3500   | 3500
+       7    | develop   | 4200   | 10200
+       8    | develop   | 6000   | 10500
+       9    | develop   | 4500   | 9700
+       10   | develop   | 5200   | 10400
+       11   | develop   | 5200   | 5200
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING) AS sum FROM empsalary",
+        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY empno RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING) AS sum FROM empsalary",
         expected=expected
     )
 
@@ -410,7 +410,7 @@ def between_unbounded_preceding_and_current_row(self):
     """
     with Example("with order by"):
         expected = convert_output("""
-             four | ten | sum | last_value 
+             four | ten | sum | last_value
             ------+-----+-----+------------
                 0 |   0 |   0 |          0
                 0 |   2 |   2 |          2
@@ -445,16 +445,16 @@ def between_unbounded_preceding_and_current_row(self):
     with Example("without order by"):
         expected = convert_output("""
           empno | depname   | salary | sum
-        --------+-----------+--------+--------- 
-              8 | develop   |   6000 | 25100 
-             10 | develop   |   5200 | 25100 
-             11 | develop   |   5200 | 25100 
-              7 | develop   |   4200 | 25100 
-              9 | develop   |   4500 | 25100 
+        --------+-----------+--------+---------
+           7    |  develop  | 4200   | 25100
+           8    |  develop  | 6000   | 25100
+           9    |  develop  | 4500   | 25100
+           10   |  develop  | 5200   | 25100
+           11   |  develop  | 5200   | 25100
         """)
 
         execute_query(
-            "SELECT empno, depname, salary, sum(salary) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS sum FROM empsalary WHERE depname = 'develop'",
+            "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS sum FROM empsalary WHERE depname = 'develop') ORDER BY empno",
             expected=expected
         )
 
@@ -484,7 +484,7 @@ def between_unbounded_preceding_and_unbounded_following(self):
     """
     with Example("with order by"):
         expected = convert_output("""
-         four | ten | sum | last_value 
+         four | ten | sum | last_value
         ------+-----+-----+------------
             0 |   0 |  20 |          8
             0 |   2 |  20 |          8
@@ -519,21 +519,21 @@ def between_unbounded_preceding_and_unbounded_following(self):
     with Example("without order by"):
         expected = convert_output("""
           empno | depname   | salary | sum
-        --------+-----------+--------+--------- 
-              1 | sales     |   5000 | 47100
-              8 | develop   |   6000 | 47100
-              2 | personnel |   3900 | 47100
-             10 | develop   |   5200 | 47100
-              3 | sales     |   4800 | 47100
-              4 | sales     |   4800 | 47100
-             11 | develop   |   5200 | 47100
-              5 | personnel |   3500 | 47100
-              7 | develop   |   4200 | 47100
-              9 | develop   |   4500 | 47100
+        --------+-----------+--------+---------
+           1    | sales     |  5000  | 47100
+           2    | personnel |  3900  | 47100
+           3    | sales     |  4800  | 47100
+           4    | sales     |  4800  | 47100
+           5    | personnel |  3500  | 47100
+           7    | develop   |  4200  | 47100
+           8    | develop   |  6000  | 47100
+           9    | develop   |  4500  | 47100
+           10   | develop   |  5200  | 47100
+           11   | develop   |  5200  | 47100
         """)
 
         execute_query(
-            "SELECT empno, depname, salary, sum(salary) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary",
+            "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary) ORDER BY empno",
             expected=expected
         )
 
@@ -570,21 +570,21 @@ def between_unbounded_preceding_and_expr_following_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          5 | personnel |   3500 |  7400 
-          2 | personnel |   3900 | 11600 
-          7 | develop   |   4200 | 16100 
-          9 | develop   |   4500 | 30700 
-          3 | sales     |   4800 | 41100 
-          4 | sales     |   4800 | 41100 
-          1 | sales     |   5000 | 41100 
-         10 | develop   |   5200 | 41100 
-         11 | develop   |   5200 | 41100 
-          8 | develop   |   6000 | 47100 
+    --------+-----------+--------+---------
+      1     | sales     | 5000   | 41100
+      2     | personnel | 3900   | 11600
+      3     | sales     | 4800   | 41100
+      4     | sales     | 4800   | 41100
+      5     | personnel | 3500   | 7400
+      7     | develop   | 4200   | 16100
+      8     | develop   | 6000   | 47100
+      9     | develop   | 4500   | 30700
+      10    | develop   | 5200   | 41100
+      11    | develop   | 5200   | 41100
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN UNBOUNDED PRECEDING AND 500 FOLLOWING) AS sum FROM empsalary",
+        "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN UNBOUNDED PRECEDING AND 500 FOLLOWING) AS sum FROM empsalary) ORDER BY empno",
         expected=expected
     )
 
@@ -597,21 +597,21 @@ def between_unbounded_preceding_and_expr_preceding_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          5 | personnel |   3500 |     0 
-          2 | personnel |   3900 |     0 
-          7 | develop   |   4200 |  3500 
-          9 | develop   |   4500 |  7400 
-          3 | sales     |   4800 | 11600 
-          4 | sales     |   4800 | 11600 
-          1 | sales     |   5000 | 16100 
-         10 | develop   |   5200 | 16100 
-         11 | develop   |   5200 | 16100 
-          8 | develop   |   6000 | 41100 
+    --------+-----------+--------+---------
+      1     | sales     | 5000   | 16100
+      2     | personnel | 3900   | 0
+      3     | sales     | 4800   | 11600
+      4     | sales     | 4800   | 11600
+      5     | personnel | 3500   | 0
+      7     | develop   | 4200   | 3500
+      8     | develop   | 6000   | 41100
+      9     | develop   | 4500   | 7400
+      10    | develop   | 5200   | 16100
+      11    | develop   | 5200   | 16100
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN UNBOUNDED PRECEDING AND 500 PRECEDING) AS sum FROM empsalary",
+        "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN UNBOUNDED PRECEDING AND 500 PRECEDING) AS sum FROM empsalary) ORDER BY empno",
         expected=expected
     )
 
@@ -774,21 +774,21 @@ def between_expr_preceding_and_current_row_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          5 | personnel |   3500 |  3500 
-          2 | personnel |   3900 |  7400 
-          7 | develop   |   4200 |  8100 
-          9 | develop   |   4500 |  8700 
-          3 | sales     |   4800 | 14100 
-          4 | sales     |   4800 | 14100 
-          1 | sales     |   5000 | 19100 
-         10 | develop   |   5200 | 25000 
-         11 | develop   |   5200 | 25000 
-          8 | develop   |   6000 |  6000 
+    --------+-----------+--------+---------
+        1   | sales     |  5000  | 5000
+        2   | personnel |  3900  | 8900
+        3   | sales     |  4800  | 13700
+        4   | sales     |  4800  | 18500
+        5   | personnel |  3500  | 22000
+        7   | develop   |  4200  | 26200
+        8   | develop   |  6000  | 32200
+        9   | develop   |  4500  | 36700
+        10  | develop   |  5200  | 41900
+        11  | develop   |  5200  | 47100
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN 500 PRECEDING AND CURRENT ROW) AS sum FROM empsalary",
+        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY empno RANGE BETWEEN 500 PRECEDING AND CURRENT ROW) AS sum FROM empsalary",
         expected=expected
     )
 
@@ -801,21 +801,21 @@ def between_expr_preceding_and_unbounded_following_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          5 | personnel |   3500 | 47100 
-          2 | personnel |   3900 | 47100 
-          7 | develop   |   4200 | 43600 
-          9 | develop   |   4500 | 39700 
-          3 | sales     |   4800 | 35500 
-          4 | sales     |   4800 | 35500 
-          1 | sales     |   5000 | 35500 
-         10 | develop   |   5200 | 31000 
-         11 | develop   |   5200 | 31000 
-          8 | develop   |   6000 |  6000 
+    --------+-----------+--------+---------
+       1    | sales     | 5000   | 35500
+       2    | personnel | 3900   | 47100
+       3    | sales     | 4800   | 35500
+       4    | sales     | 4800   | 35500
+       5    | personnel | 3500   | 47100
+       7    | develop   | 4200   | 43600
+       8    | develop   | 6000   | 6000
+       9    | develop   | 4500   | 39700
+       10   | develop   | 5200   | 31000
+       11   | develop   | 5200   | 31000
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN 500 PRECEDING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary",
+        "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN 500 PRECEDING AND UNBOUNDED FOLLOWING) AS sum FROM empsalary) ORDER BY empno",
         expected=expected
     )
 
@@ -829,27 +829,27 @@ def between_expr_preceding_and_expr_following_with_order_by(self):
     with Example("empsalary"):
         expected = convert_output("""
           empno | depname   | salary | sum
-        --------+-----------+--------+--------- 
-              5 | personnel |   3500 |  7400 
-              2 | personnel |   3900 | 11600 
-              7 | develop   |   4200 | 12600 
-              9 | develop   |   4500 | 23300 
-              3 | sales     |   4800 | 29500 
-              4 | sales     |   4800 | 29500 
-              1 | sales     |   5000 | 29500 
-             10 | develop   |   5200 | 25000 
-             11 | develop   |   5200 | 25000 
-              8 | develop   |   6000 |  6000 
+        --------+-----------+--------+---------
+           1    | sales     | 5000   | 29500
+           2    | personnel | 3900   | 11600
+           3    | sales     | 4800   | 29500
+           4    | sales     | 4800   | 29500
+           5    | personnel | 3500   | 7400
+           7    | develop   | 4200   | 12600
+           8    | develop   | 6000   | 6000
+           9    | develop   | 4500   | 23300
+           10   | develop   | 5200   | 25000
+           11   | develop   | 5200   | 25000
         """)
 
         execute_query(
-            "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN 500 PRECEDING AND 500 FOLLOWING) AS sum FROM empsalary",
+            "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN 500 PRECEDING AND 500 FOLLOWING) AS sum FROM empsalary) ORDER BY empno",
             expected=expected
         )
 
     with Example("tenk1"):
         expected = convert_output("""
-             sum | unique1 | four 
+             sum | unique1 | four
             -----+---------+------
                4 |       0 |    0
               12 |       4 |    0
@@ -879,47 +879,47 @@ def between_expr_preceding_and_expr_preceding_with_order_by(self):
     """
     with Example("order by asc"):
         expected = convert_output("""
-         sum | unique1 | four 
+         sum | unique1 | four
         -----+---------+------
-           0 |       4 |    0
-           0 |       8 |    0
-           0 |       0 |    0
-          12 |       1 |    1
-          12 |       9 |    1
-          12 |       5 |    1
-          27 |       2 |    2
-          27 |       6 |    2
-          23 |       3 |    3
-          23 |       7 |    3
+          0  |   0     |  0
+          0  |   4     |  0
+          0  |   8     |  0
+          12 |   1     |  1
+          12 |   5     |  1
+          12 |   9     |  1
+          27 |   2     |  2
+          27 |   6     |  2
+          23 |   3     |  3
+          23 |   7     |  3
         """)
 
         execute_query(
-            "SELECT sum(unique1) over (order by four range between 2 preceding and 1 preceding) AS sum, "
+            "SELECT * FROM (SELECT sum(unique1) over (order by four range between 2 preceding and 1 preceding) AS sum, "
                 "unique1, four "
-            "FROM tenk1 WHERE unique1 < 10",
+            "FROM tenk1 WHERE unique1 < 10) ORDER BY four, unique1",
             expected=expected
         )
 
     with Example("order by desc"):
         expected = convert_output("""
-         sum | unique1 | four 
+         sum | unique1 | four
         -----+---------+------
-           0 |       3 |    3
-           0 |       7 |    3
-          10 |       2 |    2
-          10 |       6 |    2
-          18 |       1 |    1
-          18 |       9 |    1
-          18 |       5 |    1
-          23 |       4 |    0
-          23 |       8 |    0
-          23 |       0 |    0
+          23 |   0     |  0
+          23 |   4     |  0
+          23 |   8     |  0
+          18 |   1     |  1
+          18 |   5     |  1
+          18 |   9     |  1
+          10 |   2     |  2
+          10 |   6     |  2
+          0  |   3     |  3
+          0  |   7     |  3
         """)
 
         execute_query(
-            "SELECT sum(unique1) over (order by four desc range between 2 preceding and 1 preceding) AS sum, "
+            "SELECT * FROM (SELECT sum(unique1) over (order by four desc range between 2 preceding and 1 preceding) AS sum, "
             "unique1, four "
-            "FROM tenk1 WHERE unique1 < 10",
+            "FROM tenk1 WHERE unique1 < 10) ORDER BY four, unique1",
             expected=expected
         )
 
@@ -1056,7 +1056,7 @@ def between_expr_following_and_current_row_zero_special_case(self):
     with When("I use it with order by"):
         expected = convert_output("""
           number |  sum
-        ---------+------  
+        ---------+------
                1 |   2
                1 |   2
                2 |   2
@@ -1070,7 +1070,7 @@ def between_expr_following_and_current_row_zero_special_case(self):
     with And("I use it without order by"):
         expected = convert_output("""
           number |  sum
-        ---------+------  
+        ---------+------
                1 |   7
                1 |   7
                2 |   7
@@ -1091,7 +1091,7 @@ def between_expr_following_and_unbounded_following_with_order_by(self):
     """
     expected = convert_output("""
           number |  sum
-        ---------+------  
+        ---------+------
                1 |   5
                1 |   5
                2 |   3
@@ -1114,7 +1114,7 @@ def between_expr_following_and_expr_preceding_with_order_by_zero_special_case(se
     """
     expected = convert_output("""
       number |  sum
-    ---------+------  
+    ---------+------
            1 |   2
            1 |   2
            2 |   2
@@ -1135,21 +1135,21 @@ def between_expr_following_and_expr_following_with_order_by(self):
     """
     expected = convert_output("""
       empno | depname   | salary | sum
-    --------+-----------+--------+--------- 
-          5 | personnel |   3500 |  8700
-          2 | personnel |   3900 | 14100
-          7 | develop   |   4200 | 25000
-          9 | develop   |   4500 | 15400
-          3 | sales     |   4800 |     0
-          4 | sales     |   4800 |     0
-          1 | sales     |   5000 |  6000
-         10 | develop   |   5200 |  6000
-         11 | develop   |   5200 |  6000
-          8 | develop   |   6000 |     0
+    --------+-----------+--------+---------
+      1     | sales     | 5000   | 6000
+      2     | personnel | 3900   | 14100
+      3     | sales     | 4800   | 0
+      4     | sales     | 4800   | 0
+      5     | personnel | 3500   | 8700
+      7     | develop   | 4200   | 25000
+      8     | develop   | 6000   | 0
+      9     | develop   | 4500   | 15400
+      10    | develop   | 5200   | 6000
+      11    | develop   | 5200   | 6000
     """)
 
     execute_query(
-        "SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN 500 FOLLOWING AND 1000 FOLLOWING) AS sum FROM empsalary",
+        "SELECT * FROM (SELECT empno, depname, salary, sum(salary) OVER (ORDER BY salary RANGE BETWEEN 500 FOLLOWING AND 1000 FOLLOWING) AS sum FROM empsalary) ORDER BY empno",
         expected=expected
     )
 
@@ -1159,7 +1159,7 @@ def between_unbounded_preceding_and_current_row_with_expressions_in_order_by_and
     expression used in the order by clause and aggregate functions.
     """
     expected = convert_output("""
-     four | two | sum | last_value 
+     four | two | sum | last_value
     ------+-----+-----+------------
         0 |   0 |   0 |          0
         0 |   0 |   0 |          0
@@ -1197,7 +1197,7 @@ def between_current_row_and_unbounded_following_modifying_named_window(self):
     modifying named window.
     """
     expected = convert_output("""
-     sum | unique1 | four 
+     sum | unique1 | four
     -----+---------+------
       45 |       0 |    0
       45 |       8 |    0
@@ -1212,9 +1212,9 @@ def between_current_row_and_unbounded_following_modifying_named_window(self):
     """)
 
     execute_query(
-        "SELECT sum(unique1) over (w range between current row and unbounded following) AS sum,"
+        "SELECT * FROM (SELECT sum(unique1) over (w range between current row and unbounded following) AS sum,"
         "unique1, four "
-        "FROM tenk1 WHERE unique1 < 10 WINDOW w AS (order by four)",
+        "FROM tenk1 WHERE unique1 < 10 WINDOW w AS (order by four)) ORDER BY unique1",
         expected=expected
     )
 
@@ -1223,25 +1223,25 @@ def between_current_row_and_unbounded_following_in_named_window(self):
     """Check range between current row and unbounded following in named window.
     """
     expected = convert_output("""
-     first_value | last_value | unique1 | four 
+     first_value | last_value | unique1 | four
     -------------+------------+---------+------
-               4 |          7 |       4 |    0
-               4 |          7 |       8 |    0
-               4 |          7 |       0 |    0
-               1 |          7 |       1 |    1
-               1 |          7 |       9 |    1
-               1 |          7 |       5 |    1
-               2 |          7 |       2 |    2
-               2 |          7 |       6 |    2
-               3 |          7 |       3 |    3
-               3 |          7 |       7 |    3
+          0      |      9     |    0    |  0
+          1      |      9     |    1    |  1
+          2      |      9     |    2    |  2
+          3      |      9     |    3    |  3
+          4      |      9     |    4    |  0
+          5      |      9     |    5    |  1
+          6      |      9     |    6    |  2
+          7      |      9     |    7    |  3
+          8      |      9     |    8    |  0
+          9      |      9     |    9    |  1
     """)
 
     execute_query(
         "SELECT first_value(unique1) over w AS first_value, "
         "last_value(unique1) over w AS last_value, unique1, four "
         "FROM tenk1 WHERE unique1 < 10 "
-        "WINDOW w AS (order by four range between current row and unbounded following)",
+        "WINDOW w AS (order by unique1 range between current row and unbounded following)",
         expected=expected
     )
 
@@ -1251,10 +1251,10 @@ def between_expr_preceding_and_expr_following_with_partition_by_two_columns(self
     by two int value columns.
     """
     expected = convert_output("""
-     f1 | sum 
+     f1 | sum
     ----+-----
-      1 |   0 
-      2 |   0 
+      1 |   0
+      2 |   0
     """)
 
     execute_query(
@@ -1272,17 +1272,17 @@ def between_expr_preceding_and_expr_following_with_partition_by_same_column_twic
     by the same column twice.
     """
     expected = convert_output("""
-     f1 | sum 
+     f1 | sum
     ----+-----
-      1 |   0 
-      2 |   0 
+      1 |   0
+      2 |   0
     """)
 
     execute_query(
         """
-        select f1, sum(f1) over (partition by f1, f1 order by f2
+        select * from (select f1, sum(f1) over (partition by f1, f1 order by f2
                                  range between 2 preceding and 1 preceding) AS sum
-        from t1 where f1 = f2
+        from t1 where f1 = f2) order by f1, sum
         """,
         expected=expected
     )
@@ -1293,7 +1293,7 @@ def between_expr_preceding_and_expr_following_with_partition_and_order_by(self):
     with partition by and order by clauses.
     """
     expected = convert_output("""
-     f1 | sum 
+     f1 | sum
     ----+-----
       1 |   1
       2 |   2
@@ -1313,7 +1313,7 @@ def order_by_decimal(self):
     """Check using range with order by decimal column.
     """
     expected = convert_output("""
-     id | f_numeric | first_value | last_value 
+     id | f_numeric | first_value | last_value
     ----+-----------+-------------+------------
       0 |     -1000 |           0 |          0
       1 |        -3 |           1 |          1
@@ -1342,7 +1342,7 @@ def order_by_float(self):
     """Check using range with order by float column.
     """
     expected = convert_output("""
-     id | f_float4  | first_value | last_value 
+     id | f_float4  | first_value | last_value
     ----+-----------+-------------+------------
       0 |      -inf |           0 |          0
       1 |        -3 |           1 |          1
@@ -1371,7 +1371,7 @@ def with_nulls(self):
     """Check using range frame over window with nulls.
     """
     expected = convert_output("""
-     x | y  | first_value | last_value 
+     x | y  | first_value | last_value
     ---+----+-------------+------------
    \\N | 42 |          42 |         43
    \\N | 43 |          42 |         43

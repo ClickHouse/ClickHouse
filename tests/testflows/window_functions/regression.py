@@ -56,10 +56,10 @@ xfails = {
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
     "tests/distributed/over clause/adhoc window":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
-    "tests/distributed/frame clause/range frame/:":
-        [(Fail, "need to investigate")],
     "tests/distributed/frame clause/range datetime/:":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/distributed/frame clause/range frame/between expr preceding and expr following with partition by same column twice":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")]
 }
 
 xflags = {
