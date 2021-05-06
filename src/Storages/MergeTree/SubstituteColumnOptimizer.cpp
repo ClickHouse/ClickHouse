@@ -144,11 +144,12 @@ public:
         const auto * identifier = ast->as<ASTIdentifier>();
         if (identifier && data.name_to_component_id.contains(identifier->name()))
         {
-            const auto & name = identifier->name();
+            const String & name = identifier->name();
             const auto component_id = data.name_to_component_id.at(name);
-            ast = data.id_to_expression_map.at(component_id)->clone();
+            auto new_ast = data.id_to_expression_map.at(component_id)->clone();
             if (data.is_select)
-                ast->setAlias(data.old_name.at(name));
+                new_ast->setAlias(data.old_name.at(name));
+            ast = new_ast;
         }
     }
 
