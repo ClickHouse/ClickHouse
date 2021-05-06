@@ -179,6 +179,12 @@ struct Decimal
     const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
     const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
 
+    template <typename U> const Decimal<T> & operator += (const Decimal<U> & x) { value += x.value; return *this; }
+    template <typename U> const Decimal<T> & operator -= (const Decimal<U> & x) { value -= x.value; return *this; }
+    template <typename U> const Decimal<T> & operator *= (const Decimal<U> & x) { value *= x.value; return *this; }
+    template <typename U> const Decimal<T> & operator /= (const Decimal<U> & x) { value /= x.value; return *this; }
+    template <typename U> const Decimal<T> & operator %= (const Decimal<U> & x) { value %= x.value; return *this; }
+
     /// This is to avoid UB for sumWithOverflow()
     void NO_SANITIZE_UNDEFINED addOverflow(const T & x) { value += x; }
 
