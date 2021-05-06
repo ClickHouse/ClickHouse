@@ -41,14 +41,14 @@
                 </replica>
             </shard>
         </shard_with_local_replica_internal_replication>
-	<shard_with_low_cardinality>
+        <shard_with_low_cardinality>
             <shard>
                 <replica>
                     <host>shard1</host>
                     <port>9000</port>
                 </replica>
-	    </shard>
-	    <shard>
+            </shard>
+            <shard>
                 <replica>
                     <host>shard2</host>
                     <port>9000</port>

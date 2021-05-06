@@ -475,7 +475,7 @@ void TCPHandler::runImpl()
 }
 
 
-bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_timeout)
+bool TCPHandler::readDataNext(size_t poll_interval, time_t receive_timeout)
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
@@ -493,8 +493,8 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
          *  If we periodically poll, the receive_timeout of the socket itself does not work.
          *  Therefore, an additional check is added.
          */
-        double elapsed = watch.elapsedSeconds();
-        if (elapsed > receive_timeout)
+        Float64 elapsed = watch.elapsedSeconds();
+        if (elapsed > static_cast<Float64>(receive_timeout))
         {
             throw Exception(ErrorCodes::SOCKET_TIMEOUT,
                             "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
@@ -535,10 +535,7 @@ std::tuple<size_t, int> TCPHandler::getReadTimeouts(const Settings & connection_
 
 void TCPHandler::readData(const Settings & connection_settings)
 {
-    size_t poll_interval;
-    int receive_timeout;
-
-    std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
+    auto [poll_interval, receive_timeout] = getReadTimeouts(connection_settings);
     sendLogs();
 
     while (readDataNext(poll_interval, receive_timeout))
