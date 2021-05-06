@@ -2206,7 +2206,7 @@ private:
             progress_bar.clearProgress();
 
         block_out_stream->write(block);
-        written_first_block = true;
+        progress_bar.setWrittenFirstBlock(true);
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
