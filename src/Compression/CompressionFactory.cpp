@@ -44,7 +44,24 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     }
 }
 
-void CompressionCodecFactory::validateCodec(const String & family_name, std::optional<int> level, bool sanity_check) const
+CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level, std::optional<std::string> param) const
+{
+    if (level && param)
+    {
+        auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        auto param_literal = std::make_shared<ASTLiteral>(static_cast<std::string>(*param));
+        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal, param_literal)), {});
+    }
+    else if (param)
+    {
+        auto param_literal = std::make_shared<ASTLiteral>(static_cast<std::string>(*param));
+        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), param_literal)), {});
+    } else {
+        return get(family_name, level);
+    }
+}
+
+void CompressionCodecFactory::validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (family_name.empty())
         throw Exception("Compression codec name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -52,16 +69,16 @@ void CompressionCodecFactory::validateCodec(const String & family_name, std::opt
     if (level)
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, sanity_check);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
         auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, sanity_check);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, sanity_check, allow_experimental_codecs);
     }
 }
 
-ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const IDataType * column_type, bool sanity_check) const
+ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const IDataType * column_type, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -90,6 +107,16 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
+            if (sanity_check && !allow_experimental_codecs) {
+                if (codec_family_name == "Lizard" || 
+                    codec_family_name == "Density" ||
+                    codec_family_name == "LZSSE2" ||
+                    codec_family_name == "LZSSE4" ||
+                    codec_family_name == "LZSSE8") {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Experimental codecs Lizard, Density and LZSSE* are not allowed, please enable allow_experimental_codecs flag.");
+                }
+            }
             /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
             CompressionCodecPtr result_codec;
@@ -172,6 +199,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
         }
+
         /// For columns with nested types like Tuple(UInt32, UInt64) we
         /// obviously cannot substitute parameters for codecs which depend on
         /// data type, because for the first column Delta(4) is suitable and
@@ -318,6 +346,11 @@ void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
+void registerCodecLizard(CompressionCodecFactory & factory);
+void registerCodecDensity(CompressionCodecFactory & factory);
+void registerCodecLZSSE2(CompressionCodecFactory & factory);
+void registerCodecLZSSE4(CompressionCodecFactory & factory);
+void registerCodecLZSSE8(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -330,6 +363,11 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
     registerCodecMultiple(*this);
+    registerCodecLizard(*this);
+    registerCodecDensity(*this);
+    registerCodecLZSSE2(*this);
+    registerCodecLZSSE4(*this);
+    registerCodecLZSSE8(*this);
 
     default_codec = get("LZ4", {});
 }
