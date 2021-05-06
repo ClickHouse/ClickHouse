@@ -85,7 +85,6 @@ std::string CompileDAG::dump() const
     std::vector<std::string> dumped_values;
     dumped_values.resize(nodes.size());
 
-    size_t input_index = 0;
     size_t dag_size = nodes.size();
     for (size_t i = 0; i < dag_size; ++i)
     {
@@ -107,7 +106,10 @@ std::string CompileDAG::dump() const
                 function_dump += '(';
 
                 for (auto argument_index : node.arguments)
-                    function_dump += dumped_values[argument_index] += ", ";
+                {
+                    function_dump += dumped_values[argument_index];
+                    function_dump += ", ";
+                }
 
                 if (!node.arguments.empty())
                 {
@@ -117,13 +119,12 @@ std::string CompileDAG::dump() const
 
                 function_dump += ')';
 
-                dumped_values[i] = function_dump;
+                dumped_values[i] = std::move(function_dump);
                 break;
             }
             case CompileType::INPUT:
             {
                 dumped_values[i] = node.result_type->getName();
-                ++input_index;
                 break;
             }
         }
