@@ -1,0 +1,21 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "density", "density.vcxproj", "{65C51F09-D1A4-9EA4-DABC-297B461B0506}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "benchmark", "benchmark.vcxproj", "{7000C5C1-DC6A-7938-25A9-2ADE9152578D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{65C51F09-D1A4-9EA4-DABC-297B461B0506}.Release|x64.ActiveCfg = Release|x64
+		{65C51F09-D1A4-9EA4-DABC-297B461B0506}.Release|x64.Build.0 = Release|x64
+		{7000C5C1-DC6A-7938-25A9-2ADE9152578D}.Release|x64.ActiveCfg = Release|x64
+		{7000C5C1-DC6A-7938-25A9-2ADE9152578D}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

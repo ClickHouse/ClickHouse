@@ -1,0 +1,13 @@
+
+# test build artefacts
+datagen
+frametest
+frametest32
+fullbench
+fullbench32
+fuzzer
+fuzzer32
+fasttest
+
+# test artefacts
+tmp*

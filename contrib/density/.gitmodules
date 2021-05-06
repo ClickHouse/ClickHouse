@@ -1,0 +1,6 @@
+[submodule "benchmark/libs/cputime"]
+	path = benchmark/libs/cputime
+	url = https://github.com/k0dai/cputime.git
+[submodule "benchmark/libs/spookyhash"]
+	path = benchmark/libs/spookyhash
+	url = https://github.com/k0dai/spookyhash.git

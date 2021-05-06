@@ -1,0 +1,272 @@
+language: c
+matrix:
+  fast_finish: true
+  include:
+    - os: osx
+      env:
+        - C_COMPILER=clang
+
+    - os: osx
+      env:
+        - C_COMPILER=gcc
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          packages:
+            - qemu-system-arm
+            - qemu-user-static
+            - gcc-aarch64-linux-gnu
+            - g++-aarch64-linux-gnu
+      env:
+        - C_COMPILER=aarch64-linux-gnu-gcc MAKE_OPTIONS="AR=gcc-ar NATIVE=off" QEMU_INTERPRETER=qemu-aarch64-static PRE_SCRIPT="export QEMU_LD_PREFIX=/usr/aarch64-linux-gnu/"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          packages:
+            - qemu-system-arm
+            - qemu-user-static
+            - gcc-arm-linux-gnueabi
+            - g++-arm-linux-gnueabi
+      env:
+        - C_COMPILER=arm-linux-gnueabi-gcc MAKE_OPTIONS="AR=gcc-ar NATIVE=off" QEMU_INTERPRETER=qemu-arm-static PRE_SCRIPT="export QEMU_LD_PREFIX=/usr/arm-linux-gnueabi/"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          packages:
+            - qemu-system-ppc
+            - qemu-user-static
+            - gcc-powerpc-linux-gnu
+            - g++-powerpc-linux-gnu
+      env:
+        - C_COMPILER=powerpc-linux-gnu-gcc MAKE_OPTIONS="AR=gcc-ar ARCH=64" QEMU_INTERPRETER="qemu-ppc64-static" PRE_SCRIPT="export QEMU_LD_PREFIX=/usr/powerpc-linux-gnu/"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          packages:
+            - qemu-system-ppc
+            - qemu-user-static
+            - gcc-powerpc-linux-gnu
+            - g++-powerpc-linux-gnu
+      env:
+        - C_COMPILER=powerpc-linux-gnu-gcc MAKE_OPTIONS="AR=gcc-ar NATIVE=off" QEMU_INTERPRETER="qemu-ppc-static" PRE_SCRIPT="export QEMU_LD_PREFIX=/usr/powerpc-linux-gnu/"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-4.8
+      env:
+        - C_COMPILER=gcc-4.8 MAKE_OPTIONS="AR=gcc-ar"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-4.8
+            - gcc-4.8-multilib
+      env:
+        - C_COMPILER=gcc-4.8 MAKE_OPTIONS="AR=gcc-ar ARCH=32"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-4.9
+      env:
+        - C_COMPILER=gcc-4.9 MAKE_OPTIONS="AR=gcc-ar"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-4.9
+            - gcc-4.9-multilib
+      env:
+        - C_COMPILER=gcc-4.9 MAKE_OPTIONS="AR=gcc-ar ARCH=32"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-5
+      env:
+        - C_COMPILER=gcc-5 MAKE_OPTIONS="AR=gcc-ar-5"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-5
+            - gcc-5-multilib
+      env:
+        - C_COMPILER=gcc-5 MAKE_OPTIONS="AR=gcc-ar-5 ARCH=32"
+
+#    - dist: trusty
+#      sudo: required
+#      addons:
+#        apt:
+#          sources:
+#            - ubuntu-toolchain-r-test
+#          packages:
+#            - gcc-6
+#      env:
+#        - C_COMPILER=gcc-6 MAKE_OPTIONS="AR=gcc-ar-6"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-6
+            - gcc-6-multilib
+      env:
+        - C_COMPILER=gcc-6 MAKE_OPTIONS="AR=gcc-ar-6 ARCH=32"
+
+#    - dist: trusty
+#      sudo: required
+#      addons:
+#        apt:
+#          sources:
+#            - ubuntu-toolchain-r-test
+#          packages:
+#            - gcc-7
+#      env:
+#        - C_COMPILER=gcc-7 MAKE_OPTIONS="AR=gcc-ar-7"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-7
+            - gcc-7-multilib
+      env:
+        - C_COMPILER=gcc-7 MAKE_OPTIONS="AR=gcc-ar-7 ARCH=32"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-3.5
+          packages:
+            - clang-3.5
+            - llvm-3.5-dev
+      env:
+        - C_COMPILER=clang-3.5 MAKE_OPTIONS="AR=llvm-ar-3.5" PRE_SCRIPT="sudo ln -sf ld.gold /usr/bin/ld"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-3.6
+          packages:
+            - clang-3.6
+            - llvm-3.6-dev
+      env:
+        - C_COMPILER=clang-3.6 MAKE_OPTIONS="AR=llvm-ar-3.6" PRE_SCRIPT="sudo ln -sf ld.gold /usr/bin/ld"
+
+#    - dist: precise
+#      sudo: required
+#      addons:
+#        apt:
+#          sources:
+#            - ubuntu-toolchain-r-test
+#            - llvm-toolchain-precise-3.7
+#          packages:
+#            - clang-3.7
+#            - llvm-3.7-dev
+#      env:
+#        - C_COMPILER=clang-3.7 MAKE_OPTIONS="AR=llvm-ar-3.7" PRE_SCRIPT="sudo ln -sf ld.gold /usr/bin/ld"
+
+#    - dist: precise
+#      sudo: required
+#      addons:
+#        apt:
+#          sources:
+#            - ubuntu-toolchain-r-test
+#            - llvm-toolchain-precise-3.8
+#          packages:
+#            - clang-3.8
+#            - llvm-3.8-dev
+#      env:
+#        - C_COMPILER=clang-3.8 MAKE_OPTIONS="AR=llvm-ar-3.8" PRE_SCRIPT="sudo ln -sf ld.gold /usr/bin/ld"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-3.9
+          packages:
+            - clang-3.9
+            - llvm-3.9-dev
+      env:
+        - C_COMPILER=clang-3.9 MAKE_OPTIONS="AR=llvm-ar-3.9" PRE_SCRIPT="sudo ln -sf ld.gold /usr/bin/ld"
+
+    - dist: trusty
+      sudo: required
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-4.0
+          packages:
+            - clang-4.0
+            - llvm-4.0-dev
+      env:
+        - C_COMPILER=clang-4.0 MAKE_OPTIONS="AR=llvm-ar-4.0" PRE_SCRIPT="sudo ln -sf ld.gold /usr/bin/ld"
+
+#    - dist: trusty
+#      sudo: required
+#      addons:
+#        apt:
+#          sources:
+#            - ubuntu-toolchain-r-test
+#            - llvm-toolchain-trusty-5.0
+#          packages:
+#            - clang-5.0
+#            - llvm-5.0-dev
+#      env:
+#        - C_COMPILER=clang-5.0 MAKE_OPTIONS="AR=llvm-ar-5.0" PRE_SCRIPT="sudo ln -sf ld.gold /usr/bin/ld"
+
+script:
+  - ${PRE_SCRIPT}
+  - $C_COMPILER -v
+  - make CC=$C_COMPILER $MAKE_OPTIONS
+  - file ./build/*
+  - $QEMU_INTERPRETER ./build/benchmark -h -f

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="libs">
+      <UniqueIdentifier>{2F149A7C-1B4B-9B0D-C437-8110B04D170F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="libs\cputime">
+      <UniqueIdentifier>{95C9EAC4-812C-7A69-2AB2-B21F16F445EC}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="libs\cputime\src">
+      <UniqueIdentifier>{2C4ACB69-1843-EABB-4175-CF402DCDC9C7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="libs\spookyhash">
+      <UniqueIdentifier>{C78AF53E-3316-6303-3C27-E6F7A831BF03}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="libs\spookyhash\src">
+      <UniqueIdentifier>{5E54D780-CAB5-B48E-5323-FB40BF83EB4D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{2DAB880B-99B4-887C-2230-9F7C8E38947C}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\benchmark\libs\cputime\src\chronometer.h">
+      <Filter>libs\cputime\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\benchmark\libs\cputime\src\cputime_api.h">
+      <Filter>libs\cputime\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\benchmark\libs\spookyhash\src\context.h">
+      <Filter>libs\spookyhash\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\benchmark\libs\spookyhash\src\globals.h">
+      <Filter>libs\spookyhash\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\benchmark\libs\spookyhash\src\spookyhash.h">
+      <Filter>libs\spookyhash\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\benchmark\libs\spookyhash\src\spookyhash_api.h">
+      <Filter>libs\spookyhash\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\benchmark\src\benchmark.h">
+      <Filter>src</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\benchmark\libs\cputime\src\chronometer.c">
+      <Filter>libs\cputime\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\benchmark\libs\spookyhash\src\context.c">
+      <Filter>libs\spookyhash\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\benchmark\libs\spookyhash\src\globals.c">
+      <Filter>libs\spookyhash\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\benchmark\libs\spookyhash\src\spookyhash.c">
+      <Filter>libs\spookyhash\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\benchmark\src\benchmark.c">
+      <Filter>src</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

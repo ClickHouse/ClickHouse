@@ -1,0 +1,143 @@
+version: 1.0.{build}
+environment:
+  matrix:
+  - COMPILER: "visual"
+    CONFIGURATION: "Debug"
+    PLATFORM: "x64"
+  - COMPILER: "visual"
+    CONFIGURATION: "Debug"
+    PLATFORM: "Win32"
+  - COMPILER: "visual"
+    CONFIGURATION: "Release"
+    PLATFORM: "x64"
+  - COMPILER: "visual"
+    CONFIGURATION: "Release"
+    PLATFORM: "Win32"
+  - COMPILER: "gcc"
+    PLATFORM: "mingw64"
+  - COMPILER: "gcc"
+    PLATFORM: "mingw32"
+  - COMPILER: "gcc"
+    PLATFORM: "clang"
+
+install:
+  - ECHO Installing %COMPILER% %PLATFORM% %CONFIGURATION%
+  - MKDIR bin
+  - if [%COMPILER%]==[gcc] SET PATH_ORIGINAL=%PATH%
+  - if [%COMPILER%]==[gcc] (
+      SET "PATH_MINGW32=c:\MinGW\bin;c:\MinGW\usr\bin" &&
+      SET "PATH_MINGW64=c:\msys64\mingw64\bin;c:\msys64\usr\bin" &&
+      COPY C:\MinGW\bin\mingw32-make.exe C:\MinGW\bin\make.exe &&
+      COPY C:\MinGW\bin\gcc.exe C:\MinGW\bin\cc.exe
+    ) else (
+      IF [%PLATFORM%]==[x64] (SET ADDITIONALPARAM=/p:LibraryPath="C:\Program Files\Microsoft SDKs\Windows\v7.1\lib\x64;c:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\lib\amd64;C:\Program Files (x86)\Microsoft Visual Studio 10.0\;C:\Program Files (x86)\Microsoft Visual Studio 10.0\lib\amd64;")
+    )
+
+build_script:
+  - if [%PLATFORM%]==[mingw32] SET PATH=%PATH_MINGW32%;%PATH_ORIGINAL%
+  - if [%PLATFORM%]==[mingw64] SET PATH=%PATH_MINGW64%;%PATH_ORIGINAL%
+  - if [%PLATFORM%]==[clang] SET PATH=%PATH_MINGW64%;%PATH_ORIGINAL%
+  - ECHO *** &&
+      ECHO Building %COMPILER% %PLATFORM% %CONFIGURATION% &&
+      ECHO ***
+  - if [%PLATFORM%]==[clang] (clang -v)
+  - if [%COMPILER%]==[gcc] (gcc -v)
+  - if [%COMPILER%]==[gcc] (
+      echo ----- &&
+      make -v &&
+      echo ----- &&
+      if not [%PLATFORM%]==[clang] (
+        make -C programs lizard && make -C tests fullbench && make -C lib lib
+      ) ELSE (
+        make -C programs lizard CC=clang MOREFLAGS="--target=x86_64-w64-mingw32 -Werror -Wconversion -Wno-sign-conversion" &&
+        make -C tests fullbench CC=clang MOREFLAGS="--target=x86_64-w64-mingw32 -Werror -Wconversion -Wno-sign-conversion" &&
+        make -C lib lib CC=clang MOREFLAGS="--target=x86_64-w64-mingw32 -Werror -Wconversion -Wno-sign-conversion"
+      )
+    )
+  - if [%COMPILER%]==[gccX] if not [%PLATFORM%]==[clang] (
+      MKDIR bin\dll bin\static bin\example bin\include &&
+      COPY tests\fullbench.c bin\example\ &&
+      COPY lib\xxhash.c bin\example\ &&
+      COPY lib\xxhash.h bin\example\ &&
+      COPY lib\lizard.h bin\include\ &&
+      COPY lib\lizardhc.h bin\include\ &&
+      COPY lib\lizard_frame.h bin\include\ &&
+      COPY lib\liblizard.a bin\static\liblizard_static.lib &&
+      COPY lib\dll\liblizard.* bin\dll\ &&
+      COPY lib\dll\example\Makefile bin\example\ &&
+      COPY lib\dll\example\fullbench-dll.* bin\example\ &&
+      COPY lib\dll\example\README.md bin\ &&
+      COPY programs\lizard.exe bin\lizard.exe
+    )
+  - if [%COMPILER%]==[gccX] if [%PLATFORM%]==[mingw64] (
+      7z.exe a bin\lizard_x64.zip NEWS .\bin\lizard.exe .\bin\README.md .\bin\example .\bin\dll .\bin\static .\bin\include &&
+      appveyor PushArtifact bin\lizard_x64.zip
+    )
+  - if [%COMPILER%]==[gccX] if [%PLATFORM%]==[mingw32] (
+      7z.exe a bin\lizard_x86.zip NEWS .\bin\lizard.exe .\bin\README.md .\bin\example .\bin\dll .\bin\static .\bin\include &&
+      appveyor PushArtifact bin\lizard_x86.zip
+    )
+  - if [%COMPILER%]==[gcc] (COPY tests\fullbench.exe programs\)
+  - if [%COMPILER%]==[visual] (
+      ECHO *** &&
+      ECHO *** Building Visual Studio 2010 %PLATFORM%\%CONFIGURATION% &&
+      ECHO *** &&
+      msbuild "visual\VS2010\lizard.sln" %ADDITIONALPARAM% /m /verbosity:minimal /property:PlatformToolset=v100 /t:Clean,Build /p:Platform=%PLATFORM% /p:Configuration=%CONFIGURATION% /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll" &&
+      ECHO *** &&
+      ECHO *** Building Visual Studio 2012 %PLATFORM%\%CONFIGURATION% &&
+      ECHO *** &&
+      msbuild "visual\VS2010\lizard.sln" /m /verbosity:minimal /property:PlatformToolset=v110 /t:Clean,Build /p:Platform=%PLATFORM% /p:Configuration=%CONFIGURATION% /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll" &&
+      ECHO *** &&
+      ECHO *** Building Visual Studio 2013 %PLATFORM%\%CONFIGURATION% &&
+      ECHO *** &&
+      msbuild "visual\VS2010\lizard.sln" /m /verbosity:minimal /property:PlatformToolset=v120 /t:Clean,Build /p:Platform=%PLATFORM% /p:Configuration=%CONFIGURATION% /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll" &&
+      ECHO *** &&
+      ECHO *** Building Visual Studio 2015 %PLATFORM%\%CONFIGURATION% &&
+      ECHO *** &&
+      msbuild "visual\VS2010\lizard.sln" /m /verbosity:minimal /property:PlatformToolset=v140 /t:Clean,Build /p:Platform=%PLATFORM% /p:Configuration=%CONFIGURATION% /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll" &&
+      COPY visual\VS2010\bin\%PLATFORM%_%CONFIGURATION%\*.exe programs\
+    )
+
+test_script:
+  - ECHO *** &&
+      ECHO Testing %COMPILER% %PLATFORM% %CONFIGURATION% &&
+      ECHO ***
+  - if not [%COMPILER%]==[unknown] (
+      CD programs &&
+      lizard -h &&
+      lizard -i1b lizard.exe &&
+      lizard -i1b5 lizard.exe &&
+      lizard -i1b10 lizard.exe &&
+      lizard -i1b15 lizard.exe &&
+      echo ------- lizard tested ------- &&
+      fullbench.exe -i1 fullbench.exe
+    )
+
+artifacts:
+  - path: bin\lizard_x64.zip
+  - path: bin\lizard_x86.zip
+
+deploy:
+- provider: GitHub
+  artifact: bin\lizard_x64.zip
+  auth_token:
+    secure: LgJo8emYc3sFnlNWkGl4/VYK3nk/8+RagcsqDlAi3xeqNGNutnKjcftjg84uJoT4
+  force_update: true
+  prerelease: true
+  on:
+    COMPILER: gcc
+    PLATFORM: "mingw64"
+    appveyor_repo_tag: true
+    branch: autobuild
+
+- provider: GitHub
+  artifact: bin\lizard_x86.zip
+  auth_token:
+    secure: LgJo8emYc3sFnlNWkGl4/VYK3nk/8+RagcsqDlAi3xeqNGNutnKjcftjg84uJoT4
+  force_update: true
+  prerelease: true
+  on:
+    COMPILER: gcc
+    PLATFORM: "mingw32"
+    appveyor_repo_tag: true
+    branch: autobuild

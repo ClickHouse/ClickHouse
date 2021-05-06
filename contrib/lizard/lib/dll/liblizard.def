@@ -1,0 +1,19 @@
+LIBRARY liblizard.dll
+EXPORTS
+    Lizard_compress
+    Lizard_compressBound
+    Lizard_compress_continue
+    Lizard_compress_extState
+    Lizard_createStream
+    Lizard_createStreamDecode
+    Lizard_decompress_safe
+    Lizard_decompress_safe_continue
+    Lizard_decompress_safe_partial
+    Lizard_decompress_safe_usingDict
+    Lizard_freeStream
+    Lizard_freeStreamDecode
+    Lizard_loadDict
+    Lizard_resetStream
+    Lizard_saveDict
+    Lizard_setStreamDecode
+    Lizard_sizeofState

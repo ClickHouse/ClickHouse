@@ -1,0 +1,15 @@
+This repository uses 2 different licenses :
+- all files in the `lib` directory use a BSD 2-Clause license
+- all other files use a GPLv2 license, unless explicitly stated otherwise
+
+Relevant license is reminded at the top of each source file,
+and with the presence of COPYING or LICENSE file.
+
+This model emphasizes the fact that
+only files in the `lib` directory are designed to be included into 3rd party projects.
+
+Other files, such as those from `programs` or `examples` directory,
+are not intended to be compiled outside of their context.
+They can serve as source of inspiration,
+but they should not be copy/pasted into 3rd party projects,
+as this scenario is not supported.
