@@ -13,4 +13,6 @@ using TypeListDecimalNumbers = TypeList<Decimal32, Decimal64, Decimal128, Decima
 using TypeListGeneralNumbers = typename TypeListConcat<TypeListNativeNumbers, TypeListExtendedNumbers>::Type;
 using TypeListNumbers = typename TypeListConcat<TypeListGeneralNumbers, TypeListDecimalNumbers>::Type;
 
+using TypeListNumbersAndUUID = typename TypeListConcat<TypeListNumbers, TypeList<UUID>>::Type;
+
 }

@@ -9,6 +9,7 @@
 
 #include <cstdint>
 
+
 namespace DB
 {
     namespace ErrorCodes
@@ -27,8 +28,6 @@ namespace DB
     class GregorianDate
     {
     public:
-        GregorianDate() = delete;
-
         /** Construct from date in text form 'YYYY-MM-DD' by reading from
           * ReadBuffer.
           */
