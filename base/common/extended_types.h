@@ -5,6 +5,7 @@
 #include <common/types.h>
 #include <common/wide_integer.h>
 
+
 using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
