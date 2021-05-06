@@ -25,6 +25,8 @@ struct CharsetClassificationImpl
 
     using ResultType = String;
     using CodePoint = UInt8;
+
+    static constexpr Float64 zero_frequency = 0.000001;
     /// map_size for ngram count.
     static constexpr size_t map_size = 1u << 16;
 
@@ -46,11 +48,14 @@ struct CharsetClassificationImpl
     static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64> standart, std::unordered_map<UInt16, Float64> model)
     {
         Float64 res = 0;
-        for (auto & el : model) {
-            if (standart[el.first] != 0) {
+        for (auto & el : model)
+        {
+            if (standart[el.first] != 0)
+            {
                 res += el.second * log(standart[el.first]);
-            } else {
-                res += el.second * log(0.000001);
+            } else
+            {
+                res += el.second * log(zero_frequency);
             }
         }
         return res;
@@ -73,10 +78,10 @@ struct CharsetClassificationImpl
     static ALWAYS_INLINE inline size_t calculateStats(
         const char * data,
         const size_t size,
-        NgramCount * ngram_stats,
         size_t (*read_code_points)(CodePoint *, const char *&, const char *),
-        NgramCount * ngram_storage)
+        std::unordered_map<UInt16, Float64>& model)
     {
+
         const char * start = data;
         const char * end = data + size;
         CodePoint cp[simultaneously_codepoints_num] = {};
@@ -94,11 +99,11 @@ struct CharsetClassificationImpl
                     hash <<= 8;
                     hash += *(cp + i + j);
                 }
-                if (ngram_stats[hash] == 0) {
-                    ngram_storage[len] = hash;
+                if (model[hash] == 0) {
+                    model[hash] = 1;
                     ++len;
                 }
-                ++ngram_stats[hash];
+                ++model[hash];
             }
             i = 0;
         } while (start < end && (found = read_code_points(cp, start, end)));
@@ -111,31 +116,21 @@ struct CharsetClassificationImpl
     {
         static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
         static std::unordered_map<String, std::unordered_map<UInt16, Float64>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
-            
-        std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}}; // frequency of N-grams 
-        std::unique_ptr<NgramCount[]> ngram_storage{new NgramCount[map_size]{}}; // list of N-grams
-            
-        size_t len = calculateStats(data.data(), data.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
-        String ans;
-        // Float64 count_bigram = data.size() - 1;
+
         std::unordered_map<UInt16, Float64> model;
-        for (size_t i = 0; i < len; ++i) {
-            model[ngram_storage.get()[i]] = static_cast<Float64>(common_stats.get()[ngram_storage.get()[i]]);
-        }
+        calculateStats(data.data(), data.size(), readCodePoints, model);
 
-        std::vector<std::pair<std::string, Float64>> results;
-
+        Float64 max_result = log(zero_frequency) * model.size();
+        res = "Undefined";
         for (const auto& item : encodings_freq)
         {
-            results.push_back(std::make_pair(item.first, Naive_bayes(item.second, model)));
+            const Float64 freq_pr = Naive_bayes(item.second, model);
+            if (max_result > freq_pr)
+            {
+                res = item.first;
+                max_result = freq_pr;
+            }
         }
-
-        std::sort(results.begin(), results.end(), [](auto &left, auto &right)
-        {
-            return left.second > right.second;
-        });
-
-        res = results[0].first; 
     }
 
 
@@ -161,33 +156,22 @@ struct CharsetClassificationImpl
 
             String prom;
 
-            std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}}; // frequency of N-grams 
-            std::unique_ptr<NgramCount[]> ngram_storage{new NgramCount[map_size]{}}; // list of N-grams
-
-            size_t len = calculateStats(str.data(), str.size(), common_stats.get(), readCodePoints, ngram_storage.get()); // count of N-grams
-            // Float64 count_bigram = data.size() - 1;
             std::unordered_map<UInt16, Float64> model;
+            calculateStats(str.data(), str.size(), readCodePoints, model);
 
-            for (size_t j = 0; j < len; ++j)
-            {
-                model[ngram_storage.get()[j]] = static_cast<Float64>(common_stats.get()[ngram_storage.get()[j]]);
-            }
+            Float64 max_result = log(zero_frequency) * model.size();
 
-            std::vector<std::pair<std::string, Float64>> results;
-
+            prom = "Undefined";
             for (const auto& item : encodings_freq)
             {
-                results.push_back(std::make_pair(item.first, Naive_bayes(item.second, model)));
+                const Float64 freq_pr = Naive_bayes(item.second, model);
+                if (max_result > freq_pr)
+                {
+                    prom = item.first;
+                    max_result = freq_pr;
+                }
             }
-
-            std::sort(results.begin(), results.end(), [](auto &left, auto &right)
-            {
-                return left.second > right.second;
-            });
-
-            prom = results[0].first; 
             
-
             const auto ans = prom.c_str();
             size_t cur_offset = offsets[i];
 
