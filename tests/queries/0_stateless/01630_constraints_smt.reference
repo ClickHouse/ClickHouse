@@ -1,0 +1,56 @@
+TEST1
+1
+TEST2
+1
+1
+0
+1
+TEST3
+1
+1
+1
+0
+0
+1
+TEST4
+1
+1
+1
+0
+0
+1
+TEST5
+1
+0
+0
+1
+TEST6
+1
+0
+1
+1
+0
+1
+0
+SELECT count()
+FROM constraint_test_constants
+WHERE (c > 100) OR (b > 100)
+SELECT count()
+FROM constraint_test_constants
+WHERE c > 100
+SELECT count()
+FROM constraint_test_constants
+WHERE c > 100
+SELECT count()
+FROM constraint_test_constants
+TEST7
+SELECT
+    a,
+    b
+FROM constraint_test_constants_fail
+WHERE a = \'c\'
+SELECT
+    a,
+    b
+FROM constraint_test_constants_fail
+WHERE a < reverse(b)

@@ -8,7 +8,7 @@ SET optimize_move_to_prewhere = 1;
 SET optimize_substitute_columns = 1;
 SET optimize_append_index = 1;
 
-CREATE TABLE constraint_test_assumption (URL String, a Int32, CONSTRAINT c1 ASSUME domainWithoutWWW(URL) = 'yandex.ru', CONSTRAINT c2 ASSUME URL > 'zzz' AND startsWith(URL, 'test') = True) ENGINE = TinyLog;
+CREATE TABLE constraint_test_assumption (URL String, a Int32, CONSTRAINT c1 ASSUME domainWithoutWWW(URL) = 'yandex.ru', CONSTRAINT c2 ASSUME URL > 'zzz' AND startsWith(URL, 'test') = 1) ENGINE = TinyLog;
 
 --- Add wrong rows in order to check optimization
 INSERT INTO constraint_test_assumption (URL, a) VALUES ('1', 1);
@@ -25,7 +25,7 @@ SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'y
 SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND NOT URL <= 'zzz'); ---> assumption -> 4
 SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND URL > 'zzz') OR (a = 10 AND a + 5 < 100); ---> assumption -> 4
 SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND URL = '111'); ---> assumption & no assumption -> 0
-SELECT count() FROM constraint_test_assumption WHERE (startsWith(URL, 'test') = True); ---> assumption -> 4
+SELECT count() FROM constraint_test_assumption WHERE (startsWith(URL, 'test') = 1); ---> assumption -> 4
 
 DROP TABLE constraint_test_assumption;
 
