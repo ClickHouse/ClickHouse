@@ -39,7 +39,7 @@ public:
 
     void deleteCompiledModule(const CompiledModuleInfo & module_info);
 
-    void * findCompiledFunction(const std::string & name) const;
+    void * findCompiledFunction(const CompiledModuleInfo & module_info, const std::string & function_name) const;
 
     void registerExternalSymbol(const std::string & symbol_name, void * address);
 

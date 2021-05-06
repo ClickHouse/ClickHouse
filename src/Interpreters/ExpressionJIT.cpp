@@ -155,7 +155,7 @@ public:
 
     ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        void * function = getJITInstance().findCompiledFunction(name);
+        void * function = getJITInstance().findCompiledFunction(module_info, name);
 
         if (!function)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot find compiled function {}", name);
@@ -266,6 +266,8 @@ static FunctionBasePtr compile(
             return nullptr;
     }
 
+    LOG_INFO(getLogger(), "Try to compile expression {}", dag.dump());
+
     FunctionBasePtr fn;
 
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
@@ -286,7 +288,13 @@ static FunctionBasePtr compile(
         });
 
         if (was_inserted)
-            LOG_INFO(getLogger(), "Compiled expression {}", compiled_function->function->getName());
+            LOG_INFO(getLogger(),
+                "Put compiled expression {} in cache used cache size {} total cache size {}",
+                compiled_function->function->getName(),
+                compilation_cache->weight(),
+                compilation_cache->maxSize());
+        else
+            LOG_INFO(getLogger(), "Get compiled expression {} from cache", compiled_function->function->getName());
 
         fn = compiled_function->function;
     }
@@ -333,7 +341,7 @@ static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children)
 {
-    /// Extract CompileDag from root actions dag node, it is important that each root child is compilable.
+    /// Extract CompileDAG from root actions dag node, it is important that each root child is compilable.
 
     CompileDAG dag;
 
@@ -369,7 +377,7 @@ static CompileDAG getCompilableDAG(
 
         bool all_children_visited = frame.next_child_to_visit == node->children.size();
 
-        if (all_children_visited)
+        if (!all_children_visited)
             continue;
 
         CompileDAG::Node compile_node;
