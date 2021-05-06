@@ -120,7 +120,7 @@ struct CharsetClassificationImpl
         std::unordered_map<UInt16, Float64> model;
         calculateStats(data.data(), data.size(), readCodePoints, model);
 
-        Float64 max_result = log(zero_frequency) * model.size();
+        Float64 max_result = log(zero_frequency) * (model.size() + 1);
         res = "Undefined";
         for (const auto& item : encodings_freq)
         {
@@ -158,7 +158,7 @@ struct CharsetClassificationImpl
 
             std::unordered_map<UInt16, Float64> model;
             calculateStats(str.data(), str.size(), readCodePoints, model);
-
+/*
             Float64 max_result = log(zero_frequency) * model.size();
 
             prom = "Undefined";
@@ -171,6 +171,18 @@ struct CharsetClassificationImpl
                     max_result = freq_pr;
                 }
             }
+            */
+            std::vector<std::pair<std::string, Float64>> results;
+           for (const auto& item : encodings_freq)
+            {
+                results.push_back(std::make_pair(item.first, Naive_bayes(item.second, model)));
+            }
+            std::sort(results.begin(), results.end(), [](auto &left, auto &right)
+            {
+                return left.second > right.second;
+            });
+
+            prom = results[0].first + " | " + results[1].first + " | " + results[2].first; 
             
             const auto ans = prom.c_str();
             size_t cur_offset = offsets[i];
