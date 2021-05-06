@@ -1,4 +1,10 @@
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -10,37 +16,25 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
 }
 
-static TypeId getLeastSuperTypeId(const PaddedPODArray<TypeIndex> & type_ids)
-{
-
-}
-
 ColumnObject::Subcolumn::Subcolumn(const Subcolumn & other)
-    : data(other.data), type_ids(other.type_ids.begin(), other.type_ids.end())
+    : data(other.data), least_common_type(other.least_common_type)
 {
 }
 
 ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_)
-    : data(std::move(data_))
+    : data(std::move(data_)), least_common_type(getDataTypeByColumn(*data))
 {
 }
 
-void ColumnObject::Subcolumn::insert(const Field & field, TypeIndex type_id)
+void ColumnObject::Subcolumn::insert(const Field & field, const DataTypePtr & value_type)
 {
     data->insert(field);
-    type_ids.push_back(type_id);
+    least_common_type = getLeastSupertype({least_common_type, value_type}, true);
 }
 
 void ColumnObject::Subcolumn::insertDefault()
 {
     data->insertDefault();
-    type_ids.push_back(TypeIndex::Nothing);
-}
-
-void ColumnObject::Subcolumn::resize(size_t new_size)
-{
-    data = data->cloneResized(new_size);
-    type_ids.resize_fill(new_size, TypeIndex::Nothing);
 }
 
 ColumnObject::ColumnObject(SubcolumnsMap && subcolumns_)
@@ -71,11 +65,11 @@ void ColumnObject::checkConsistency() const
 
 MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 {
-    SubcolumnsMap new_subcolumns;
-    for (const auto & [key, subcolumn] : subcolumns)
-        new_subcolumns[key].resize(new_size);
+    if (new_size != 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ColumnObject doesn't support resize to non-zero length");
 
-    return ColumnObject::create(std::move(new_subcolumns));
+    return ColumnObject::create();
 }
 
 size_t ColumnObject::byteSize() const
@@ -117,7 +111,7 @@ bool ColumnObject::hasSubcolumn(const String & key) const
     return subcolumns.count(key) != 0;
 }
 
-void ColumnObject::addSubcolumn(const String & key, MutableColumnPtr && column_sample, size_t new_size, bool check_size)
+void ColumnObject::addSubcolumn(const String & key, const ColumnPtr & column_sample, size_t new_size, bool check_size)
 {
     if (subcolumns.count(key))
         throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key);
@@ -132,8 +126,8 @@ void ColumnObject::addSubcolumn(const String & key, MutableColumnPtr && column_s
             key, new_size, size());
 
     auto & subcolumn = subcolumns[key];
-    subcolumn = std::move(column_sample);
-    subcolumn.resize(new_size);
+    subcolumn.data = column_sample->cloneResized(new_size);
+    subcolumn.least_common_type = std::make_shared<DataTypeNothing>();
 }
 
 void ColumnObject::addSubcolumn(const String & key, Subcolumn && subcolumn, bool check_size)
@@ -156,6 +150,38 @@ Names ColumnObject::getKeys() const
     for (const auto & [key, _] : subcolumns)
         keys.emplace_back(key);
     return keys;
+}
+
+void ColumnObject::optimizeTypesOfSubcolumns()
+{
+    if (optimized_subcolumn_types)
+        return;
+
+    for (auto & [_, subcolumn] : subcolumns)
+    {
+        auto from_type = getDataTypeByColumn(*subcolumn.data);
+        if (subcolumn.least_common_type->equals(*from_type))
+            continue;
+
+        size_t subcolumn_size = subcolumn.size();
+        if (subcolumn.data->getNumberOfDefaultRows(1) == 0)
+        {
+            subcolumn.data = castColumn({subcolumn.data, from_type, ""}, subcolumn.least_common_type);
+        }
+        else
+        {
+            /// TODO: wrong code.
+            auto offsets = ColumnUInt64::create();
+            auto & offsets_data = offsets->getData();
+
+            subcolumn.data->getIndicesOfNonDefaultValues(offsets_data, 0, subcolumn_size);
+            auto values = subcolumn.data->index(*offsets, subcolumn_size);
+            values = castColumn({subcolumn.data, from_type, ""}, subcolumn.least_common_type);
+            subcolumn.data = values->createWithOffsets(offsets_data, subcolumn_size);
+        }
+    }
+
+    optimized_subcolumn_types = true;
 }
 
 }

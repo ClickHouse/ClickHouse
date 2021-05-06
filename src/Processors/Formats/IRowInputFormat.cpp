@@ -1,4 +1,5 @@
 #include <Processors/Formats/IRowInputFormat.h>
+#include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
 #include <common/logger_useful.h>
 
@@ -197,6 +198,7 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
+    optimizeTypesOfObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;

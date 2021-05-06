@@ -101,7 +101,7 @@ DataTypePtr FieldToDataType::operator() (const Array & x) const
     for (const Field & elem : x)
         element_types.emplace_back(applyVisitor(FieldToDataType(), elem));
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype(element_types));
+    return std::make_shared<DataTypeArray>(getLeastSupertype(element_types, allow_convertion_to_string));
 }
 
 
@@ -134,7 +134,9 @@ DataTypePtr FieldToDataType::operator() (const Map & map) const
         value_types.push_back(applyVisitor(FieldToDataType(), tuple[1]));
     }
 
-    return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
+    return std::make_shared<DataTypeMap>(
+        getLeastSupertype(key_types, allow_convertion_to_string),
+        getLeastSupertype(value_types, allow_convertion_to_string));
 }
 
 DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) const

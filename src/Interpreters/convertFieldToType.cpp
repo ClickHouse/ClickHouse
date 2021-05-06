@@ -210,6 +210,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             return src;
         }
+
+        return applyVisitor(FieldVisitorToString(), src);
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {

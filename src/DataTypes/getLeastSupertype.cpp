@@ -50,8 +50,16 @@ namespace
 }
 
 
-DataTypePtr getLeastSupertype(const DataTypes & types)
+DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_string)
 {
+    auto throw_or_return = [&](std::string_view message, int error_code)
+    {
+        if (allow_conversion_to_string)
+            return std::make_shared<DataTypeString>();
+
+        throw Exception(String(message), error_code);
+    };
+
     /// Trivial cases
 
     if (types.empty())
@@ -113,7 +121,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         if (have_array)
         {
             if (!all_arrays)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Array and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are Array and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             return std::make_shared<DataTypeArray>(getLeastSupertype(nested_types));
         }
@@ -139,7 +147,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                         nested_types[elem_idx].reserve(types.size());
                 }
                 else if (tuple_size != type_tuple->getElements().size())
-                    throw Exception(getExceptionMessagePrefix(types) + " because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
+                    return throw_or_return(getExceptionMessagePrefix(types) + " because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
 
                 have_tuple = true;
 
@@ -153,7 +161,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         if (have_tuple)
         {
             if (!all_tuples)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
@@ -187,7 +195,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         if (have_maps)
         {
             if (!all_maps)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
         }
@@ -268,7 +276,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         {
             bool all_strings = type_ids.size() == (have_string + have_fixed_string);
             if (!all_strings)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are String/FixedString and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are String/FixedString and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             return std::make_shared<DataTypeString>();
         }
@@ -284,7 +292,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         {
             bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime/DateTime64 and some of them are not",
+                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime/DateTime64 and some of them are not",
                     ErrorCodes::NO_COMMON_TYPE);
 
             if (have_datetime64 == 0)
@@ -331,7 +339,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             if (num_supported != type_ids.size())
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless conversion to Decimal",
+                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them have no lossless conversion to Decimal",
                                 ErrorCodes::NO_COMMON_TYPE);
 
             UInt32 max_scale = 0;
@@ -354,7 +362,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             if (min_precision > DataTypeDecimal<Decimal128>::maxPrecision())
-                throw Exception(getExceptionMessagePrefix(types) + " because the least supertype is Decimal("
+                return throw_or_return(getExceptionMessagePrefix(types) + " because the least supertype is Decimal("
                                 + toString(min_precision) + ',' + toString(max_scale) + ')',
                                 ErrorCodes::NO_COMMON_TYPE);
 
@@ -415,7 +423,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         if (max_bits_of_signed_integer || max_bits_of_unsigned_integer || max_mantissa_bits_of_floating)
         {
             if (!all_numbers)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are numbers and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are numbers and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             /// If there are signed and unsigned types of same bit-width, the result must be signed number with at least one more bit.
             /// Example, common of Int32, UInt32 = Int64.
@@ -430,7 +438,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 if (min_bit_width_of_integer != 64)
                     ++min_bit_width_of_integer;
                 else
-                    throw Exception(
+                    return throw_or_return(
                         getExceptionMessagePrefix(types)
                             + " because some of them are signed integers and some are unsigned integers,"
                               " but there is no signed integer type, that can exactly represent all required unsigned integer values",
@@ -446,7 +454,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 else if (min_mantissa_bits <= 53)
                     return std::make_shared<DataTypeFloat64>();
                 else
-                    throw Exception(getExceptionMessagePrefix(types)
+                    return throw_or_return(getExceptionMessagePrefix(types)
                         + " because some of them are integers and some are floating point,"
                         " but there is no floating point type, that can exactly represent all required integers", ErrorCodes::NO_COMMON_TYPE);
             }
@@ -467,7 +475,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 else if (min_bit_width_of_integer <= 256)
                     return std::make_shared<DataTypeInt256>();
                 else
-                    throw Exception(getExceptionMessagePrefix(types)
+                    return throw_or_return(getExceptionMessagePrefix(types)
                         + " because some of them are signed integers and some are unsigned integers,"
                         " but there is no signed integer type, that can exactly represent all required unsigned integer values", ErrorCodes::NO_COMMON_TYPE);
             }
@@ -485,14 +493,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 else if (min_bit_width_of_integer <= 256)
                     return std::make_shared<DataTypeUInt256>();
                 else
-                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
+                    return throw_or_return("Logical error: " + getExceptionMessagePrefix(types)
                         + " but as all data types are unsigned integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
             }
         }
     }
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
-    throw Exception(getExceptionMessagePrefix(types), ErrorCodes::NO_COMMON_TYPE);
+    return throw_or_return(getExceptionMessagePrefix(types), ErrorCodes::NO_COMMON_TYPE);
 }
 
 }

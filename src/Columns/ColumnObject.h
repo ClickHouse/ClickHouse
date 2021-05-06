@@ -6,6 +6,8 @@
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 
+#include <DataTypes/IDataType.h>
+
 namespace DB
 {
 
@@ -25,18 +27,18 @@ public:
         Subcolumn & operator=(Subcolumn && other) = default;
 
         WrappedPtr data;
-        PaddedPODArray<TypeIndex> type_ids;
+        DataTypePtr least_common_type;
 
         size_t size() const { return data->size(); }
-        void insert(const Field & field, TypeIndex type_id);
+        void insert(const Field & field, const DataTypePtr & value_type);
         void insertDefault();
-        void resize(size_t new_size);
     };
 
     using SubcolumnsMap = std::unordered_map<String, Subcolumn>;
 
 private:
     SubcolumnsMap subcolumns;
+    bool optimized_subcolumn_types = false;
 
 public:
     ColumnObject() = default;
@@ -49,13 +51,15 @@ public:
     const Subcolumn & getSubcolumn(const String & key) const;
     Subcolumn & getSubcolumn(const String & key);
 
-    void addSubcolumn(const String & key, MutableColumnPtr && column_sample, size_t new_size, bool check_size = false);
+    void addSubcolumn(const String & key, const ColumnPtr & column_sample, size_t new_size, bool check_size = false);
     void addSubcolumn(const String & key, Subcolumn && subcolumn, bool check_size = false);
 
     const SubcolumnsMap & getSubcolumns() const { return subcolumns; }
     SubcolumnsMap & getSubcolumns() { return subcolumns; }
 
     Names getKeys() const;
+
+    void optimizeTypesOfSubcolumns();
 
     /// Part of interface
 
