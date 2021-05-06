@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -1061,10 +1062,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
-    DataTypePtr type = literal.data_type_hint
-        ? literal.data_type_hint
-        : applyVisitor(FieldToDataType(), literal.value);
-
+    DataTypePtr type = applyVisitor(FieldToDataType(), literal.value);
     const auto value = convertFieldToType(literal.value, *type);
 
     // FIXME why do we have a second pass with a clean sample block over the same

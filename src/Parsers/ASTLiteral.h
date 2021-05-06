@@ -34,9 +34,6 @@ public:
      */
     String unique_column_name;
 
-    /// Hint for data type of literal, that can be set by operator "::".
-    DataTypePtr data_type_hint;
-
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
 

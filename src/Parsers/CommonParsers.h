@@ -56,15 +56,4 @@ public:
     bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override { return true; }
 };
 
-class ParserDoubleColon : public IParserBase
-{
-public:
-    const char * getName() const override { return "double colon"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-private:
-    ParserToken parser_colon{TokenType::Colon};
-};
-
 }

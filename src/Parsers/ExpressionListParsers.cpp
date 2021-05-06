@@ -564,7 +564,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     ASTPtr type_ast;
-    if (ParserDoubleColon().ignore(pos, expected)
+    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
         && ParserDataType().parse(pos, type_ast, expected))
     {
         node = createFunctionCast(expr_ast, type_ast);
