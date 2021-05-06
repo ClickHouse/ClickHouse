@@ -48,16 +48,14 @@ inline auto getInstanceAndInitGlobalCounters()
 
 Writer::Writer()
     : hardware_concurrency(std::thread::hardware_concurrency()),
-      functions_count(0),
-      addrs_count(0),
-      edges_count(0),
       base_log(nullptr),
       coverage_dir(std::filesystem::current_path() / Writer::coverage_dir_relative_path),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
       // 0 -- unlimited queue e.g. functor insertion to thread pool won't lock.
       // Set the initial pool size to all thread as we'll need all resources to symbolize fast.
-      pool(hardware_concurrency, 1000, 0)
+      pool(hardware_concurrency, 1000, 0),
+      copying_test_hits(false)
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
     {
@@ -87,11 +85,8 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
     const size_t edges_pairs = pc_array_end - pc_array;
     edges_count = edges_pairs / 2;
 
-    edges_hit.resize(edges_count);
+    edges_hit.resize(edges_count, 0);
     edges_cache.resize(edges_count);
-
-    for (auto & e : edges_hit)
-        e = std::make_unique<AtomicCounter>(0);
 
     edges_to_addrs.resize(edges_count);
     edge_is_func_entry.resize(edges_count);
@@ -183,61 +178,36 @@ void Writer::symbolizeInstrumentedData()
 
 void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
-    std::string old_test_name;
-    EdgesHashmap edges_hashmap;
-    //bool dump_global_report {false};
+    std::string test_swap = {test_name.data(), test_name.size()};
+    EdgesHit edges_hit_swap(edges_count, 0);
 
-    const Poco::Logger * log {nullptr};
+    { /// Critical section
+        whileCopyingBusyLoop(); // to prevent multithreading access.
+        copying_test_hits.store(true, std::memory_order_release);
 
-    {
-        auto lck = std::lock_guard(edges_mutex);
-        copying_test_hits.store(true);
-
-        if (!test)
+        if (!hasTest())
         {
-            test = test_name;
+            test = std::move(test_swap);
+            copying_test_hits.store(false, std::memory_order_release);
             return;
         }
 
-        log = &Poco::Logger::get(std::string{logger_base_name} + "." + *test);
+        edges_hit.swap(edges_hit_swap);
+        test.swap(test_swap);
 
-        LOG_INFO(log, "Started copying data");
-
-        // Can't do it in multiple threads as atomics aren't copy constructible
-        for (size_t i = 0; i < edges_count; ++i)
-        {
-            auto& ptr = edges_hit[i];
-            const CallCount hit = ptr->exchange(0);
-
-            if (!hit)
-                continue;
-
-            setOrIncrement(edges_hashmap, i, hit);
-        }
-
-        LOG_INFO(log, "Copied data into hashtable, {} unique addrs", edges_hashmap.size());
-
-        old_test_name = *test;
-
-        /// genhtml doesn't allow '.' in test names
-        std::replace(old_test_name.begin(), old_test_name.end(), '.', '_');
-
-        if (!test_name.empty())
-            test = test_name;
-        else
-        {
-            test = std::nullopt;
-            //dump_global_report = true;
-        }
-
-        copying_test_hits.store(false);
+        copying_test_hits.store(false, std::memory_order_release);
     }
+
+    const Poco::Logger * log = &Poco::Logger::get(std::string{logger_base_name} + "." + test_swap);
 
     LOG_INFO(log, "Copied shared data");
 
+    /// genhtml doesn't allow '.' in test names
+    std::replace(test_swap.begin(), test_swap.end(), '.', '_');
+
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// The move is evaluated within current function's lifetime during function constructor call.
-    auto f = [this, log, test_name = std::move(old_test_name), edges_copied = std::move(edges_hashmap)]
+    auto f = [this, log, test_name = std::move(test_swap), edges_copied = std::move(edges_hit_swap)]
     {
         prepareDataAndDump({test_name, log}, edges_copied);
     };
@@ -249,7 +219,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     //    return;
 }
 
-void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits)
+void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
 {
     LOG_INFO(test_info.log, "Started filling internal structures");
 

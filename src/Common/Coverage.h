@@ -86,13 +86,9 @@ public:
 
     inline void hit(EdgeIndex edge_index)
     {
-        if (copying_test_hits.load())
-        {
-            auto lck = std::lock_guard(edges_mutex);
-            edges_hit[edge_index]->fetch_add(1);
-        }
-        else
-            edges_hit[edge_index]->fetch_add(1);
+        whileCopyingBusyLoop();
+        // no sync on individual cells, still can get approximately good hit results.
+        ++edges_hit[edge_index];
     }
 
 private:
@@ -123,14 +119,16 @@ private:
 
     FreeThreadPool pool;
 
-    using AtomicCounter = std::atomic<CallCount>;
-    using EdgesHit = std::vector<std::unique_ptr<AtomicCounter>>;
-    using EdgesHashmap = std::unordered_map<EdgeIndex, CallCount>;
+    using EdgesHit = std::vector<EdgeIndex>;
 
     EdgesHit edges_hit;
-    std::optional<std::string> test;
-    std::atomic_bool copying_test_hits = false;
-    std::mutex edges_mutex; // protects test, edges_hit
+    std::string test;
+    std::atomic_bool copying_test_hits;
+
+    void whileCopyingBusyLoop() const { while(copying_test_hits.load(std::memory_order_acquire)); }
+
+    // Faster than using optional<string>.
+    constexpr bool hasTest() const { return !test.empty(); }
 
     /// Two caches filled on binary startup from PC table created by clang.
     using EdgesToAddrs = std::vector<Addr>;
@@ -202,7 +200,7 @@ private:
 
     // TODO TestData global_report;
 
-    void prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits);
+    void prepareDataAndDump(TestInfo test_info, const EdgesHit& hits);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
 
     /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
