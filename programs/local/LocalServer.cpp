@@ -393,16 +393,17 @@ void LocalServer::processQueries()
 
     if (progress_bar.getNeedRenderProgress)
     {
-        context->setProgressCallback([&](const Progress & value) {
-            if (!progress_bar.updateProgress(progress, value))
-            {
-                // Just a keep-alive update.
-                progress_bar.clearProgress();
-                return true;
-            }
-            progress_bar.writeProgress(progress, watch);
-            return true;
-        });
+        context->setProgressCallback([&](const Progress & value)
+                                     {
+                                         if (!progress_bar.updateProgress(progress, value))
+                                         {
+                                             // Just a keep-alive update.
+                                              progress_bar.clearProgress();
+                                              return true;
+                                         }
+                                         progress_bar.writeProgress(progress, watch);
+                                         return true;
+                                     });
     }
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
