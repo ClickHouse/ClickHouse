@@ -7,7 +7,6 @@
 
 #include "ProcessorStatisticsOS.h"
 
-
 #include <Core/Types.h>
 
 #include <common/logger_useful.h>
