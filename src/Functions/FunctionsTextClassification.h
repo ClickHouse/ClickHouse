@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -31,7 +32,7 @@ class FunctionsTextClassification : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsTextClassification>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsTextClassification>(); }
 
     String getName() const override { return name; }
 
