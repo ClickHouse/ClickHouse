@@ -4,7 +4,6 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/FieldVisitors.h>
-#include <DataTypes/IDataType.h>
 
 #include <optional>
 
