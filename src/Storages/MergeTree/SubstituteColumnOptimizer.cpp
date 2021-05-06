@@ -13,6 +13,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -140,7 +144,7 @@ public:
         const auto * identifier = ast->as<ASTIdentifier>();
         if (identifier && data.name_to_component_id.contains(identifier->name()))
         {
-            const auto name = identifier->name();
+            const auto & name = identifier->name();
             const auto component_id = data.name_to_component_id.at(name);
             ast = data.id_to_expression_map.at(component_id)->clone();
             if (data.is_select)

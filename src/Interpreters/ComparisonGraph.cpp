@@ -12,7 +12,7 @@ namespace DB
 {
 
 /// make function a < b or a <= b
-ASTPtr ComparisonGraph::normalizeAtom(const ASTPtr & atom) const
+ASTPtr ComparisonGraph::normalizeAtom(const ASTPtr & atom)
 {
     static const std::map<std::string, std::string> inverse_relations = {
         {"greaterOrEquals", "lessOrEquals"},
@@ -46,7 +46,7 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
     Graph g;
     for (const auto & atom_raw : atomic_formulas)
     {
-        const auto atom = normalizeAtom(atom_raw);
+        const auto atom = ComparisonGraph::normalizeAtom(atom_raw);
 
         const auto bad_term = std::numeric_limits<std::size_t>::max();
         auto get_index = [](const ASTPtr & ast, Graph & asts_graph) -> std::size_t
@@ -103,12 +103,12 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
         }
     }
 
-    graph = BuildGraphFromAstsGraph(g);
-    dists = BuildDistsFromGraph(graph);
+    graph = ComparisonGraph::BuildGraphFromAstsGraph(g);
+    dists = ComparisonGraph::BuildDistsFromGraph(graph);
     std::tie(ast_const_lower_bound, ast_const_upper_bound) = buildConstBounds();
 }
 
-/// resturns {is less, is strict}
+/// returns {is less, is strict}
 /// {true, true} = <
 /// {true, false} = =<
 /// {false, ...} = ?
@@ -199,7 +199,7 @@ bool ComparisonGraph::isPossibleCompare(const CompareResult expected, const ASTP
 
     if (expected == CompareResult::UNKNOWN || result == CompareResult::UNKNOWN)
     {
-        Poco::Logger::get("isPossibleCompare").information("unknonw");
+        Poco::Logger::get("isPossibleCompare").information("unknown");
         return true;
     }
     if (expected == result)
@@ -392,7 +392,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph::getConstLowerBound(const 
     return std::make_pair(graph.vertices[to].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::LESS);
 }
 
-void ComparisonGraph::dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order) const
+void ComparisonGraph::dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order)
 {
     visited[v] = true;
     for (const auto & edge : asts_graph.edges[v])
@@ -405,7 +405,7 @@ void ComparisonGraph::dfsOrder(const Graph & asts_graph, size_t v, std::vector<b
     order.push_back(v);
 }
 
-ComparisonGraph::Graph ComparisonGraph::reverseGraph(const Graph & asts_graph) const
+ComparisonGraph::Graph ComparisonGraph::reverseGraph(const Graph & asts_graph)
 {
     Graph g;
     g.ast_hash_to_component = asts_graph.ast_hash_to_component;
@@ -434,7 +434,7 @@ std::vector<ASTs> ComparisonGraph::getVertices() const
 }
 
 void ComparisonGraph::dfsComponents(
-    const Graph & reversed_graph, size_t v, std::vector<size_t> & components, const size_t not_visited, const size_t component) const
+    const Graph & reversed_graph, size_t v, std::vector<size_t> & components, const size_t not_visited, const size_t component)
 {
     components[v] = component;
     for (const auto & edge : reversed_graph.edges[v])
@@ -446,7 +446,7 @@ void ComparisonGraph::dfsComponents(
     }
 }
 
-ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & asts_graph) const
+ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & asts_graph)
 {
     Poco::Logger::get("Graph").information("building");
     /// Find strongly connected component
@@ -458,7 +458,7 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
         for (size_t v = 0; v < n; ++v)
         {
             if (!visited[v])
-                dfsOrder(asts_graph, v, visited, order);
+                ComparisonGraph::dfsOrder(asts_graph, v, visited, order);
         }
     }
 
@@ -471,7 +471,7 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
         {
             if (components[v] == not_visited)
             {
-                dfsComponents(reversed_graph, v, components, not_visited, component);
+                ComparisonGraph::dfsComponents(reversed_graph, v, components, not_visited, component);
                 ++component;
             }
         }
@@ -529,11 +529,11 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     return result;
 }
 
-std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::BuildDistsFromGraph(const Graph & g) const
+std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::BuildDistsFromGraph(const Graph & g)
 {
     // min path : < = -1, =< = 0
     const auto inf = std::numeric_limits<int8_t>::max();
-    const size_t n = graph.vertices.size();
+    const size_t n = g.vertices.size();
     std::vector<std::vector<int8_t>> results(n, std::vector<int8_t>(n, inf));
     for (size_t v = 0; v < n; ++v)
     {

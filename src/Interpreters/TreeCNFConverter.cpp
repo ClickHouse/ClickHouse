@@ -5,6 +5,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Splits AND(a, b, c) to AND(a, AND(b, c)) for AND/OR
 void splitMultiLogic(ASTPtr & node)
@@ -38,7 +42,6 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     {
         if (add_negation)
         {
-            ASSERT(func->arguments->size() == 2)
             if (func->arguments->children.size() != 2)
                 throw Exception("Bad AND or OR function.", ErrorCodes::LOGICAL_ERROR);
             /// apply De Morgan's Law
@@ -54,7 +57,6 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     }
     else if (func && func->name == "not")
     {
-        ASSERT(func->arguments->size() == 1)
         if (func->arguments->children.size() != 1)
             throw Exception("Bad NOT function.", ErrorCodes::LOGICAL_ERROR);
         /// delete NOT
@@ -95,9 +97,6 @@ void pushOr(ASTPtr & query)
         ors.pop_back();
 
         auto * or_func = or_node.get()->as<ASTFunction>();
-        ASSERT(or_func)
-        ASSERT(or_func->name == "or")
-        ASSERT(or_func->arguments->children.size() == 2)
         if (or_func->arguments->children.size() != 2)
             throw Exception("Bad OR function.", ErrorCodes::LOGICAL_ERROR);
 
@@ -116,10 +115,7 @@ void pushOr(ASTPtr & query)
             continue;
         const size_t other_node_id = 1 - and_node_id;
 
-        auto and_func = or_func->arguments->children[and_node_id]->as<ASTFunction>();
-        ASSERT(and_func)
-        ASSERT(and_func->name == "and")
-        ASSERT(and_func->arguments->children.size() == 2)
+        const auto * and_func = or_func->arguments->children[and_node_id]->as<ASTFunction>();
         if (and_func->arguments->children.size() != 2)
             throw Exception("Bad AND function.", ErrorCodes::LOGICAL_ERROR);
 
