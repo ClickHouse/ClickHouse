@@ -40,9 +40,6 @@
 #include "ASTColumnsMatcher.h"
 
 #include <Interpreters/StorageID.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
