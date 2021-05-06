@@ -49,7 +49,7 @@ int main(int argc, char **argv)
     }
 
     int64_t value = 5;
-    auto * test_name_function = reinterpret_cast<int64_t (*)(int64_t *)>(jit.findCompiledFunction("test_name"));
+    auto * test_name_function = reinterpret_cast<int64_t (*)(int64_t *)>(jit.findCompiledFunction(compiled_module_info, "test_name"));
     auto result = test_name_function(&value);
     std::cerr << "Result " << result << std::endl;
 

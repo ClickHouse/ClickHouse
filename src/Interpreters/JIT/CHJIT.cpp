@@ -239,7 +239,9 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "DynamicLinker could not found symbol {} after compilation", function_name);
 
         auto * jit_symbol_address = reinterpret_cast<void *>(jit_symbol.getAddress());
-        name_to_symbol[function_name] = jit_symbol_address;
+
+        std::string symbol_name = std::to_string(current_module_key) + '_' + function_name;
+        name_to_symbol[symbol_name] = jit_symbol_address;
         module_info.compiled_functions.emplace_back(std::move(function_name));
     }
 
@@ -270,11 +272,12 @@ void CHJIT::deleteCompiledModule(const CHJIT::CompiledModuleInfo & module_info)
     compiled_code_size.fetch_sub(module_info.size, std::memory_order_relaxed);
 }
 
-void * CHJIT::findCompiledFunction(const std::string & name) const
+void * CHJIT::findCompiledFunction(const CompiledModuleInfo & module_info, const std::string & function_name) const
 {
     std::lock_guard<std::mutex> lock(jit_lock);
 
-    auto it = name_to_symbol.find(name);
+    std::string symbol_name = std::to_string(module_info.module_identifier) + '_' + function_name;
+    auto it = name_to_symbol.find(symbol_name);
     if (it != name_to_symbol.end())
         return it->second;
 
