@@ -288,6 +288,23 @@ def test_clickhouse_remote(started_cluster):
             time.sleep(0.5)
 
     node3.query("detach dictionary if exists test.clickhouse_remote")
+
+    with pytest.raises(QueryRuntimeException):
+        node3.query("""
+            CREATE DICTIONARY test.clickhouse_remote(
+                id UInt64,
+                SomeValue1 UInt8,
+                SomeValue2 String
+            )
+            PRIMARY KEY id
+            LAYOUT(FLAT())
+            SOURCE(CLICKHOUSE(HOST 'node4' PORT 9000 USER 'default' PASSWORD 'default' TABLE 'xml_dictionary_table' DB 'test'))
+            LIFETIME(MIN 1 MAX 10)
+            """)
+
+    node3.query("attach dictionary test.clickhouse_remote")
+    node3.query("drop dictionary test.clickhouse_remote")
+
     node3.query("""
         CREATE DICTIONARY test.clickhouse_remote(
             id UInt64,

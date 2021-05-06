@@ -18,7 +18,7 @@ void ASTWithElement::formatImpl(const FormatSettings & settings, FormatState & s
 {
     settings.writeIdentifier(name);
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
-    dynamic_cast<const ASTWithAlias *>(subquery.get())->formatImplWithoutAlias(settings, state, frame);
+    dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(settings, state, frame);
 }
 
 }

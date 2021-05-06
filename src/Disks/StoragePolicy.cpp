@@ -93,17 +93,17 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
 }
 
 
-StoragePolicy::StoragePolicy(const StoragePolicy & storage_policy,
+StoragePolicy::StoragePolicy(StoragePolicyPtr storage_policy,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         DiskSelectorPtr disks)
-    : StoragePolicy(storage_policy.getName(), config, config_prefix, disks)
+    : StoragePolicy(storage_policy->getName(), config, config_prefix, disks)
 {
     for (auto & volume : volumes)
     {
-        if (storage_policy.volume_index_by_volume_name.count(volume->getName()) > 0)
+        if (storage_policy->containsVolume(volume->getName()))
         {
-            auto old_volume = storage_policy.getVolumeByName(volume->getName());
+            auto old_volume = storage_policy->getVolumeByName(volume->getName());
             try
             {
                 auto new_volume = updateVolumeFromConfig(old_volume, config, config_prefix + ".volumes." + volume->getName(), disks);
@@ -112,7 +112,7 @@ StoragePolicy::StoragePolicy(const StoragePolicy & storage_policy,
             catch (Exception & e)
             {
                 /// Default policies are allowed to be missed in configuration.
-                if (e.code() != ErrorCodes::NO_ELEMENTS_IN_CONFIG || storage_policy.getName() != DEFAULT_STORAGE_POLICY_NAME)
+                if (e.code() != ErrorCodes::NO_ELEMENTS_IN_CONFIG || storage_policy->getName() != DEFAULT_STORAGE_POLICY_NAME)
                     throw;
 
                 Poco::Util::AbstractConfiguration::Keys keys;
@@ -155,6 +155,17 @@ Disks StoragePolicy::getDisks() const
     for (const auto & volume : volumes)
         for (const auto & disk : volume->getDisks())
             res.push_back(disk);
+    return res;
+}
+
+
+Disks StoragePolicy::getDisksByType(DiskType::Type type) const
+{
+    Disks res;
+    for (const auto & volume : volumes)
+        for (const auto & disk : volume->getDisks())
+            if (disk->getType() == type)
+                res.push_back(disk);
     return res;
 }
 
@@ -331,6 +342,11 @@ bool StoragePolicy::hasAnyVolumeWithDisabledMerges() const
     return false;
 }
 
+bool StoragePolicy::containsVolume(const String & volume_name) const
+{
+    return volume_index_by_volume_name.contains(volume_name);
+}
+
 StoragePolicySelector::StoragePolicySelector(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
@@ -344,6 +360,13 @@ StoragePolicySelector::StoragePolicySelector(
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
             throw Exception(
                 "Storage policy name can contain only alphanumeric and '_' (" + backQuote(name) + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
+        /*
+         * A customization point for StoragePolicy, here one can add his own policy, for example, based on policy's name
+         * if (name == "MyCustomPolicy")
+         *      policies.emplace(name, std::make_shared<CustomPolicy>(name, config, config_prefix + "." + name, disks));
+         *  else
+         */
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
         LOG_INFO(&Poco::Logger::get("StoragePolicySelector"), "Storage policy {} loaded", backQuote(name));
@@ -374,7 +397,7 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// Second pass, load.
     for (const auto & [name, policy] : policies)
     {
-        result->policies[name] = std::make_shared<StoragePolicy>(*policy, config, config_prefix + "." + name, disks);
+        result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
     }
 
     return result;

@@ -569,10 +569,14 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ASTPtr as_table;
     ASTPtr select;
     ASTPtr live_view_timeout;
+    ASTPtr live_view_periodic_refresh;
 
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
+    bool with_and = false;
+    bool with_timeout = false;
+    bool with_periodic_refresh = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -594,10 +598,35 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!table_name_p.parse(pos, table, expected))
         return false;
 
-    if (ParserKeyword{"WITH TIMEOUT"}.ignore(pos, expected))
+    if (ParserKeyword{"WITH"}.ignore(pos, expected))
     {
-        if (!ParserNumber{}.parse(pos, live_view_timeout, expected))
-            live_view_timeout = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
+        if (ParserKeyword{"TIMEOUT"}.ignore(pos, expected))
+        {
+            if (!ParserNumber{}.parse(pos, live_view_timeout, expected))
+            {
+                live_view_timeout = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
+            }
+
+            /// Optional - AND
+            if (ParserKeyword{"AND"}.ignore(pos, expected))
+                with_and = true;
+
+            with_timeout = true;
+        }
+
+        if (ParserKeyword{"REFRESH"}.ignore(pos, expected) || ParserKeyword{"PERIODIC REFRESH"}.ignore(pos, expected))
+        {
+            if (!ParserNumber{}.parse(pos, live_view_periodic_refresh, expected))
+                live_view_periodic_refresh = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC));
+
+            with_periodic_refresh = true;
+        }
+
+        else if (with_and)
+            return false;
+
+        if (!with_timeout && !with_periodic_refresh)
+            return false;
     }
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
@@ -655,6 +684,9 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (live_view_timeout)
         query->live_view_timeout.emplace(live_view_timeout->as<ASTLiteral &>().value.safeGet<UInt64>());
+
+    if (live_view_periodic_refresh)
+        query->live_view_periodic_refresh.emplace(live_view_periodic_refresh->as<ASTLiteral &>().value.safeGet<UInt64>());
 
     return true;
 }
@@ -748,6 +780,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     ASTPtr table;
     ASTPtr to_table;
+    ASTPtr to_inner_uuid;
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -798,9 +831,16 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    // TO [db.]table
-    if (ParserKeyword{"TO"}.ignore(pos, expected))
+
+    if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
+        ParserLiteral literal_p;
+        if (!literal_p.parse(pos, to_inner_uuid, expected))
+            return false;
+    }
+    else if (ParserKeyword{"TO"}.ignore(pos, expected))
+    {
+        // TO [db.]table
         if (!table_name_p.parse(pos, to_table, expected))
             return false;
     }
@@ -851,6 +891,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (to_table)
         query->to_table_id = getTableIdentifier(to_table);
+    if (to_inner_uuid)
+        query->to_inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.get<String>());
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);

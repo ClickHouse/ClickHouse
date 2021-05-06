@@ -1,6 +1,6 @@
 ---
 toc_priority: 31
-toc_title: "\u0421\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441"
+toc_title: "Синтаксис"
 ---
 
 # Синтаксис {#sintaksis}
@@ -128,7 +128,7 @@ expr AS alias
 
         Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        В функции [CAST](sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
+        В функции [CAST](../sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
 
 -   `expr` — любое выражение, которое поддерживает ClickHouse.
 
@@ -138,7 +138,7 @@ expr AS alias
 
         Например, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
-### Примечания по использованию {#primechaniia-po-ispolzovaniiu}
+### Примечания по использованию {#notes-on-usage}
 
 Синонимы являются глобальными для запроса или подзапроса, и вы можете определить синоним в любой части запроса для любого выражения. Например, `SELECT (1 AS n) + 2, n`.
 
@@ -169,9 +169,9 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-В этом примере мы объявили таблицу `t` со столбцом `b`. Затем, при выборе данных, мы определили синоним `sum(b) AS b`. Поскольку синонимы глобальные, то ClickHouse заменил литерал `b` в выражении `argMax(a, b)` выражением `sum(b)`. Эта замена вызвала исключение.
+В этом примере мы объявили таблицу `t` со столбцом `b`. Затем, при выборе данных, мы определили синоним `sum(b) AS b`. Поскольку синонимы глобальные, то ClickHouse заменил литерал `b` в выражении `argMax(a, b)` выражением `sum(b)`. Эта замена вызвала исключение. Можно изменить это поведение, включив настройку [prefer_column_name_to_alias](../operations/settings/settings.md#prefer_column_name_to_alias), для этого нужно установить ее в значение `1`.
 
-## Звёздочка {#zviozdochka}
+## Звёздочка {#asterisk}
 
 В запросе `SELECT`, вместо выражения может стоять звёздочка. Подробнее смотрите раздел «SELECT».
 
@@ -180,5 +180,3 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 Выражение представляет собой функцию, идентификатор, литерал, применение оператора, выражение в скобках, подзапрос, звёздочку. А также может содержать синоним.
 Список выражений - одно выражение или несколько выражений через запятую.
 Функции и операторы, в свою очередь, в качестве аргументов, могут иметь произвольные выражения.
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/syntax/) <!--hide-->

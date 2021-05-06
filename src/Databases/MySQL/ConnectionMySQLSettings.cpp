@@ -50,12 +50,12 @@ void ConnectionMySQLSettings::loadFromQuery(ASTStorage & storage_def)
 #undef ADD_IF_ABSENT
 }
 
-void ConnectionMySQLSettings::loadFromQueryContext(const Context & context)
+void ConnectionMySQLSettings::loadFromQueryContext(ContextPtr context)
 {
-    if (!context.hasQueryContext())
+    if (!context->hasQueryContext())
         return;
 
-    const Settings & settings = context.getQueryContext().getSettingsRef();
+    const Settings & settings = context->getQueryContext()->getSettingsRef();
 
     if (settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
         set("mysql_datatypes_support_level", settings.mysql_datatypes_support_level.toString());

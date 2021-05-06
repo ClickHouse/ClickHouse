@@ -2,6 +2,7 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -35,7 +36,7 @@ FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_
         throw Exception("FillingStep expects single input", ErrorCodes::LOGICAL_ERROR);
 }
 
-void FillingStep::transformPipeline(QueryPipeline & pipeline)
+void FillingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -48,6 +49,11 @@ void FillingStep::describeActions(FormatSettings & settings) const
     settings.out << String(settings.offset, ' ');
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);
     settings.out << '\n';
+}
+
+void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Sort Description", explainSortDescription(sort_description, input_streams.front().header));
 }
 
 }

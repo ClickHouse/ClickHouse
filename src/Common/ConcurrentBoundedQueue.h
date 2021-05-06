@@ -6,38 +6,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
-#include <common/types.h>
-
-
-namespace detail
-{
-    template <typename T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable_v<T>>
-    struct MoveOrCopyIfThrow;
-
-    template <typename T>
-    struct MoveOrCopyIfThrow<T, true>
-    {
-        void operator()(T && src, T & dst) const
-        {
-            dst = std::forward<T>(src);
-        }
-    };
-
-    template <typename T>
-    struct MoveOrCopyIfThrow<T, false>
-    {
-        void operator()(T && src, T & dst) const
-        {
-            dst = src;
-        }
-    };
-
-    template <typename T>
-    void moveOrCopyIfThrow(T && src, T & dst)
-    {
-        MoveOrCopyIfThrow<T>()(std::forward<T>(src), dst);
-    }
-}
+#include <common/MoveOrCopyIfThrow.h>
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty.
@@ -53,8 +22,10 @@ private:
     Poco::Semaphore empty_count;
 
 public:
-    ConcurrentBoundedQueue(size_t max_fill)
-        : fill_count(0, max_fill), empty_count(max_fill, max_fill) {}
+    explicit ConcurrentBoundedQueue(size_t max_fill)
+        : fill_count(0, max_fill)
+        , empty_count(max_fill, max_fill)
+    {}
 
     void push(const T & x)
     {

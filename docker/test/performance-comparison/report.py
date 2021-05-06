@@ -520,12 +520,13 @@ if args.report == 'main':
     for t in tables:
         print(t)
 
-    print("""
+    print(f"""
     </div>
     <p class="links">
     <a href="all-queries.html">All queries</a>
     <a href="compare.log">Log</a>
     <a href="output.7z">Test output</a>
+    {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
     </p>
     </body>
     </html>
@@ -638,12 +639,13 @@ elif args.report == 'all-queries':
     for t in tables:
         print(t)
 
-    print("""
+    print(f"""
     </div>
     <p class="links">
     <a href="report.html">Main report</a>
     <a href="compare.log">Log</a>
     <a href="output.7z">Test output</a>
+    {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
     </p>
     </body>
     </html>

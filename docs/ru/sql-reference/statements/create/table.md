@@ -1,11 +1,15 @@
 ---
 toc_priority: 36
-toc_title: "\u0422\u0430\u0431\u043b\u0438\u0446\u0430"
+toc_title: "Таблица"
 ---
 
 # CREATE TABLE {#create-table-query}
 
-Запрос `CREATE TABLE` может иметь несколько форм.
+Запрос `CREATE TABLE` может иметь несколько форм, которые используются в зависимости от контекста и решаемых задач.
+
+По умолчанию таблицы создаются на текущем сервере. Распределенные DDL запросы создаются с помощью секции `ON CLUSTER`, которая [описана отдельно](../../../sql-reference/distributed-ddl.md).
+## Варианты синтаксиса {#syntax-forms}
+### С описанием структуры {#with-explicit-schema}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -23,27 +27,50 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Также могут быть указаны выражения для значений по умолчанию - смотрите ниже.
 
 При необходимости можно указать [первичный ключ](#primary-key) с одним или несколькими ключевыми выражениями.
+
+### Со структурой, аналогичной другой таблице {#with-a-schema-similar-to-other-table}
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Создаёт таблицу с такой же структурой, как другая таблица. Можно указать другой движок для таблицы. Если движок не указан, то будет выбран такой же движок, как у таблицы `db2.name2`.
 
+### Из табличной функции {#from-a-table-function}
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
+Создаёт таблицу с такой же структурой и данными, как результат соответствующей табличной функции. Созданная таблица будет работать так же, как и указанная табличная функция.
 
-Создаёт таблицу с такой же структурой и данными, как результат соответствующей табличной функцией.
+### Из запроса SELECT {#from-select-query}
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
-Создаёт таблицу со структурой, как результат запроса `SELECT`, с движком engine, и заполняет её данными из SELECT-а.
+Создаёт таблицу со структурой, как результат запроса `SELECT`, с движком `engine`, и заполняет её данными из `SELECT`. Также вы можете явно задать описание столбцов.
 
-Во всех случаях, если указано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
+Если таблица уже существует и указано `IF NOT EXISTS`, то запрос ничего не делает.
 
 После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../../../engines/table-engines/index.md#table_engines).
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+Результат:
+
+```text
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
 
 ## Модификатор NULL или NOT NULL {#null-modifiers}
 
@@ -53,7 +80,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 Смотрите также настройку [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable).
 
-### Значения по умолчанию {#create-default-values}
+## Значения по умолчанию {#create-default-values}
 
 В описании столбца, может быть указано выражение для значения по умолчанию, одного из следующих видов:
 `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
@@ -67,15 +94,21 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 В качестве выражения для умолчания, может быть указано произвольное выражение от констант и столбцов таблицы. При создании и изменении структуры таблицы, проверяется, что выражения не содержат циклов. При INSERT-е проверяется разрешимость выражений - что все столбцы, из которых их можно вычислить, переданы.
 
+### DEFAULT {#default}
+
 `DEFAULT expr`
 
 Обычное значение по умолчанию. Если в запросе INSERT не указан соответствующий столбец, то он будет заполнен путём вычисления соответствующего выражения.
+
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
 Материализованное выражение. Такой столбец не может быть указан при INSERT, то есть, он всегда вычисляется.
 При INSERT без указания списка столбцов, такие столбцы не рассматриваются.
 Также этот столбец не подставляется при использовании звёздочки в запросе SELECT. Это необходимо, чтобы сохранить инвариант, что дамп, полученный путём `SELECT *`, можно вставить обратно в таблицу INSERT-ом без указания списка столбцов.
+
+### ALIAS {#alias}
 
 `ALIAS expr`
 
@@ -118,7 +151,7 @@ PRIMARY KEY(expr1[, expr2,...]);
 !!! warning "Предупреждение"
     Вы не можете сочетать оба способа в одном запросе.
 
-### Ограничения (constraints) {#constraints}
+## Ограничения {#constraints}
 
 Наряду с объявлением столбцов можно объявить ограничения на значения в столбцах таблицы:
 
@@ -136,11 +169,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Добавление большого числа ограничений может негативно повлиять на производительность `INSERT` запросов.
 
-### Выражение для TTL {#vyrazhenie-dlia-ttl}
+## Выражение для TTL {#vyrazhenie-dlia-ttl}
 
 Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-### Кодеки сжатия столбцов {#codecs}
+## Кодеки сжатия столбцов {#codecs}
 
 По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../../../operations/server-configuration-parameters/settings.md). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
 
@@ -182,7 +215,18 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 ClickHouse поддерживает кодеки общего назначения и специализированные кодеки.
 
-#### Специализированные кодеки {#create-query-specialized-codecs}
+### Кодеки общего назначения {#create-query-common-purpose-codecs}
+
+Кодеки:
+
+-   `NONE` — без сжатия.
+-   `LZ4` — [алгоритм сжатия без потерь](https://github.com/lz4/lz4) используемый по умолчанию. Применяет быстрое сжатие LZ4.
+-   `LZ4HC[(level)]` — алгоритм LZ4 HC (high compression) с настраиваемым уровнем сжатия. Уровень по умолчанию — 9. Настройка `level <= 0` устанавливает уровень сжания по умолчанию. Возможные уровни сжатия: \[1, 12\]. Рекомендуемый диапазон уровней: \[4, 9\].
+-   `ZSTD[(level)]` — [алгоритм сжатия ZSTD](https://en.wikipedia.org/wiki/Zstandard) с настраиваемым уровнем сжатия `level`. Возможные уровни сжатия: \[1, 22\]. Уровень сжатия по умолчанию: 1.
+
+Высокие уровни сжатия полезны для ассимметричных сценариев, подобных «один раз сжал, много раз распаковал». Они подразумевают лучшее сжатие, но большее использование CPU.
+
+### Специализированные кодеки {#create-query-specialized-codecs}
 
 Эти кодеки разработаны для того, чтобы, используя особенности данных сделать сжатие более эффективным. Некоторые из этих кодеков не сжимают данные самостоятельно. Они готовят данные для кодеков общего назначения, которые сжимают подготовленные данные эффективнее, чем неподготовленные.
 
@@ -203,19 +247,7 @@ CREATE TABLE codec_example
 )
 ENGINE = MergeTree()
 ```
-
-#### Кодеки общего назначения {#create-query-common-purpose-codecs}
-
-Кодеки:
-
--   `NONE` — без сжатия.
--   `LZ4` — [алгоритм сжатия без потерь](https://github.com/lz4/lz4) используемый по умолчанию. Применяет быстрое сжатие LZ4.
--   `LZ4HC[(level)]` — алгоритм LZ4 HC (high compression) с настраиваемым уровнем сжатия. Уровень по умолчанию — 9. Настройка `level <= 0` устанавливает уровень сжания по умолчанию. Возможные уровни сжатия: \[1, 12\]. Рекомендуемый диапазон уровней: \[4, 9\].
--   `ZSTD[(level)]` — [алгоритм сжатия ZSTD](https://en.wikipedia.org/wiki/Zstandard) с настраиваемым уровнем сжатия `level`. Возможные уровни сжатия: \[1, 22\]. Уровень сжатия по умолчанию: 1.
-
-Высокие уровни сжатия полезны для ассимметричных сценариев, подобных «один раз сжал, много раз распаковал». Высокие уровни сжатия подразумеваю лучшее сжатие, но большее использование CPU.
-
-## Временные таблицы {#vremennye-tablitsy}
+## Временные таблицы {#temporary-tables}
 
 ClickHouse поддерживает временные таблицы со следующими характеристиками:
 
@@ -241,7 +273,77 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 
 Вместо временных можно использовать обычные таблицы с [ENGINE = Memory](../../../engines/table-engines/special/memory.md).
 
+## REPLACE TABLE {#replace-table-query}
 
+Запрос `REPLACE` позволяет частично изменить таблицу (структуру или данные).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/table) 
+!!!note "Замечание"
+    Такие запросы поддерживаются только движком БД [Atomic](../../../engines/database-engines/atomic.md).
+
+Чтобы удалить часть данных из таблицы, вы можете создать новую таблицу, добавить в нее данные из старой таблицы, которые вы хотите оставить (отобрав их с помощью запроса `SELECT`), затем удалить старую таблицу и переименовать новую таблицу так как старую:
+
+```sql
+CREATE TABLE myNewTable AS myOldTable;
+INSERT INTO myNewTable SELECT * FROM myOldTable WHERE CounterID <12345;
+DROP TABLE myOldTable;
+RENAME TABLE myNewTable TO myOldTable;
+```
+
+Вместо перечисленных выше операций можно использовать один запрос:
+
+```sql
+REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
+```
+
+### Синтаксис
+
+{CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
+
+Для данного запроса можно использовать любые варианты синтаксиса запроса `CREATE`. Запрос `REPLACE` для несуществующей таблицы вызовет ошибку.
+
+### Примеры:
+
+Рассмотрим таблицу:
+
+```sql
+CREATE DATABASE base ENGINE = Atomic;
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (1, 'test');
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┬─s────┐
+│ 1 │ test │
+└───┴──────┘
+```
+
+Используем запрос `REPLACE` для удаления всех данных:
+
+```sql
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (2, null);
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┬─s──┐
+│ 2 │ \N │
+└───┴────┘
+```
+
+Используем запрос `REPLACE` для изменения структуры таблицы:
+
+```sql
+REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (3);
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┐
+│ 3 │
+└───┘
+```
+
 <!--hide-->
