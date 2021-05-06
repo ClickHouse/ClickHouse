@@ -1,8 +1,0 @@
-/Makefile.liz*
-/printVersion
-/doubleBuffer
-/ringBuffer
-/ringBufferHC
-/lineCompress
-/frameCompress
-/*.exe
