@@ -2202,8 +2202,8 @@ private:
         if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
             return;
 
-        if (need_render_progress)
-            clearProgress();
+        if (progress_bar.getNeedRenderProgress())
+            progress_bar.clearProgress();
 
         block_out_stream->write(block);
         written_first_block = true;
@@ -2212,8 +2212,8 @@ private:
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (need_render_progress)
-            writeProgress();
+        if (progress_bar.getNeedRenderProgress())
+            progress_bar.writeProgress(progress, watch);
     }
 
 
