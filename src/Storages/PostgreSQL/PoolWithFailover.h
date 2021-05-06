@@ -9,6 +9,8 @@
 namespace postgres
 {
 
+String formatConnectionString(String dbname, String host, UInt16 port, String user, String password);
+
 class PoolWithFailover
 {
 
@@ -39,8 +41,9 @@ public:
 
     ConnectionHolderPtr get();
 
-
 private:
+    bool getAndValidateConnection();
+
     struct PoolHolder
     {
         String connection_string;

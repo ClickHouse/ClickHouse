@@ -8,8 +8,6 @@
 namespace postgres
 {
 
-String formatConnectionString(String dbname, String host, UInt16 port, String user, String password);
-
 using ConnectionPtr = std::unique_ptr<pqxx::connection>;
 using Pool = BorrowedObjectPool<ConnectionPtr>;
 using PoolPtr = std::shared_ptr<Pool>;
@@ -24,16 +22,14 @@ public:
 
     ~ConnectionHolder();
 
-    /// Will throw if error is not pqxx::broken_connection.
-    bool isConnected();
-    /// Throw on no connection.
+    bool isValid() { return connection && connection->is_open(); }
+
     pqxx::connection & get();
 
 private:
     String connection_string;
     PoolPtr pool;
     ConnectionPtr connection;
-    size_t pool_wait_timeout;
 };
 
 using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;

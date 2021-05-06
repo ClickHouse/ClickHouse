@@ -2,7 +2,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
-
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -14,6 +14,17 @@ namespace ErrorCodes
 
 namespace postgres
 {
+
+String formatConnectionString(String dbname, String host, UInt16 port, String user, String password)
+{
+    DB::WriteBufferFromOwnString out;
+    out << "dbname=" << DB::quote << dbname
+        << " host=" << DB::quote << host
+        << " port=" << port
+        << " user=" << DB::quote << user
+        << " password=" << DB::quote << password;
+    return out.str();
+}
 
 PoolWithFailover::PoolWithFailover(
         const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
@@ -58,7 +69,6 @@ PoolWithFailover::PoolWithFailover(
     }
 }
 
-
 PoolWithFailover::PoolWithFailover(
         const std::string & database,
         const RemoteDescription & addresses,
@@ -78,13 +88,11 @@ PoolWithFailover::PoolWithFailover(
     }
 }
 
-
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
         : replicas_with_priority(other.replicas_with_priority)
         , max_tries(other.max_tries)
 {
 }
-
 
 ConnectionHolderPtr PoolWithFailover::get()
 {
@@ -98,13 +106,29 @@ ConnectionHolderPtr PoolWithFailover::get()
             for (size_t i = 0; i < replicas.size(); ++i)
             {
                 const auto & pool_entry = replicas[i];
-                auto entry = std::make_unique<ConnectionHolder>(pool_entry.connection_string, pool_entry.pool, pool_entry.pool_wait_timeout);
 
-                if (entry->isConnected())
+                try
                 {
+                    auto entry = std::make_unique<ConnectionHolder>(pool_entry.connection_string, pool_entry.pool, pool_entry.pool_wait_timeout);
+
+                    if (!entry->isValid())
+                        continue;
+
                     /// Move all traversed replicas to the end.
-                    std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
+                    if (replicas.size() > 1)
+                        std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
+
                     return entry;
+                }
+                catch (const pqxx::broken_connection & pqxx_error)
+                {
+                    LOG_ERROR(
+                        &Poco::Logger::get("PostgreSQLConnection"),
+                        "Connection error: {}", pqxx_error.what());
+                }
+                catch (...)
+                {
+                    throw;
                 }
             }
         }
@@ -112,5 +136,4 @@ ConnectionHolderPtr PoolWithFailover::get()
 
     throw DB::Exception(DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Unable to connect to any of the replicas");
 }
-
 }
