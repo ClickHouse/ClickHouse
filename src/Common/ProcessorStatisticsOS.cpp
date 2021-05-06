@@ -1,11 +1,9 @@
 #if defined(OS_LINUX)
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <cassert>
 #include <string>
+#include <ctime>
 
 #include "ProcessorStatisticsOS.h"
 
@@ -16,9 +14,8 @@
 
 #include <Common/Exception.h>
 
-#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/MMappedFileDescriptor.h>
 
 namespace DB
 {
@@ -35,147 +32,144 @@ static constexpr auto loadavg_filename = "/proc/loadavg";
 static constexpr auto procst_filename  = "/proc/stat";
 static constexpr auto cpuinfo_filename = "/proc/cpuinfo";
 
+static const long USER_HZ = sysconf(_SC_CLK_TCK);
+
 ProcessorStatisticsOS::ProcessorStatisticsOS()
-    : loadavg_fd(openWithCheck(loadavg_filename, O_RDONLY | O_CLOEXEC))
-    , procst_fd(openWithCheck(procst_filename,   O_RDONLY | O_CLOEXEC))
-    , cpuinfo_fd(openWithCheck(cpuinfo_filename, O_RDONLY | O_CLOEXEC))
-{}
-
-ProcessorStatisticsOS::~ProcessorStatisticsOS() 
+    : loadavg_in(loadavg_filename, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY | O_CLOEXEC)
+    , procst_in(procst_filename,   DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY | O_CLOEXEC)
+    , cpuinfo_in(cpuinfo_filename, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY | O_CLOEXEC)
 {
-    closeFD(loadavg_fd, String(loadavg_filename));
-    closeFD(procst_fd, String(procst_filename));
-    closeFD(cpuinfo_fd, String(cpuinfo_filename));
+    ProcStLoad unused;
+    calcStLoad(unused);
 }
 
-int ProcessorStatisticsOS::openWithCheck(const String & filename, int flags)
-{
-    int fd = ::open(filename.c_str(), flags);
-    checkFDAfterOpen(fd, filename);
-    return fd;
-}
+ProcessorStatisticsOS::~ProcessorStatisticsOS() {}
 
-void ProcessorStatisticsOS::checkFDAfterOpen(int fd, const String & filename)
-{
-    if (-1 == fd) 
-        throwFromErrno(
-                "Cannot open file" + String(filename), 
-                errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
-}
-
-void ProcessorStatisticsOS::closeFD(int fd, const String & filename)
-{
-    if (0 != ::close(fd)) 
-    {
-        try 
-        {
-            throwFromErrno(
-                    "File descriptor for \"" + filename + "\" could not be closed. "
-                    "Something seems to have gone wrong. Inspect errno.", ErrorCodes::CANNOT_CLOSE_FILE);
-        } catch(const ErrnoException&)
-        {
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__); 
-        }
-    }
-}
-
-ProcessorStatisticsOS::Data ProcessorStatisticsOS::ProcessorStatisticsOS::get() const 
+ProcessorStatisticsOS::Data ProcessorStatisticsOS::ProcessorStatisticsOS::get()
 {
     Data data;
-    readLoadavg(data);
-    readProcst(data);
-    readCpuinfo(data);
+    readLoadavg(data.loadavg);
+    calcStLoad(data.stload);
+    readFreq(data.freq); 
     return data;
 }
 
-void ProcessorStatisticsOS::readLoadavg(Data & data) const
+void ProcessorStatisticsOS::readLoadavg(ProcLoadavg& loadavg)
 {
-    constexpr size_t buf_size = 1024;
-    char buf[buf_size];
-
-    ssize_t res = 0;
-
-    do 
-    {
-        res = ::pread(loadavg_fd, buf, buf_size, 0);
-        
-        if (-1 == res) 
-        {
-            if (errno == EINTR) 
-                continue;
-
-            throwFromErrno("Cannot read from file " + String(loadavg_filename), 
-                    ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
-        }
-
-        assert(res >= 0);
-        break;
-    } while (true);
-
-    ReadBufferFromMemory in(buf, res);
+    loadavg_in.seek(0, SEEK_SET);
     
-    readFloatAndSkipWhitespaceIfAny(data.avg1,  in);
-    readFloatAndSkipWhitespaceIfAny(data.avg5,  in);
-    readFloatAndSkipWhitespaceIfAny(data.avg15, in);
+    readFloatAndSkipWhitespaceIfAny(loadavg.avg1,  loadavg_in);
+    readFloatAndSkipWhitespaceIfAny(loadavg.avg5,  loadavg_in);
+    readFloatAndSkipWhitespaceIfAny(loadavg.avg15, loadavg_in);
 }
 
-void ProcessorStatisticsOS::readProcst(Data & data) const
+void ProcessorStatisticsOS::calcStLoad(ProcStLoad & stload) 
 {
-    MMappedFileDescriptor mapped_procst(procst_fd, 0);
-    ReadBufferFromMemory in(mapped_procst.getData(),
-                            mapped_procst.getLength());
+    ProcTime cur_proc_time;
+    readProcTimeAndProcesses(cur_proc_time, stload);
+
+    std::time_t cur_time = std::time(nullptr);
+    float time_dif = static_cast<float>(cur_time - last_stload_call_time);
+
+    stload.user_time = 
+        (cur_proc_time.user - last_proc_time.user) / time_dif;
+    stload.nice_time = 
+        (cur_proc_time.nice - last_proc_time.nice) / time_dif;
+    stload.system_time = 
+        (cur_proc_time.system - last_proc_time.system) / time_dif;
+    stload.idle_time = 
+        (cur_proc_time.idle - last_proc_time.idle) / time_dif;
+    stload.iowait_time = 
+        (cur_proc_time.iowait - last_proc_time.iowait) / time_dif;
+    stload.steal_time = 
+       (cur_proc_time.steal - last_proc_time.steal) / time_dif;
+    stload.guest_time = 
+       (cur_proc_time.guest - last_proc_time.guest) / time_dif;
+    stload.guest_nice_time = 
+        (cur_proc_time.guest_nice - last_proc_time.guest_nice) / time_dif;
+    
+    last_stload_call_time = cur_time;
+    last_proc_time = cur_proc_time;
+}
+
+void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcStLoad& stload)
+{
+    procst_in.seek(0, SEEK_SET);
 
     String field_name, field_val;
     uint64_t unused; 
    
-    readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, in);
+    readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, procst_in);
 
-    readIntTextAndSkipWhitespaceIfAny(data.user_time,   in);
-    readIntTextAndSkipWhitespaceIfAny(data.nice_time,   in);
-    readIntTextAndSkipWhitespaceIfAny(data.system_time, in);
-    readIntTextAndSkipWhitespaceIfAny(data.idle_time,   in);
-    readIntTextAndSkipWhitespaceIfAny(data.iowait_time, in);
+    readIntTextAndSkipWhitespaceIfAny(proc_time.user,   procst_in);
+    readIntTextAndSkipWhitespaceIfAny(proc_time.nice,   procst_in);
+    readIntTextAndSkipWhitespaceIfAny(proc_time.system, procst_in);
+    readIntTextAndSkipWhitespaceIfAny(proc_time.idle,   procst_in);
+    readIntTextAndSkipWhitespaceIfAny(proc_time.iowait, procst_in);
+    proc_time.user   *= USER_HZ;
+    proc_time.nice   *= USER_HZ;
+    proc_time.system *= USER_HZ;
+    proc_time.idle   *= USER_HZ;
+    proc_time.iowait *= USER_HZ;
     
-    readIntTextAndSkipWhitespaceIfAny(unused, in);
-    readIntTextAndSkipWhitespaceIfAny(unused, in);
+    readIntTextAndSkipWhitespaceIfAny(unused, procst_in);
+    readIntTextAndSkipWhitespaceIfAny(unused, procst_in);
     
-    readIntTextAndSkipWhitespaceIfAny(data.steal_time,  in);
-    readIntTextAndSkipWhitespaceIfAny(data.guest_time,  in);
-    readIntTextAndSkipWhitespaceIfAny(data.nice_time,   in);
+    readIntTextAndSkipWhitespaceIfAny(proc_time.steal,      procst_in);
+    readIntTextAndSkipWhitespaceIfAny(proc_time.guest,      procst_in);
+    readIntTextAndSkipWhitespaceIfAny(proc_time.guest_nice, procst_in);
+    proc_time.steal      *= USER_HZ;
+    proc_time.guest      *= USER_HZ;
+    proc_time.guest_nice *= USER_HZ;
 
     do 
     {
-        readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, in);
-        readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_val,  in);
+        readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, procst_in);
+        readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_val,  procst_in);
     } while (field_name != String("processes"));
     
-    data.processes = static_cast<uint32_t>(std::stoul(field_val));
+    stload.processes = static_cast<uint32_t>(std::stoul(field_val));
     
-    readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, in);
-    readIntTextAndSkipWhitespaceIfAny(data.procs_running, in);
+    readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, procst_in);
+    readIntTextAndSkipWhitespaceIfAny(stload.procs_running, procst_in);
     
-    readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, in);
-    readIntTextAndSkipWhitespaceIfAny(data.procs_blocked, in);
+    readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, procst_in);
+    readIntTextAndSkipWhitespaceIfAny(stload.procs_blocked, procst_in);
 }
 
-void ProcessorStatisticsOS::readCpuinfo(Data & data) const
-{
-    MMappedFileDescriptor mapped_cpuinfo(cpuinfo_fd, 0);
-    ReadBufferFromMemory in(mapped_cpuinfo.getData(), 
-                            mapped_cpuinfo.getLength());
+void ProcessorStatisticsOS::readFreq(ProcFreq & freq)
+{   
+    cpuinfo_in.seek(0, SEEK_SET);
     
     String field_name, field_val;
     char unused;
+    int cpu_count = 0;
 
-    do 
+    do
     {
+        do 
+        {
+            readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, cpuinfo_in);
+        } while (!cpuinfo_in.eof() && field_name != String("cpu MHz"));
         
-        readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, in);
-        readCharAndSkipWhitespaceIfAny(unused,        in);
-        readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_val,  in);
-    } while (field_name != String("cpu MHz"));
-    
-    data.freq = stof(field_val);
+        if (cpuinfo_in.eof()) 
+            break;
+
+        readCharAndSkipWhitespaceIfAny(unused, cpuinfo_in);
+        readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_val,  cpuinfo_in);
+
+        cpu_count++;
+        
+        float cur_cpu_freq = stof(field_val);
+
+        freq.avg += cur_cpu_freq;
+        freq.max = (cpu_count == 1 ? cur_cpu_freq : 
+                                          std::max(freq.max, cur_cpu_freq));
+        freq.min = (cpu_count == 1 ? cur_cpu_freq : 
+                                          std::min(freq.min, cur_cpu_freq));
+    } while (true);
+
+    freq.avg /= static_cast<float>(cpu_count);
 }
 
 template<typename T>
