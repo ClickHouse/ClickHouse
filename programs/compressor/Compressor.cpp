@@ -4,6 +4,7 @@
 #include <boost/algorithm/string/join.hpp>
 
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -19,6 +20,8 @@
 #include <Common/TerminalSize.h>
 #include <Core/Defines.h>
 
+#include <sys/times.h>
+#include <sys/time.h>
 
 namespace DB
 {
@@ -77,6 +80,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("block-size,b", po::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
+        ("lizard", "use Lizard instread of LZ4")
+        ("lzsse2", "use lzsse2 instread of LZ4")
+        ("lzsse4", "use lzsse4 instread of LZ4")
+        ("lzsse8", "use lzsse8 instread of LZ4")
+        ("density", "use Density instread of LZ4")
+        ("param", po::value<std::string>(), "extra params for compresion algorithm")
         ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
         ("level", po::value<int>(), "compression level for codecs specified via flags")
         ("none", "use no compression instead of LZ4")
@@ -103,12 +112,21 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool decompress = options.count("decompress");
         bool use_lz4hc = options.count("hc");
         bool use_zstd = options.count("zstd");
+        bool use_lizard = options.count("lizard");
+        bool use_lzsse2 = options.count("lzsse2");
+        bool use_lzsse4 = options.count("lzsse4");
+        bool use_lzsse8 = options.count("lzsse8");
+        bool use_density = options.count("density");
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
         unsigned block_size = options["block-size"].as<unsigned>();
         std::vector<std::string> codecs;
         if (options.count("codec"))
             codecs = options["codec"].as<std::vector<std::string>>();
+
+        std::optional<std::string> param;
+        if (options.count("param"))
+            param = options["param"].as<std::string>();
 
         if ((use_lz4hc || use_zstd || use_none) && !codecs.empty())
             throw Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", ErrorCodes::BAD_ARGUMENTS);
@@ -122,6 +140,16 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             method_family = "LZ4HC";
         else if (use_zstd)
             method_family = "ZSTD";
+        else if (use_lizard)
+            method_family = "Lizard";
+        else if (use_lzsse2)
+            method_family = "LZSSE2";
+        else if (use_lzsse4)
+            method_family = "LZSSE4";
+        else if (use_lzsse8)
+            method_family = "LZSSE8";
+        else if (use_density)
+            method_family = "Density";
         else if (use_none)
             method_family = "NONE";
 
@@ -137,6 +165,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             std::string codecs_line = boost::algorithm::join(codecs, ",");
             auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
             codec = CompressionCodecFactory::instance().get(ast, nullptr);
+        } else if (param.has_value()) {
+            codec = CompressionCodecFactory::instance().get(method_family, level, param);
         }
         else
             codec = CompressionCodecFactory::instance().get(method_family, level);
@@ -155,6 +185,9 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else
             wb = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
 
+
+        struct tms tv1, tv2;
+        times(&tv1);
         if (stat_mode)
         {
             /// Output statistic for compressed file.
@@ -185,6 +218,10 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             CompressedWriteBuffer to(*wb, codec, block_size);
             copyData(*rb, to);
         }
+        times(&tv2);
+        
+        int tics_per_second = sysconf(_SC_CLK_TCK);
+        std::cerr << static_cast<double>(tv2.tms_utime - tv1.tms_utime) / tics_per_second << std::endl;
     }
     catch (...)
     {

@@ -41,8 +41,14 @@ enum class CompressionMethodByte : uint8_t
     Multiple = 0x91,
     Delta    = 0x92,
     T64      = 0x93,
-    DoubleDelta = 0x94,
-    Gorilla     = 0x95,
+    DoubleDelta  = 0x94,
+    Gorilla      = 0x95,
+    Lizard       = 0x96,
+    Density      = 0x97,
+    LZSSE2       = 0x98,
+    LZSSE4       = 0x99,
+    LZSSE8       = 0xa0,
+
 };
 
 }
