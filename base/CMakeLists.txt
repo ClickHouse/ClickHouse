@@ -3,7 +3,8 @@ if (USE_CLANG_TIDY)
 endif ()
 
 if (WITH_COVERAGE)
-    add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
+    # Can't add for whole folder as daemon/ needs instrumentation
+    #add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
 
     set_source_files_properties(
         ext/chrono_io.h

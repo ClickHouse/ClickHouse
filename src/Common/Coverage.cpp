@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -54,8 +55,7 @@ Writer::Writer()
       dwarf(symbol_index->getSelf()->elf),
       // 0 -- unlimited queue e.g. functor insertion to thread pool won't lock.
       // Set the initial pool size to all thread as we'll need all resources to symbolize fast.
-      pool(hardware_concurrency, 1000, 0),
-      copying_test_hits(false)
+      pool(hardware_concurrency, 1000, 0)
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
     {
@@ -181,42 +181,30 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     std::string test_swap = {test_name.data(), test_name.size()};
     EdgesHit edges_hit_swap(edges_count, 0);
 
-    { /// Critical section
-        whileCopyingBusyLoop(); // to prevent multithreading access.
-        copying_test_hits.store(true, std::memory_order_release);
-
-        if (!hasTest())
-        {
-            test = std::move(test_swap);
-            copying_test_hits.store(false, std::memory_order_release);
-            return;
-        }
-
-        edges_hit.swap(edges_hit_swap);
+    {
+        auto lk = std::lock_guard(copying_data_mutex);
         test.swap(test_swap);
 
-        copying_test_hits.store(false, std::memory_order_release);
+        if (test_swap.empty())
+            return;
+
+        edges_hit.swap(edges_hit_swap);
     }
-
-    const Poco::Logger * log = &Poco::Logger::get(std::string{logger_base_name} + "." + test_swap);
-
-    LOG_INFO(log, "Copied shared data");
-
-    /// genhtml doesn't allow '.' in test names
-    std::replace(test_swap.begin(), test_swap.end(), '.', '_');
 
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// The move is evaluated within current function's lifetime during function constructor call.
-    auto f = [this, log, test_name = std::move(test_swap), edges_copied = std::move(edges_hit_swap)]
+    auto f = [this, test_name = std::move(test_swap), edges_copied = std::move(edges_hit_swap)] () mutable
     {
+        /// genhtml doesn't allow '.' in test names
+        std::replace(test_name.begin(), test_name.end(), '.', '_');
+
+        const Poco::Logger * log = &Poco::Logger::get(std::string{logger_base_name} + "." + test_name);
+
         prepareDataAndDump({test_name, log}, edges_copied);
     };
 
     // The functor insertion itself is thread-safe.
     pool.scheduleOrThrowOnError(std::move(f));
-
-    //if (!dump_global_report)
-    //    return;
 }
 
 void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
@@ -225,11 +213,18 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
 
     TestData test_data(source_files_cache.size());
 
-    for (auto [edge_index, hit] : hits)
+    for (size_t edge_index = 0; edge_index < edges_count; ++edge_index)
+    {
+        const CallCount hit = hits[edge_index];
+
+        if (!hit)
+            continue;
+
         if (const EdgeInfo& info = edges_cache[edge_index]; info.isFunctionEntry())
             setOrIncrement(test_data[info.index].functions_hit, edge_index, hit);
         else
             setOrIncrement(test_data[info.index].lines_hit, info.line, hit);
+    }
 
     LOG_INFO(test_info.log, "Finished filling internal structures");
     convertToLCOVAndDump(test_info, test_data);

@@ -86,8 +86,11 @@ public:
 
     inline void hit(EdgeIndex edge_index)
     {
-        whileCopyingBusyLoop();
-        // no sync on individual cells, still can get approximately good hit results.
+        /**
+         * If we are not copying data: it's like multithreaded value increment -- will probably get less hits, but
+         * it's still good approximation.
+         * If we are copying data: it's just pointer swap, so the hit will count for the old test, not for the new one.
+         */
         ++edges_hit[edge_index];
     }
 
@@ -123,12 +126,7 @@ private:
 
     EdgesHit edges_hit;
     std::string test;
-    std::atomic_bool copying_test_hits;
-
-    void whileCopyingBusyLoop() const { while(copying_test_hits.load(std::memory_order_acquire)); }
-
-    // Faster than using optional<string>.
-    constexpr bool hasTest() const { return !test.empty(); }
+    std::mutex copying_data_mutex;
 
     /// Two caches filled on binary startup from PC table created by clang.
     using EdgesToAddrs = std::vector<Addr>;
@@ -283,7 +281,7 @@ private:
      * take some extra time.
      */
     template <bool is_func_cache, class CacheItem>
-    void scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data) const
+    void scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
     {
         const size_t pool_size = hardware_concurrency;
         const size_t step = data.size() / pool_size;
