@@ -182,11 +182,12 @@ struct ResultOfIf
                 ? max(sizeof(A), sizeof(B)) * 2
                 : max(sizeof(A), sizeof(B))>::Type;
 
-    using ConstructedTypeWithoutUUID = std::conditional_t<std::is_same_v<A, UInt128> || std::is_same_v<B, UInt128>, Error, ConstructedType>;
-    using ConstructedWithUUID = std::conditional_t<std::is_same_v<A, UInt128> && std::is_same_v<B, UInt128>, A, ConstructedTypeWithoutUUID>;
-
-    using Type = std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>, ConstructedWithUUID,
-        std::conditional_t<IsDecimalNumber<A> && IsDecimalNumber<B>, std::conditional_t<(sizeof(A) > sizeof(B)), A, B>, Error>>;
+    using Type =
+        std::conditional_t<std::is_same_v<A, B>, A,
+        std::conditional_t<IsDecimalNumber<A> && IsDecimalNumber<B>,
+            std::conditional_t<(sizeof(A) > sizeof(B)), A, B>,
+        std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>,
+            ConstructedType, Error>>>;
 };
 
 /** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */

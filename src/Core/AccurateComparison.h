@@ -21,6 +21,9 @@ using namespace DB;
 template <typename A, typename B>
 bool lessOp(A a, B b)
 {
+    if constexpr (std::is_same_v<A, B>)
+        return a < b;
+
     /// float vs float
     if constexpr (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
         return a < b;
@@ -94,6 +97,9 @@ bool lessOrEqualsOp(A a, B b)
 template <typename A, typename B>
 bool equalsOp(A a, B b)
 {
+    if constexpr (std::is_same_v<A, B>)
+        return a == b;
+
     /// float vs float
     if constexpr (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
         return a == b;
@@ -135,9 +141,8 @@ bool equalsOp(A a, B b)
         return DecomposedFloat<A>(a).equals(b);
     }
 
-    static_assert(is_integer_v<A> || std::is_floating_point_v<A>);
-    static_assert(is_integer_v<B> || std::is_floating_point_v<B>);
-    __builtin_unreachable();
+    /// e.g comparing UUID with integer.
+    return false;
 }
 
 template <typename A, typename B>
