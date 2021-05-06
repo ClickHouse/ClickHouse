@@ -155,7 +155,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     else
     {
         /// A case for radix sort
-        if constexpr (is_arithmetic_v<T> && !std::is_same_v<T, UInt128>)
+        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
         {
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (s >= 256 && s <= std::numeric_limits<UInt32>::max())
