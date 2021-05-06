@@ -1,0 +1,41 @@
+Lizard v1.0
+- LZ5 v2.0 was renamed to Lizard v1.0
+- improved compression speed with many small files
+
+LZ5 v2.0
+- this version is optimized for decompression speed (instead of ratio for previous versions)
+- LZ5 v2.0 contains 4 compression methods:
+  fastLZ4 : compression levels -10...-19 are designed to give better decompression speed than LZ4 i.e. over 2000 MB/s
+  LIZv1 : compression levels -20...-29 are designed to give better ratio than LZ4 keeping 75% decompression speed
+  fastLZ4 + Huffman : compression levels -30...-39 add Huffman coding to fastLZ4
+  LIZv1 + Huffman : compression levels -40...-49 give the best ratio (comparable to zlib and low levels of zstd/brotli) at decompression speed of 1000 MB/s
+
+LZ5 v1.5
+- introduced compatibility with Visual C++ 2010 and newer
+- attached Visual Studio 2010 project
+- thoroughly tested with 21 Travis CI and 7 AppVeyor CI tests
+- fixed bug with reusing a context in lizard_frame.c (LizardF_compressBegin and Lizard_compress_HC_continue)
+- fixed rare bug in match finder (concerns levels 4 - 15)
+
+LZ5 v1.4.1
+- fixed bug with a backward match extension (level 11 and 12)
+
+LZ5 v1.4
+- improved: levels from 13 to 15 (maximum compression ratio)
+- added a new parser: LizardHC_optimal_price_bt
+- updated documentation: lizard_Block_format.md and lizard_Frame_format.md 
+- changed lizard.exe: the "-B" option with block size [1-7] = 64KB, 256KB, 1MB, 4MB, 16MB, 64MB, 256MB (default : 4 = 4MB)
+ 
+LZ5 v1.3.3
+- added: new levels from 11 to 18 (maximum compression ratio)
+- added: a new parser: LizardHC_optimal_price
+- fixed: buffer-overflow during decompression (thanks to m^2)
+
+LZ5 r132
+- improved compression ratio
+- added: new parsers: LizardHC_fast, LizardHC_price_fast, LizardHC_lowest_price
+- added: a special 1-byte codeword for the last occured offset
+- added: support for 3-byte long matches (MINMATCH = 3)
+
+LZ5 r131
+The first release based on LZ4 r132 dev

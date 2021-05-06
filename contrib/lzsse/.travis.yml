@@ -1,0 +1,185 @@
+language: c
+sudo: false
+branches:
+  except:
+    - /^(wip\/)?(appveyor|msvc|mingw|windows)(\-.+)?$/
+matrix:
+  include:
+    ###
+    ## Linux builds using various versions of GCC.
+    ###
+    - env: C_COMPILER=gcc-7
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - premake4
+          packages:
+          - gcc-7
+          - g++-7
+          - premake4
+    # - env: C_COMPILER=gcc-6
+    #   addons:
+    #     apt:
+    #       sources:
+    #       - ubuntu-toolchain-r-test
+    #       - premake4
+    #       packages:
+    #       - gcc-6
+    #       - g++-6
+    #       - premake4
+    - env: C_COMPILER=gcc-5
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - premake4
+          packages:
+          - gcc-5
+          - g++-5
+          - premake4
+    # - env: C_COMPILER=gcc-4.9
+    #   addons:
+    #     apt:
+    #       sources:
+    #       - ubuntu-toolchain-r-test
+    #       - premake4
+    #       packages:
+    #       - gcc-4.9
+    #       - g++-4.9
+    #       - premake4
+    - env: C_COMPILER=gcc-4.8
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - premake4
+          packages:
+          - gcc-4.8
+          - g++-4.8
+          - premake4
+    # - env: C_COMPILER=gcc-4.7
+    #   addons:
+    #     apt:
+    #       sources:
+    #       - ubuntu-toolchain-r-test
+    #       - premake4
+    #       packages:
+    #       - gcc-4.7
+    #       - g++-4.7
+    #       - premake4
+    - env: C_COMPILER=gcc-4.6
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - premake4
+          packages:
+          - gcc-4.6
+          - g++-4.6
+          - premake4
+    # - os: linux
+    #   env: C_COMPILER=gcc-4.5
+    #   addons:
+    #     apt:
+    #       sources:
+    #       - ubuntu-toolchain-r-test
+    #       - premake4
+    #       packages:
+    #       - gcc-4.5
+    #       - g++-4.5
+    #       - premake4
+    - env: C_COMPILER=gcc-4.4
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - premake4
+          packages:
+          - gcc-4.4
+          - g++-4.4
+          - premake4
+
+    ###
+    ## clang on Linux
+    ###
+    - env: C_COMPILER=clang-3.9
+      addons:
+        apt:
+          sources:
+          - llvm-toolchain-precise-3.9
+          - ubuntu-toolchain-r-test
+          - premake4
+          packages:
+          - clang-3.9
+          - premake4
+    # - env: C_COMPILER=clang-3.8
+    #   addons:
+    #     apt:
+    #       sources:
+    #       - llvm-toolchain-precise-3.8
+    #       - ubuntu-toolchain-r-test
+    #       - premake4
+    #       packages:
+    #       - clang-3.8
+    #       - premake4
+    - env: C_COMPILER=clang-3.7
+      addons:
+        apt:
+          sources:
+          - llvm-toolchain-precise-3.7
+          - ubuntu-toolchain-r-test
+          - premake4
+          packages:
+          - clang-3.7
+          - premake4
+    # - env: C_COMPILER=clang-3.6
+    #   addons:
+    #     apt:
+    #       sources:
+    #       - llvm-toolchain-precise-3.6
+    #       - ubuntu-toolchain-r-test
+    #       - premake4
+    #       packages:
+    #       - clang-3.6
+    #       - premake4
+    - env: C_COMPILER=clang-3.5
+      addons:
+        apt:
+          sources:
+          - llvm-toolchain-precise-3.5
+          - ubuntu-toolchain-r-test
+          - premake4
+          packages:
+          - clang-3.5
+          - premake4
+
+    ###
+    ## PGI
+    ###
+    - env: C_COMPILER=pgcc ENABLE_OPENMP=y
+      addons:
+        apt:
+          sources:
+          - premake4
+          packages:
+          - premake4
+
+    ###
+    ## OS X
+    ###
+    # - os: osx
+
+before_install:
+###
+## If we use the matrix to set CC/CXX Travis, overwrites the values,
+## so instead we use C/CXX_COMPILER, then copy the values to CC/CXX
+## here (after Travis has set CC/CXX).
+###
+- if [ "${C_COMPILER}" = "pgcc" ]; then wget -q -O /dev/stdout 'https://raw.githubusercontent.com/nemequ/pgi-travis/master/install-pgi.sh' | /bin/sh; fi
+- if [ -n "${C_COMPILER}" ]; then export CC="${C_COMPILER}"; fi
+- premake4 gmake
+
+script:
+- cd gmake && make
+

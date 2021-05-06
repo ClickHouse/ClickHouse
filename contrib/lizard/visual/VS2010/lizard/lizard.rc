@@ -1,0 +1,51 @@
+// Microsoft Visual C++ generated resource script.
+//
+
+#include "lizard_compress.h" /* LIZARD_VERSION_STRING */
+#define APSTUDIO_READONLY_SYMBOLS
+#include "verrsrc.h"
+#undef APSTUDIO_READONLY_SYMBOLS
+
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE 9, 1
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO     VERSIONINFO
+  FILEVERSION       LIZARD_VERSION_MAJOR,LIZARD_VERSION_MINOR,LIZARD_VERSION_RELEASE,0
+  PRODUCTVERSION    LIZARD_VERSION_MAJOR,LIZARD_VERSION_MINOR,LIZARD_VERSION_RELEASE,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Yann Collet, Przemyslaw Skibinski"
+            VALUE "FileDescription", "Extremely fast compression"
+            VALUE "FileVersion", LIZARD_VERSION_STRING
+            VALUE "InternalName", "lizard.exe"
+            VALUE "LegalCopyright", "Copyright (C) 2013-2017, Yann Collet, Przemyslaw Skibinski"
+            VALUE "OriginalFilename", "lizard.exe"
+            VALUE "ProductName", "Lizard"
+            VALUE "ProductVersion", LIZARD_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
+
+#endif

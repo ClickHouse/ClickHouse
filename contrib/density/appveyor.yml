@@ -1,0 +1,37 @@
+version: 0.14.2.{build}
+image: Visual Studio 2015
+init:
+- cmd:
+environment:
+  matrix:
+  - EXTRA_PATH: C:\mingw-w64\i686-5.3.0-posix-dwarf-rt_v4-rev0\mingw32\bin\
+    LAUNCH_BUILD: mingw32-make CC=gcc AR=gcc-ar
+    LAUNCH_PATH: build\
+  - EXTRA_PATH: C:\mingw-w64\i686-6.3.0-posix-dwarf-rt_v5-rev1\mingw32\bin\
+    LAUNCH_BUILD: mingw32-make CC=gcc AR=gcc-ar
+    LAUNCH_PATH: build\
+  - EXTRA_PATH: C:\mingw-w64\x86_64-6.3.0-posix-seh-rt_v5-rev1\mingw64\bin\
+    LAUNCH_BUILD: mingw32-make CC=gcc AR=gcc-ar
+    LAUNCH_PATH: build\
+  - EXTRA_PATH: C:\mingw-w64\x86_64-7.2.0-posix-seh-rt_v5-rev1\mingw64\bin\
+    LAUNCH_BUILD: mingw32-make CC=gcc AR=gcc-ar
+    LAUNCH_PATH: build\
+  - EXTRA_PATH: '%programfiles(x86)%\Microsoft Visual Studio\2017\Community\MSBuild\15.0\Bin\amd64\'
+    LAUNCH_BUILD: cd msvc && msbuild.exe Density.sln
+    EXTRA_GIT: git submodule update --init --recursive
+    LAUNCH_PATH: bin\Release\
+install:
+- cmd:
+build_script:
+- cmd: >-
+    %EXTRA_GIT%
+
+    set PATH=%EXTRA_PATH%;%PATH%
+
+    %LAUNCH_BUILD%
+
+    file %LAUNCH_PATH:\=/%*
+
+    %LAUNCH_PATH%benchmark.exe -h -f
+test_script:
+- cmd:

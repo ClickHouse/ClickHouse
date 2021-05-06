@@ -1,0 +1,229 @@
+\."
+\." lizard.1: This is a manual page for 'lizard' program. This file is part of the
+\." lizard <http://github.com/inikep/lizard/> project.
+\." Author: Yann Collet
+\."
+.
+\." No hyphenation
+.hy 0
+.nr HY 0
+.
+.TH lizard "1" "2015-03-21" "lizard" "User Commands"
+.SH NAME
+\fBlizard, unlizard, lizardcat\fR \- Compress or decompress .liz files
+
+.SH SYNOPSIS
+.TP 5
+\fBlizard\fR [\fBOPTIONS\fR] [-|INPUT-FILE] <OUTPUT-FILE>
+.PP
+.B unlizard
+is equivalent to
+.BR "lizard \-d"
+.br
+.B lizardcat
+is equivalent to
+.BR "lizard \-dc"
+.br
+.PP
+When writing scripts that need to decompress files,
+it is recommended to always use the name
+.B lizard
+with appropriate arguments
+.RB ( "lizard \-d"
+or
+.BR "lizard \-dc" )
+instead of the names
+.B unlizard
+and
+.BR lizardcat .
+
+
+.SH DESCRIPTION
+.PP
+\fBlizard\fR is an extremely fast lossless compression algorithm,
+based on \fBbyte-aligned LZ77\fR family of compression scheme.
+\fBlizard\fR offers compression speeds of 400 MB/s per core, linearly scalable with multi-core CPUs.
+It features an extremely fast decoder, with speed in multiple GB/s per core,
+typically reaching RAM speed limit on multi-core systems.
+The native file format is the
+.B .liz
+format.
+
+.B lizard
+supports a command line syntax similar but not identical to
+.BR gzip (1).
+Differences are :
+\fBlizard\fR preserve original files ;
+\fBlizard file1 file2\fR means : compress file1 \fIinto\fR file2 ;
+\fBlizard file\fR shows real-time statistics during compression .
+
+Default behaviors can be modified by opt-in commands, described below.
+\fBlizard --quiet --multiple\fR more closely mimics \fBgzip\fR behavior.
+
+.SS "Concatenation of .liz files"
+It is possible to concatenate
+.B .liz
+files as is.
+.B lizard
+will decompress such files as if they were a single
+.B .liz
+file. For example:
+  lizard file1  > foo.liz
+  lizard file2 >> foo.liz
+ then
+  lizardcat foo.liz
+ is equivalent to :
+  cat file1 file2
+
+.PP
+
+.SH OPTIONS
+.
+.SS "Short commands concatenation"
+In some cases, some options can be expressed using short command
+.B "-x"
+or long command
+.B "--long-word" .
+Short commands can be concatenated together. For example,
+.B "-d -c"
+is equivalent to
+.B "-dc" .
+Long commands cannot be concatenated.
+They must be clearly separated by a space.
+.SS "Multiple commands"
+When multiple contradictory commands are issued on a same command line,
+only the latest one will be applied.
+.
+.SS "Operation mode"
+.TP
+.BR \-z ", " \-\-compress
+Compress.
+This is the default operation mode
+when no operation mode option is specified ,
+no other operation mode is implied from the command name
+(for example,
+.B unlizard
+implies
+.B \-\-decompress ),
+nor from the input file name
+(for example, a file extension
+.B .liz
+implies
+.B \-\-decompress
+by default).
+.B -z
+can also be used to force compression of an already compressed
+.B .liz
+file.
+.TP
+.BR \-d ", " \-\-decompress ", " \-\-uncompress
+Decompress.
+.B --decompress
+is also the default operation when the input filename has an
+.B .liz
+extensionq
+.TP
+.BR \-t ", " \-\-test
+Test the integrity of compressed
+.B .liz
+files.
+The decompressed data is discarded.
+No files are created nor removed.
+.
+.SS "Operation modifiers"
+.TP
+.B \-1
+ fast compression (default)
+.TP
+.B \-9
+ high compression
+
+.TP
+.BR \-f ", " --[no-]force
+ This option has several effects:
+.RS
+.IP \(bu 3
+If the target file already exists,
+overwrite it without prompting.
+.IP \(bu 3
+When used with
+.B \-\-decompress
+and
+.B lizard
+cannot recognize the type of the source file,
+copy the source file as is to standard output.
+This allows
+.B lizardcat
+.B \-\-force
+to be used like
+.BR cat (1)
+for files that have not been compressed with
+.BR lizard .
+.RE
+
+.TP
+.BR \-c ", " \--stdout ", " \--to-stdout
+ force write to standard output, even if it is the console
+
+.TP
+.BR \-m ", " \--multiple
+ Multiple file names.
+ By default, the second filename is used as the destination filename for the compressed file.
+ With
+.B -m
+, you can specify any number of input filenames. Each of them will be compressed
+independently, and the resulting name of each compressed file will be
+.B filename.liz
+.
+
+.TP
+.B \-B#
+ block size [4-7](default : 7)
+ B1 = 128KB, B2=256KB, B3=1MB, B4=4MB, B5=16MB, B6=64MB, B7=256MB
+.TP
+.B \-BD
+ block dependency (improves compression ratio on small blocks)
+.TP
+.B \--[no-]frame-crc
+ select frame checksum (default:enabled)
+.TP
+.B \--[no-]content-size
+ header includes original size (default:not present)
+ Note : this option can only be activated when the original size can be determined,
+hence for a file. It won't work with unknown source size, such as stdin or pipe.
+.TP
+.B \--[no-]sparse
+ sparse mode support (default:enabled on file, disabled on stdout)
+.TP
+.B \-l
+ use Legacy format (useful for Linux Kernel compression)
+.
+.SS "Other options"
+.TP
+.BR \-v ", " --verbose
+ verbose mode
+.TP
+.BR \-q ", " --quiet
+ suppress warnings and real-time statistics; specify twice to suppress errors too
+.TP
+.B \-h/\-H
+ display help/long help and exit
+.TP
+.BR \-V ", " \--version
+ display Version number and exit
+.TP
+.BR \-k ", " \--keep
+ Don't delete source file.
+This is default behavior anyway, so this option is just for compatibility with gzip/xz.
+.TP
+.B \-b
+ benchmark file(s)
+.TP
+.B \-i#
+ iteration loops [1-9](default : 3), benchmark mode only
+
+.SH BUGS
+Report bugs at: https://github.com/inikep/lizard/issues
+
+.SH AUTHOR
+Yann Collet

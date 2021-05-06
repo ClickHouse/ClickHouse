@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="algorithms">
+      <UniqueIdentifier>{DF10C562-CBC8-06B0-34D0-DF0B20A7A1A0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\chameleon">
+      <UniqueIdentifier>{5AB95D49-4648-E712-EF66-FB0DDBD4F7B8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\chameleon\core">
+      <UniqueIdentifier>{1252540B-7E14-8895-C7C4-162233C66073}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\chameleon\dictionary">
+      <UniqueIdentifier>{3F6054BC-AB43-63FC-B446-913820A9294D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\cheetah">
+      <UniqueIdentifier>{C09C0CB6-AC80-CD0B-15E1-C75E01E4B78D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\cheetah\core">
+      <UniqueIdentifier>{3845B705-A47C-FF9C-AD86-63C0193D2696}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\cheetah\dictionary">
+      <UniqueIdentifier>{E597066D-51B0-ED96-1A5D-7D3086348230}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\lion">
+      <UniqueIdentifier>{40FA2C44-AC85-9A08-B596-1DFD21A1F608}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\lion\core">
+      <UniqueIdentifier>{B8122E82-A4A1-B74B-4DC0-CB46392EC8F1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\lion\dictionary">
+      <UniqueIdentifier>{6585C1C9-5195-6D9A-BA4E-D2B8A67D5C33}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="algorithms\lion\forms">
+      <UniqueIdentifier>{B6B426C8-2221-E2C2-EB14-7A205740042B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="buffers">
+      <UniqueIdentifier>{B2DFE593-1EBF-642F-27D7-EF059335CB90}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="structure">
+      <UniqueIdentifier>{367A73B3-A2E4-272A-EB22-D9CF57CC057F}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\algorithms\algorithms.h">
+      <Filter>algorithms</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\chameleon\chameleon.h">
+      <Filter>algorithms\chameleon</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\chameleon\core\chameleon_decode.h">
+      <Filter>algorithms\chameleon\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\chameleon\core\chameleon_encode.h">
+      <Filter>algorithms\chameleon\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\chameleon\dictionary\chameleon_dictionary.h">
+      <Filter>algorithms\chameleon\dictionary</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\cheetah\cheetah.h">
+      <Filter>algorithms\cheetah</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\cheetah\core\cheetah_decode.h">
+      <Filter>algorithms\cheetah\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\cheetah\core\cheetah_encode.h">
+      <Filter>algorithms\cheetah\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\cheetah\dictionary\cheetah_dictionary.h">
+      <Filter>algorithms\cheetah\dictionary</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\dictionaries.h">
+      <Filter>algorithms</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\lion\core\lion_decode.h">
+      <Filter>algorithms\lion\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\lion\core\lion_encode.h">
+      <Filter>algorithms\lion\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\lion\dictionary\lion_dictionary.h">
+      <Filter>algorithms\lion\dictionary</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\lion\forms\lion_form_model.h">
+      <Filter>algorithms\lion\forms</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\algorithms\lion\lion.h">
+      <Filter>algorithms\lion</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\buffers\buffer.h">
+      <Filter>buffers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\density_api.h" />
+    <ClInclude Include="..\src\globals.h" />
+    <ClInclude Include="..\src\structure\header.h">
+      <Filter>structure</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\algorithms\algorithms.c">
+      <Filter>algorithms</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\algorithms\chameleon\core\chameleon_decode.c">
+      <Filter>algorithms\chameleon\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\algorithms\chameleon\core\chameleon_encode.c">
+      <Filter>algorithms\chameleon\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\algorithms\cheetah\core\cheetah_decode.c">
+      <Filter>algorithms\cheetah\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\algorithms\cheetah\core\cheetah_encode.c">
+      <Filter>algorithms\cheetah\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\algorithms\dictionaries.c">
+      <Filter>algorithms</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\algorithms\lion\core\lion_decode.c">
+      <Filter>algorithms\lion\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\algorithms\lion\core\lion_encode.c">
+      <Filter>algorithms\lion\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\algorithms\lion\forms\lion_form_model.c">
+      <Filter>algorithms\lion\forms</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\buffers\buffer.c">
+      <Filter>buffers</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\globals.c" />
+    <ClCompile Include="..\src\structure\header.c">
+      <Filter>structure</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

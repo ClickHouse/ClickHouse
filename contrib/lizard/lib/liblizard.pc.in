@@ -1,0 +1,15 @@
+#   Lizard - Fast LZ compression algorithm
+#   Copyright (C) 2011-2014, Yann Collet
+#   Copyright (C) 2016-2017, Przemyslaw Skibinski <inikep@gmail.com>
+#   BSD 2-Clause License (http://www.opensource.org/licenses/bsd-license.php)
+
+prefix=@PREFIX@
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: lizard
+Description: extremely fast lossless compression algorithm library
+URL: http://github.com/inikep/lizard
+Version: @VERSION@
+Libs: -L@LIBDIR@ -llizard
+Cflags: -I@INCLUDEDIR@
