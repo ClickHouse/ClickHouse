@@ -621,7 +621,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         std::atomic<size_t> total_parts{0};
         std::atomic<size_t> parts_dropped{0};
 
-        MergedDataSkippingIndexAndCondition(MergeTreeIndexMergedConditionPtr condition_)
+        explicit MergedDataSkippingIndexAndCondition(MergeTreeIndexMergedConditionPtr condition_)
             : condition(condition_)
         {
         }

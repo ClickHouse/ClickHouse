@@ -192,7 +192,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         Poco::Logger::get("MTPRWHERE WHERE").information(select.where()->getColumnName());
         Poco::Logger::get("MTPRWHERE WHERE").information(select.where()->dumpTree());
     }
-    if(select.prewhere())
+    if (select.prewhere())
     {
         Poco::Logger::get("MTPRWHERE PRE").information(select.prewhere()->dumpTree());
         Poco::Logger::get("MTPRWHERE PRE").information(select.prewhere()->getColumnName());

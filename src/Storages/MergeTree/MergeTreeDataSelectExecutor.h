@@ -127,7 +127,7 @@ private:
         Poco::Logger * log);
 
     static MarkRanges filterMarksUsingMergedIndex(
-        MergeTreeIndices index_helper,
+        MergeTreeIndices indices,
         MergeTreeIndexMergedConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
