@@ -54,6 +54,10 @@ if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz)
 endif()
 
+add_subdirectory (lizard-cmake)
+add_subdirectory (density-cmake)
+add_subdirectory (lzsse-cmake)
+
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
 
