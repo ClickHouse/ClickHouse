@@ -62,9 +62,7 @@ void stem_en_init() {
 #define EXC7(a, b) ( len==7 && EXCBASE(b) && a[4]==b[4] && a[5]==b[5] )
 #define EXC8(a, b) ( len==8 && EXCBASE(b) && a[4]==b[4] && a[5]==b[5] && a[6]==b[6] )
 
-void stem_en(unsigned short *in_word, int len) {
-    auto word = reinterpret_cast<unsigned char *>(in_word);
-    
+void stem_en(BYTE *word, int len) {
     int i, first_vowel, r1, r2, iword;
     unsigned char has_Y = 0;
 
