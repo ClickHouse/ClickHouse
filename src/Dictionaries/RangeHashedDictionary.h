@@ -171,7 +171,8 @@ private:
     ColumnUInt8::Ptr hasKeysImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & ids,
-        const PaddedPODArray<RangeStorageType> & dates) const;
+        const PaddedPODArray<RangeStorageType> & dates,
+        size_t & keys_found) const;
 
     template <typename T>
     static void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
