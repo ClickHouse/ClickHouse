@@ -35,6 +35,8 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
 
+    size_t already_read_bytes = 0;
+
 public:
     explicit ReadBufferFromS3(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,

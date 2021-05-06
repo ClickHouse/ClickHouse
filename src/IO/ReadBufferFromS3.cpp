@@ -88,6 +88,8 @@ bool ReadBufferFromS3::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
 
+    already_read_bytes += internal_buffer.size();
+
     working_buffer = internal_buffer;
     return true;
 }
@@ -120,8 +122,9 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    if (getPosition())
-        req.SetRange("bytes=" + std::to_string(getPosition()) + "-");
+    auto position = offset + already_read_bytes;
+    if (position)
+        req.SetRange("bytes=" + std::to_string(position) + "-");
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
