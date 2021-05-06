@@ -748,6 +748,7 @@ Configuration markup:
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
             <retry_attempts>10</retry_attempts>
+            <single_read_retry_attempts>4</single_read_retry_attempts>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <cache_enabled>true</cache_enabled>
@@ -772,6 +773,7 @@ Optional parameters:
 -   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`. 
 -   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`. 
 -   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`. 
+-   `single_read_retry_attempts` — Number of retry attempts in case of connection drop during read. Default value is `4`. 
 -   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`. 
 -   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`. 
 -   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`. 
