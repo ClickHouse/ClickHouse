@@ -122,9 +122,20 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
+
     auto position = offset + already_read_bytes;
     if (position)
-        req.SetRange("bytes=" + std::to_string(position) + "-");
+		req.SetRange("bytes=" + std::to_string(position) + "-");
+
+    if (position != static_cast<size_t>(getPosition()))
+        LOG_TRACE(
+            log,
+            "DIFF: position:{}, getPosition():{}, already_read_bytes:{}, offset:{}, count():{}",
+            position,
+            getPosition(),
+            already_read_bytes,
+            offset,
+            count());
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
