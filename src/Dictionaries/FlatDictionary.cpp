@@ -223,7 +223,8 @@ ColumnPtr FlatDictionary::getDescendants(
             parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
-    auto result = getKeysDescendantsArray(keys, parent_to_child, level);
+    size_t keys_found;
+    auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
 
