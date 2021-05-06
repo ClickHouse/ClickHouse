@@ -437,7 +437,10 @@ void LOC_PREFIX(stem_ru_init)() {
 }
 
 
-void LOC_PREFIX(stem_ru)(LOC_CHAR_TYPE *word, int) {
+//void LOC_PREFIX(stem_ru)(LOC_CHAR_TYPE *word, int) {
+void LOC_PREFIX(stem_ru)(BYTE *in_word, int) {
+    auto word = reinterpret_cast<WORD *>(in_word);
+
     int r1, r2;
     int i, len;
 

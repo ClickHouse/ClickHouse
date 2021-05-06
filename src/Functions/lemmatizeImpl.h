@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 //#include <Poco/UTF8Encoding.h>
 #include <Common/UTF8Helpers.h>
+#include <sphinxstd.h>
 #include <sphinxstemen.cpp>
 
 namespace DB
@@ -57,7 +58,7 @@ struct LemmatizeImpl
 private:
 
     static void stemImpl(UInt8 * dst, UInt64 length) {
-        stem_en(reinterpret_cast<unsigned short *>(dst), length);
+        stem_en(reinterpret_cast<unsigned char *>(dst), length);
     }
 
 };

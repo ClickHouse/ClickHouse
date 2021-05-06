@@ -12,8 +12,11 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/castTypeToEither.h>
 
+#include <sphinxstd.h>
 #include <sphinxstemen.cpp>
 #include <sphinxstemru.cpp>
+#include <sphinxstemcz.cpp>
+#include <sphinxstemar.cpp>
 #include <functional>
 
 
@@ -36,7 +39,7 @@ struct StemImpl
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        std::function<void(unsigned short *, int)> stem,
+        std::function<void(unsigned char *, int)> stem,
         std::function<void()> stem_init)
     {
         /// Add 2 because some realizations of stem need 
@@ -52,7 +55,7 @@ struct StemImpl
             size_t original_size = offsets[i] - offsets[i - 1];
             memcpy(res_data.data() + data_size, data.data() + offsets[i - 1], original_size);
             
-            stem(reinterpret_cast<unsigned short *>(res_data.data() + data_size), original_size - 1);
+            stem(reinterpret_cast<unsigned char *>(res_data.data() + data_size), original_size - 1);
 
             UInt64 new_size = strlen(reinterpret_cast<const char *>(res_data.data() + data_size));
             data_size += new_size + 1;
@@ -104,7 +107,7 @@ public:
             if (const ColumnConst * scale_column_num = checkAndGetColumn<ColumnConst>(langcolumn.get()))
             {
                 String language = scale_column_num->getValue<String>();
-                std::function<void(unsigned short *, int)> stem;
+                std::function<void(unsigned char *, int)> stem;
                 std::function<void()> stem_init;
 
                 if (language == "en") {
@@ -113,6 +116,12 @@ public:
                 } else if (language == "ru") {
                     stem = stem_ru_utf8;    
                     stem_init = stem_ru_init;
+                } else if (language == "ar") {
+                    stem = stem_ar_utf8;    
+                    stem_init = stem_ar_init;
+                } else if (language == "cz") {
+                    stem = stem_cz;    
+                    stem_init = stem_cz_init;
                 }
                  else {
                     throw Exception(
