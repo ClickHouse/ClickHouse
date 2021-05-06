@@ -300,7 +300,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-UInt64 ColumnVector<T>::get64(size_t n) const
+UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
 {
     if constexpr (IsNumber<T>)
         return ext::bit_cast<UInt64>(data[n]);
@@ -309,7 +309,7 @@ UInt64 ColumnVector<T>::get64(size_t n) const
 }
 
 template <typename T>
-inline Float64 ColumnVector<T>::getFloat64(size_t n) const
+inline Float64 ColumnVector<T>::getFloat64(size_t n [[maybe_unused]]) const
 {
     if constexpr (IsNumber<T>)
         return static_cast<Float64>(data[n]);
@@ -318,7 +318,7 @@ inline Float64 ColumnVector<T>::getFloat64(size_t n) const
 }
 
 template <typename T>
-Float32 ColumnVector<T>::getFloat32(size_t n) const
+Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 {
     if constexpr (IsNumber<T>)
         return static_cast<Float32>(data[n]);
