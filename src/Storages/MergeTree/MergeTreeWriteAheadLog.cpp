@@ -30,7 +30,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     , disk(disk_)
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
-    , pool(storage.global_context.getSchedulePool())
+    , pool(storage.getContext()->getSchedulePool())
 {
     init();
     sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
@@ -147,7 +147,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
             }
             else if (action_type == ActionType::ADD_PART)
             {
-                auto part_disk = storage.reserveSpace(0)->getDisk();
                 auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
 
                 part = storage.createPart(
@@ -192,7 +191,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
         {
             MergedBlockOutputStream part_out(part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
 
-            part->minmax_idx.update(block, storage.minmax_idx_columns);
+            part->minmax_idx.update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0);
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);

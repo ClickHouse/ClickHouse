@@ -20,7 +20,7 @@
 
 namespace DB
 {
-class IPAddressDictionary final : public IDictionaryBase
+class IPAddressDictionary final : public IDictionary
 {
 public:
     IPAddressDictionary(
@@ -28,8 +28,7 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
-        bool require_nonempty_,
-        bool access_to_key_from_attributes_);
+        bool require_nonempty_);
 
     std::string getKeyDescription() const { return key_description; }
 
@@ -47,8 +46,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime,
-                                                     require_nonempty, access_to_key_from_attributes);
+        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -69,7 +67,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+        const ColumnPtr & default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -103,6 +101,7 @@ private:
             Decimal32,
             Decimal64,
             Decimal128,
+            Decimal256,
             Float32,
             Float64,
             String>
@@ -120,6 +119,7 @@ private:
             ContainerType<Decimal32>,
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
+            ContainerType<Decimal256>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<StringRef>>

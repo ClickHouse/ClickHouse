@@ -34,7 +34,7 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionMap>();
     }
@@ -65,7 +65,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() % 2 != 0)
-            throw Exception("Function " + getName() + " even number of arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires even number of arguments, but {} given", getName(), arguments.size());
 
         DataTypes keys, values;
         for (size_t i = 0; i < arguments.size(); i += 2)
@@ -145,7 +146,7 @@ class FunctionMapContains : public IFunction
 {
 public:
     static constexpr auto name = NameMapContains::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapContains>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapContains>(); }
 
     String getName() const override
     {
@@ -208,7 +209,7 @@ class FunctionMapKeys : public IFunction
 {
 public:
     static constexpr auto name = "mapKeys";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapKeys>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapKeys>(); }
 
     String getName() const override
     {
@@ -255,7 +256,7 @@ class FunctionMapValues : public IFunction
 {
 public:
     static constexpr auto name = "mapValues";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapValues>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapValues>(); }
 
     String getName() const override
     {

@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.210101.1235930.
+# document by TestFlows v1.6.210129.1222545.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -814,15 +814,15 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Prefix_WithS
     level=4,
     num='4.8.8.5')
 
-QA_SRS014_ClickHouse_LDAP_Role_Mapping = Specification(
-    name='QA-SRS014 ClickHouse LDAP Role Mapping', 
+SRS_014_ClickHouse_LDAP_Role_Mapping = Specification(
+    name='SRS-014 ClickHouse LDAP Role Mapping', 
     description=None,
-    author='vzakaznikov',
-    date='December 4, 2020', 
-    status='-', 
-    approved_by='-',
-    approved_date='-',
-    approved_version='-',
+    author=None,
+    date=None, 
+    status=None, 
+    approved_by=None,
+    approved_date=None,
+    approved_version=None,
     version=None,
     group=None,
     type=None,
@@ -950,26 +950,8 @@ QA_SRS014_ClickHouse_LDAP_Role_Mapping = Specification(
         RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Prefix_WithSpecialRegexCharacters,
         ),
     content='''
-# QA-SRS014 ClickHouse LDAP Role Mapping
+# SRS-014 ClickHouse LDAP Role Mapping
 # Software Requirements Specification
-
-(c) 2020 Altinity LTD. All Rights Reserved.
-
-**Document status:** Confidential
-
-**Author:** vzakaznikov
-
-**Date:** December 4, 2020
-
-## Approval
-
-**Status:** -
-
-**Version:** -
-
-**Approved by:** -
-
-**Date:** -
 
 ## Table of Contents
 
@@ -1046,13 +1028,13 @@ QA_SRS014_ClickHouse_LDAP_Role_Mapping = Specification(
 ## Revision History
 
 This document is stored in an electronic form using [Git] source control management software
-hosted in a [GitLab Repository].
+hosted in a [GitHub Repository].
 All the updates are tracked using the [Revision History].
 
 ## Introduction
 
-The [QA-SRS007 ClickHouse Authentication of Users via LDAP] added support for authenticating
-users using an [LDAP] server and the [QA-SRS009 ClickHouse LDAP External User Directory] added
+The [SRS-007 ClickHouse Authentication of Users via LDAP] added support for authenticating
+users using an [LDAP] server and the [SRS-009 ClickHouse LDAP External User Directory] added
 support for authenticating users using an [LDAP] external user directory. 
 
 This requirements specification adds additional functionality for mapping [LDAP] groups to 
@@ -1457,19 +1439,19 @@ the `<user directories><ldap><role_mapping>` section of the `config.xml`.
 * **Access Control and Account Management**: https://clickhouse.tech/docs/en/operations/access-rights/
 * **LDAP**: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
 * **ClickHouse:** https://clickhouse.tech
-* **GitLab Repository**: https://gitlab.com/altinity-qa/documents/qa-srs014-clickhouse-ldap-role-mapping/-/blob/master/QA_SRS014_ClickHouse_LDAP_Role_Mapping.md
-* **Revision History**: https://gitlab.com/altinity-qa/documents/qa-srs014-clickhouse-ldap-role-mapping/-/commits/master/QA_SRS014_ClickHouse_LDAP_Role_Mapping.md
+* **GitHub Repository**: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
+* **Revision History**: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/role_mapping/requirements/requirements.md 
 * **Git:** https://git-scm.com/
 
 [RBAC]: https://clickhouse.tech/docs/en/operations/access-rights/
 [SRS]: #srs
 [Access Control and Account Management]: https://clickhouse.tech/docs/en/operations/access-rights/
-[QA-SRS009 ClickHouse LDAP External User Directory]: https://gitlab.com/altinity-qa/documents/qa-srs009-clickhouse-ldap-external-user-directory/-/blob/master/QA_SRS009_ClickHouse_LDAP_External_User_Directory.md
-[QA-SRS007 ClickHouse Authentication of Users via LDAP]: https://gitlab.com/altinity-qa/documents/qa-srs007-clickhouse-athentication-of-users-via-ldap/-/blob/master/QA_SRS007_ClickHouse_Authentication_of_Users_via_LDAP.md
+[SRS-009 ClickHouse LDAP External User Directory]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/external_user_directory/requirements/requirements.md
+[SRS-007 ClickHouse Authentication of Users via LDAP]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/authentication/requirements/requirements.md
 [LDAP]: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
 [ClickHouse]: https://clickhouse.tech
-[GitLab Repository]: https://gitlab.com/altinity-qa/documents/qa-srs014-clickhouse-ldap-role-mapping/-/blob/master/QA_SRS014_ClickHouse_LDAP_Role_Mapping.md
-[Revision History]: https://gitlab.com/altinity-qa/documents/qa-srs014-clickhouse-ldap-role-mapping/-/commits/master/QA_SRS014_ClickHouse_LDAP_Role_Mapping.md
+[GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
+[Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
 [Git]: https://git-scm.com/
-[GitLab]: https://gitlab.com
+[GitHub]: https://github.com
 ''')

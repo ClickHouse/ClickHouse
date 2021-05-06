@@ -35,28 +35,12 @@ sudo apt-get install git cmake ninja-build
 或cmake3而不是旧系统上的cmake。
 或者在早期版本的系统中用 cmake3 替代 cmake
 
-## 安装 GCC 10 {#an-zhuang-gcc-10}
+## 安装 Clang
 
-有几种方法可以做到这一点。
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-### 安装 PPA 包 {#an-zhuang-ppa-bao}
-
-``` bash
-sudo apt-get install software-properties-common
-sudo apt-add-repository ppa:ubuntu-toolchain-r/test
-sudo apt-get update
-sudo apt-get install gcc-10 g++-10
-```
-
-### 源码安装 gcc {#yuan-ma-an-zhuang-gcc}
-
-请查看 [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
-
-## 使用 GCC 10 来编译 {#shi-yong-gcc-10-lai-bian-yi}
-
-``` bash
-export CC=gcc-10
-export CXX=g++-10
+```bash
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
 ## 拉取 ClickHouse 源码 {#la-qu-clickhouse-yuan-ma-1}

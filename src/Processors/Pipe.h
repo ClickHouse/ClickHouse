@@ -1,7 +1,9 @@
 #pragma once
+
 #include <Processors/IProcessor.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 namespace DB
 {
@@ -108,6 +110,7 @@ public:
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
+    void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
     /// For queries with nested interpreters (i.e. StorageDistributed)
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { holder.query_plans.emplace_back(std::move(plan)); }
 
@@ -128,6 +131,7 @@ private:
         std::vector<StoragePtr> storage_holders;
         std::vector<TableLockHolder> table_locks;
         std::vector<std::unique_ptr<QueryPlan>> query_plans;
+        std::shared_ptr<QueryIdHolder> query_id_holder;
     };
 
     Holder holder;
@@ -152,7 +156,7 @@ private:
     /// This methods are for QueryPipeline. It is allowed to complete graph only there.
     /// So, we may be sure that Pipe always has output port if not empty.
     bool isCompleted() const { return !empty() && output_ports.empty(); }
-    static Pipe unitePipes(Pipes pipes, Processors * collected_processors);
+    static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
     void setOutputFormat(ProcessorPtr output);
 

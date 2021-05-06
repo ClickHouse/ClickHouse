@@ -21,16 +21,13 @@ void MarkdownRowOutputFormat::writePrefix()
     }
     writeCString("\n|", out);
     String left_alignment = ":-|";
-    String central_alignment = ":-:|";
     String right_alignment = "-:|";
     for (size_t i = 0; i < columns; ++i)
     {
-        if (isInteger(types[i]))
+        if (types[i]->shouldAlignRightInPrettyFormats())
             writeString(right_alignment, out);
-        else if (isString(types[i]))
-            writeString(left_alignment, out);
         else
-            writeString(central_alignment, out);
+            writeString(left_alignment, out);
     }
     writeChar('\n', out);
 }
@@ -50,9 +47,9 @@ void MarkdownRowOutputFormat::writeRowEndDelimiter()
     writeCString(" |\n", out);
 }
 
-void MarkdownRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    type.serializeAsTextEscaped(column, row_num, out, format_settings);
+    serialization.serializeTextEscaped(column, row_num, out, format_settings);
 }
 
 void registerOutputFormatProcessorMarkdown(FormatFactory & factory)

@@ -8,7 +8,7 @@ CREATE TABLE nested
     col2 Nested(a UInt32, n Nested(s String, b UInt32)),
     col3 Nested(n1 Nested(a UInt32, b UInt32), n2 Nested(s String, t String))
 )
-ENGINE = MergeTree 
+ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 
@@ -36,7 +36,7 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %nested%'))
-    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
+    AND event_date >= yesterday() AND current_database = currentDatabase();
 
 SYSTEM DROP MARK CACHE;
 SELECT col3.n2.s FROM nested FORMAT Null;
@@ -46,7 +46,7 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col3.n2.s FROM %nested%'))
-    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
+    AND event_date >= yesterday() AND current_database = currentDatabase();
 
 DROP TABLE nested;
 
@@ -55,12 +55,14 @@ CREATE TABLE nested
     id UInt32,
     col1 Nested(a UInt32, n Nested(s String, b UInt32))
 )
-ENGINE = MergeTree 
+ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
 
-INSERT INTO nested SELECT number, arrayMap(x -> (x, arrayMap(y -> (toString(y * x), y + x), range(number % 17))), range(number % 19)) FROM numbers(1000000);
+INSERT INTO nested SELECT number, arrayMap(x -> (x, arrayMap(y -> (toString(y * x), y + x), range(number % 17))), range(number % 19)) FROM numbers(100000);
 SELECT id % 10, sum(length(col1)), sumArray(arrayMap(x -> length(x), col1.n.b)) FROM nested GROUP BY id % 10;
 
 SELECT arraySum(col1.a), arrayMap(x -> x * x * 2, col1.a) FROM nested ORDER BY id LIMIT 5;
 SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10;
+
+DROP TABLE nested;

@@ -14,6 +14,7 @@ namespace DB
 
 class ASTExpressionList;
 class ASTOrderByElement;
+struct WindowFrame;
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -49,7 +50,7 @@ struct QueryFuzzer
     // Some debug fields for detecting problematic ASTs with loops.
     // These are reset for each fuzzMain call.
     std::unordered_set<const IAST *> debug_visited_nodes;
-    ASTPtr * debug_top_ast;
+    ASTPtr * debug_top_ast = nullptr;
 
 
     // This is the only function you have to call -- it will modify the passed
@@ -65,6 +66,7 @@ struct QueryFuzzer
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast);
     void fuzzColumnLikeExpressionList(IAST * ast);
+    void fuzzWindowFrame(WindowFrame & frame);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(const ASTPtr ast);

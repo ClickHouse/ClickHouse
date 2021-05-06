@@ -79,7 +79,7 @@ void writeQueryWithHighlightedErrorPositions(
     {
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
 
-        assert(current_position_to_hilite < end);
+        assert(current_position_to_hilite <= end);
         assert(current_position_to_hilite >= begin);
 
         out.write(pos, current_position_to_hilite - pos);
@@ -269,14 +269,6 @@ ASTPtr tryParseQuery(
     // most of the checks.
     if (insert && insert->data)
     {
-        if (!parse_res)
-        {
-            // Generic parse error.
-            out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
-                last_token, expected, hilite, query_description);
-            return nullptr;
-        }
-
         return res;
     }
 
@@ -290,7 +282,7 @@ ASTPtr tryParseQuery(
     }
 
     /// Unmatched parentheses
-    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token);
+    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
         out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,

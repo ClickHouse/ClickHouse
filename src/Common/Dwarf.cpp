@@ -19,8 +19,6 @@
 /** This file was edited for ClickHouse.
   */
 
-#include <optional>
-
 #include <string.h>
 
 #include <Common/Elf.h>
@@ -43,6 +41,7 @@
 #define DW_FORM_ref4 0x13
 #define DW_FORM_data8 0x07
 #define DW_FORM_ref8 0x14
+#define DW_FORM_ref_sig8 0x20
 #define DW_FORM_sdata 0x0d
 #define DW_FORM_udata 0x0f
 #define DW_FORM_ref_udata 0x15
@@ -54,9 +53,24 @@
 #define DW_FORM_strp 0x0e
 #define DW_FORM_indirect 0x16
 #define DW_TAG_compile_unit 0x11
+#define DW_TAG_subprogram 0x2e
+#define DW_TAG_try_block 0x32
+#define DW_TAG_catch_block 0x25
+#define DW_TAG_entry_point 0x03
+#define DW_TAG_common_block 0x1a
+#define DW_TAG_lexical_block 0x0b
 #define DW_AT_stmt_list 0x10
 #define DW_AT_comp_dir 0x1b
 #define DW_AT_name 0x03
+#define DW_AT_high_pc 0x12
+#define DW_AT_low_pc 0x11
+#define DW_AT_entry_pc 0x52
+#define DW_AT_ranges 0x55
+#define DW_AT_abstract_origin 0x31
+#define DW_AT_call_line 0x59
+#define DW_AT_call_file 0x58
+#define DW_AT_linkage_name 0x6e
+#define DW_AT_specification 0x47
 #define DW_LNE_define_file 0x03
 #define DW_LNS_copy 0x01
 #define DW_LNS_advance_pc 0x02
@@ -84,7 +98,7 @@ namespace ErrorCodes
 }
 
 
-Dwarf::Dwarf(const Elf & elf) : elf_(&elf)
+Dwarf::Dwarf(const std::shared_ptr<Elf> & elf) : elf_(elf)
 {
     init();
 }
@@ -99,6 +113,10 @@ Dwarf::Section::Section(std::string_view d) : is64Bit_(false), data_(d)
 
 namespace
 {
+// Maximum number of DIEAbbreviation to cache in a compilation unit. Used to
+// speed up inline function lookup.
+const uint32_t kMaxAbbreviationEntries = 1000;
+
 // All following read* functions read from a std::string_view, advancing the
 // std::string_view, and aborting if there's not enough room.
 
@@ -158,7 +176,7 @@ uint64_t readOffset(std::string_view & sp, bool is64Bit)
 // Read "len" bytes
 std::string_view readBytes(std::string_view & sp, uint64_t len)
 {
-    SAFE_CHECK(len >= sp.size(), "invalid string length");
+    SAFE_CHECK(len <= sp.size(), "invalid string length: " + std::to_string(len) + " vs. " + std::to_string(sp.size()));
     std::string_view ret(sp.data(), len);
     sp.remove_prefix(len);
     return ret;
@@ -364,15 +382,18 @@ void Dwarf::init()
         || !getSection(".debug_line", &line_)
         || !getSection(".debug_str", &strings_))
     {
-        elf_ = nullptr;
+        elf_.reset();
         return;
     }
 
     // Optional: fast address range lookup. If missing .debug_info can
     // be used - but it's much slower (linear scan).
     getSection(".debug_aranges", &aranges_);
+
+    getSection(".debug_ranges", &ranges_);
 }
 
+// static
 bool Dwarf::readAbbreviation(std::string_view & section, DIEAbbreviation & abbr)
 {
     // abbreviation code
@@ -384,14 +405,14 @@ bool Dwarf::readAbbreviation(std::string_view & section, DIEAbbreviation & abbr)
     abbr.tag = readULEB(section);
 
     // does this entry have children?
-    abbr.hasChildren = (read<uint8_t>(section) != DW_CHILDREN_no);
+    abbr.has_children = (read<uint8_t>(section) != DW_CHILDREN_no);
 
     // attributes
     const char * attribute_begin = section.data();
     for (;;)
     {
         SAFE_CHECK(!section.empty(), "invalid attribute section");
-        auto attr = readAttribute(section);
+        auto attr = readAttributeSpec(section);
         if (attr.name == 0 && attr.form == 0)
             break;
     }
@@ -400,9 +421,159 @@ bool Dwarf::readAbbreviation(std::string_view & section, DIEAbbreviation & abbr)
     return true;
 }
 
-Dwarf::DIEAbbreviation::Attribute Dwarf::readAttribute(std::string_view & sp)
+// static
+void Dwarf::readCompilationUnitAbbrs(std::string_view abbrev, CompilationUnit & cu)
+{
+    abbrev.remove_prefix(cu.abbrev_offset);
+
+    DIEAbbreviation abbr;
+    while (readAbbreviation(abbrev, abbr))
+    {
+        // Abbreviation code 0 is reserved for null debugging information entries.
+        if (abbr.code != 0 && abbr.code <= kMaxAbbreviationEntries)
+        {
+            cu.abbr_cache[abbr.code - 1] = abbr;
+        }
+    }
+}
+
+size_t Dwarf::forEachChild(const CompilationUnit & cu, const Die & die, std::function<bool(const Die & die)> f) const
+{
+    size_t next_die_offset = forEachAttribute(cu, die, [&](const Attribute &) { return true; });
+    if (!die.abbr.has_children)
+    {
+        return next_die_offset;
+    }
+
+    auto child_die = getDieAtOffset(cu, next_die_offset);
+    while (child_die.code != 0)
+    {
+        if (!f(child_die))
+        {
+            return child_die.offset;
+        }
+
+        // NOTE: Don't run `f` over grandchildren, just skip over them.
+        size_t sibling_offset = forEachChild(cu, child_die, [](const Die &) { return true; });
+        child_die = getDieAtOffset(cu, sibling_offset);
+    }
+
+    // childDie is now a dummy die whose offset is to the code 0 marking the
+    // end of the children. Need to add one to get the offset of the next die.
+    return child_die.offset + 1;
+}
+
+/*
+ * Iterate over all attributes of the given DIE, calling the given callable
+ * for each. Iteration is stopped early if any of the calls return false.
+ */
+size_t Dwarf::forEachAttribute(const CompilationUnit & cu, const Die & die, std::function<bool(const Attribute & die)> f) const
+{
+    auto attrs = die.abbr.attributes;
+    auto values = std::string_view{info_.data() + die.offset + die.attr_offset, cu.offset + cu.size - die.offset - die.attr_offset};
+    while (auto spec = readAttributeSpec(attrs))
+    {
+        auto attr = readAttribute(die, spec, values);
+        if (!f(attr))
+        {
+            return static_cast<size_t>(-1);
+        }
+    }
+    return values.data() - info_.data();
+}
+
+Dwarf::Attribute Dwarf::readAttribute(const Die & die, AttributeSpec spec, std::string_view & info) const
+{
+    switch (spec.form)
+    {
+        case DW_FORM_addr:
+            return {spec, die, read<uintptr_t>(info)};
+        case DW_FORM_block1:
+            return {spec, die, readBytes(info, read<uint8_t>(info))};
+        case DW_FORM_block2:
+            return {spec, die, readBytes(info, read<uint16_t>(info))};
+        case DW_FORM_block4:
+            return {spec, die, readBytes(info, read<uint32_t>(info))};
+        case DW_FORM_block:
+            [[fallthrough]];
+        case DW_FORM_exprloc:
+            return {spec, die, readBytes(info, readULEB(info))};
+        case DW_FORM_data1:
+            [[fallthrough]];
+        case DW_FORM_ref1:
+            return {spec, die, read<uint8_t>(info)};
+        case DW_FORM_data2:
+            [[fallthrough]];
+        case DW_FORM_ref2:
+            return {spec, die, read<uint16_t>(info)};
+        case DW_FORM_data4:
+            [[fallthrough]];
+        case DW_FORM_ref4:
+            return {spec, die, read<uint32_t>(info)};
+        case DW_FORM_data8:
+            [[fallthrough]];
+        case DW_FORM_ref8:
+            [[fallthrough]];
+        case DW_FORM_ref_sig8:
+            return {spec, die, read<uint64_t>(info)};
+        case DW_FORM_sdata:
+            return {spec, die, uint64_t(readSLEB(info))};
+        case DW_FORM_udata:
+            [[fallthrough]];
+        case DW_FORM_ref_udata:
+            return {spec, die, readULEB(info)};
+        case DW_FORM_flag:
+            return {spec, die, read<uint8_t>(info)};
+        case DW_FORM_flag_present:
+            return {spec, die, 1u};
+        case DW_FORM_sec_offset:
+            [[fallthrough]];
+        case DW_FORM_ref_addr:
+            return {spec, die, readOffset(info, die.is64Bit)};
+        case DW_FORM_string:
+            return {spec, die, readNullTerminated(info)};
+        case DW_FORM_strp:
+            return {spec, die, getStringFromStringSection(readOffset(info, die.is64Bit))};
+        case DW_FORM_indirect: // form is explicitly specified
+            // Update spec with the actual FORM.
+            spec.form = readULEB(info);
+            return readAttribute(die, spec, info);
+        default:
+            SAFE_CHECK(false, "invalid attribute form");
+    }
+
+    return {spec, die, 0u};
+}
+
+// static
+Dwarf::AttributeSpec Dwarf::readAttributeSpec(std::string_view & sp)
 {
     return {readULEB(sp), readULEB(sp)};
+}
+
+// static
+Dwarf::CompilationUnit Dwarf::getCompilationUnit(std::string_view info, uint64_t offset)
+{
+    SAFE_CHECK(offset < info.size(), "unexpected offset");
+    CompilationUnit cu;
+    std::string_view chunk(info);
+    cu.offset = offset;
+    chunk.remove_prefix(offset);
+
+    auto initial_length = read<uint32_t>(chunk);
+    cu.is64Bit = (initial_length == uint32_t(-1));
+    cu.size = cu.is64Bit ? read<uint64_t>(chunk) : initial_length;
+    SAFE_CHECK(cu.size <= chunk.size(), "invalid chunk size");
+    cu.size += cu.is64Bit ? 12 : 4;
+
+    cu.version = read<uint16_t>(chunk);
+    SAFE_CHECK(cu.version >= 2 && cu.version <= 4, "invalid info version");
+    cu.abbrev_offset = readOffset(chunk, cu.is64Bit);
+    cu.addr_size = read<uint8_t>(chunk);
+    SAFE_CHECK(cu.addr_size == sizeof(uintptr_t), "invalid address size");
+
+    cu.first_die = chunk.data() - info.data();
+    return cu;
 }
 
 Dwarf::DIEAbbreviation Dwarf::getAbbreviation(uint64_t code, uint64_t offset) const
@@ -516,104 +687,411 @@ bool Dwarf::findDebugInfoOffset(uintptr_t address, std::string_view aranges, uin
     return false;
 }
 
+Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const
+{
+    SAFE_CHECK(offset < info_.size(), "unexpected offset");
+    Die die;
+    std::string_view sp{info_.data() + offset, cu.offset + cu.size - offset};
+    die.offset = offset;
+    die.is64Bit = cu.is64Bit;
+    auto code = readULEB(sp);
+    die.code = code;
+    if (code == 0)
+    {
+        return die;
+    }
+    die.attr_offset = sp.data() - info_.data() - offset;
+    die.abbr = !cu.abbr_cache.empty() && die.code < kMaxAbbreviationEntries ? cu.abbr_cache[die.code - 1]
+                                                                            : getAbbreviation(die.code, cu.abbrev_offset);
+
+    return die;
+}
+
+Dwarf::Die Dwarf::findDefinitionDie(const CompilationUnit & cu, const Die & die) const
+{
+    // Find the real definition instead of declaration.
+    // DW_AT_specification: Incomplete, non-defining, or separate declaration
+    // corresponding to a declaration
+    auto offset = getAttribute<uint64_t>(cu, die, DW_AT_specification);
+    if (!offset)
+    {
+        return die;
+    }
+    return getDieAtOffset(cu, cu.offset + offset.value());
+}
+
 /**
  * Find the @locationInfo for @address in the compilation unit represented
  * by the @sp .debug_info entry.
  * Returns whether the address was found.
  * Advances @sp to the next entry in .debug_info.
  */
-bool Dwarf::findLocation(uintptr_t address, std::string_view & infoEntry, LocationInfo & locationInfo) const
+bool Dwarf::findLocation(
+    uintptr_t address,
+    const LocationInfoMode mode,
+    CompilationUnit & cu,
+    LocationInfo & info,
+    std::vector<SymbolizedFrame> & inline_frames) const
 {
-    // For each compilation unit compiled with a DWARF producer, a
-    // contribution is made to the .debug_info section of the object
-    // file. Each such contribution consists of a compilation unit
-    // header (see Section 7.5.1.1) followed by a single
-    // DW_TAG_compile_unit or DW_TAG_partial_unit debugging information
-    // entry, together with its children.
-
-    // 7.5.1.1 Compilation Unit Header
-    //  1. unit_length (4B or 12B): read by Section::next
-    //  2. version (2B)
-    //  3. debug_abbrev_offset (4B or 8B): offset into the .debug_abbrev section
-    //  4. address_size (1B)
-
-    Section debug_info_section(infoEntry);
-    std::string_view chunk;
-    SAFE_CHECK(debug_info_section.next(chunk), "invalid debug info");
-
-    auto version = read<uint16_t>(chunk);
-    SAFE_CHECK(version >= 2 && version <= 4, "invalid info version");
-    uint64_t abbrev_offset = readOffset(chunk, debug_info_section.is64Bit());
-    auto address_size = read<uint8_t>(chunk);
-    SAFE_CHECK(address_size == sizeof(uintptr_t), "invalid address size");
-
-    // We survived so far. The first (and only) DIE should be DW_TAG_compile_unit
-    // NOTE: - binutils <= 2.25 does not issue DW_TAG_partial_unit.
-    //       - dwarf compression tools like `dwz` may generate it.
-    // TODO(tudorb): Handle DW_TAG_partial_unit?
-    auto code = readULEB(chunk);
-    SAFE_CHECK(code != 0, "invalid code");
-    auto abbr = getAbbreviation(code, abbrev_offset);
-    SAFE_CHECK(abbr.tag == DW_TAG_compile_unit, "expecting compile unit entry");
-    // Skip children entries, remove_prefix to the next compilation unit entry.
-    infoEntry.remove_prefix(chunk.end() - infoEntry.begin());
+    Die die = getDieAtOffset(cu, cu.first_die);
+    // Partial compilation unit (DW_TAG_partial_unit) is not supported.
+    SAFE_CHECK(die.abbr.tag == DW_TAG_compile_unit, "expecting compile unit entry");
 
     // Read attributes, extracting the few we care about
-    bool found_line_offset = false;
-    uint64_t line_offset = 0;
+    std::optional<uint64_t> line_offset = 0;
     std::string_view compilation_directory;
-    std::string_view main_file_name;
+    std::optional<std::string_view> main_file_name;
+    std::optional<uint64_t> base_addr_cu;
 
-    DIEAbbreviation::Attribute attr;
-    std::string_view attributes = abbr.attributes;
-    for (;;)
+    forEachAttribute(cu, die, [&](const Attribute & attr)
     {
-        attr = readAttribute(attributes);
-        if (attr.name == 0 && attr.form == 0)
-        {
-            break;
-        }
-        auto val = readAttributeValue(chunk, attr.form, debug_info_section.is64Bit());
-        switch (attr.name)
+        switch (attr.spec.name)
         {
             case DW_AT_stmt_list:
                 // Offset in .debug_line for the line number VM program for this
                 // compilation unit
-                line_offset = std::get<uint64_t>(val);
-                found_line_offset = true;
+                line_offset = std::get<uint64_t>(attr.attr_value);
                 break;
             case DW_AT_comp_dir:
                 // Compilation directory
-                compilation_directory = std::get<std::string_view>(val);
+                compilation_directory = std::get<std::string_view>(attr.attr_value);
                 break;
             case DW_AT_name:
                 // File name of main file being compiled
-                main_file_name = std::get<std::string_view>(val);
+                main_file_name = std::get<std::string_view>(attr.attr_value);
+                break;
+            case DW_AT_low_pc:
+            case DW_AT_entry_pc:
+                // 2.17.1: historically DW_AT_low_pc was used. DW_AT_entry_pc was
+                // introduced in DWARF3. Support either to determine the base address of
+                // the CU.
+                base_addr_cu = std::get<uint64_t>(attr.attr_value);
                 break;
         }
-    }
+        // Iterate through all attributes until find all above.
+        return true;
+    });
 
-    if (!main_file_name.empty())
+    if (main_file_name)
     {
-        locationInfo.hasMainFile = true;
-        locationInfo.mainFile = Path(compilation_directory, "", main_file_name);
+        info.has_main_file = true;
+        info.main_file = Path(compilation_directory, "", *main_file_name);
     }
 
-    if (!found_line_offset)
+    if (!line_offset)
     {
         return false;
     }
 
     std::string_view line_section(line_);
-    line_section.remove_prefix(line_offset);
+    line_section.remove_prefix(*line_offset);
     LineNumberVM line_vm(line_section, compilation_directory);
 
     // Execute line number VM program to find file and line
-    locationInfo.hasFileAndLine = line_vm.findAddress(address, locationInfo.file, locationInfo.line);
-    return locationInfo.hasFileAndLine;
+    info.has_file_and_line = line_vm.findAddress(address, info.file, info.line);
+
+    bool check_inline = (mode == LocationInfoMode::FULL_WITH_INLINE);
+
+    if (info.has_file_and_line && check_inline)
+    {
+        // Re-get the compilation unit with abbreviation cached.
+        cu.abbr_cache.clear();
+        cu.abbr_cache.resize(kMaxAbbreviationEntries);
+        readCompilationUnitAbbrs(abbrev_, cu);
+
+        // Find the subprogram that matches the given address.
+        Die subprogram;
+        findSubProgramDieForAddress(cu, die, address, base_addr_cu, subprogram);
+
+        // Subprogram is the DIE of caller function.
+        if (check_inline && subprogram.abbr.has_children)
+        {
+            // Use an extra location and get its call file and call line, so that
+            // they can be used for the second last location when we don't have
+            // enough inline frames for all inline functions call stack.
+            const size_t max_size = Dwarf::kMaxInlineLocationInfoPerFrame + 1;
+            std::vector<CallLocation> call_locations;
+            call_locations.reserve(Dwarf::kMaxInlineLocationInfoPerFrame + 1);
+
+            findInlinedSubroutineDieForAddress(cu, subprogram, line_vm, address, base_addr_cu, call_locations, max_size);
+            size_t num_found = call_locations.size();
+
+            if (num_found > 0)
+            {
+                const auto inner_most_file = info.file;
+                const auto inner_most_line = info.line;
+
+                // Earlier we filled in locationInfo:
+                // - mainFile: the path to the CU -- the file where the non-inlined
+                //   call is made from.
+                // - file + line: the location of the inner-most inlined call.
+                // Here we already find inlined info so mainFile would be redundant.
+                info.has_main_file = false;
+                info.main_file = Path{};
+                // @findInlinedSubroutineDieForAddress fills inlineLocations[0] with the
+                // file+line of the non-inlined outer function making the call.
+                // locationInfo.name is already set by the caller by looking up the
+                // non-inlined function @address belongs to.
+                info.has_file_and_line = true;
+                info.file = call_locations[0].file;
+                info.line = call_locations[0].line;
+
+                // The next inlined subroutine's call file and call line is the current
+                // caller's location.
+                for (size_t i = 0; i < num_found - 1; i++)
+                {
+                    call_locations[i].file = call_locations[i + 1].file;
+                    call_locations[i].line = call_locations[i + 1].line;
+                }
+                // CallLocation for the inner-most inlined function:
+                // - will be computed if enough space was available in the passed
+                //   buffer.
+                // - will have a .name, but no !.file && !.line
+                // - its corresponding file+line is the one returned by LineVM based
+                //   on @address.
+                // Use the inner-most inlined file+line info we got from the LineVM.
+                call_locations[num_found - 1].file = inner_most_file;
+                call_locations[num_found - 1].line = inner_most_line;
+
+                // Fill in inline frames in reverse order (as expected by the caller).
+                std::reverse(call_locations.begin(), call_locations.end());
+                for (const auto & call_location : call_locations)
+                {
+                    SymbolizedFrame inline_frame;
+                    inline_frame.found = true;
+                    inline_frame.addr = address;
+                    inline_frame.name = call_location.name.data();
+                    inline_frame.location.has_file_and_line = true;
+                    inline_frame.location.file = call_location.file;
+                    inline_frame.location.line = call_location.line;
+                    inline_frames.push_back(inline_frame);
+                }
+            }
+        }
+    }
+
+    return info.has_file_and_line;
 }
 
-bool Dwarf::findAddress(uintptr_t address, LocationInfo & locationInfo, LocationInfoMode mode) const
+void Dwarf::findSubProgramDieForAddress(
+    const CompilationUnit & cu, const Die & die, uint64_t address, std::optional<uint64_t> base_addr_cu, Die & subprogram) const
+{
+    forEachChild(cu, die, [&](const Die & child_die)
+    {
+        if (child_die.abbr.tag == DW_TAG_subprogram)
+        {
+            std::optional<uint64_t> low_pc;
+            std::optional<uint64_t> high_pc;
+            std::optional<bool> is_high_pc_addr;
+            std::optional<uint64_t> range_offset;
+            forEachAttribute(cu, child_die, [&](const Attribute & attr)
+            {
+                switch (attr.spec.name)
+                {
+                    case DW_AT_ranges:
+                        range_offset = std::get<uint64_t>(attr.attr_value);
+                        break;
+                    case DW_AT_low_pc:
+                        low_pc = std::get<uint64_t>(attr.attr_value);
+                        break;
+                    case DW_AT_high_pc:
+                        // Value of DW_AT_high_pc attribute can be an address
+                        // (DW_FORM_addr) or an offset (DW_FORM_data).
+                        is_high_pc_addr = (attr.spec.form == DW_FORM_addr);
+                        high_pc = std::get<uint64_t>(attr.attr_value);
+                        break;
+                }
+                // Iterate through all attributes until find all above.
+                return true;
+            });
+            bool pc_match = low_pc && high_pc && is_high_pc_addr && address >= *low_pc
+                && (address < (*is_high_pc_addr ? *high_pc : *low_pc + *high_pc));
+            bool range_match = range_offset && isAddrInRangeList(address, base_addr_cu, range_offset.value(), cu.addr_size);
+            if (pc_match || range_match)
+            {
+                subprogram = child_die;
+                return false;
+            }
+        }
+
+        findSubProgramDieForAddress(cu, child_die, address, base_addr_cu, subprogram);
+
+        // Iterates through children until find the inline subprogram.
+        return true;
+    });
+}
+
+/**
+ * Find DW_TAG_inlined_subroutine child DIEs that contain @address and
+ * then extract:
+ * - Where was it called from (DW_AT_call_file & DW_AT_call_line):
+ *   the statement or expression that caused the inline expansion.
+ * - The inlined function's name. As a function may be inlined multiple
+ *   times, common attributes like DW_AT_linkage_name or DW_AT_name
+ *   are only stored in its "concrete out-of-line instance" (a
+ *   DW_TAG_subprogram) which we find using DW_AT_abstract_origin.
+ */
+void Dwarf::findInlinedSubroutineDieForAddress(
+    const CompilationUnit & cu,
+    const Die & die,
+    const LineNumberVM & line_vm,
+    uint64_t address,
+    std::optional<uint64_t> base_addr_cu,
+    std::vector<CallLocation> & locations,
+    const size_t max_size) const
+{
+    if (locations.size() >= max_size)
+    {
+        return;
+    }
+
+    forEachChild(cu, die, [&](const Die & child_die)
+    {
+        // Between a DW_TAG_subprogram and and DW_TAG_inlined_subroutine we might
+        // have arbitrary intermediary "nodes", including DW_TAG_common_block,
+        // DW_TAG_lexical_block, DW_TAG_try_block, DW_TAG_catch_block and
+        // DW_TAG_with_stmt, etc.
+        // We can't filter with locationhere since its range may be not specified.
+        // See section 2.6.2: A location list containing only an end of list entry
+        // describes an object that exists in the source code but not in the
+        // executable program.
+        if (child_die.abbr.tag == DW_TAG_try_block || child_die.abbr.tag == DW_TAG_catch_block || child_die.abbr.tag == DW_TAG_entry_point
+            || child_die.abbr.tag == DW_TAG_common_block || child_die.abbr.tag == DW_TAG_lexical_block)
+        {
+            findInlinedSubroutineDieForAddress(cu, child_die, line_vm, address, base_addr_cu, locations, max_size);
+            return true;
+        }
+
+        std::optional<uint64_t> low_pc;
+        std::optional<uint64_t> high_pc;
+        std::optional<bool> is_high_pc_addr;
+        std::optional<uint64_t> abstract_origin;
+        std::optional<uint64_t> abstract_origin_ref_type;
+        std::optional<uint64_t> call_file;
+        std::optional<uint64_t> call_line;
+        std::optional<uint64_t> range_offset;
+        forEachAttribute(cu, child_die, [&](const Attribute & attr)
+        {
+            switch (attr.spec.name)
+            {
+                case DW_AT_ranges:
+                    range_offset = std::get<uint64_t>(attr.attr_value);
+                    break;
+                case DW_AT_low_pc:
+                    low_pc = std::get<uint64_t>(attr.attr_value);
+                    break;
+                case DW_AT_high_pc:
+                    // Value of DW_AT_high_pc attribute can be an address
+                    // (DW_FORM_addr) or an offset (DW_FORM_data).
+                    is_high_pc_addr = (attr.spec.form == DW_FORM_addr);
+                    high_pc = std::get<uint64_t>(attr.attr_value);
+                    break;
+                case DW_AT_abstract_origin:
+                    abstract_origin_ref_type = attr.spec.form;
+                    abstract_origin = std::get<uint64_t>(attr.attr_value);
+                    break;
+                case DW_AT_call_line:
+                    call_line = std::get<uint64_t>(attr.attr_value);
+                    break;
+                case DW_AT_call_file:
+                    call_file = std::get<uint64_t>(attr.attr_value);
+                    break;
+            }
+            // Iterate through all until find all above attributes.
+            return true;
+        });
+
+        // 2.17 Code Addresses and Ranges
+        // Any debugging information entry describing an entity that has a
+        // machine code address or range of machine code addresses,
+        // which includes compilation units, module initialization, subroutines,
+        // ordinary blocks, try/catch blocks, labels and the like, may have
+        //  - A DW_AT_low_pc attribute for a single address,
+        //  - A DW_AT_low_pc and DW_AT_high_pc pair of attributes for a
+        //    single contiguous range of addresses, or
+        //  - A DW_AT_ranges attribute for a non-contiguous range of addresses.
+        // TODO: Support DW_TAG_entry_point and DW_TAG_common_block that don't
+        // have DW_AT_low_pc/DW_AT_high_pc pairs and DW_AT_ranges.
+        // TODO: Support relocated address which requires lookup in relocation map.
+        bool pc_match
+            = low_pc && high_pc && is_high_pc_addr && address >= *low_pc && (address < (*is_high_pc_addr ? *high_pc : *low_pc + *high_pc));
+        bool range_match = range_offset && isAddrInRangeList(address, base_addr_cu, range_offset.value(), cu.addr_size);
+        if (!pc_match && !range_match)
+        {
+            // Address doesn't match. Keep searching other children.
+            return true;
+        }
+
+        if (!abstract_origin || !abstract_origin_ref_type || !call_line || !call_file)
+        {
+            // We expect a single sibling DIE to match on addr, but it's missing
+            // required fields. Stop searching for other DIEs.
+            return false;
+        }
+
+        CallLocation location;
+        location.file = line_vm.getFullFileName(*call_file);
+        location.line = *call_line;
+
+        auto get_function_name = [&](const CompilationUnit & srcu, uint64_t die_offset)
+        {
+            auto decl_die = getDieAtOffset(srcu, die_offset);
+            // Jump to the actual function definition instead of declaration for name
+            // and line info.
+            auto def_die = findDefinitionDie(srcu, decl_die);
+
+            std::string_view name;
+            // The file and line will be set in the next inline subroutine based on
+            // its DW_AT_call_file and DW_AT_call_line.
+            forEachAttribute(srcu, def_die, [&](const Attribute & attr)
+            {
+                switch (attr.spec.name)
+                {
+                    case DW_AT_linkage_name:
+                        name = std::get<std::string_view>(attr.attr_value);
+                        break;
+                    case DW_AT_name:
+                        // NOTE: when DW_AT_linkage_name and DW_AT_name match, dwarf
+                        // emitters omit DW_AT_linkage_name (to save space). If present
+                        // DW_AT_linkage_name should always be preferred (mangled C++ name
+                        // vs just the function name).
+                        if (name.empty())
+                        {
+                            name = std::get<std::string_view>(attr.attr_value);
+                        }
+                        break;
+                }
+                return true;
+            });
+            return name;
+        };
+
+        // DW_AT_abstract_origin is a reference. There a 3 types of references:
+        // - the reference can identify any debugging information entry within the
+        //   compilation unit (DW_FORM_ref1, DW_FORM_ref2, DW_FORM_ref4,
+        //   DW_FORM_ref8, DW_FORM_ref_udata). This type of reference is an offset
+        //   from the first byte of the compilation header for the compilation unit
+        //   containing the reference.
+        // - the reference can identify any debugging information entry within a
+        //   .debug_info section; in particular, it may refer to an entry in a
+        //   different compilation unit (DW_FORM_ref_addr)
+        // - the reference can identify any debugging information type entry that
+        //   has been placed in its own type unit.
+        //   Not applicable for DW_AT_abstract_origin.
+        location.name = (*abstract_origin_ref_type != DW_FORM_ref_addr)
+            ? get_function_name(cu, cu.offset + *abstract_origin)
+            : get_function_name(findCompilationUnit(info_, *abstract_origin), *abstract_origin);
+
+        locations.push_back(location);
+
+        findInlinedSubroutineDieForAddress(cu, child_die, line_vm, address, base_addr_cu, locations, max_size);
+
+        return false;
+    });
+}
+
+bool Dwarf::findAddress(
+    uintptr_t address, LocationInfo & locationInfo, LocationInfoMode mode, std::vector<SymbolizedFrame> & inline_frames) const
 {
     locationInfo = LocationInfo();
 
@@ -635,10 +1113,9 @@ bool Dwarf::findAddress(uintptr_t address, LocationInfo & locationInfo, Location
         if (findDebugInfoOffset(address, aranges_, offset))
         {
             // Read compilation unit header from .debug_info
-            std::string_view info_entry(info_);
-            info_entry.remove_prefix(offset);
-            findLocation(address, info_entry, locationInfo);
-            return locationInfo.hasFileAndLine;
+            auto unit = getCompilationUnit(info_, offset);
+            findLocation(address, mode, unit, locationInfo, inline_frames);
+            return locationInfo.has_file_and_line;
         }
         else if (mode == LocationInfoMode::FAST)
         {
@@ -650,19 +1127,91 @@ bool Dwarf::findAddress(uintptr_t address, LocationInfo & locationInfo, Location
         }
         else
         {
-            SAFE_CHECK(mode == LocationInfoMode::FULL, "unexpected mode");
+            SAFE_CHECK(mode == LocationInfoMode::FULL || mode == LocationInfoMode::FULL_WITH_INLINE, "unexpected mode");
             // Fall back to the linear scan.
         }
     }
 
     // Slow path (linear scan): Iterate over all .debug_info entries
     // and look for the address in each compilation unit.
-    std::string_view info_entry(info_);
-    while (!info_entry.empty() && !locationInfo.hasFileAndLine)
-        findLocation(address, info_entry, locationInfo);
+    uint64_t offset = 0;
+    while (offset < info_.size() && !locationInfo.has_file_and_line)
+    {
+        auto unit = getCompilationUnit(info_, offset);
+        offset += unit.size;
+        findLocation(address, mode, unit, locationInfo, inline_frames);
+    }
 
-    return locationInfo.hasFileAndLine;
+    return locationInfo.has_file_and_line;
 }
+
+bool Dwarf::isAddrInRangeList(uint64_t address, std::optional<uint64_t> base_addr, size_t offset, uint8_t addr_size) const
+{
+    SAFE_CHECK(addr_size == 4 || addr_size == 8, "wrong address size");
+    if (ranges_.empty())
+    {
+        return false;
+    }
+
+    const bool is_64bit_addr = addr_size == 8;
+    std::string_view sp = ranges_;
+    sp.remove_prefix(offset);
+    const uint64_t max_addr = is_64bit_addr ? std::numeric_limits<uint64_t>::max() : std::numeric_limits<uint32_t>::max();
+    while (!sp.empty())
+    {
+        uint64_t begin = readOffset(sp, is_64bit_addr);
+        uint64_t end = readOffset(sp, is_64bit_addr);
+        // The range list entry is a base address selection entry.
+        if (begin == max_addr)
+        {
+            base_addr = end;
+            continue;
+        }
+        // The range list entry is an end of list entry.
+        if (begin == 0 && end == 0)
+        {
+            break;
+        }
+        // Check if the given address falls in the range list entry.
+        // 2.17.3 Non-Contiguous Address Ranges
+        // The applicable base address of a range list entry is determined by the
+        // closest preceding base address selection entry (see below) in the same
+        // range list. If there is no such selection entry, then the applicable base
+        // address defaults to the base address of the compilation unit.
+        if (base_addr && address >= begin + *base_addr && address < end + *base_addr)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// static
+Dwarf::CompilationUnit Dwarf::findCompilationUnit(std::string_view info, uint64_t targetOffset)
+{
+    SAFE_CHECK(targetOffset < info.size(), "unexpected target address");
+    uint64_t offset = 0;
+    while (offset < info.size())
+    {
+        std::string_view chunk(info);
+        chunk.remove_prefix(offset);
+
+        auto initial_length = read<uint32_t>(chunk);
+        auto is_64bit = (initial_length == uint32_t(-1));
+        auto size = is_64bit ? read<uint64_t>(chunk) : initial_length;
+        SAFE_CHECK(size <= chunk.size(), "invalid chunk size");
+        size += is_64bit ? 12 : 4;
+
+        if (offset + size > targetOffset)
+        {
+            break;
+        }
+        offset += size;
+    }
+    return getCompilationUnit(info, offset);
+}
+
 
 Dwarf::LineNumberVM::LineNumberVM(std::string_view data, std::string_view compilationDirectory)
     : compilationDirectory_(compilationDirectory)

@@ -103,11 +103,6 @@ void DiskDecorator::replaceFile(const String & from_path, const String & to_path
     delegate->replaceFile(from_path, to_path);
 }
 
-void DiskDecorator::copyFile(const String & from_path, const String & to_path)
-{
-    delegate->copyFile(from_path, to_path);
-}
-
 void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     delegate->copy(from_path, to_disk, to_path);
@@ -119,9 +114,10 @@ void DiskDecorator::listFiles(const String & path, std::vector<String> & file_na
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
-DiskDecorator::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
+DiskDecorator::readFile(
+    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return delegate->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
+    return delegate->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -148,6 +144,16 @@ void DiskDecorator::removeDirectory(const String & path)
 void DiskDecorator::removeRecursive(const String & path)
 {
     delegate->removeRecursive(path);
+}
+
+void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
+{
+    delegate->removeSharedFile(path, keep_s3);
+}
+
+void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)
+{
+    delegate->removeSharedRecursive(path, keep_s3);
 }
 
 void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp & timestamp)
@@ -183,6 +189,26 @@ Executor & DiskDecorator::getExecutor()
 SyncGuardPtr DiskDecorator::getDirectorySyncGuard(const String & path) const
 {
     return delegate->getDirectorySyncGuard(path);
+}
+
+void DiskDecorator::onFreeze(const String & path)
+{
+    delegate->onFreeze(path);
+}
+
+void DiskDecorator::shutdown()
+{
+    delegate->shutdown();
+}
+
+void DiskDecorator::startup()
+{
+    delegate->startup();
+}
+
+void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context)
+{
+    delegate->applyNewSettings(config, context);
 }
 
 }

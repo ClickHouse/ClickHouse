@@ -23,7 +23,7 @@ struct GCDImpl : public GCDLCMImpl<A, B, GCDImpl<A, B>, NameGCD>
     }
 };
 
-using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false>;
+using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false, false>;
 
 }
 

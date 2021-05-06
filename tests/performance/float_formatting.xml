@@ -3,7 +3,7 @@
     is 10 times faster than toString(number % 100 + 0.5). The shorter
     queries are somewhat unstable, so ignore differences less than 10%.
 -->
-<test max_ignored_relative_change="0.2">
+<test>
     <substitutions>
        <substitution>
            <name>expr</name>

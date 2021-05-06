@@ -15,6 +15,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
+#include <Common/JSONBuilder.h>
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -44,15 +45,17 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
+    : settings(settings_)
 {
     actions_dag = actions_dag_->clone();
 
-    actions_dag->compileExpressions();
+#if USE_EMBEDDED_COMPILER
+    if (settings.compile_expressions)
+        actions_dag->compileExpressions(settings.min_count_to_compile_expression);
+#endif
 
     linearizeActions();
-
-    const auto & settings = actions_dag->getSettings();
 
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
@@ -141,7 +144,7 @@ void ExpressionActions::linearizeActions()
 
         ExpressionActions::Arguments arguments;
         arguments.reserve(cur.node->children.size());
-        for (auto * child : cur.node->children)
+        for (const auto * child : cur.node->children)
         {
             auto & arg = data[reverse_index[child]];
 
@@ -256,17 +259,39 @@ std::string ExpressionActions::Action::toString() const
     return out.str();
 }
 
+JSONBuilder::ItemPtr ExpressionActions::Action::toTree() const
+{
+    auto map = std::make_unique<JSONBuilder::JSONMap>();
+
+    if (node)
+        node->toTree(*map);
+
+    auto args = std::make_unique<JSONBuilder::JSONArray>();
+    auto dropped_args = std::make_unique<JSONBuilder::JSONArray>();
+    for (auto arg : arguments)
+    {
+        args->add(arg.pos);
+        if (!arg.needed_later)
+            dropped_args->add(arg.pos);
+    }
+
+    map->add("Arguments", std::move(args));
+    map->add("Removed Arguments", std::move(dropped_args));
+    map->add("Result", result_position);
+
+    return map;
+}
+
 void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
 {
-    auto max_temporary_non_const_columns = actions_dag->getSettings().max_temporary_non_const_columns;
-    if (max_temporary_non_const_columns)
+    if (settings.max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
         for (const auto & column : columns)
             if (column.column && !isColumnConst(*column.column))
                 ++non_const_columns;
 
-        if (non_const_columns > max_temporary_non_const_columns)
+        if (non_const_columns > settings.max_temporary_non_const_columns)
         {
             WriteBufferFromOwnString list_of_non_const_columns;
             for (const auto & column : columns)
@@ -274,7 +299,7 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                     list_of_non_const_columns << "\n" << column.name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + std::to_string(max_temporary_non_const_columns),
+                + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
                 ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
@@ -296,7 +321,7 @@ namespace
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
         std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows;
+        size_t num_rows = 0;
     };
 }
 
@@ -460,7 +485,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         }
     }
 
-    if (actions_dag->getSettings().project_input)
+    if (actions_dag->isInputProjected())
     {
         block.clear();
     }
@@ -521,6 +546,10 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 
     for (const auto & column : columns)
     {
+        /// Skip .sizeX and similar meta information
+        if (!column.getSubcolumnName().empty())
+            continue;
+
         /// @todo resolve evil constant
         size_t size = column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100;
 
@@ -554,12 +583,56 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\nproject input: " << actions_dag->getSettings().project_input << "\noutput positions:";
+    ss << "\nproject input: " << actions_dag->isInputProjected() << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";
 
     return ss.str();
+}
+
+JSONBuilder::ItemPtr ExpressionActions::toTree() const
+{
+    auto inputs_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (const auto & input_column : required_columns)
+    {
+        auto map = std::make_unique<JSONBuilder::JSONMap>();
+        map->add("Name", input_column.name);
+        if (input_column.type)
+            map->add("Type", input_column.type->getName());
+
+        inputs_array->add(std::move(map));
+    }
+
+    auto outputs_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (const auto & output_column : sample_block)
+    {
+        auto map = std::make_unique<JSONBuilder::JSONMap>();
+        map->add("Name", output_column.name);
+        if (output_column.type)
+            map->add("Type", output_column.type->getName());
+
+        outputs_array->add(std::move(map));
+    }
+
+    auto actions_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & action : actions)
+        actions_array->add(action.toTree());
+
+    auto positions_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (auto pos : result_positions)
+        positions_array->add(pos);
+
+    auto map = std::make_unique<JSONBuilder::JSONMap>();
+    map->add("Inputs", std::move(inputs_array));
+    map->add("Actions", std::move(actions_array));
+    map->add("Outputs", std::move(outputs_array));
+    map->add("Positions", std::move(positions_array));
+    map->add("Project Input", actions_dag->isInputProjected());
+
+    return map;
 }
 
 bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const
@@ -621,11 +694,10 @@ void ExpressionActionsChain::finalize()
     /// Finalize all steps. Right to left to define unnecessary input columns.
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
     {
-        Names required_output = steps[i]->required_output;
-        std::unordered_map<String, size_t> required_output_indexes;
-        for (size_t j = 0; j < required_output.size(); ++j)
-            required_output_indexes[required_output[j]] = j;
-        auto & can_remove_required_output = steps[i]->can_remove_required_output;
+        auto & required_output = steps[i]->required_output;
+        NameSet required_names;
+        for (const auto & output : required_output)
+            required_names.insert(output.first);
 
         if (i + 1 < static_cast<int>(steps.size()))
         {
@@ -634,15 +706,15 @@ void ExpressionActionsChain::finalize()
             {
                 if (additional_input.count(it.name) == 0)
                 {
-                    auto iter = required_output_indexes.find(it.name);
-                    if (iter == required_output_indexes.end())
-                        required_output.push_back(it.name);
-                    else if (!can_remove_required_output.empty())
-                        can_remove_required_output[iter->second] = false;
+                    auto iter = required_output.find(it.name);
+                    if (iter == required_output.end())
+                        required_names.insert(it.name);
+                    else
+                        iter->second = false;
                 }
             }
         }
-        steps[i]->finalize(required_output);
+        steps[i]->finalize(required_names);
     }
 
     /// Adding the ejection of unnecessary columns to the beginning of each step.
@@ -666,8 +738,8 @@ std::string ExpressionActionsChain::dumpChain() const
     {
         ss << "step " << i << "\n";
         ss << "required output:\n";
-        for (const std::string & name : steps[i]->required_output)
-            ss << name << "\n";
+        for (const auto & it : steps[i]->required_output)
+            ss << it.first << "\n";
         ss << "\n" << steps[i]->dump() << "\n";
     }
 
@@ -693,20 +765,19 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
     }
 }
 
-void ExpressionActionsChain::ArrayJoinStep::finalize(const Names & required_output_)
+void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_output_)
 {
     NamesAndTypesList new_required_columns;
     ColumnsWithTypeAndName new_result_columns;
 
-    NameSet names(required_output_.begin(), required_output_.end());
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
+        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
+        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
             new_required_columns.emplace_back(column);
     }
 
@@ -726,17 +797,17 @@ ExpressionActionsChain::JoinStep::JoinStep(
     for (const auto & column : result_columns)
         required_columns.emplace_back(column.name, column.type);
 
-    analyzed_join->addJoinedColumnsAndCorrectNullability(result_columns);
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns);
 }
 
-void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
+void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
 {
     /// We need to update required and result columns by removing unused ones.
     NamesAndTypesList new_required_columns;
     ColumnsWithTypeAndName new_result_columns;
 
     /// That's an input columns we need.
-    NameSet required_names(required_output_.begin(), required_output_.end());
+    NameSet required_names = required_output_;
     for (const auto & name : analyzed_join->keyNamesLeft())
         required_names.emplace(name);
 
@@ -747,8 +818,8 @@ void ExpressionActionsChain::JoinStep::finalize(const Names & required_output_)
     }
 
     /// Result will also contain joined columns.
-    for (const auto & column : analyzed_join->columnsAddedByJoin())
-        required_names.emplace(column.name);
+    for (const auto & column_name : analyzed_join->columnsAddedByJoin())
+        required_names.emplace(column_name);
 
     for (const auto & column : result_columns)
     {

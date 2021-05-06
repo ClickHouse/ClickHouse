@@ -64,7 +64,9 @@ class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
 {
 private:
     DataTypePtr keys_type;
+    SerializationPtr keys_serialization;
     DataTypes values_types;
+    Serializations values_serializations;
 
 public:
     using Base = IAggregateFunctionDataHelper<
@@ -72,9 +74,14 @@ public:
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
-        : Base(argument_types_, {} /* parameters */), keys_type(keys_type_),
-          values_types(values_types_)
+        : Base(argument_types_, {} /* parameters */)
+        , keys_type(keys_type_)
+        , keys_serialization(keys_type->getDefaultSerialization())
+        , values_types(values_types_)
     {
+        values_serializations.reserve(values_types.size());
+        for (const auto & type : values_types)
+            values_serializations.emplace_back(type->getDefaultSerialization());
     }
 
     DataTypePtr getReturnType() const override
@@ -115,7 +122,16 @@ public:
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
                         getName(), value_type->getName()};
 
-                result_type = value_type_without_nullable->promoteNumericType();
+                WhichDataType value_type_to_check(value_type);
+
+                /// Do not promote decimal because of implementation issues of this function design
+                /// Currently we cannot get result column type in case of decimal we cannot get decimal scale
+                /// in method void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+                /// If we decide to make this function more efficient we should promote decimal type during summ
+                if (value_type_to_check.isDecimal())
+                    result_type = value_type_without_nullable;
+                else
+                    result_type = value_type_without_nullable->promoteNumericType();
             }
 
             types.emplace_back(std::make_shared<DataTypeArray>(result_type));
@@ -123,6 +139,8 @@ public:
 
         return std::make_shared<DataTypeTuple>(types);
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     static const auto & getArgumentColumns(const IColumn**& columns)
     {
@@ -136,7 +154,7 @@ public:
         }
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns_, const size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns_, const size_t row_num, Arena *) const override
     {
         const auto & columns = getArgumentColumns(columns_);
 
@@ -212,7 +230,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
@@ -231,7 +249,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
@@ -239,13 +257,13 @@ public:
 
         for (const auto & elem : merged_maps)
         {
-            keys_type->serializeBinary(elem.first, buf);
+            keys_serialization->serializeBinary(elem.first, buf);
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_types[col]->serializeBinary(elem.second[col], buf);
+                values_serializations[col]->serializeBinary(elem.second[col], buf);
         }
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         size_t size = 0;
@@ -254,12 +272,12 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_type->deserializeBinary(key, buf);
+            keys_serialization->deserializeBinary(key, buf);
 
             Array values;
             values.resize(values_types.size());
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_types[col]->deserializeBinary(values[col], buf);
+                values_serializations[col]->deserializeBinary(values[col], buf);
 
             if constexpr (IsDecimalNumber<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;
@@ -268,7 +286,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         size_t num_columns = values_types.size();
 
@@ -404,7 +422,7 @@ public:
 
         for (const Field & f : keys_to_keep_)
         {
-            keys_to_keep.emplace(f.safeGet<NearestFieldType<T>>());
+            keys_to_keep.emplace(f.safeGet<T>());
         }
     }
 
