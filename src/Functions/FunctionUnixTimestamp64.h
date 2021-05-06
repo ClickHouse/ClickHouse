@@ -53,31 +53,31 @@ public:
         auto res_column = ColumnUInt64::create(input_rows_count);
         auto & result_data = res_column->getData();
 
-        const auto & source_data = typeid_cast<const ColumnDecimal<Decimal64> &>(col).getData();
+        const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
 
         Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
         if (scale_diff == 0)
         {
-            for (const auto & v : source_data)
-                result_data.push_back(v);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                result_data[i] = source_data[i];
         }
         else if (scale_diff < 0)
         {
             const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(-scale_diff);
-            for (const auto & v : source_data)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Int64 result_value = v;
+                Int64 result_value = source_data[i];
                 if (common::mulOverflow(result_value, scale_multiplier, result_value))
                     throw Exception("Decimal overflow in " + getName(), ErrorCodes::DECIMAL_OVERFLOW);
 
-                result_data.push_back(result_value);
+                result_data[i] = result_value;
             }
         }
         else
         {
             const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(scale_diff);
-            for (const auto & v : source_data)
-                result_data.push_back(Int64(v) / scale_multiplier);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                result_data[i] = Int64(source_data[i]) / scale_multiplier;
         }
 
         return res_column;
@@ -121,13 +121,13 @@ public:
         const auto & src = arguments[0];
         const auto & col = *src.column;
 
-        auto res_column = ColumnDecimal<Decimal64>::create(input_rows_count, target_scale);
+        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
         auto & result_data = res_column->getData();
 
         const auto & source_data = typeid_cast<const ColumnInt64 &>(col).getData();
 
-        for (const auto & v : source_data)
-            result_data.push_back(v);
+        for (size_t i = 0; i < input_rows_count; ++i)
+            result_data[i] = source_data[i];
 
         return res_column;
     }
