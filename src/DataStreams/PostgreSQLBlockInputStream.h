@@ -19,7 +19,7 @@ class PostgreSQLBlockInputStream : public IBlockInputStream
 {
 public:
     PostgreSQLBlockInputStream(
-        postgres::ConnectionHolderPtr connection_,
+        postgres::ConnectionHolderPtr entry_,
         const std::string & query_str,
         const Block & sample_block,
         const UInt64 max_block_size_);
