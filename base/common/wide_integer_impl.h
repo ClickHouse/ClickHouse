@@ -178,7 +178,7 @@ struct integer<Bits, Signed>::_impl
     constexpr static bool is_negative(const integer<B, T> & n) noexcept
     {
         if constexpr (std::is_same_v<T, signed>)
-            return static_cast<signed_base_type>(n.items[big(0)]) < 0;
+            return static_cast<signed_base_type>(n.items[integer<B, T>::_impl::big(0)]) < 0;
         else
             return false;
     }
