@@ -34,33 +34,6 @@ void SerializationObject<Parser>::serializeText(const IColumn & /*column*/, size
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
-namespace
-{
-
-DataTypePtr createArrayOfStrings(size_t dim)
-{
-    DataTypePtr type = std::make_shared<DataTypeString>();
-    for (size_t i = 0; i < dim; ++i)
-        type = std::make_shared<DataTypeArray>(type);
-    return type;
-}
-
-size_t getNumberOfDimensions(const IDataType & type)
-{
-    if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
-        return type_array->getNumberOfDimensions();
-    return 0;
-}
-
-size_t getNumberOfDimensions(const IColumn & column)
-{
-    if (const auto * column_array = checkAndGetColumn<ColumnArray>(column))
-        return column_array->getNumberOfDimensions();
-    return 0;
-}
-
-}
-
 template <typename Parser>
 void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
@@ -83,9 +56,10 @@ void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer &
     size_t column_size = column_object.size();
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        auto value_type = applyVisitor(FieldToDataType(), values[i]);
-        size_t value_dim = getNumberOfDimensions(*value_type);
-        auto array_type = createArrayOfStrings(value_dim);
+        auto value_type = applyVisitor(FieldToDataType(/*allow_conversion_to_string=*/true), values[i]);
+
+        auto value_dim = getNumberOfDimensions(*value_type);
+        auto array_type = createArrayOfType(std::make_shared<DataTypeString>(), value_dim);
         auto converted_value = convertFieldToTypeOrThrow(values[i], *array_type, value_type.get());
 
         if (!column_object.hasSubcolumn(paths[i]))
@@ -99,7 +73,7 @@ void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer &
                 "Dimension of types mismatched beetwen value and column. Dimension of value: {}. Dimension of column: {}",
                 value_dim, column_dim);
 
-        subcolumn.insert(converted_value, value_type->getTypeId());
+        subcolumn.insert(converted_value, value_type);
     }
 
     for (auto & [key, subcolumn] : column_object.getSubcolumns())
@@ -246,6 +220,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
     column_object.checkConsistency();
+    column_object.optimizeTypesOfSubcolumns();
     column = std::move(mutable_column);
 }
 

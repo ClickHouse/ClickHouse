@@ -345,6 +345,8 @@ struct WhichDataType
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
 
     constexpr bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
+
+    constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
