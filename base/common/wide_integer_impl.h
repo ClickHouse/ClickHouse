@@ -395,23 +395,23 @@ struct integer<Bits, Signed>::_impl
 
 private:
     template <typename T>
-    constexpr static base_type get_item(const T & x, unsigned number)
+    constexpr static base_type get_item(const T & x, unsigned idx)
     {
         if constexpr (IsWideInteger<T>::value)
         {
-            if (number < T::_impl::item_count)
-                return x.items[number];
+            if (idx < T::_impl::item_count)
+                return x.items[idx];
             return 0;
         }
         else
         {
             if constexpr (sizeof(T) <= sizeof(base_type))
             {
-                if (!number)
+                if (0 == idx)
                     return x;
             }
-            else if (number * sizeof(base_type) < sizeof(T))
-                return x >> (number * base_bits); // & std::numeric_limits<base_type>::max()
+            else if (idx * sizeof(base_type) < sizeof(T))
+                return x >> (idx * base_bits); // & std::numeric_limits<base_type>::max()
             return 0;
         }
     }
@@ -670,7 +670,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (std::is_signed_v<T> && (is_negative(lhs) != is_negative(rhs)))
+            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(rhs);
 
             for (unsigned i = 0; i < item_count; ++i)
@@ -695,7 +695,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (std::is_signed_v<T> && (is_negative(lhs) != is_negative(rhs)))
+            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(lhs);
 
             for (unsigned i = 0; i < item_count; ++i)
@@ -1120,16 +1120,15 @@ template <size_t Bits, typename Signed>
 template <class T, class>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    static_assert(std::is_integral_v<T>);
+    static_assert(std::numeric_limits<T>::is_integer);
 
     /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
 
     using UnsignedT = std::make_unsigned_t<T>;
-    using UnsignedBaseType = std::make_unsigned_t<base_type>;
 
     UnsignedT res{};
     for (unsigned i = 0; i < _impl::item_count && i < (sizeof(T) + sizeof(base_type) - 1) / sizeof(base_type); ++i)
-        res += UnsignedT(UnsignedBaseType(items[i])) << (sizeof(base_type) * 8 * i);
+        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i);
 
     return res;
 }
