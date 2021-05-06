@@ -1216,6 +1216,16 @@ void ColumnArray::gather(ColumnGathererStream & gatherer)
     gatherer.gather(*this);
 }
 
+size_t ColumnArray::getNumberOfDimensions() const
+{
+    const auto * nested_array = checkAndGetColumn<ColumnArray>(*data);
+    if (!nested_array)
+        return 1;
+    return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
+}
+
+
+
 // size_t ColumnArray::getNumberOfDefaultRows(size_t step) const
 // {
 //     const auto & offsets_data = getOffsets();

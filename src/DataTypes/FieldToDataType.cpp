@@ -95,9 +95,6 @@ DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal256> & x) con
 
 DataTypePtr FieldToDataType::operator() (const Array & x) const
 {
-    if (assume_array_elements_have_equal_types && !x.empty())
-        return std::make_shared<DataTypeArray>(applyVisitor(FieldToDataType(), x[0]));
-
     DataTypes element_types;
     element_types.reserve(x.size());
 

@@ -17,11 +17,6 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class FieldToDataType : public StaticVisitor<DataTypePtr>
 {
 public:
-    FieldToDataType(bool assume_array_elements_have_equal_types_ = false)
-      : assume_array_elements_have_equal_types(assume_array_elements_have_equal_types_)
-    {
-    }
-
     DataTypePtr operator() (const Null & x) const;
     DataTypePtr operator() (const UInt64 & x) const;
     DataTypePtr operator() (const UInt128 & x) const;
@@ -39,9 +34,6 @@ public:
     DataTypePtr operator() (const AggregateFunctionStateData & x) const;
     DataTypePtr operator() (const UInt256 & x) const;
     DataTypePtr operator() (const Int256 & x) const;
-
-private:
-  bool assume_array_elements_have_equal_types;
 };
 
 }

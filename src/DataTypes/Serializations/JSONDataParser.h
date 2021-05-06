@@ -14,13 +14,13 @@ namespace
 {
 
 template <typename Element>
-String getValueAsString(const Element & element)
+Field getValueAsField(const Element & element)
 {
-    if (element.isBool())   return toString(element.getBool());
-    if (element.isInt64())  return toString(element.getInt64());
-    if (element.isUInt64()) return toString(element.getUInt64());
-    if (element.isDouble()) return toString(element.getDouble());
-    if (element.isString()) return String(element.getString());
+    if (element.isBool())   return element.getBool();
+    if (element.isInt64())  return element.getInt64();
+    if (element.isUInt64()) return element.getUInt64();
+    if (element.isDouble()) return element.getDouble();
+    if (element.isString()) return element.getString();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type of JSON field");
 }
@@ -132,7 +132,7 @@ private:
         else
         {
             result.paths.push_back(current_path);
-            result.values.push_back(getValueAsString(element));
+            result.values.push_back(getValueAsField(element));
         }
     }
 

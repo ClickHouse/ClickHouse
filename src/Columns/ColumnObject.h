@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Columns/IColumn.h>
 #include <Core/Names.h>
+#include <Columns/IColumn.h>
+#include <Common/PODArray.h>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -12,25 +14,43 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class ColumnObject : public COWHelper<IColumn, ColumnObject>
+class ColumnObject final : public COWHelper<IColumn, ColumnObject>
 {
+public:
+    struct Subcolumn
+    {
+        Subcolumn() = default;
+        Subcolumn(const Subcolumn & other);
+        Subcolumn(MutableColumnPtr && data_);
+        Subcolumn & operator=(Subcolumn && other) = default;
+
+        WrappedPtr data;
+        PaddedPODArray<TypeIndex> type_ids;
+
+        size_t size() const { return data->size(); }
+        void insert(const Field & field, TypeIndex type_id);
+        void insertDefault();
+        void resize(size_t new_size);
+    };
+
+    using SubcolumnsMap = std::unordered_map<String, Subcolumn>;
+
 private:
-    using SubcolumnsMap = std::unordered_map<String, WrappedPtr>;
     SubcolumnsMap subcolumns;
 
 public:
     ColumnObject() = default;
-    ColumnObject(const SubcolumnsMap & subcolumns_);
-    ColumnObject(const Names & keys, const Columns & subcolumns_);
+    ColumnObject(SubcolumnsMap && subcolumns_);
 
     void checkConsistency() const;
 
     bool hasSubcolumn(const String & key) const;
 
-    const IColumn & getSubcolumn(const String & key) const;
-    IColumn & getSubcolumn(const String & key);
+    const Subcolumn & getSubcolumn(const String & key) const;
+    Subcolumn & getSubcolumn(const String & key);
 
-    void addSubcolumn(const String & key, MutableColumnPtr && subcolumn, bool check_size = false);
+    void addSubcolumn(const String & key, MutableColumnPtr && column_sample, size_t new_size, bool check_size = false);
+    void addSubcolumn(const String & key, Subcolumn && subcolumn, bool check_size = false);
 
     const SubcolumnsMap & getSubcolumns() const { return subcolumns; }
     SubcolumnsMap & getSubcolumns() { return subcolumns; }
@@ -41,7 +61,7 @@ public:
 
     const char * getFamilyName() const override { return "Object"; }
 
-    size_t size() const override { return subcolumns.empty() ? 0 : subcolumns.begin()->second->size(); }
+    size_t size() const override { return subcolumns.empty() ? 0 : subcolumns.begin()->second.size(); }
 
     MutableColumnPtr cloneResized(size_t new_size) const override;
 
