@@ -34,19 +34,22 @@ public:
     void parseEncodingFrequencies(const String & pt)
     {
         path_to_enc_freq = pt;
-        loadEncodingsFrequency(pt);
+        //loadEncodingsFrequency(pt);
+        loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
     }
 
     void parseEmotionalDict(const String & pt)
     {
         path_to_emo_dict = pt;
-        loadEmotionalDict(pt);
+        //loadEmotionalDict(pt);
+        loadEmotionalDict("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/emotional_dictionary_rus.txt");
     }
 
     void parseProgrammingFrequency(const String & pt) 
     {
         path_to_prog_freq = pt;
-        loadProgrammingFrequency(pt);
+        //loadProgrammingFrequency(pt);
+        loadProgrammingFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/programming_freq.txt");
     }
 
 
