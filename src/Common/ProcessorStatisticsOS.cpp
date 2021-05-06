@@ -106,11 +106,11 @@ void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcS
     readIntTextAndSkipWhitespaceIfAny(proc_time.system, procst_in);
     readIntTextAndSkipWhitespaceIfAny(proc_time.idle,   procst_in);
     readIntTextAndSkipWhitespaceIfAny(proc_time.iowait, procst_in);
-    proc_time.user   *= USER_HZ;
-    proc_time.nice   *= USER_HZ;
-    proc_time.system *= USER_HZ;
-    proc_time.idle   *= USER_HZ;
-    proc_time.iowait *= USER_HZ;
+    proc_time.user   /= USER_HZ;
+    proc_time.nice   /= USER_HZ;
+    proc_time.system /= USER_HZ;
+    proc_time.idle   /= USER_HZ;
+    proc_time.iowait /= USER_HZ;
     
     readIntTextAndSkipWhitespaceIfAny(unused, procst_in);
     readIntTextAndSkipWhitespaceIfAny(unused, procst_in);
@@ -118,9 +118,9 @@ void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcS
     readIntTextAndSkipWhitespaceIfAny(proc_time.steal,      procst_in);
     readIntTextAndSkipWhitespaceIfAny(proc_time.guest,      procst_in);
     readIntTextAndSkipWhitespaceIfAny(proc_time.guest_nice, procst_in);
-    proc_time.steal      *= USER_HZ;
-    proc_time.guest      *= USER_HZ;
-    proc_time.guest_nice *= USER_HZ;
+    proc_time.steal      /= USER_HZ;
+    proc_time.guest      /= USER_HZ;
+    proc_time.guest_nice /= USER_HZ;
 
     do 
     {
