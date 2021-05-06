@@ -99,13 +99,13 @@ private:
         std::vector<std::vector<Edge>> edges;
     };
 
-    ASTPtr normalizeAtom(const ASTPtr & atom) const;
-    Graph BuildGraphFromAstsGraph(const Graph & asts_graph) const;
+    static ASTPtr normalizeAtom(const ASTPtr & atom);
+    static Graph BuildGraphFromAstsGraph(const Graph & asts_graph);
 
-    Graph reverseGraph(const Graph & asts_graph) const;
-    void dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order) const;
-    void dfsComponents(
-            const Graph & reversed_graph, size_t v, std::vector<size_t> & components, const size_t not_visited, const size_t component) const;
+    static Graph reverseGraph(const Graph & asts_graph);
+    static void dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order);
+    static void dfsComponents(
+            const Graph & reversed_graph, size_t v, std::vector<size_t> & components, const size_t not_visited, const size_t component);
 
     std::pair<bool, bool> findPath(const size_t start, const size_t finish) const;
 
@@ -115,7 +115,7 @@ private:
         LESS_OR_EQUAL,
     };
 
-    std::map<std::pair<size_t, size_t>, Path> BuildDistsFromGraph(const Graph & g) const;
+    static std::map<std::pair<size_t, size_t>, Path> BuildDistsFromGraph(const Graph & g);
     std::pair<std::vector<ssize_t>, std::vector<ssize_t>> buildConstBounds() const;
 
     Graph graph;

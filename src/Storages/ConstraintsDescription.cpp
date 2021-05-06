@@ -14,6 +14,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 String ConstraintsDescription::toString() const
 {
@@ -107,17 +111,18 @@ std::unique_ptr<ComparisonGraph> ConstraintsDescription::buildGraph() const
 
     std::vector<ASTPtr> constraints_for_graph;
     auto atomic_formulas = getAtomicConstraintData();
-    for (auto & atomic_formula : atomic_formulas)
+    for (const auto & atomic_formula : atomic_formulas)
     {
         Poco::Logger::get("atomic_formula: before:").information(atomic_formula.ast->dumpTree() + " " + std::to_string(atomic_formula.negative));
-        pushNotIn(atomic_formula);
-        auto * func = atomic_formula.ast->as<ASTFunction>();
+        CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
+        pushNotIn(atom);
+        auto * func = atom.ast->as<ASTFunction>();
         if (func && relations.count(func->name))
         {
-            if (atomic_formula.negative)
+            if (atom.negative)
                 throw Exception(": ", ErrorCodes::LOGICAL_ERROR);
-            Poco::Logger::get("atomic_formula: after:").information(atomic_formula.ast->dumpTree() + " " + std::to_string(atomic_formula.negative));
-            constraints_for_graph.push_back(atomic_formula.ast);
+            Poco::Logger::get("atomic_formula: after:").information(atom.ast->dumpTree() + " " + std::to_string(atom.negative));
+            constraints_for_graph.push_back(atom.ast);
         }
     }
 
