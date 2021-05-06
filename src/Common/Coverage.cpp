@@ -165,6 +165,8 @@ void Writer::symbolizeInstrumentedData()
 
     pool.setMaxThreads(hardware_concurrency / 2);
 
+    global_report.resize(source_files_cache.size());
+
     LOG_INFO(base_log, "Symbolized all addresses");
 }
 
@@ -184,11 +186,13 @@ void Writer::dumpAndChangeTestName(std::string old_test_name)
 
     edges_hit.swap(edges_hit_swap);
 
+    const bool dump_global_report = test.empty();
+
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// Move is evaluated within current function's lifetime during function constructor call.
     /// Functor insertion itself is thread-safe.
-    pool.scheduleOrThrowOnError(
-        [this, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_swap)] () mutable
+    pool.scheduleOrThrowOnError([this, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_swap),
+        dump_global_report] () mutable
     {
         /// genhtml doesn't allow '.' in test names
         std::replace(test_name.begin(), test_name.end(), '.', '_');
@@ -196,6 +200,9 @@ void Writer::dumpAndChangeTestName(std::string old_test_name)
         const Poco::Logger * log = &Poco::Logger::get(std::string{logger_base_name} + "." + test_name);
 
         prepareDataAndDump({test_name, log}, edges_copied);
+
+        if (dump_global_report) //todo add unlikely
+            convertToLCOVAndDump({"global_report", base_log}, global_report);
     });
 }
 
@@ -213,9 +220,15 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
             continue;
 
         if (const EdgeInfo& info = edges_cache[edge_index]; info.isFunctionEntry())
+        {
+            setOrIncrement(global_report[info.index].functions_hit, edge_index, hit);
             setOrIncrement(test_data[info.index].functions_hit, edge_index, hit);
+        }
         else
+        {
+            setOrIncrement(global_report[info.index].lines_hit, info.line, hit);
             setOrIncrement(test_data[info.index].lines_hit, info.line, hit);
+        }
     }
 
     LOG_INFO(test_info.log, "Finished filling internal structures");
@@ -348,6 +361,6 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 
     LOG_INFO(test_info.log, "Finished compressing");
 
-    Poco::Logger::destroy(test_info.log->name());
+    //Poco::Logger::destroy(test_info.log->name());
 }
 }

@@ -148,8 +148,6 @@ if (WITH_COVERAGE)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -fsanitize-coverage-blocklist=${CMAKE_CURRENT_SOURCE_DIR}/blocklist.txt")
         set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
         set(WITHOUT_COVERAGE "-fno-sanitize-coverage=trace-pc-guard,pc-table")
-
-        set(ENABLE_JEMALLOC ON)
     else()
         message(ERROR "As for now, the code coverage is supported in Clang only")
     endif()

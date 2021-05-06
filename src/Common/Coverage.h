@@ -201,7 +201,7 @@ private:
 
     using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
 
-    // TODO TestData global_report;
+    TestData global_report;
 
     void prepareDataAndDump(TestInfo test_info, const EdgesHit& hits);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
