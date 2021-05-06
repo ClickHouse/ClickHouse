@@ -1,5 +1,7 @@
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/JSONDataParser.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/ObjectUtils.h>
@@ -8,6 +10,8 @@
 #include <Common/FieldVisitors.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnArray.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -28,6 +32,33 @@ template <typename Parser>
 void SerializationObject<Parser>::serializeText(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+}
+
+namespace
+{
+
+DataTypePtr createArrayOfStrings(size_t dim)
+{
+    DataTypePtr type = std::make_shared<DataTypeString>();
+    for (size_t i = 0; i < dim; ++i)
+        type = std::make_shared<DataTypeArray>(type);
+    return type;
+}
+
+size_t getNumberOfDimensions(const IDataType & type)
+{
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
+        return type_array->getNumberOfDimensions();
+    return 0;
+}
+
+size_t getNumberOfDimensions(const IColumn & column)
+{
+    if (const auto * column_array = checkAndGetColumn<ColumnArray>(column))
+        return column_array->getNumberOfDimensions();
+    return 0;
+}
+
 }
 
 template <typename Parser>
@@ -52,31 +83,29 @@ void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer &
     size_t column_size = column_object.size();
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        auto value_type = applyVisitor(FieldToDataType(true), values[i]);
+        auto value_type = applyVisitor(FieldToDataType(), values[i]);
+        size_t value_dim = getNumberOfDimensions(*value_type);
+        auto array_type = createArrayOfStrings(value_dim);
+        auto converted_value = convertFieldToTypeOrThrow(values[i], *array_type, value_type.get());
+
         if (!column_object.hasSubcolumn(paths[i]))
-        {
-            auto new_column = value_type->createColumn()->cloneResized(column_size);
-            new_column->insert(values[i]);
-            column_object.addSubcolumn(paths[i], std::move(new_column));
-        }
-        else
-        {
-            auto & subcolumn = column_object.getSubcolumn(paths[i]);
-            auto column_type = getDataTypeByColumn(subcolumn);
+            column_object.addSubcolumn(paths[i], array_type->createColumn(), column_size);
 
-            if (!value_type->equals(*column_type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Type mismatch beetwen value and column. Type of value: {}. Type of column: {}",
-                    value_type->getName(), column_type->getName());
+        auto & subcolumn = column_object.getSubcolumn(paths[i]);
+        size_t column_dim = getNumberOfDimensions(*subcolumn.data);
 
-            subcolumn.insert(values[i]);
-        }
+        if (value_dim != column_dim)
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Dimension of types mismatched beetwen value and column. Dimension of value: {}. Dimension of column: {}",
+                value_dim, column_dim);
+
+        subcolumn.insert(converted_value, value_type->getTypeId());
     }
 
     for (auto & [key, subcolumn] : column_object.getSubcolumns())
     {
         if (!paths_set.count(key))
-            subcolumn->insertDefault();
+            subcolumn.insertDefault();
     }
 }
 
@@ -139,7 +168,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
 
         if (auto * stream = settings.getter(settings.path))
         {
-            auto type = getDataTypeByColumn(*subcolumn);
+            auto type = getDataTypeByColumn(*subcolumn.data);
             writeStringBinary(key, *stream);
             writeStringBinary(type->getName(), *stream);
         }
@@ -149,9 +178,9 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
 
         if (auto * stream = settings.getter(settings.path))
         {
-            auto type = getDataTypeByColumn(*subcolumn);
+            auto type = getDataTypeByColumn(*subcolumn.data);
             auto serialization = type->getDefaultSerialization();
-            serialization->serializeBinaryBulkWithMultipleStreams(*subcolumn, offset, limit, settings, state);
+            serialization->serializeBinaryBulkWithMultipleStreams(*subcolumn.data, offset, limit, settings, state);
         }
     }
 
@@ -204,9 +233,9 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
         {
             auto type = DataTypeFactory::instance().get(type_name);
             auto serialization = type->getDefaultSerialization();
-            ColumnPtr subcolumn = type->createColumn();
-            serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, limit, settings, state, cache);
-            column_object.addSubcolumn(key, subcolumn->assumeMutable());
+            ColumnPtr subcolumn_data = type->createColumn();
+            serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn_data, limit, settings, state, cache);
+            column_object.addSubcolumn(key, subcolumn_data->assumeMutable());
         }
         else
         {

@@ -28,7 +28,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
     if (column.empty())
         return std::make_shared<DataTypeNothing>();
 
-    return applyVisitor(FieldToDataType(true), column[0]);
+    return applyVisitor(FieldToDataType(), column[0]);
 }
 
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block)
@@ -54,8 +54,8 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block)
             for (const auto & [key, subcolumn] : subcolumns_map)
             {
                 tuple_names.push_back(key);
-                tuple_types.push_back(getDataTypeByColumn(*subcolumn));
-                tuple_columns.push_back(subcolumn);
+                tuple_types.push_back(getDataTypeByColumn(*subcolumn.data));
+                tuple_columns.push_back(subcolumn.data);
             }
 
             auto type_tuple = std::make_shared<DataTypeTuple>(tuple_types, tuple_names);

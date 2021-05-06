@@ -7,22 +7,45 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int DUPLICATE_COLUMN;
 }
 
-ColumnObject::ColumnObject(const SubcolumnsMap & subcolumns_)
-    : subcolumns(subcolumns_)
+static TypeId getLeastSuperTypeId(const PaddedPODArray<TypeIndex> & type_ids)
 {
-    checkConsistency();
+
 }
 
-ColumnObject::ColumnObject(const Names & keys, const Columns & subcolumns_)
+ColumnObject::Subcolumn::Subcolumn(const Subcolumn & other)
+    : data(other.data), type_ids(other.type_ids.begin(), other.type_ids.end())
 {
-    if (keys.size() != subcolumns_.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of keys ({}) and subcolumns ({}) are inconsistent");
+}
 
-    for (size_t i = 0; i < keys.size(); ++i)
-        subcolumns[keys[i]] = subcolumns_[i];
+ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_)
+    : data(std::move(data_))
+{
+}
 
+void ColumnObject::Subcolumn::insert(const Field & field, TypeIndex type_id)
+{
+    data->insert(field);
+    type_ids.push_back(type_id);
+}
+
+void ColumnObject::Subcolumn::insertDefault()
+{
+    data->insertDefault();
+    type_ids.push_back(TypeIndex::Nothing);
+}
+
+void ColumnObject::Subcolumn::resize(size_t new_size)
+{
+    data = data->cloneResized(new_size);
+    type_ids.resize_fill(new_size, TypeIndex::Nothing);
+}
+
+ColumnObject::ColumnObject(SubcolumnsMap && subcolumns_)
+    : subcolumns(std::move(subcolumns_))
+{
     checkConsistency();
 }
 
@@ -31,17 +54,17 @@ void ColumnObject::checkConsistency() const
     if (subcolumns.empty())
         return;
 
-    size_t first_size = subcolumns.begin()->second->size();
+    size_t first_size = subcolumns.begin()->second.size();
     for (const auto & [name, column] : subcolumns)
     {
-        if (!column)
+        if (!column.data)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Null subcolumn passed to ColumnObject");
 
-        if (first_size != column->size())
+        if (first_size != column.data->size())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
                 " Subcolumn '{}' has {} rows, subcolumn '{}' has {} rows",
-                subcolumns.begin()->first, first_size, name, column->size());
+                subcolumns.begin()->first, first_size, name, column.data->size());
         }
     }
 }
@@ -50,16 +73,16 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 {
     SubcolumnsMap new_subcolumns;
     for (const auto & [key, subcolumn] : subcolumns)
-        new_subcolumns[key] = subcolumn->cloneResized(new_size);
+        new_subcolumns[key].resize(new_size);
 
-    return ColumnObject::create(new_subcolumns);
+    return ColumnObject::create(std::move(new_subcolumns));
 }
 
 size_t ColumnObject::byteSize() const
 {
     size_t res = 0;
     for (const auto & [_, column] : subcolumns)
-        res += column->byteSize();
+        res += column.data->byteSize();
     return res;
 }
 
@@ -67,33 +90,24 @@ size_t ColumnObject::allocatedBytes() const
 {
     size_t res = 0;
     for (const auto & [_, column] : subcolumns)
-        res += column->allocatedBytes();
+        res += column.data->allocatedBytes();
     return res;
 }
 
-// const ColumnPtr & ColumnObject::tryGetSubcolumn(const String & key) const
-// {
-//     auto it = subcolumns.find(key);
-//     if (it == subcolumns.end())
-//         return nullptr;
-
-//     return it->second;
-// }
-
-const IColumn & ColumnObject::getSubcolumn(const String & key) const
+const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const String & key) const
 {
     auto it = subcolumns.find(key);
     if (it != subcolumns.end())
-        return *it->second;
+        return it->second;
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key);
 }
 
-IColumn & ColumnObject::getSubcolumn(const String & key)
+ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const String & key)
 {
     auto it = subcolumns.find(key);
     if (it != subcolumns.end())
-        return *it->second;
+        return it->second;
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key);
 }
@@ -103,12 +117,34 @@ bool ColumnObject::hasSubcolumn(const String & key) const
     return subcolumns.count(key) != 0;
 }
 
-void ColumnObject::addSubcolumn(const String & key, MutableColumnPtr && subcolumn, bool check_size)
+void ColumnObject::addSubcolumn(const String & key, MutableColumnPtr && column_sample, size_t new_size, bool check_size)
 {
-    if (check_size && subcolumn->size() != size())
+    if (subcolumns.count(key))
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key);
+
+    if (!column_sample->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot add subcolumn '{}' with non-empty sample column", key);
+
+    if (check_size && new_size != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
-            key, subcolumn->size(), size());
+            key, new_size, size());
+
+    auto & subcolumn = subcolumns[key];
+    subcolumn = std::move(column_sample);
+    subcolumn.resize(new_size);
+}
+
+void ColumnObject::addSubcolumn(const String & key, Subcolumn && subcolumn, bool check_size)
+{
+    if (subcolumns.count(key))
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key);
+
+    if (check_size && subcolumn.size() != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
+            key, subcolumn.size(), size());
 
     subcolumns[key] = std::move(subcolumn);
 }
