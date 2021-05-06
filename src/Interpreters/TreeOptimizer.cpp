@@ -516,9 +516,10 @@ void optimizeWithConstraints(ASTSelectQuery * select_query,
                              const NameSet & /*source_columns_set*/,
                              const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
                              const StorageMetadataPtr & metadata_snapshot,
-                             const bool optimize_append_index)
+                             const bool optimize_append_index,
+                             const bool optimize_use_smt)
 {
-    WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index).perform();
+    WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index, optimize_use_smt).perform();
     if (select_query->where())
         Poco::Logger::get("CNF").information(select_query->where()->dumpTree());
     else
@@ -652,7 +653,14 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
 
     if (settings.convert_query_to_cnf && settings.optimize_using_constraints)
     {
-        optimizeWithConstraints(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, settings.optimize_append_index);
+        optimizeWithConstraints(
+            select_query,
+            aliases,
+            source_columns_set,
+            tables_with_columns,
+            metadata_snapshot,
+            settings.optimize_append_index,
+            settings.optimize_using_smt);
         if (settings.optimize_substitute_columns)
             optimizeSubstituteColumn(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage);
     }

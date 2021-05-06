@@ -466,6 +466,11 @@ if (USE_ROCKSDB)
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
 endif()
 
+if (USE_Z3)
+    dbms_target_link_libraries(PUBLIC ${Z3_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${Z3_INCLUDE_DIR})
+endif()
+
 if (USE_LIBPQXX)
     dbms_target_link_libraries(PUBLIC ${LIBPQXX_LIBRARY})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})

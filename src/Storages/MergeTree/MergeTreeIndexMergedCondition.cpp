@@ -132,6 +132,7 @@ bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const
         {
             for (auto atom : or_group)
             {
+                atom.ast = atom.ast->clone();
                 pushNotIn(atom);
                 const auto * func = atom.ast->as<ASTFunction>();
                 if (func && func->arguments->children.size() == 2)
@@ -170,6 +171,7 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
 
             for (auto atom : or_group)
             {
+                atom.ast = atom.ast->clone();
                 pushNotIn(atom);
                 Poco::Logger::get("KEK").information(atom.ast->dumpTree());
                 const auto * func = atom.ast->as<ASTFunction>();

@@ -8,6 +8,7 @@
 #include <Interpreters/AddIndexConstraintsOptimizer.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Poco/Logger.h>
+#include <Interpreters/TreeSMTSolver.h>
 
 namespace DB
 {
@@ -15,10 +16,12 @@ namespace DB
 WhereConstraintsOptimizer::WhereConstraintsOptimizer(
     ASTSelectQuery * select_query_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const bool optimize_append_index_)
+    const bool optimize_append_index_,
+    const bool optimize_use_smt_)
     : select_query(select_query_)
     , metadata_snapshot(metadata_snapshot_)
     , optimize_append_index(optimize_append_index_)
+    , optimize_use_smt(optimize_use_smt_)
 {
 }
 
@@ -59,6 +62,13 @@ bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const Cons
         }
     }
     return false;
+}
+
+bool checkIfGroupAlwaysTrueSMT(const CNFQuery::OrGroup & group, TreeSMTSolver & solver)
+{
+    return solver.alwaysTrue(
+        TreeCNFConverter::fromCNF(
+            CNFQuery(CNFQuery::AndGroup({group}))));
 }
 
 ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula & atom)
@@ -106,6 +116,13 @@ bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const
     return false;
 }
 
+bool checkIfAtomAlwaysFalseFullMatch(CNFQuery::AtomicFormula atom,  TreeSMTSolver & solver)
+{
+    atom.ast = atom.ast->clone();
+    pushNotIn(atom);
+    return solver.alwaysFalse(atom.ast);
+}
+
 bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const ComparisonGraph & graph)
 {
     const auto * func = atom.ast->as<ASTFunction>();
@@ -149,20 +166,39 @@ void WhereConstraintsOptimizer::perform()
     if (select_query->where() && metadata_snapshot)
     {
         //const auto & constraint_data = metadata_snapshot->getConstraints().getConstraintData();
+        TreeSMTSolver smt(TreeSMTSolver::STRICTNESS::POLYNOMIAL, metadata_snapshot->getColumns().getAll());
+        for (const auto & constraint_description : metadata_snapshot->getConstraints().getConstraints())
+        {
+            const auto * constraint = constraint_description->as<ASTConstraintDeclaration>();
+            if (!constraint)
+                throw Exception("Bad constraint", ErrorCodes::LOGICAL_ERROR);
+            smt.addConstraint(constraint->expr->clone());
+        }
+
         const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
         Poco::Logger::get("BEFORE CNF ").information(select_query->where()->dumpTree());
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
         Poco::Logger::get("BEFORE OPT").information(cnf.dump());
         cnf.pullNotOutFunctions()
+            .filterAlwaysTrueGroups([&smt, this](const auto & group)
+            {
+                /// remove always true groups from CNF
+                return !optimize_use_smt || !checkIfGroupAlwaysTrueSMT(group, smt);
+            })
+            .filterAlwaysFalseAtoms([&smt, this](const auto & atom)
+            {
+                /// remove always false atoms from CNF
+                return !optimize_use_smt || !checkIfAtomAlwaysFalseFullMatch(atom, smt);
+            })
             .filterAlwaysTrueGroups([&compare_graph, this](const auto & group)
             {
                 /// remove always true groups from CNF
-                return !checkIfGroupAlwaysTrueFullMatch(group, metadata_snapshot->getConstraints()) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+                return optimize_use_smt || (!checkIfGroupAlwaysTrueFullMatch(group, metadata_snapshot->getConstraints()) && !checkIfGroupAlwaysTrueGraph(group, compare_graph));
             })
             .filterAlwaysFalseAtoms([&compare_graph, this](const auto & atom)
             {
                 /// remove always false atoms from CNF
-                return !checkIfAtomAlwaysFalseFullMatch(atom, metadata_snapshot->getConstraints()) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
+                return optimize_use_smt || (!checkIfAtomAlwaysFalseFullMatch(atom, metadata_snapshot->getConstraints()) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph));
             })
             .transformAtoms([&compare_graph](const auto & atom)
             {

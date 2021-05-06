@@ -20,7 +20,8 @@ public:
     WhereConstraintsOptimizer(
         ASTSelectQuery * select_query,
         const StorageMetadataPtr & metadata_snapshot,
-        const bool optimize_append_index_);
+        const bool optimize_append_index,
+        const bool optimize_use_smt);
 
     void perform();
 
@@ -28,6 +29,7 @@ private:
     ASTSelectQuery * select_query;
     const StorageMetadataPtr & metadata_snapshot;
     bool optimize_append_index;
+    bool optimize_use_smt;
 };
 
 }
