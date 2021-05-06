@@ -814,92 +814,77 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
     return func_node;
 }
 
+template <TokenType ...tokens>
+static bool isOneOf(TokenType token)
+{
+    return ((token == tokens) || ...);
+}
+
+
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Numbers, strings, tuples and arrays of them.
-    /// Types, that doesn't have representation in Field, e.g.: Date, DateTime,
-    /// can't be read from text as literals.
-    auto is_good_token = [](const auto & token)
-    {
-        return token == TokenType::Number
-            || token == TokenType::StringLiteral
-            || token == TokenType::Comma
-            || token == TokenType::OpeningSquareBracket
-            || token == TokenType::ClosingSquareBracket
-            || token == TokenType::OpeningRoundBracket
-            || token == TokenType::ClosingRoundBracket;
-    };
-
-    auto is_number_or_string = [](const auto & type) { return isNumber(type) || isStringOrFixedString(type); };
-
-    auto is_good_type = [&is_number_or_string](const auto & type)
-    {
-        if (is_number_or_string(type))
-            return true;
-
-        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-            return is_number_or_string(type_array->getNestedType());
-
-        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-        {
-            const auto & elems = type_tuple->getElements();
-            return std::all_of(elems.begin(), elems.end(), [&](const auto & elem) { return is_number_or_string(elem); });
-        }
-
-        return false;
-    };
+    /// Parse numbers (including decimals), strings and arrays of them.
 
     const char * data_begin = pos->begin;
-    bool is_number_literal = pos->type == TokenType::Number;
     bool is_string_literal = pos->type == TokenType::StringLiteral;
-
-    size_t skipped_tokens = 0;
-    while (pos.isValid() && is_good_token(pos->type))
+    if (pos->type == TokenType::Number || is_string_literal)
     {
         ++pos;
-        ++skipped_tokens;
     }
+    else if (pos->type == TokenType::OpeningSquareBracket)
+    {
+        TokenType last_token = TokenType::OpeningSquareBracket;
+        while (pos.isValid())
+        {
+            if (pos->type == TokenType::OpeningSquareBracket)
+            {
+                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
+                    return false;
+            }
+            else if (pos->type == TokenType::ClosingSquareBracket)
+            {
+                if (last_token == TokenType::Comma)
+                    return false;
+            }
+            else if (pos->type == TokenType::Comma)
+            {
+                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
+                    return false;
+            }
+            else if (isOneOf<TokenType::Number, TokenType::StringLiteral>(pos->type))
+            {
+                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
+                    return false;
+            }
+            else
+            {
+                break;
+            }
 
-    if (!pos.isValid())
-        return false;
-    if ((is_string_literal || is_number_literal) && skipped_tokens != 1)
-        return false;
+            last_token = pos->type;
+            ++pos;
+        }
+    }
 
     ASTPtr type_ast;
     const char * data_end = pos->begin;
 
-    if (ParserDoubleColon().ignore(pos, expected)
+    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
         && ParserDataType().parse(pos, type_ast, expected))
     {
-        auto type = DataTypeFactory::instance().get(type_ast);
-        if (!is_good_type(type))
-            return false;
-
-        /// Allow to parse numbers only from number literals,
-        /// because SerializationNumber uses unsafe version of int deserialization
-        /// and it won't throw an exception in case of error.
-        if (isNumber(type) && !is_number_literal)
-            return false;
-
-        ReadBufferFromMemory buf(data_begin, data_end - data_begin);
-        auto column = type->createColumn();
-
-        try
+        String s;
+        size_t data_size = data_end - data_begin;
+        if (is_string_literal)
         {
-            if (is_string_literal)
-                type->getDefaultSerialization()->deserializeTextQuoted(*column, buf, {});
-            else
-                type->getDefaultSerialization()->deserializeTextEscaped(*column, buf, {});
+            ReadBufferFromMemory buf(data_begin, data_size);
+            readQuotedStringWithSQLStyle(s, buf);
+            assert(buf.count() == data_size);
         }
-        catch (const Exception &)
-        {
-            expected.add(pos, "literal with operator ::");
-            return false;
-        }
+        else
+            s = String(data_begin, data_size);
 
-        auto literal = std::make_shared<ASTLiteral>((*column)[0]);
-        literal->data_type_hint = type;
-        node = std::move(literal);
+        auto literal = std::make_shared<ASTLiteral>(std::move(s));
+        node = createFunctionCast(literal, type_ast);
         return true;
     }
 
