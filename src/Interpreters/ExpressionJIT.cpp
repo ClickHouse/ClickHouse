@@ -266,7 +266,7 @@ static FunctionBasePtr compile(
             return nullptr;
     }
 
-    LOG_INFO(getLogger(), "Try to compile expression {}", dag.dump());
+    LOG_TRACE(getLogger(), "Try to compile expression {}", dag.dump());
 
     FunctionBasePtr fn;
 
@@ -288,13 +288,13 @@ static FunctionBasePtr compile(
         });
 
         if (was_inserted)
-            LOG_INFO(getLogger(),
+            LOG_TRACE(getLogger(),
                 "Put compiled expression {} in cache used cache size {} total cache size {}",
                 compiled_function->function->getName(),
                 compilation_cache->weight(),
                 compilation_cache->maxSize());
         else
-            LOG_INFO(getLogger(), "Get compiled expression {} from cache", compiled_function->function->getName());
+            LOG_TRACE(getLogger(), "Get compiled expression {} from cache", compiled_function->function->getName());
 
         fn = compiled_function->function;
     }
@@ -303,7 +303,7 @@ static FunctionBasePtr compile(
         fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(dag));
     }
 
-    LOG_INFO(getLogger(), "Use compiled expression {}", fn->getName());
+    LOG_TRACE(getLogger(), "Use compiled expression {}", fn->getName());
 
     return fn;
 }
