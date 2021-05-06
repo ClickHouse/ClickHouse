@@ -11,6 +11,11 @@ else ()
     option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
 endif ()
 
+
+if (WITH_COVERAGE)
+    set (ENABLE_JEMALLOC ON)
+endif()
+
 if (NOT ENABLE_JEMALLOC)
     add_library(jemalloc INTERFACE)
     target_compile_definitions(jemalloc INTERFACE USE_JEMALLOC=0)
@@ -41,12 +46,15 @@ if (OS_LINUX)
 else()
     set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000")
 endif()
+
 # CACHE variable is empty, to allow changing defaults without necessity
 # to purge cache
 set (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE "" CACHE STRING "Change default configuration string of JEMalloc" )
+
 if (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE)
     set (JEMALLOC_CONFIG_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE}")
 endif()
+
 message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
@@ -137,6 +145,11 @@ endif ()
 target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
 # for RTLD_NEXT
 target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
+
+if (WITH_COVERAGE)
+    target_compile_options(jemalloc
+        PRIVATE -O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
+endif()
 
 set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
 if (MAKE_STATIC_LIBRARIES)
