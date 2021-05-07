@@ -237,7 +237,8 @@ struct integer<Bits, Signed>::_impl
      * a_(n - 1) = a_n * max_int + b2, a_n <= max_int <- base case.
      */
     template <class T>
-    constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept {
+    constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept
+    {
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
 
         /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
@@ -258,7 +259,8 @@ struct integer<Bits, Signed>::_impl
         self += static_cast<uint64_t>(t - alpha * static_cast<T>(max_int)); // += b_i
     }
 
-    constexpr static void wide_integer_from_bultin(integer<Bits, Signed>& self, double rhs) noexcept {
+    constexpr static void wide_integer_from_bultin(integer<Bits, Signed>& self, double rhs) noexcept
+    {
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
         constexpr int64_t min_int = std::numeric_limits<int64_t>::min();
 
