@@ -372,6 +372,7 @@ def test_dcl_management():
 def test_users_xml_is_readonly():
     assert re.search("storage is readonly", instance.query_and_get_error("DROP QUOTA myQuota"))
 
+
 def test_query_inserts():
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", [31556952],
                           0, "['default']", "[]"]])
@@ -380,9 +381,16 @@ def test_query_inserts():
     system_quotas_usage(
         [["myQuota", "default", 1, 31556952, 0, 1000, 0, 500, 0, 500, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
 
-    instance.query("INSERT INTO test_table values(1)")
+    instance.query("DROP TABLE IF EXISTS test_table_ins")
+    instance.query("CREATE TABLE test_table_ins(x UInt32) ENGINE = MergeTree ORDER BY tuple()")
     system_quota_usage(
-        [["myQuota", "default", 31556952, 1, 1000, 0, 500, 1, 500, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
+        [["myQuota", "default", 31556952, 2, 1000, 0, 500, 0, 500, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
+    
+    instance.query("INSERT INTO test_table_ins values(1)")
+    system_quota_usage(
+        [["myQuota", "default", 31556952, 3, 1000, 0, 500, 1, 500, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
+    instance.query("DROP TABLE test_table_ins")
+
 
 def test_consumption_of_show_tables():
     assert instance.query("SHOW TABLES") == "test_table\n"

@@ -137,7 +137,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
-            if (!result_null_map_column)
+            if (!result_null_map_column) //-V1051
             {
                 result_null_map_column = null_map_column;
             }
@@ -149,8 +149,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
                 const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
-                    if (src_null_map[i])
-                        result_null_map[i] = 1;
+                    result_null_map[i] |= src_null_map[i];
 
                 result_null_map_column = std::move(mutable_result_null_map_column);
             }
@@ -179,10 +178,8 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
 
     for (const auto & elem : args)
     {
-        if (!res.has_nullable)
-            res.has_nullable = elem.type->isNullable();
-        if (!res.has_null_constant)
-            res.has_null_constant = elem.type->onlyNull();
+        res.has_nullable |= elem.type->isNullable();
+        res.has_null_constant |= elem.type->onlyNull();
     }
 
     return res;
@@ -477,7 +474,7 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationF
     }
     if (null_presence.has_nullable)
     {
-        Block nested_columns = createBlockWithNestedColumns(arguments);
+        auto nested_columns = Block(createBlockWithNestedColumns(arguments));
         auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
         return makeNullable(return_type);
     }

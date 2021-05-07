@@ -2,6 +2,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -52,11 +53,11 @@ void MergeSortingStep::updateLimit(size_t limit_)
     if (limit_ && (limit == 0 || limit_ < limit))
     {
         limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
+        transform_traits.preserves_number_of_rows = false;
     }
 }
 
-void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
+void MergeSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
@@ -82,6 +83,14 @@ void MergeSortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
+}
+
+void MergeSortingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Sort Description", explainSortDescription(description, input_streams.front().header));
+
+    if (limit)
+        map.add("Limit", limit);
 }
 
 }

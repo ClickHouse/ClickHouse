@@ -1,6 +1,6 @@
+#include <functional>
 #include <iostream>
 #include <string_view>
-#include <functional>
 #include <boost/program_options.hpp>
 
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -50,6 +50,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         ("quiet,q", "just check syntax, no output on success")
         ("multiquery,n", "allow multiple queries in the same file")
         ("obfuscate", "obfuscate instead of formatting")
+        ("backslash", "add a backslash at the end of each line of the formatted query")
         ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
     ;
 
@@ -70,6 +71,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool quiet = options.count("quiet");
         bool multiple = options.count("multiquery");
         bool obfuscate = options.count("obfuscate");
+        bool backslash = options.count("backslash");
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -100,8 +102,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             }
 
             SharedContextHolder shared_context = Context::createShared();
-            Context context = Context::createGlobal(shared_context.get());
-            context.makeGlobalContext();
+            auto context = Context::createGlobal(shared_context.get());
+            context->makeGlobalContext();
 
             registerFunctions();
             registerAggregateFunctions();
@@ -148,12 +150,39 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 }
                 if (!quiet)
                 {
-                    WriteBufferFromOStream res_buf(std::cout, 4096);
-                    formatAST(*res, res_buf, hilite, oneline);
-                    res_buf.next();
-                    if (multiple)
-                        std::cout << "\n;\n";
-                    std::cout << std::endl;
+                    if (!backslash)
+                    {
+                        WriteBufferFromOStream res_buf(std::cout, 4096);
+                        formatAST(*res, res_buf, hilite, oneline);
+                        res_buf.next();
+                        if (multiple)
+                            std::cout << "\n;\n";
+                        std::cout << std::endl;
+                    }
+                    /// add additional '\' at the end of each line;
+                    else
+                    {
+                        WriteBufferFromOwnString str_buf;
+                        formatAST(*res, str_buf, hilite, oneline);
+
+                        auto res_string = str_buf.str();
+                        WriteBufferFromOStream res_cout(std::cout, 4096);
+
+                        const char * s_pos= res_string.data();
+                        const char * s_end = s_pos + res_string.size();
+
+                        while (s_pos != s_end)
+                        {
+                            if (*s_pos == '\n')
+                                res_cout.write(" \\", 2);
+                            res_cout.write(*s_pos++);
+                        }
+
+                        res_cout.next();
+                        if (multiple)
+                            std::cout << " \\\n;\n";
+                        std::cout << std::endl;
+                    }
                 }
 
                 do

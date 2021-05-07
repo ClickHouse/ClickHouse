@@ -21,9 +21,9 @@ class FunctionIfNull : public IFunction
 public:
     static constexpr auto name = "ifNull";
 
-    explicit FunctionIfNull(const Context & context_) : context(context_) {}
+    explicit FunctionIfNull(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionIfNull>(context);
     }
@@ -83,7 +83,7 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
 }

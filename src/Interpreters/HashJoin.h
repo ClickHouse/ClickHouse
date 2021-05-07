@@ -134,6 +134,8 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
+    const TableJoin & getTableJoin() const override { return *table_join; }
+
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
@@ -156,6 +158,8 @@ public:
     bool hasTotals() const override { return totals; }
 
     void joinTotals(Block & block) const override;
+
+    bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
@@ -341,6 +345,9 @@ private:
     std::shared_ptr<TableJoin> table_join;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
+
+    /// This join was created from StorageJoin and it is already filled.
+    bool from_storage_join = false;
 
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
     const Names & key_names_right;

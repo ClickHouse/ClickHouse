@@ -42,8 +42,7 @@ LAYOUT(COMPLEX_KEY_SSD_CACHE(FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse
 SELECT 'TEST_SMALL';
 SELECT 'VALUE FROM RAM BUFFER';
 
--- NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-SELECT dictHas('01280_db.ssd_dict', 'a', tuple('1')); -- { serverError 42 }
+SELECT dictHas('01280_db.ssd_dict', 'a', tuple('1')); -- { serverError 43 }
 
 SELECT dictGetUInt64('01280_db.ssd_dict', 'a', tuple('1', toInt32(3)));
 SELECT dictGetInt32('01280_db.ssd_dict', 'b', tuple('1', toInt32(3)));
@@ -99,7 +98,7 @@ CREATE DICTIONARY 01280_db.ssd_dict
 PRIMARY KEY k1, k2
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB '01280_db'))
 LIFETIME(MIN 1000 MAX 2000)
-LAYOUT(COMPLEX_KEY_SSD_CACHE(FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/1d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 4096 MAX_STORED_KEYS 1000000));
+LAYOUT(COMPLEX_KEY_SSD_CACHE(FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/1d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 4096));
 
 SELECT 'UPDATE DICTIONARY';
 -- 118

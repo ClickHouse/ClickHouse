@@ -13,28 +13,7 @@ namespace DB
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
     if (auto * node_select = ast->as<ASTSelectQuery>())
-    {
-        std::optional<Data> new_data;
-        if (auto with = node_select->with())
-        {
-            for (auto & child : with->children)
-            {
-                visit(child, new_data ? *new_data : data);
-                if (auto * ast_with_elem = child->as<ASTWithElement>())
-                {
-                    if (!new_data)
-                        new_data = data;
-                    new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
-                }
-            }
-        }
-
-        for (auto & child : node_select->children)
-        {
-            if (child != node_select->with())
-                visit(child, new_data ? *new_data : data);
-        }
-    }
+        visit(*node_select, data);
     else
     {
         for (auto & child : ast->children)
@@ -44,6 +23,36 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
         else if (auto * node_table = ast->as<ASTTableExpression>())
             visit(*node_table, data);
     }
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
+{
+    std::optional<Data> new_data;
+    if (auto with = ast.with())
+    {
+        for (auto & child : with->children)
+        {
+            visit(child, new_data ? *new_data : data);
+            if (auto * ast_with_elem = child->as<ASTWithElement>())
+            {
+                if (!new_data)
+                    new_data = data;
+                new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+            }
+        }
+    }
+
+    for (auto & child : ast.children)
+    {
+        if (child != ast.with())
+            visit(child, new_data ? *new_data : data);
+    }
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & ast, const Data & data)
+{
+    for (auto & child : ast.children)
+        visit(child, data);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & data)

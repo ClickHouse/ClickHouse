@@ -8,6 +8,7 @@
 
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
@@ -35,7 +36,7 @@ template <typename T>
 using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 
 class Field;
-using FieldVector = std::vector<Field>;
+using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -95,7 +96,7 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -158,7 +159,7 @@ private:
     T dec;
     UInt32 scale;
 };
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 
@@ -309,7 +310,7 @@ public:
     template <typename T, typename Z = void *>
     using enable_if_not_field_or_stringlike_t = std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field> && !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
 
-    Field()
+    Field() //-V730
         : which(Types::Null)
     {
     }
@@ -399,10 +400,10 @@ public:
 
 
     template <typename T>
-    T & get();
+    NearestFieldType<std::decay_t<T>> & get();
 
     template <typename T>
-    const T & get() const
+    const auto & get() const
     {
         auto mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
         return mutable_this->get<T>();
@@ -436,21 +437,10 @@ public:
         return true;
     }
 
-    template <typename T> T & safeGet()
-    {
-        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
-        if (which != requested)
-            throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
-        return get<T>();
-    }
+    template <typename T> auto & safeGet() const
+    { return const_cast<Field *>(this)->safeGet<T>(); }
 
-    template <typename T> const T & safeGet() const
-    {
-        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
-        if (which != requested)
-            throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
-        return get<T>();
-    }
+    template <typename T> auto & safeGet();
 
     bool operator< (const Field & rhs) const
     {
@@ -573,7 +563,7 @@ public:
         {
             case Types::Null:    return f(field.template get<Null>());
 // gcc 8.2.1
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -593,7 +583,7 @@ public:
             case Types::Int128: return f(field.template get<Int128>());
             case Types::UInt256: return f(field.template get<UInt256>());
             case Types::Int256: return f(field.template get<Int256>());
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
         }
@@ -778,21 +768,39 @@ inline constexpr bool isInt64FieldType(Field::Types::Which t)
 
 // Field value getter with type checking in debug builds.
 template <typename T>
-T & Field::get()
+NearestFieldType<std::decay_t<T>> & Field::get()
 {
-    using ValueType = std::decay_t<T>;
+    // Before storing the value in the Field, we static_cast it to the field
+    // storage type, so here we return the value of storage type as well.
+    // Otherwise, it is easy to make a mistake of reinterpret_casting the stored
+    // value to a different and incompatible type.
+    // For example, a Float32 value is stored as Float64, and it is incorrect to
+    // return a reference to this value as Float32.
+    using StoredType = NearestFieldType<std::decay_t<T>>;
 
 #ifndef NDEBUG
     // Disregard signedness when converting between int64 types.
-    constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
+    constexpr Field::Types::Which target = TypeToEnum<StoredType>::value;
     if (target != which
            && (!isInt64FieldType(target) || !isInt64FieldType(which)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Field get from type {} to type {}", Types::toString(which), Types::toString(target));
 #endif
 
-    ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
+    StoredType * MAY_ALIAS ptr = reinterpret_cast<StoredType *>(&storage);
+
     return *ptr;
 }
+
+
+template <typename T>
+auto & Field::safeGet()
+{
+    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    if (which != requested)
+        throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
+    return get<T>();
+}
+
 
 template <typename T>
 T & Field::reinterpret()
@@ -843,7 +851,7 @@ decltype(auto) castToNearestFieldType(T && x)
 }
 
 template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_stringlike_t<T>)
+Field::Field(T && rhs, enable_if_not_field_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
@@ -946,3 +954,26 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 String toString(const Field & x);
 
 }
+
+template <>
+struct fmt::formatter<DB::Field>
+{
+    constexpr auto parse(format_parse_context & ctx)
+    {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::Field & x, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{}", toString(x));
+    }
+};
+

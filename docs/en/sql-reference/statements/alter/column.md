@@ -74,6 +74,9 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
+!!! warning "Warning"
+    You can’t delete a column if it is referenced by [materialized view](../../../sql-reference/statements/create/view.md#materialized). Otherwise, it returns an error.
+
 Example:
 
 ``` sql
@@ -144,7 +147,7 @@ This query changes the `name` column properties:
 
 -   TTL
 
-        For examples of columns TTL modifying, see [Column TTL](../../engines/table_engines/mergetree_family/mergetree.md#mergetree-column-ttl).
+For examples of columns TTL modifying, see [Column TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist.
 
@@ -180,7 +183,7 @@ ALTER TABLE table_name MODIFY column_name REMOVE property;
 ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ```
 
-## See Also
+**See Also**
 
 - [REMOVE TTL](ttl.md).
 
@@ -191,7 +194,7 @@ Renames an existing column.
 Syntax:
 
 ```sql
-ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name;
+ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name
 ```
 
 **Example**

@@ -94,32 +94,6 @@ std::pair<std::shared_ptr<std::ostream>, std::shared_ptr<std::ostream>> HTTPServ
     return std::make_pair(header_stream, stream);
 }
 
-void HTTPServerResponse::sendFile(const std::string & path, const std::string & mediaType)
-{
-    poco_assert(!stream);
-
-    Poco::File f(path);
-    Poco::Timestamp date_time = f.getLastModified();
-    Poco::File::FileSize length = f.getSize();
-    set("Last-Modified", Poco::DateTimeFormatter::format(date_time, Poco::DateTimeFormat::HTTP_FORMAT));
-    setContentLength64(length);
-    setContentType(mediaType);
-    setChunkedTransferEncoding(false);
-
-    Poco::FileInputStream istr(path);
-    if (istr.good())
-    {
-        stream = std::make_shared<Poco::Net::HTTPHeaderOutputStream>(session);
-        write(*stream);
-        if (request && request->getMethod() != HTTPRequest::HTTP_HEAD)
-        {
-            Poco::StreamCopier::copyStream(istr, *stream);
-        }
-    }
-    else
-        throw Poco::OpenFileException(path);
-}
-
 void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)
 {
     poco_assert(!stream);
@@ -133,20 +107,6 @@ void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)
     {
         stream->write(static_cast<const char *>(buffer), static_cast<std::streamsize>(length));
     }
-}
-
-void HTTPServerResponse::redirect(const std::string & uri, HTTPStatus status)
-{
-    poco_assert(!stream);
-
-    setContentLength(0);
-    setChunkedTransferEncoding(false);
-
-    setStatusAndReason(status);
-    set("Location", uri);
-
-    stream = std::make_shared<Poco::Net::HTTPHeaderOutputStream>(session);
-    write(*stream);
 }
 
 void HTTPServerResponse::requireAuthentication(const std::string & realm)
