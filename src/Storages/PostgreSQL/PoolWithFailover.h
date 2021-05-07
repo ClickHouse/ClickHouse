@@ -1,9 +1,9 @@
 #pragma once
 
 #include <mutex>
-#include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/PostgreSQL/ConnectionHolder.h>
+#include <common/logger_useful.h>
 
 
 namespace postgres
@@ -48,18 +48,20 @@ private:
     {
         String connection_string;
         PoolPtr pool;
-        size_t pool_wait_timeout;
 
-        PoolHolder(const String & connection_string_, size_t pool_size, size_t pool_wait_timeout_)
-            : connection_string(connection_string_), pool(std::make_shared<Pool>(pool_size)), pool_wait_timeout(pool_wait_timeout_) {}
+        PoolHolder(const String & connection_string_, size_t pool_size)
+            : connection_string(connection_string_), pool(std::make_shared<Pool>(pool_size)) {}
     };
+
     /// Highest priority is 0, the bigger the number in map, the less the priority
     using Replicas = std::vector<PoolHolder>;
     using ReplicasWithPriority = std::map<size_t, Replicas>;
 
     ReplicasWithPriority replicas_with_priority;
+    size_t pool_wait_timeout;
     size_t max_tries;
     std::mutex mutex;
+    Poco::Logger * log = &Poco::Logger::get("PostgreSQLConnectionPool");
 };
 
 using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
