@@ -61,5 +61,3 @@ Assigns grants from a user with a `john` account to a user with a `jack` account
 ``` sql
 ALTER USER john GRANTEES jack;
 ```
-
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/alter/user/) <!--hide-->

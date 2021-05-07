@@ -100,5 +100,3 @@ Create the user account `john` and assign his grants to a user with a `jack` acc
 ``` sql
 CREATE USER john GRANTEES jack;
 ```
-
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/user/) <!--hide-->
