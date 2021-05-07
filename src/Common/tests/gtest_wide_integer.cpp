@@ -7,6 +7,7 @@
 
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <common/demangle.h>
 
 
@@ -102,6 +103,46 @@ GTEST_TEST(WideInteger, Conversions)
     ASSERT_EQ(toString(UInt256(1) * 1000000000 * 1000000000 * 1000000000 * 1000000000 * 1000000000 * 1000000000 * 1000000000 * 1000000000),
         "1000000000000000000000000000000000000000000000000000000000000000000000000");
     ASSERT_EQ(Float64(UInt256(1) * 1000000000 * 1000000000 * 1000000000 * 1000000000 * 1000000000 * 1000000000 * 1000000000 * 1000000000), 1e72);
+
+    EXPECT_EQ(toString(parse<Int128>("148873535527910577765226390751398592640")), "148873535527910577765226390751398592640");
+    EXPECT_EQ(toString(parse<UInt128>("148873535527910577765226390751398592640")), "148873535527910577765226390751398592640");
+}
+
+
+template <typename T>
+static T divide(T & numerator, T && denominator)
+{
+    if (!denominator)
+        throwError("Division by zero");
+
+    T & n = numerator;
+    T & d = denominator;
+    T x = 1;
+    T quotient = 0;
+
+    /// Multiply d to the power of two until it will be greater than n.
+    /// The factor will be collected in x.
+    while (d <= n && ((d >> (sizeof(T) * 8 - 1)) & 1) == 0)
+    {
+        x <<= 1;
+        d <<= 1;
+    }
+
+    std::cerr << toString(x) << ", " << toString(d) << "\n";
+
+    while (x)
+    {
+        if (d <= n)
+        {
+            n -= d;
+            quotient |= x;
+        }
+
+        x >>= 1;
+        d >>= 1;
+    }
+
+    return quotient;
 }
 
 
@@ -128,6 +169,10 @@ GTEST_TEST(WideInteger, Arithmetic)
     ASSERT_EQ(UInt256(12345678901234567890ULL) * UInt128(12345678901234567890ULL) / 12345678901234567890ULL, 12345678901234567890ULL);
 
     ASSERT_EQ(Int128(0) + Int32(-1), Int128(-1));
+
+    Int128 x(parse<Int128>("148873535527910577765226390751398592640"));
+    Int128 dividend = x / 10;
+    ASSERT_EQ(toString(dividend), "14887353552791057776522639075139859264");
 }
 
 
@@ -218,4 +263,19 @@ GTEST_TEST(WideInteger, Shift)
 
     y <<= 64;
     ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\xFF\xFF", sizeof(Int128)));
+}
+
+
+GTEST_TEST(WideInteger, DecimalFormatting)
+{
+    Decimal128 x(parse<Int128>("148873535527910577765226390751398592640"));
+
+    EXPECT_EQ(toString(x.value), "148873535527910577765226390751398592640");
+    EXPECT_EQ(toString(x.value / 10), "14887353552791057776522639075139859264");
+    EXPECT_EQ(toString(x.value % 10), "0");
+
+    Int128 fractional = DecimalUtils::getFractionalPart(x, 2);
+
+    EXPECT_EQ(fractional, 40);
+    EXPECT_EQ(decimalFractional(fractional, 2), "40");
 }
