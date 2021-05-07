@@ -1069,7 +1069,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         if (expressions.first_stage)
         {
-            if (expressions.filter_info)
+            // If there is a storage that supports prewhere, this will always be nullptr
+            // Thus, we don't actually need to check if projection is active.
+            if (!query_info.projection && expressions.filter_info)
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                         query_plan.getCurrentDataStream(),
@@ -1156,7 +1158,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 }
             }
 
-            if (expressions.hasWhere())
+            if (!query_info.projection && expressions.hasWhere())
                 executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
