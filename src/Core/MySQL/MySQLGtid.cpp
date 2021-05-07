@@ -1,6 +1,7 @@
 #include "MySQLGtid.h"
-
 #include <boost/algorithm/string.hpp>
+#include <IO/ReadHelpers.h>
+
 
 namespace DB
 {
@@ -38,7 +39,7 @@ void GTIDSets::parse(const String gtid_format)
         boost::split(server_ids, gset, [](char c) { return c == ':'; });
 
         GTIDSet set;
-        set.uuid = stringToUUID(server_ids[0]);
+        set.uuid = DB::parse<UUID>(server_ids[0]);
 
         for (size_t k = 1; k < server_ids.size(); k++)
         {
