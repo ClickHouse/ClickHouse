@@ -21,15 +21,15 @@ class MemoryInfoOS
 public:
     // In kB
     struct Data {
-        unsigned long total;
-        unsigned long free;
-        unsigned long buffers;
-        unsigned long cached;
-        unsigned long free_and_cached;
+        uint64_t total;
+        uint64_t free;
+        uint64_t buffers;
+        uint64_t cached;
+        uint64_t free_and_cached;
 
-        unsigned long swap_total;
-        unsigned long  swap_free;
-        unsigned long swap_cached;
+        uint64_t swap_total;
+        uint64_t swap_free;
+        uint64_t swap_cached;
     };
 
     MemoryInfoOS();
@@ -40,14 +40,9 @@ public:
 private:
     ReadBufferFromFile meminfo_in;
     
-    bool readField(unsigned long & field_val, const String & field_name_target);
+    bool readField(uint64_t & field_val, const String & field_name_target);
 
     void skipField();
-    
-    static void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf);
-
-    template<typename T>
-    static void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf);
 };
 
 }
