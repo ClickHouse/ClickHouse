@@ -24,9 +24,14 @@ namespace llvm
 namespace DB
 {
 
-/// DAG is represented as list of nodes stored in in-order traverse order.
-/// Expression (a + 1) + (b + 1) will be represented like chain: a, 1, a + 1, b, b + 1, (a + 1) + (b + 1).
-/// TODO: Consider to rename in CompileStack
+/** This class is needed to compile part of ActionsDAG.
+  * For example we have expression (a + 1) + (b + 1) in actions dag.
+  * It must be added into CompileDAG in order of compile evaluation.
+  * Node a, Constant 1, Function add(a + 1), Input b, Constant 1, Function add(b, 1), Function add(add(a + 1), add(a + 1)).
+  *
+  * Compile function must be called with input_nodes_values equal to input nodes count.
+  * During compile funciton call CompileDAG is compiled in order of added nodes.
+  */
 class CompileDAG
 {
 public:
@@ -68,7 +73,6 @@ public:
 
     inline Node & operator[](size_t index) { return nodes[index]; }
     inline const Node & operator[](size_t index) const { return nodes[index]; }
-
 
     inline Node & front() { return nodes.front(); }
     inline const Node & front() const { return nodes.front(); }

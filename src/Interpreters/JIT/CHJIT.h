@@ -20,7 +20,29 @@ class JITModuleMemoryManager;
 class JITSymbolResolver;
 class JITCompiler;
 
-/// TODO: Add documentation
+/** Custom jit implementation
+  * Main use cases:
+  * 1. Compiled functions in module.
+  * 2. Release memory for compiled functions.
+  *
+  * In LLVM library there are 2 main JIT stacks MCJIT and ORCv2.
+  *
+  * Main reasons for custom implementation vs MCJIT
+  * MCJIT keeps llvm::Module and compiled object code before linking process after module was compiled.
+  * llvm::Module can be removed, but compiled object code cannot be removed. Memory for compiled code
+  * will be release only during MCJIT instance destruction. It is too expensive to create MCJIT
+  * instance for each compiled module.
+  *
+  * Main reasong for custom implementation vs ORCv2.
+  * ORC is on request compiled, we does not need support for asynchronous compilation.
+  * It was possible to remove compiled code with ORCv1 but it was deprecated.
+  * In ORCv2 this probably can be done only with custom layer and materialization unit.
+  * But it is inconvenient, discard is only called for materialization units by JITDylib that are not yet materialized.
+  *
+  * CHJIT interface is thread safe, that means all functions can be called from multiple threads and state of CHJIT instance
+  * will not be broken.
+  * It is client responsibility to be sure and do not use compiled code after it was released.
+  */
 class CHJIT
 {
 public:
@@ -30,19 +52,39 @@ public:
 
     struct CompiledModuleInfo
     {
+        /// Size of compiled module code in bytes
         size_t size;
-        uint64_t module_identifier;
+        /// Module identifier. Should not be changed by client
+        uint64_t identifier;
+        /// Vector of compiled function nameds. Should not be changed by client.
         std::vector<std::string> compiled_functions;
     };
 
+    /** Compile module. In compile function client responsibility is to fill module with necessary
+      * IR code, then it will be compiled by CHJIT instance.
+      * Return compiled module info.
+      */
     CompiledModuleInfo compileModule(std::function<void (llvm::Module &)> compile_function);
 
+    /** Delete compiled module. Pointers to functions from module become invalid after this call.
+      * It is client responsibility to be sure that there are no pointers to compiled module code.
+      */
     void deleteCompiledModule(const CompiledModuleInfo & module_info);
 
+    /** Find compiled function using module_info, and function_name.
+      * It is client responsibility to case result function to right signature.
+      * After call to deleteCompiledModule compiled functions from module become invalid.
+      */
     void * findCompiledFunction(const CompiledModuleInfo & module_info, const std::string & function_name) const;
 
+    /** Register external symbol for CHJIT instance to use, during linking.
+      * It can be function, or global constant.
+      * It is client responsibility to be sure that address of symbol is valid during CHJIT instance lifetime.
+      */
     void registerExternalSymbol(const std::string & symbol_name, void * address);
 
+    /** Total compiled code size for module that are currently valid.
+      */
     inline size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
 
 private:

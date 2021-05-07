@@ -47,7 +47,7 @@ ColumnData getColumnData(const IColumn * column)
 
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
     {
-        result.null = nullable->getNullMapColumn().getRawData().data;
+        result.null_data = nullable->getNullMapColumn().getRawData().data;
         column = & nullable->getNestedColumn();
     }
 
@@ -56,39 +56,51 @@ ColumnData getColumnData(const IColumn * column)
     return result;
 }
 
-static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
+static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & function)
 {
+    /** Algorithm is to create a loop that iterate over ColumnDataRowsSize size_t argument and
+     * over ColumnData data and null_data. On each step compiled expression from function
+     * will be executed over column data and null_data row.
+     */
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
-    const auto & arg_types = f.getArgumentTypes();
+    const auto & arg_types = function.getArgumentTypes();
 
     llvm::IRBuilder<> b(module.getContext());
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
     auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
 
-    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), module);
+    /// Create function in module
+
+    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, function.getName(), module);
     auto * args = func->args().begin();
     llvm::Value * counter_arg = &*args++;
     llvm::Value * columns_arg = &*args++;
+
+    /// Initialize ColumnDataPlaceholder llvm represenation of ColumnData
+    /// Last columns ColumnDataPlaceholder is result column
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
     b.SetInsertPoint(entry);
     std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
     for (size_t i = 0; i <= arg_types.size(); ++i)
     {
-        const auto & type = i == arg_types.size() ? f.getResultType() : arg_types[i];
+        const auto & type = i == arg_types.size() ? function.getResultType() : arg_types[i];
         auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(type))->getPointerTo());
         columns[i].null_init = type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
     }
 
-    /// assume nonzero initial value in `counter_arg`
+    /// Initialize loop
+
     auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", func);
     b.CreateBr(loop);
     b.SetInsertPoint(loop);
+
     auto * counter_phi = b.CreatePHI(counter_arg->getType(), 2);
     counter_phi->addIncoming(counter_arg, entry);
+
     for (auto & col : columns)
     {
         col.data = b.CreatePHI(col.data_init->getType(), 2);
@@ -99,6 +111,8 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
             col.null->addIncoming(col.null_init, entry);
         }
     }
+
+    /// Initialize column row values
 
     Values arguments;
     arguments.reserve(arg_types.size());
@@ -121,7 +135,9 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
         arguments.emplace_back(nullable_value);
     }
 
-    auto * result = f.compile(b, std::move(arguments));
+    /// Compile values for column rows and store compiled value in result column
+
+    auto * result = function.compile(b, std::move(arguments));
     if (columns.back().null)
     {
         b.CreateStore(b.CreateExtractValue(result, {0}), columns.back().data);
@@ -131,6 +147,8 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
     {
         b.CreateStore(result, columns.back().data);
     }
+
+    /// End of loop
 
     auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns)
@@ -148,13 +166,13 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
     b.CreateRetVoid();
 }
 
-CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBaseImpl & f)
+CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBaseImpl & function)
 {
     Stopwatch watch;
 
     auto compiled_module_info = jit.compileModule([&](llvm::Module & module)
     {
-        compileFunction(module, f);
+        compileFunction(module, function);
     });
 
     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
