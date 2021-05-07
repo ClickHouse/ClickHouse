@@ -126,8 +126,7 @@ void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcS
     do 
     {
         readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, procst_in);
-        readString(field_val,  procst_in);
-        skipWhitespaceIfAny(procst_in);
+        readStringAndSkipWhitespaceIfAny(field_val, procst_in);
     } while (field_name != String("processes"));
     
     stload.processes = static_cast<uint32_t>(std::stoul(field_val));
