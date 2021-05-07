@@ -36,6 +36,8 @@ ASTPtr ComparisonGraph::normalizeAtom(const ASTPtr & atom)
 
 ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
 {
+    if (atomic_formulas.empty())
+        return;
     static const std::unordered_map<std::string, Edge::Type> relation_to_enum =
     {
         {"equals", Edge::Type::EQUAL},

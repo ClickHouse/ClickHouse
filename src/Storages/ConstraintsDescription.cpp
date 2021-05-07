@@ -204,6 +204,13 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
 
 void ConstraintsDescription::update()
 {
+    if (constraints.empty())
+    {
+        cnf_constraints.clear();
+        ast_to_atom_ids.clear();
+        graph = std::make_unique<ComparisonGraph>(std::vector<ASTPtr>());
+        return;
+    }
     cnf_constraints = buildConstraintData();
     ast_to_atom_ids.clear();
     for (size_t i = 0; i < cnf_constraints.size(); ++i)
