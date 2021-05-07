@@ -1031,6 +1031,7 @@ private:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
+    friend class StorageAggregatingMemory;
 
     Params params;
 
@@ -1229,6 +1230,18 @@ private:
         Method & method,
         bool final,
         ThreadPool * thread_pool) const;
+
+    template <typename Method, typename Table>
+    void convertToBlockImplSingleKey(
+        Method & method,
+        Table & data,
+        MutableColumns & key_columns,
+        AggregateColumnsData & aggregate_columns,
+        MutableColumns & final_aggregate_columns,
+        Arena * arena,
+        std::map<String, Field> key) const;
+
+    Block mergeAndFillBlockForSingleKey(ManyAggregatedDataVariantsPtr data, std::map<String, Field> key) const;
 
     template <bool no_more_keys, typename Method, typename Table>
     void mergeStreamsImplCase(

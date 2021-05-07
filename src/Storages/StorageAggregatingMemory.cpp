@@ -12,7 +12,9 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Storages/StorageAggregatingMemory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
@@ -24,6 +26,7 @@
 #include <Processors/Transforms/AggregatingTransform.cpp>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -32,6 +35,120 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_QUERY;
+}
+
+class AggregationKeyMatcher
+{
+public:
+    using Visitor = InDepthNodeVisitor<AggregationKeyMatcher, true>;
+
+    struct Data
+    {
+        NamesAndTypesList aggregation_keys;
+
+        std::map<String, Field> values;
+        bool failed;
+
+        Data(NamesAndTypesList aggregation_keys_)
+            : aggregation_keys(aggregation_keys_),
+              failed(false)
+        {
+        }
+
+        bool hasAllKeys()
+        {
+            for (auto & key : aggregation_keys)
+                if (!values.count(key.name))
+                    return false;
+
+            return true;
+        }
+    };
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        return !(node->as<ASTFunction>());
+    }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        auto * function = ast->as<ASTFunction>();
+        if (!function)
+        {
+            return;
+        }
+
+        if (function->name == "and")
+        {
+            /// Just need to visit children.
+            Visitor(data).visit(function->arguments);
+            return;
+        }
+
+        if (function->name != "equals")
+        {
+            /// Only simple cases with equals are supported.
+            data.failed = true;
+            return;
+        }
+
+        const auto & args = function->arguments->as<ASTExpressionList &>();
+        const ASTIdentifier * ident;
+        const IAST * value;
+
+        if (args.children.size() != 2)
+        {
+            data.failed = true;
+            return;
+        }
+
+        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
+            value = args.children.at(1).get();
+        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
+            value = args.children.at(0).get();
+        else
+        {
+            data.failed = true;
+            return;
+        }
+
+        // TODO data.aggregation_keys can differ in names of aggregation keys
+        std::optional<NameAndTypePair> key_column = data.aggregation_keys.tryGetByName(ident->name());
+        if (!key_column.has_value())
+        {
+            /// This condition is irrelevant.
+            return;
+        }
+
+        /// function->name == "equals"
+        if (const auto * literal = value->as<ASTLiteral>())
+        {
+            auto converted_field = convertFieldToType(literal->value, *(key_column->type));
+            if (!converted_field.isNull())
+                data.values[ident->name()] = converted_field;
+        }
+    }
+};
+
+using AggregationKeyVisitor = AggregationKeyMatcher::Visitor;
+
+std::optional<AggregationKeyVisitor::Data> getFilterKeys(const NamesAndTypesList & aggregation_keys, const SelectQueryInfo & query_info)
+{
+    if (aggregation_keys.empty())
+        return {};
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    ASTPtr where = select.where();
+    if (!where)
+        return {};
+
+    AggregationKeyVisitor::Data data(aggregation_keys);
+    AggregationKeyVisitor(data).visit(where);
+
+    if (data.failed || !data.hasAllKeys())
+        return {};
+
+    return data;
 }
 
 void executeExpression(Pipe & pipe, const ActionsDAGPtr & expression)
@@ -199,7 +316,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
               .analyzeSelect(
                   select_ptr, TreeRewriterResult(src_block_header.getNamesAndTypesList()), {}, {}, required_result_column_names, {});
 
-    auto query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
+    query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
         select_ptr,
         syntax_analyzer_result,
         *select_context,
@@ -252,7 +369,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
 Pipe StorageAggregatingMemory::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
@@ -266,10 +383,22 @@ Pipe StorageAggregatingMemory::read(
     auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
 
-    auto processor
-        = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
+    ProcessorPtr source;
 
-    Pipe pipe(std::move(processor));
+    auto filter_key = getFilterKeys(query_analyzer->aggregationKeys(), query_info);
+    if (filter_key.has_value())
+    {
+        Block block = aggregator_transform->aggregator.mergeAndFillBlockForSingleKey(prepared_data_ptr, filter_key->values);
+
+        Chunk chunk(block.getColumns(), block.rows());
+        source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));
+    }
+    else
+    {
+        source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
+    }
+
+    Pipe pipe(source);
     executeExpression(pipe, analysis_result.before_window);
     // TODO add support for window expressions
     executeExpression(pipe, analysis_result.before_order_by);

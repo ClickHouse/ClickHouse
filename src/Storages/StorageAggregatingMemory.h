@@ -61,6 +61,7 @@ private:
 
     AggregatingTransformParamsPtr aggregator_transform;
 
+    std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     ExpressionAnalysisResult analysis_result;
 
     std::shared_ptr<ManyAggregatedData> many_data;

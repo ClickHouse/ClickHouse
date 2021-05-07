@@ -1298,6 +1298,87 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
     return block;
 }
 
+template <typename Method, typename Table>
+void Aggregator::convertToBlockImplSingleKey(
+    Method &,
+    Table & data,
+    MutableColumns & key_columns,
+    AggregateColumnsData &,
+    MutableColumns & final_aggregate_columns,
+    Arena * arena,
+    std::map<String, Field> query) const
+{
+    if (data.empty())
+        return;
+
+    if (key_columns.size() != params.keys_size)
+        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
+
+    ColumnRawPtrs raw_key_columns(params.keys_size);
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        String column_name = params.src_header.getByPosition(params.keys[i]).name;
+
+        auto column = key_columns[i].get();
+        column->insert(query[column_name]);
+        raw_key_columns[i] = column;
+    }
+
+    typename Method::State state(raw_key_columns, key_sizes, aggregation_state_cache);
+
+    Arena temp_pool;
+    auto result = state.findKey(data, 0, temp_pool);
+
+    if (!result.isFound())
+    {
+        for (auto & column : key_columns)
+            column->popBack(1);
+        return;
+    }
+
+    auto mapped = result.getMapped();
+    insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
+}
+
+Block Aggregator::mergeAndFillBlockForSingleKey(ManyAggregatedDataVariantsPtr data, std::map<String, Field> key) const
+{
+    AggregatedDataVariantsPtr & first = data->at(0);
+
+#define M(NAME) \
+            else if (first->type == AggregatedDataVariants::Type::NAME) \
+                mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data);
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+    else
+        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+    // prepareBlockAndFillSingleLevel
+    AggregatedDataVariants & data_variants = *first;
+
+    size_t rows = data_variants.sizeWithoutOverflowRow();
+
+    auto filler = [&data_variants, this, key](
+        MutableColumns & key_columns,
+        AggregateColumnsData & aggregate_columns,
+        MutableColumns & final_aggregate_columns,
+        bool)
+    {
+    #define M(NAME) \
+        else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+            convertToBlockImplSingleKey(*data_variants.NAME, data_variants.NAME->data, \
+                key_columns, aggregate_columns, final_aggregate_columns, data_variants.aggregates_pool, key);
+
+        if (false) {} // NOLINT
+        APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+    #undef M
+        else
+            throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+    };
+
+    return prepareBlockAndFill(data_variants, true, rows, filler);
+}
+
 Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
     size_t rows = data_variants.sizeWithoutOverflowRow();
