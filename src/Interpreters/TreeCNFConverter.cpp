@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 /// Splits AND(a, b, c) to AND(a, AND(b, c)) for AND/OR
@@ -17,6 +18,9 @@ void splitMultiLogic(ASTPtr & node)
 
     if (func && (func->name == "and" || func->name == "or"))
     {
+        if (func->arguments->children.size() < 2)
+            throw Exception("Bad logical function", ErrorCodes::INCORRECT_QUERY);
+
         if (func->arguments->children.size() > 2)
         {
             ASTPtr res = func->arguments->children.front()->clone();
@@ -58,7 +62,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     else if (func && func->name == "not")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception("Bad NOT function.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Bad NOT function.", ErrorCodes::INCORRECT_QUERY);
         /// delete NOT
         node = func->arguments->children[0]->clone();
 
@@ -98,7 +102,7 @@ void pushOr(ASTPtr & query)
 
         auto * or_func = or_node.get()->as<ASTFunction>();
         if (or_func->arguments->children.size() != 2)
-            throw Exception("Bad OR function.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Bad OR function", ErrorCodes::LOGICAL_ERROR);
 
         /// find or upper than and
         size_t and_node_id = or_func->arguments->children.size();
@@ -117,7 +121,7 @@ void pushOr(ASTPtr & query)
 
         const auto * and_func = or_func->arguments->children[and_node_id]->as<ASTFunction>();
         if (and_func->arguments->children.size() != 2)
-            throw Exception("Bad AND function.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Bad AND function", ErrorCodes::LOGICAL_ERROR);
 
         auto a = or_func->arguments->children[other_node_id];
         auto b = and_func->arguments->children[0];
@@ -159,6 +163,8 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::
     }
     else if (func && func->name == "not")
     {
+        if (func->arguments->children.size() != 1)
+            throw Exception("Bad NOT function", ErrorCodes::INCORRECT_QUERY);
         or_group.insert(CNFQuery::AtomicFormula{true, func->arguments->children.front()});
     }
     else

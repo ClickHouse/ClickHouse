@@ -244,7 +244,7 @@ void SubstituteColumnOptimizer::perform()
         return;
     }
 
-    const auto compare_graph = metadata_snapshot->getConstraints().getGraph();
+    const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
 
     // Fill aliases
     if (select_query->select())
