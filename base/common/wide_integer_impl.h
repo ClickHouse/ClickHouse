@@ -774,7 +774,6 @@ public:
         }
     }
 
-private:
     template <typename T>
     constexpr static bool is_zero(const T & x)
     {
@@ -791,46 +790,46 @@ private:
     }
 
     /// returns quotient as result and remainder in numerator.
-    template <typename T>
-    constexpr static T divide(T & numerator, T && denominator)
+    template <size_t Bits2>
+    constexpr static integer<Bits2, unsigned> divide(integer<Bits2, unsigned> & numerator, integer<Bits2, unsigned> denominator)
     {
+        static_assert(std::is_unsigned_v<Signed>);
+
         if (is_zero(denominator))
-            throwError("divide by zero");
+            throwError("Division by zero");
 
-        T & n = numerator;
-        T & d = denominator;
-        T x = 1;
-        T quotient = 0;
+        integer<Bits2, unsigned> x = 1;
+        integer<Bits2, unsigned> quotient = 0;
 
-        while (!operator_greater(d, n) && operator_eq(operator_amp(shift_right(d, base_bits * item_count - 1), 1), 0))
+        while (!operator_greater(denominator, numerator) && is_zero(operator_amp(shift_right(denominator, Bits2 - 1), 1)))
         {
             x = shift_left(x, 1);
-            d = shift_left(d, 1);
+            denominator = shift_left(denominator, 1);
         }
 
-        while (!operator_eq(x, 0))
+        while (!is_zero(x))
         {
-            if (!operator_greater(d, n))
+            if (!operator_greater(denominator, numerator))
             {
-                n = operator_minus(n, d);
+                numerator = operator_minus(numerator, denominator);
                 quotient = operator_pipe(quotient, x);
             }
 
             x = shift_right(x, 1);
-            d = shift_right(d, 1);
+            denominator = shift_right(denominator, 1);
         }
 
         return quotient;
     }
 
-public:
     template <typename T>
     constexpr static auto operator_slash(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> numerator = make_positive(lhs);
-            integer<Bits, Signed> quotient = divide(numerator, make_positive(integer<Bits, Signed>(rhs)));
+            integer<Bits, unsigned> numerator = make_positive(lhs);
+            integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
+            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
                 quotient = operator_unary_minus(quotient);
@@ -848,8 +847,9 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> remainder = make_positive(lhs);
-            divide(remainder, make_positive(integer<Bits, Signed>(rhs)));
+            integer<Bits, unsigned> remainder = make_positive(lhs);
+            integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
+            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);
@@ -915,7 +915,7 @@ public:
                     ++c;
                 }
                 else
-                    throwError("invalid char from");
+                    throwError("Invalid char from");
             }
         }
         else
@@ -923,7 +923,7 @@ public:
             while (*c)
             {
                 if (*c < '0' || *c > '9')
-                    throwError("invalid char from");
+                    throwError("Invalid char from");
 
                 res = multiply(res, 10U);
                 res = plus(res, *c - '0');
