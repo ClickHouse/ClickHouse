@@ -285,17 +285,17 @@ foreach (module ${all_modules})
 endforeach ()
 
 set_source_files_properties(
+    Common/Coverage.h
     Common/Coverage.cpp
     Common/CoverageCallbacks.h
-    Common/ThreadPool.cpp # used in Coverage.cpp
-    PROPERTIES COMPILE_FLAGS "-O3 -finline-functions ${WITHOUT_COVERAGE}")
+    Common/ThreadPool.cpp # Otherwise tests run about x2 slower.
 
-# Otherwise it will slow down stack traces printing too much.
-set_source_files_properties(
+    # Otherwise it will slow down stack traces printing too much.
     Common/Elf.cpp
     Common/Dwarf.cpp
     Common/SymbolIndex.cpp
-    PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
+
+    PROPERTIES COMPILE_FLAGS "-O3 -g3 -finline-functions ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE

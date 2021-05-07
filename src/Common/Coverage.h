@@ -14,6 +14,7 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <fmt/format.h>
 #include <Poco/Logger.h>
 
 #include "common/logger_useful.h"
@@ -66,6 +67,97 @@ using Addr = void *;
 using CallCount = size_t;
 using Line = size_t;
 
+/// Simplified FreeThreadPool. Not intended for general use (some invariants broken).
+/// 1. Does not use job priorities.
+/// 2. Does not throw.
+/// 3. Does not use metrics.
+/// 4. Does not remove threads after job finish, max_threads_ run all the time.
+/// 5. Invokes job with job index.
+/// 6. Some operations are not thread-safe.
+class TaskQueue
+{
+public:
+    explicit inline TaskQueue(size_t max_threads_)
+        : max_threads(max_threads_)
+    {
+        for (size_t i = 0; i < max_threads; ++i)
+            spawnThread(i);
+    }
+
+    template <class J>
+    void schedule(J && job)
+    {
+        {
+            std::unique_lock lock(mutex);
+            jobs.emplace(std::forward<J>(job));
+            ++scheduled_jobs;
+        }
+
+        new_job_or_shutdown.notify_one();
+    }
+
+    inline void wait()
+    {
+        std::unique_lock lock(mutex);
+        job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
+    }
+
+    inline ~TaskQueue() { finalize(); }
+
+    inline void changePoolSizeAndRespawnThreads(size_t size)
+    {
+        // will be called when there are 0 jobs active, no mutex needed
+        //std::lock_guard lock(mutex);
+
+        finalize();
+        shutdown = false;
+
+        max_threads = size;
+
+        for (size_t i = 0; i < max_threads; ++i)
+            spawnThread(i);
+    }
+
+private:
+    using Job = std::function<void(size_t)>;
+    using Thread = std::thread;
+
+    std::mutex mutex;
+    std::condition_variable job_finished;
+    std::condition_variable new_job_or_shutdown;
+
+    size_t max_threads;
+
+    size_t scheduled_jobs = 0;
+    bool shutdown = false;
+
+    std::queue<Job> jobs;
+    std::list<Thread> threads;
+    using Iter = typename std::list<Thread>::iterator;
+
+    void worker(size_t thread_id);
+
+    inline void spawnThread(size_t thread_index)
+    {
+        threads.emplace_front([this, thread_index] { worker(thread_index); });
+    }
+
+    inline void finalize()
+    {
+        {
+            std::unique_lock lock(mutex);
+            shutdown = true;
+        }
+
+        new_job_or_shutdown.notify_all();
+
+        for (auto & thread : threads)
+            thread.join();
+
+        threads.clear();
+    }
+};
+
 class Writer
 {
 public:
@@ -107,7 +199,6 @@ private:
 
     static constexpr std::string_view logger_base_name = "Coverage";
     static constexpr std::string_view coverage_dir_relative_path = "../../coverage";
-    static constexpr std::string_view coverage_global_report_name = "global_report";
 
     /**
      * We use all threads (including hyper-threading) for symbolization as server does nothing else.
@@ -128,7 +219,7 @@ private:
     const MultiVersion<SymbolIndex>::Version symbol_index;
     const Dwarf dwarf;
 
-    FreeThreadPool pool;
+    TaskQueue pool;
 
     using EdgesHit = std::vector<EdgeIndex>;
 
@@ -190,6 +281,7 @@ private:
     struct TestInfo
     {
         std::string_view name;
+        size_t buffer_index; // [0; hardware_concurrency \ 2)
         const Poco::Logger * log;
     };
 
@@ -199,9 +291,24 @@ private:
         std::unordered_map<Line, CallCount> lines_hit;
     };
 
-    using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
+    /// Pre-allocated buffers for all threads in thread pool
+    std::vector<char> tests_buffers;
 
-    TestData global_report;
+    static constexpr size_t threadsCountForTests()  { return 1; }
+
+    inline void resizeBuffersAndCaches()
+    {
+        edges_hit.resize(edges_count, 0);
+        edges_cache.resize(edges_count);
+
+        edges_to_addrs.resize(edges_count);
+        edge_is_func_entry.resize(edges_count);
+
+        constexpr size_t buffer_size_per_thread = 20 * 1024 * 1024; // 20 MB
+        tests_buffers.resize(buffer_size_per_thread * threadsCountForTests());
+    }
+
+    using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
 
     void prepareDataAndDump(TestInfo test_info, const EdgesHit& hits);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
@@ -272,8 +379,8 @@ private:
         ? "func"
         : "addr";
 
-    /// each LocalCache pre-allocates this / pool_size for a small speedup;
-    static constexpr size_t total_source_files_hint = 3000;
+    /// each LocalCache pre-allocates this / pool_size for a small speedup.
+    static constexpr size_t total_source_files_hint = 5000;
 
     /**
      * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
@@ -288,12 +395,10 @@ private:
     template <bool is_func_cache, class CacheItem>
     void scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
     {
-        const size_t pool_size = hardware_concurrency;
-        const size_t step = data.size() / pool_size;
-
-        for (size_t thread_index = 0; thread_index < pool_size; ++thread_index)
-            pool.scheduleOrThrowOnError([this, &local_caches, &data, thread_index, step, pool_size]
+        for (size_t k = 0; k < hardware_concurrency; ++k)
+            pool.schedule([this, &local_caches, &data](size_t thread_index)
             {
+                const size_t step = data.size() / hardware_concurrency;
                 const size_t start_index = thread_index * step;
                 const size_t end_index = std::min(start_index + step, data.size() - 1);
                 const size_t count = end_index - start_index;
@@ -302,7 +407,7 @@ private:
                     fmt::format("{}.{}{}", logger_base_name, thread_name<is_func_cache>, thread_index));
 
                 LocalCache<CacheItem>& cache = local_caches[thread_index];
-                cache.reserve(total_source_files_hint / pool_size);
+                cache.reserve(total_source_files_hint / hardware_concurrency);
 
                 for (size_t i = start_index; i < end_index; ++i)
                 {
@@ -335,7 +440,7 @@ private:
                                 {std::move(source.full_path), {{source.line, edge_index}}};
                     }
 
-                    if (i % 128 == 0)
+                    if (i % 512 == 0)
                         LOG_DEBUG(log, "{}/{}", i - start_index, count);
                 }
             });

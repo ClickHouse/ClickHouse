@@ -45,15 +45,43 @@ inline auto getInstanceAndInitGlobalCounters()
 }
 }
 
+void TaskQueue::worker(size_t thread_id)
+{
+    while (true)
+    {
+        Job job;
+
+        {
+            std::unique_lock lock(mutex);
+            new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
+
+            if (jobs.empty())
+                return;
+
+            job = std::move(jobs.front());
+            jobs.pop();
+        }
+
+        job(thread_id);
+        job = {};
+
+        {
+            std::unique_lock lock(mutex);
+            --scheduled_jobs;
+        }
+
+        job_finished.notify_all();
+    }
+}
+
 Writer::Writer()
     : hardware_concurrency(std::thread::hardware_concurrency()),
       base_log(nullptr),
       coverage_dir(std::filesystem::current_path() / Writer::coverage_dir_relative_path),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
-      // 0 -- unlimited queue e.g. functor insertion to thread pool won't lock.
       // Set the initial pool size to all thread as we'll need all resources to symbolize fast.
-      pool(hardware_concurrency, 1000, 0)
+      pool(hardware_concurrency)
 {
     //if (std::filesystem::exists(coverage_dir))
     //{
@@ -77,11 +105,7 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
     const size_t edges_pairs = pc_array_end - pc_array;
     edges_count = edges_pairs / 2;
 
-    edges_hit.resize(edges_count, 0);
-    edges_cache.resize(edges_count);
-
-    edges_to_addrs.resize(edges_count);
-    edge_is_func_entry.resize(edges_count);
+    resizeBuffersAndCaches();
 
     for (size_t i = 0; i < edges_pairs; i += 2)
     {
@@ -163,9 +187,7 @@ void Writer::symbolizeInstrumentedData()
 
     mergeDataToCaches<false>(addr_caches);
 
-    pool.setMaxThreads(hardware_concurrency / 2);
-
-    global_report.resize(source_files_cache.size());
+    pool.changePoolSizeAndRespawnThreads(threadsCountForTests());
 
     LOG_INFO(base_log, "Symbolized all addresses");
 }
@@ -186,23 +208,17 @@ void Writer::dumpAndChangeTestName(std::string old_test_name)
 
     edges_hit.swap(edges_hit_swap);
 
-    const bool dump_global_report = test.empty();
-
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// Move is evaluated within current function's lifetime during function constructor call.
-    /// Functor insertion itself is thread-safe.
-    pool.scheduleOrThrowOnError([this, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_swap),
-        dump_global_report] () mutable
+    pool.schedule([this, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_swap)]
+        (size_t task_index) mutable
     {
         /// genhtml doesn't allow '.' in test names
         std::replace(test_name.begin(), test_name.end(), '.', '_');
 
         const Poco::Logger * log = &Poco::Logger::get(std::string{logger_base_name} + "." + test_name);
 
-        prepareDataAndDump({test_name, log}, edges_copied);
-
-        if (dump_global_report) //todo add unlikely
-            convertToLCOVAndDump({"global_report", base_log}, global_report);
+        prepareDataAndDump({test_name, task_index, log}, edges_copied);
     });
 }
 
@@ -220,15 +236,9 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
             continue;
 
         if (const EdgeInfo& info = edges_cache[edge_index]; info.isFunctionEntry())
-        {
-            setOrIncrement(global_report[info.index].functions_hit, edge_index, hit);
             setOrIncrement(test_data[info.index].functions_hit, edge_index, hit);
-        }
         else
-        {
-            setOrIncrement(global_report[info.index].lines_hit, info.line, hit);
             setOrIncrement(test_data[info.index].lines_hit, info.line, hit);
-        }
     }
 
     LOG_INFO(test_info.log, "Finished filling internal structures");
@@ -320,43 +330,41 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
         .lexically_normal()
         .string();
 
-    constexpr size_t formatted_buffer_size = 10 * (1 >> 21); //20 MB
+    auto begin = tests_buffers.begin() + threadsCountForTests() * test_info.buffer_index;
+    auto out = begin;
 
-    fmt::memory_buffer mb;
-    mb.reserve(formatted_buffer_size);
-
-    fmt::format_to(mb, "TN:{}\n", test_info.name);
+    out = fmt::format_to(out, "TN:{}\n", test_info.name);
 
     for (size_t i = 0; i < test_data.size(); ++i)
     {
         const auto& [funcs_hit, lines_hit] = test_data[i];
         const auto& [path, funcs_instrumented, lines_instrumented] = source_files_cache[i];
 
-        fmt::format_to(mb, "SF:{}\n", path);
+        out = fmt::format_to(out, "SF:{}\n", path);
 
         for (EdgeIndex index : funcs_instrumented)
         {
             const EdgeInfo& func_info = edges_cache[index];
             const CallCount call_count = valueOr(funcs_hit, index, 0);
 
-            fmt::format_to(mb, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
+            out = fmt::format_to(out, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
         }
 
-        fmt::format_to(mb, "FNF:{}\nFNH:{}\n", funcs_instrumented.size(), funcs_hit.size());
+        out = fmt::format_to(out, "FNF:{}\nFNH:{}\n", funcs_instrumented.size(), funcs_hit.size());
 
         for (size_t line : lines_instrumented)
         {
             const CallCount call_count = valueOr(lines_hit, line, 0);
-            fmt::format_to(mb, "DA:{},{}\n", line, call_count);
+            out = fmt::format_to(out, "DA:{},{}\n", line, call_count);
         }
 
-        fmt::format_to(mb, "LF:{}\nLH:{}\nend_of_record\n", lines_instrumented.size(), lines_hit.size());
+        out = fmt::format_to(out, "LF:{}\nLH:{}\nend_of_record\n", lines_instrumented.size(), lines_hit.size());
     }
 
     LOG_INFO(test_info.log, "Finished writing to format buffer");
 
     FILE * const out_file = fopen(test_path.data(), "w");
-    gzip(out_file, mb.begin(), mb.size());
+    gzip(out_file, begin.base(), out - begin);
     fclose(out_file);
 
     LOG_INFO(test_info.log, "Finished compressing");
