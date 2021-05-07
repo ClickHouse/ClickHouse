@@ -1239,9 +1239,19 @@ private:
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
         Arena * arena,
-        std::map<String, Field> key) const;
+        const std::map<String, Field> & key) const;
 
-    Block mergeAndFillBlockForSingleKey(ManyAggregatedDataVariantsPtr data, std::map<String, Field> key) const;
+    template <typename Method>
+    Block convertOneBucketToBlockSingleKey(
+        AggregatedDataVariants & data_variants,
+        Method & method,
+        Arena * arena,
+        size_t bucket,
+        const std::map<String, Field> & key) const;
+
+    Block mergeAndFillBlockForSingleKey(
+        ManyAggregatedDataVariantsPtr data,
+        const std::map<String, Field> & key) const;
 
     template <bool no_more_keys, typename Method, typename Table>
     void mergeStreamsImplCase(

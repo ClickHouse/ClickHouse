@@ -1306,7 +1306,7 @@ void Aggregator::convertToBlockImplSingleKey(
     AggregateColumnsData &,
     MutableColumns & final_aggregate_columns,
     Arena * arena,
-    std::map<String, Field> query) const
+    const std::map<String, Field> & query) const
 {
     if (data.empty())
         return;
@@ -1320,7 +1320,7 @@ void Aggregator::convertToBlockImplSingleKey(
         String column_name = params.src_header.getByPosition(params.keys[i]).name;
 
         auto column = key_columns[i].get();
-        column->insert(query[column_name]);
+        column->insert(query.at(column_name));
         raw_key_columns[i] = column;
     }
 
@@ -1340,9 +1340,59 @@ void Aggregator::convertToBlockImplSingleKey(
     insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
 }
 
-Block Aggregator::mergeAndFillBlockForSingleKey(ManyAggregatedDataVariantsPtr data, std::map<String, Field> key) const
+template <typename Method>
+Block Aggregator::convertOneBucketToBlockSingleKey(
+    AggregatedDataVariants & data_variants,
+    Method & method,
+    Arena * arena,
+    size_t bucket,
+    const std::map<String, Field> & key) const
+{
+    return prepareBlockAndFill(data_variants, true, method.data.impls[bucket].size(),
+        [bucket, &method, arena, key, this] (
+            MutableColumns & key_columns,
+            AggregateColumnsData & aggregate_columns,
+            MutableColumns & final_aggregate_columns,
+            bool)
+        {
+            convertToBlockImplSingleKey(method, method.data.impls[bucket],
+                key_columns, aggregate_columns, final_aggregate_columns, arena, key);
+        });
+}
+
+Block Aggregator::mergeAndFillBlockForSingleKey(
+    ManyAggregatedDataVariantsPtr data,
+    const std::map<String, Field> & key) const
 {
     AggregatedDataVariantsPtr & first = data->at(0);
+
+    if (first->isTwoLevel())
+    {
+        Arena arena;
+        Block block;
+
+        auto & merged_data = *(*data)[0];
+        auto method = merged_data.type;
+
+        for (size_t bucket = 0; bucket < 256; ++bucket)
+        {
+            if (false) {} // NOLINT
+        #define M(NAME) \
+            else if (method == AggregatedDataVariants::Type::NAME) \
+            { \
+                mergeBucketImpl<decltype(merged_data.NAME)::element_type>(*data, bucket, &arena); \
+                block = convertOneBucketToBlockSingleKey(merged_data, *merged_data.NAME, &arena, bucket, key); \
+            }
+
+            APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+        #undef M
+
+            if (block.rows())
+                return block;
+        }
+
+        return {};
+    }
 
 #define M(NAME) \
             else if (first->type == AggregatedDataVariants::Type::NAME) \
