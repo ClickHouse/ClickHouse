@@ -1085,9 +1085,14 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
                         disk->removeRecursive(it->path());
                     }
                 }
-                catch (const Poco::FileNotFoundException &)
+                catch (const fs::filesystem_error & e)
                 {
-                    /// If the file is already deleted, do nothing.
+                    if (e.code() == std::errc::no_such_file_or_directory)
+                    {
+                        /// If the file is already deleted, do nothing.
+                    }
+                    else
+                        throw;
                 }
             }
         }
@@ -1373,10 +1378,15 @@ void MergeTreeData::dropAllData()
         {
             disk->removeRecursive(path);
         }
-        catch (const Poco::FileNotFoundException &)
+        catch (const fs::filesystem_error & e)
         {
-            /// If the file is already deleted, log the error message and do nothing.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the file is already deleted, log the error message and do nothing.
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+            else
+                throw;
         }
     }
 

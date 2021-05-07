@@ -8,6 +8,7 @@
 #include <Common/quoteString.h>
 #include <IO/createReadBufferFromFileBase.h>
 #include <Poco/File.h>
+#include <Common/createFile.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -293,7 +294,7 @@ void DiskLocal::truncateFile(const String & path, size_t size)
 
 void DiskLocal::createFile(const String & path)
 {
-    Poco::File(fs::path(disk_path) / path).createFile();
+    fs::createFile(fs::path(disk_path) / path);
 }
 
 void DiskLocal::setReadOnly(const String & path)

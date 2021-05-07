@@ -74,13 +74,16 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
 
             continue;
         }
-        catch (const Poco::FileNotFoundException &)
+        catch (const fs::filesystem_error & e)
         {
-            ++try_no;
-            if (try_no == max_tries)
-                throw;
-
-            continue;
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                ++try_no;
+                if (try_no == max_tries)
+                    throw;
+                continue;
+            }
+            throw;
         }
 
         break;

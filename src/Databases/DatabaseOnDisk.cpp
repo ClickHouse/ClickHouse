@@ -14,14 +14,14 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
-
 #include <common/logger_useful.h>
-#include <Poco/DirectoryIterator.h>
-
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
 #include <filesystem>
+#include <Poco/File.h>
+#include <Poco/Path.h>
+#include <Common/createFile.h>
 
 namespace fs = std::filesystem;
 
@@ -321,10 +321,10 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_nam
 {
     auto table = detachTable(table_name);
 
-    Poco::File detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
+    fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
     try
     {
-        detached_permanently_flag.createFile();
+        fs::createFile(detached_permanently_flag);
     }
     catch (Exception & e)
     {
@@ -572,40 +572,40 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     /// Metadata files to load: name and flag for .tmp_drop files
     std::set<std::pair<String, bool>> metadata_files;
 
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
+        String file_name = dir_it->path().filename();
         /// For '.svn', '.gitignore' directory and similar.
-        if (dir_it.name().at(0) == '.')
+        if (file_name.at(0) == '.')
             continue;
 
         /// There are .sql.bak files - skip them.
-        if (endsWith(dir_it.name(), ".sql.bak"))
+        if (endsWith(file_name, ".sql.bak"))
             continue;
 
         /// Permanently detached table flag
-        if (endsWith(dir_it.name(), ".sql.detached"))
+        if (endsWith(file_name, ".sql.detached"))
             continue;
 
-        if (endsWith(dir_it.name(), ".sql.tmp_drop"))
+        if (endsWith(file_name, ".sql.tmp_drop"))
         {
             /// There are files that we tried to delete previously
-            metadata_files.emplace(dir_it.name(), false);
+            metadata_files.emplace(file_name, false);
         }
-        else if (endsWith(dir_it.name(), ".sql.tmp"))
+        else if (endsWith(file_name, ".sql.tmp"))
         {
             /// There are files .sql.tmp - delete
-            LOG_INFO(log, "Removing file {}", dir_it->path());
+            LOG_INFO(log, "Removing file {}", dir_it->path().string());
             fs::remove(dir_it->path());
         }
-        else if (endsWith(dir_it.name(), ".sql"))
+        else if (endsWith(file_name, ".sql"))
         {
             /// The required files have names like `table_name.sql`
-            metadata_files.emplace(dir_it.name(), true);
+            metadata_files.emplace(file_name, true);
         }
         else
-            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + getMetadataPath(),
-                ErrorCodes::INCORRECT_FILE_NAME);
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
     }
 
     /// Read and parse metadata in parallel
