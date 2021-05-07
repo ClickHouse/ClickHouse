@@ -29,7 +29,8 @@ class ASTStorage;
     M(Char, kafka_row_delimiter, '\0', "The character to be considered as a delimiter in Kafka message.", 0) \
     M(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
     M(UInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block", 0) \
-    M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0)
+    M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
+    M(HandleKafkaErrorMode, kafka_handle_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Passible values: default, stream.", 0) \
 
     /** TODO: */
     /* https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md */

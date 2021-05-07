@@ -423,15 +423,51 @@ SELECT uuid = uuid2;
 └─────────────────────┘
 ```
 
+## reinterpret(x, T) {#type_conversion_function-reinterpret}
+
+Использует туже самую исходную последовательность байт в памяти для значения `x` и переинтерпретирует ее как конечный тип данных
+
+Запрос:
+```sql
+SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
+    reinterpret(toInt8(1), 'Float32') as int_to_float,
+    reinterpret('1', 'UInt32') as string_to_int;
+```
+
+Результат:
+
+```
+┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
+│         255 │        1e-45 │            49 │
+└─────────────┴──────────────┴───────────────┘
+```
+
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Преобразует входное значение `x` в указанный тип данных `T`.
+Преобразует входное значение `x` в указанный тип данных `T`. В отличии от функции `reinterpret` использует внешнее представление значения `x`.
 
 Поддерживается также синтаксис `CAST(x AS t)`.
 
 Обратите внимание, что если значение `x` не может быть преобразовано к типу `T`, возникает переполнение. Например, `CAST(-1, 'UInt8')` возвращает 255.
 
-**Пример**
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT
+    cast(toInt8(-1), 'UInt8') AS cast_int_to_uint,
+    cast(toInt8(1), 'Float32') AS cast_int_to_float,
+    cast('1', 'UInt32') AS cast_string_to_int
+```
+
+Результат:
+
+```
+┌─cast_int_to_uint─┬─cast_int_to_float─┬─cast_string_to_int─┐
+│              255 │                 1 │                  1 │
+└──────────────────┴───────────────────┴────────────────────┘
+```
 
 Запрос:
 
@@ -511,7 +547,8 @@ SELECT cast(-1, 'UInt8') as uint8;
 ``` text
 ┌─uint8─┐
 │   255 │
-└─────
+└───────┘
+```
 
 Запрос:
 
@@ -627,6 +664,7 @@ SELECT
 ```
 
 ## parseDateTimeBestEffort {#parsedatetimebesteffort}
+## parseDateTime32BestEffort {#parsedatetime32besteffort}
 
 Преобразует дату и время в [строковом](../../sql-reference/functions/type-conversion-functions.md) представлении к типу данных [DateTime](../../sql-reference/functions/type-conversion-functions.md#data_type-datetime).
 
@@ -814,6 +852,16 @@ AS parseDateTimeBestEffortUS;
 └─────────────────────────——┘
 ```
 
+## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
+## parseDateTime32BestEffortOrNull {#parsedatetime32besteffortornull}
+
+Работает также как [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает `NULL` когда получает формат даты который не может быть обработан.
+
+## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
+## parseDateTime32BestEffortOrZero {#parsedatetime32besteffortorzero}
+
+Работает также как [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает нулевую дату или нулевую дату и время когда получает формат даты который не может быть обработан.
+
 ## parseDateTimeBestEffortUSOrNull {#parsedatetimebesteffortusornull}
 
 Работает аналогично функции [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS), но в отличие от нее возвращает `NULL`, если входная строка не может быть преобразована в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
@@ -986,9 +1034,100 @@ SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOr
 └─────────────────────────────────┘
 ```
 
-## toUnixTimestamp64Milli
-## toUnixTimestamp64Micro
-## toUnixTimestamp64Nano
+## parseDateTime64BestEffort {#parsedatetime64besteffort}
+
+Работает также как функция [parseDateTimeBestEffort](#parsedatetimebesteffort) но также понимамет милисекунды и микросекунды и возвращает `DateTime64(3)` или `DateTime64(6)` типы данных в зависимости от заданной точности.
+
+**Syntax**
+
+``` sql
+parseDateTime64BestEffort(time_string [, precision [, time_zone]])
+```
+
+**Parameters**
+
+-   `time_string` — String containing a date or date with time to convert. [String](../../sql-reference/data-types/string.md).
+-   `precision` — `3` for milliseconds, `6` for microseconds. Default `3`. Optional [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT parseDateTime64BestEffort('2021-01-01') AS a, toTypeName(a) AS t
+UNION ALL
+SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346') AS a, toTypeName(a) AS t
+UNION ALL
+SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
+UNION ALL
+SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
+FORMAT PrettyCompactMonoBlcok
+```
+
+Результат:
+
+```
+┌──────────────────────────a─┬─t──────────────────────────────┐
+│ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
+│ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
+│ 2021-01-01 01:01:00.123460 │ DateTime64(6)                  │
+│ 2020-12-31 22:01:00.123000 │ DateTime64(3, 'Europe/Moscow') │
+└────────────────────────────┴────────────────────────────────┘
+```
+
+## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
+
+Работает также как функция [parseDateTime64BestEffort](#parsedatetime64besteffort) но возвращает `NULL` когда встречает формат даты который не может обработать.
+
+## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
+
+Работает также как функция [parseDateTime64BestEffort](#parsedatetimebesteffort) но возвращает "нулевую" дату и время когда встречает формат даты который не может обработать.
+
+
+## toLowCardinality {#tolowcardinality}
+
+Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+
+Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
+
+**Синтаксис**
+
+```sql
+toLowCardinality(expr)
+```
+
+**Аргументы**
+
+-   `expr` — [выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
+
+**Возвращаемое значение**
+
+-   Результат преобразования `expr`.
+
+Тип: `LowCardinality(expr_result_type)`
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT toLowCardinality('1');
+```
+
+Результат:
+
+```text
+┌─toLowCardinality('1')─┐
+│ 1                     │
+└───────────────────────┘
+```
+
+## toUnixTimestamp64Milli {#tounixtimestamp64milli}
+
+## toUnixTimestamp64Micro {#tounixtimestamp64micro}
+
+## toUnixTimestamp64Nano {#tounixtimestamp64nano}
 
 Преобразует значение `DateTime64` в значение `Int64` с фиксированной точностью менее одной секунды. 
 Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. Обратите внимание, что возвращаемое значение - это временная метка в UTC, а не в часовом поясе `DateTime64`.
@@ -1039,9 +1178,11 @@ SELECT toUnixTimestamp64Nano(dt64);
 └─────────────────────────────┘
 ```
 
-## fromUnixTimestamp64Milli
-## fromUnixTimestamp64Micro
-## fromUnixTimestamp64Nano
+## fromUnixTimestamp64Milli {#fromunixtimestamp64milli}
+
+## fromUnixTimestamp64Micro {#fromunixtimestamp64micro}
+
+## fromUnixTimestamp64Nano {#fromunixtimestamp64nano}
 
 Преобразует значение `Int64` в значение `DateTime64` с фиксированной точностью менее одной секунды и дополнительным часовым поясом. Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. Обратите внимание, что входное значение обрабатывается как метка времени UTC, а не метка времени в заданном (или неявном) часовом поясе.
 
@@ -1075,45 +1216,6 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC');
 ┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
-```
-
-## toLowCardinality {#tolowcardinality}
-
-Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
-
-Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
-
-**Синтаксис**
-
-```sql
-toLowCardinality(expr)
-```
-
-**Аргументы**
-
--   `expr` — [выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
-
-
-**Возвращаемое значение**
-
--   Результат преобразования `expr`.
-
-Тип: `LowCardinality(expr_result_type)`
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT toLowCardinality('1');
-```
-
-Результат:
-
-```text
-┌─toLowCardinality('1')─┐
-│ 1                     │
-└───────────────────────┘
 ```
 
 ## formatRow {#formatrow}

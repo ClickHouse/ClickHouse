@@ -66,7 +66,12 @@ reportStageEnd('parse')
 subst_elems = root.findall('substitutions/substitution')
 available_parameters = {} # { 'table': ['hits_10m', 'hits_100m'], ... }
 for e in subst_elems:
-    available_parameters[e.find('name').text] = [v.text for v in e.findall('values/value')]
+    name = e.find('name').text
+    values = [v.text for v in e.findall('values/value')]
+    if not values:
+        raise Exception(f'No values given for substitution {{{name}}}')
+
+    available_parameters[name] = values
 
 # Takes parallel lists of templates, substitutes them with all combos of
 # parameters. The set of parameters is determined based on the first list.
@@ -76,7 +81,10 @@ def substitute_parameters(query_templates, other_templates = []):
     query_results = []
     other_results = [[]] * (len(other_templates))
     for i, q in enumerate(query_templates):
-        keys = set(n for _, n, _, _ in string.Formatter().parse(q) if n)
+        # We need stable order of keys here, so that the order of substitutions
+        # is always the same, and the query indexes are consistent across test
+        # runs.
+        keys = sorted(set(n for _, n, _, _ in string.Formatter().parse(q) if n))
         values = [available_parameters[k] for k in keys]
         combos = itertools.product(*values)
         for c in combos:

@@ -609,9 +609,13 @@ void IMergeTreeDataPart::loadIndex()
 
         size_t marks_count = index_granularity.getMarksCount();
 
+        Serializations serializations(key_size);
+        for (size_t j = 0; j < key_size; ++j)
+            serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
+
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                primary_key.data_types[j]->getDefaultSerialization()->deserializeBinary(*loaded_index[j], *index_file);
+                serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -769,7 +773,8 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
-    String path = getFullRelativePath() + "checksums.txt";
+    const String path = getFullRelativePath() + "checksums.txt";
+
     if (volume->getDisk()->exists(path))
     {
         auto buf = openForReading(volume->getDisk(), path);
@@ -784,12 +789,14 @@ void IMergeTreeDataPart::loadChecksums(bool require)
     else
     {
         if (require)
-            throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksums.txt in part {}", name);
 
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         /// Check the data while we are at it.
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+
         checksums = checkDataPart(shared_from_this(), false);
+
         {
             auto out = volume->getDisk()->writeFile(getFullRelativePath() + "checksums.txt.tmp", 4096);
             checksums.write(*out);
@@ -1100,13 +1107,13 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
         {
             /// Remove each expected file in directory, then remove directory itself.
 
-    #if !__clang__
+    #if !defined(__clang__)
     #    pragma GCC diagnostic push
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
                 volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
-    #if !__clang__
+    #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
@@ -1349,6 +1356,24 @@ String IMergeTreeDataPart::getUniqueId() const
     return id;
 }
 
+
+String IMergeTreeDataPart::getZeroLevelPartBlockID() const
+{
+    if (info.level != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
+
+    SipHash hash;
+    checksums.computeTotalChecksumDataOnly(hash);
+    union
+    {
+        char bytes[16];
+        UInt64 words[2];
+    } hash_value;
+    hash.get128(hash_value.bytes);
+
+    return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+}
+
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);
@@ -1365,4 +1390,3 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 }
 
 }
-

@@ -13,7 +13,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
         Block & sample_block,
-        const Context &,
+        ContextPtr,
         const std::string & /* default_database */,
         bool /* check_config */)
     {
@@ -126,7 +126,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 #if POCO_VERSION >= 0x01070800
             Poco::MongoDB::Database poco_db(db);
             if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
-                throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+                throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
 #else
             authenticate(*connection, db, user, password);
 #endif
@@ -151,7 +151,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
-        throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
 
     auto cursor = createCursor(db, collection, sample_block);
 
@@ -172,7 +172,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
-        throw Exception{"'key' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
 
     auto cursor = createCursor(db, collection, sample_block);
 
@@ -198,6 +198,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
                 case AttributeUnderlyingType::utDecimal32:
                 case AttributeUnderlyingType::utDecimal64:
                 case AttributeUnderlyingType::utDecimal128:
+                case AttributeUnderlyingType::utDecimal256:
                     key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
                     break;
 
