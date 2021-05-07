@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <bit>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
@@ -141,4 +142,81 @@ GTEST_TEST(WideInteger, DecimalArithmetic)
 
     zero += addend;
     ASSERT_EQ(zero.value, -2000);
+}
+
+
+GTEST_TEST(WideInteger, FromDouble)
+{
+    /// Check that we are being able to convert double to big integer without the help of floating point instructions.
+    /// (a prototype of a function that we may need)
+
+    double f = -123.456;
+    UInt64 u;
+    memcpy(&u, &f, sizeof(f));
+
+    bool is_negative = u >> 63;
+    uint16_t exponent = (u >> 52) & (((1ull << 12) - 1) >> 1);
+    int16_t normalized_exponent = exponent - 1023;
+    UInt64 mantissa = u & ((1ull << 52) - 1);
+
+    // std::cerr << is_negative << ", " << normalized_exponent << ", " << mantissa << "\n";
+
+    /// x = sign * (2 ^ normalized_exponent + mantissa * 2 ^ (normalized_exponent - mantissa_bits))
+
+    Int128 res = 0;
+
+    if (normalized_exponent >= 128)
+    {
+    }
+    else
+    {
+        res = mantissa;
+        if (normalized_exponent > 52)
+            res <<= (normalized_exponent - 52);
+        else
+            res >>= (52 - normalized_exponent);
+
+        if (normalized_exponent > 0)
+            res += Int128(1) << normalized_exponent;
+    }
+
+    if (is_negative)
+        res = -res;
+
+    ASSERT_EQ(toString(res), "-123");
+}
+
+
+GTEST_TEST(WideInteger, Shift)
+{
+    Int128 x = 1;
+
+    auto y = x << 64;
+    ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00", sizeof(Int128)));
+
+    auto z = y << 11;
+    ASSERT_EQ(toString(z), "37778931862957161709568");
+
+    auto a = x << 11;
+    ASSERT_EQ(a, 2048);
+
+    z >>= 64;
+    ASSERT_EQ(z, a);
+
+    x = -1;
+    y = x << 16;
+
+    ASSERT_EQ(0, memcmp(&y, "\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
+
+    y >>= 16;
+    ASSERT_EQ(0, memcmp(&y, "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
+
+    y <<= 64;
+    ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
+
+    y >>= 32;
+    ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
+
+    y <<= 64;
+    ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\xFF\xFF", sizeof(Int128)));
 }
