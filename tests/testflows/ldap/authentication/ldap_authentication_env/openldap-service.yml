@@ -24,11 +24,8 @@ services:
 
   phpldapadmin:
     image: osixia/phpldapadmin:0.9.0
-    container_name: phpldapadmin
     environment:
       PHPLDAPADMIN_HTTPS=false:
-    ports:
-      - "8080:80"
     healthcheck:
       test: echo 1
       interval: 10s
@@ -37,3 +34,4 @@ services:
       start_period: 300s
     security_opt:
       - label:disable
+

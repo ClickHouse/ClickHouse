@@ -4,10 +4,31 @@ import inspect
 import threading
 import tempfile
 
+import testflows.settings as settings
+
 from testflows.core import *
 from testflows.asserts import error
-from testflows.connect import Shell
+from testflows.connect import Shell as ShellBase
 from testflows.uexpect import ExpectTimeoutError
+from testflows._core.testtype import TestSubType
+
+class Shell(ShellBase):
+    def __exit__(self, type, value, traceback):
+        # send exit and Ctrl-D repeatedly
+        # to terminate any open shell commands.
+        # This is needed for example
+        # to solve a problem with
+        # 'docker-compose exec {name} bash --noediting'
+        # that does not clean up open bash processes
+        # if not exited normally
+        for i in range(10):
+            if self.child is not None:
+                try:
+                    self.send('exit\r', eol='')
+                    self.send('\x04\r', eol='')
+                except OSError:
+                    pass
+        return super(Shell, self).__exit__(type, value, traceback)
 
 class QueryRuntimeException(Exception):
     """Exception during query execution on the server.
@@ -26,14 +47,19 @@ class Node(object):
     def repr(self):
         return f"Node(name='{self.name}')"
 
-    def restart(self, timeout=300, retries=5, safe=True):
-        """Restart node.
+    def close_bashes(self):
+        """Close all active bashes to the node.
         """
         with self.cluster.lock:
             for key in list(self.cluster._bash.keys()):
                 if key.endswith(f"-{self.name}"):
                     shell = self.cluster._bash.pop(key)
                     shell.__exit__(None, None, None)
+
+    def restart(self, timeout=300, retries=5, safe=True):
+        """Restart node.
+        """
+        self.close_bashes()
 
         for retry in range(retries):
             r = self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
@@ -51,11 +77,7 @@ class Node(object):
     def stop(self, timeout=300, retries=5, safe=True):
         """Stop node.
         """
-        with self.cluster.lock:
-            for key in list(self.cluster._bash.keys()):
-                if key.endswith(f"-{self.name}"):
-                    shell = self.cluster._bash.pop(key)
-                    shell.__exit__(None, None, None)
+        self.close_bashes()
 
         for retry in range(retries):
             r = self.cluster.command(None, f'{self.cluster.docker_compose} stop {self.name}', timeout=timeout)
@@ -110,7 +132,7 @@ class ClickHouseNode(Node):
         with By(f"waiting until container {self.name} is healthy"):
             start_time = time.time()
             while True:
-                if self.query("select 1", no_checks=1, timeout=300, steps=False).exitcode == 0:
+                if self.query("select 1", no_checks=1, timeout=10, steps=False).exitcode == 0:
                     break
                 if time.time() - start_time < timeout:
                     time.sleep(2)
@@ -129,11 +151,7 @@ class ClickHouseNode(Node):
             with And("forcing to sync everything to disk"):
                 self.command("sync", timeout=30)
 
-        with self.cluster.lock:
-            for key in list(self.cluster._bash.keys()):
-                if key.endswith(f"-{self.name}"):
-                    shell = self.cluster._bash.pop(key)
-                    shell.__exit__(None, None, None)
+        self.close_bashes()
 
         for retry in range(retries):
             r = self.cluster.command(None, f'{self.cluster.docker_compose} stop {self.name}', timeout=timeout)
@@ -163,11 +181,7 @@ class ClickHouseNode(Node):
             with And("forcing to sync everything to disk"):
                 self.command("sync", timeout=30)
 
-        with self.cluster.lock:
-            for key in list(self.cluster._bash.keys()):
-                if key.endswith(f"-{self.name}"):
-                    shell = self.cluster._bash.pop(key)
-                    shell.__exit__(None, None, None)
+        self.close_bashes()
 
         for retry in range(retries):
             r = self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
@@ -247,8 +261,8 @@ class Cluster(object):
             docker_compose="docker-compose", docker_compose_project_dir=None,
             docker_compose_file="docker-compose.yml"):
 
-        self.terminating = False
         self._bash = {}
+        self.environ = {}
         self.clickhouse_binary_path = clickhouse_binary_path
         self.configs_dir = configs_dir
         self.local = local
@@ -278,7 +292,7 @@ class Cluster(object):
         if not os.path.exists(docker_compose_file_path):
             raise TypeError("docker compose file '{docker_compose_file_path}' does not exist")
 
-        self.docker_compose += f" --no-ansi --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
+        self.docker_compose += f" --ansi never --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
         self.lock = threading.Lock()
 
     def shell(self, node, timeout=300):
@@ -288,7 +302,7 @@ class Cluster(object):
             return Shell()
 
         shell = Shell(command=[
-                "/bin/bash", "--noediting", "-c", f"{self.docker_compose} exec {node} bash --noediting"
+                "/bin/bash", "--noediting", "-c", f"docker exec -it $({self.docker_compose} ps -q {node}) bash --noediting"
             ], name=node)
 
         shell.timeout = timeout
@@ -301,8 +315,8 @@ class Cluster(object):
         """
         test = current()
 
-        if self.terminating:
-            if test and (test.cflags & MANDATORY):
+        if top().terminating:
+            if test and (test.cflags & MANDATORY and test.subtype is not TestSubType.Given):
                 pass
             else:
                 raise InterruptedError("terminating")
@@ -314,9 +328,11 @@ class Cluster(object):
             if self._bash.get(id) is None:
                 if node is None:
                     self._bash[id] = Shell().__enter__()
+                    for name,value in self.environ.items():
+                        self._bash[id](f"export {name}={value}")
                 else:
                     self._bash[id] = Shell(command=[
-                        "/bin/bash", "--noediting", "-c", f"{self.docker_compose} exec {node} {command}"
+                        "/bin/bash", "--noediting", "-c", f"docker exec -it $({self.docker_compose} ps -q {node}) {command}"
                     ], name=node).__enter__()
 
                 self._bash[id].timeout = timeout
@@ -366,8 +382,11 @@ class Cluster(object):
 
     def down(self, timeout=300):
         """Bring cluster down by executing docker-compose down."""
-        self.terminating = True
 
+        # add message to each clickhouse-server.log
+        if settings.debug:
+            for node in self.nodes["clickhouse"]:
+                self.command(node=node, command=f"echo -e \"\n-- sending stop to: {node} --\n\" >> /var/log/clickhouse-server/clickhouse-server.log")
         try:
             bash = self.bash(None)
             with self.lock:
@@ -390,39 +409,54 @@ class Cluster(object):
                     assert os.path.exists(self.clickhouse_binary_path)
 
             with And("I set all the necessary environment variables"):
-                os.environ["COMPOSE_HTTP_TIMEOUT"] = "300"
-                os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
-                os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(
+                self.environ["COMPOSE_HTTP_TIMEOUT"] = "300"
+                self.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
+                self.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(
                     os.path.dirname(self.clickhouse_binary_path), "clickhouse-odbc-bridge")
-                os.environ["CLICKHOUSE_TESTS_DIR"] = self.configs_dir
+                self.environ["CLICKHOUSE_TESTS_DIR"] = self.configs_dir
 
             with And("I list environment variables to show their values"):
                 self.command(None, "env | grep CLICKHOUSE")
 
         with Given("docker-compose"):
             max_attempts = 5
+            max_up_attempts = 1
+
             for attempt in range(max_attempts):
                 with When(f"attempt {attempt}/{max_attempts}"):
                     with By("pulling images for all the services"):
                         cmd = self.command(None, f"{self.docker_compose} pull 2>&1 | tee", exitcode=None, timeout=timeout)
                         if cmd.exitcode != 0:
                             continue
+
+                    with And("checking if any containers are already running"):
+                        self.command(None, f"{self.docker_compose} ps | tee")
+
                     with And("executing docker-compose down just in case it is up"):
-                        cmd = self.command(None, f"{self.docker_compose} down --remove-orphans 2>&1 | tee", exitcode=None, timeout=timeout)
+                        cmd = self.command(None, f"{self.docker_compose} down 2>&1 | tee", exitcode=None, timeout=timeout)
                         if cmd.exitcode != 0:
                             continue
+
+                    with And("checking if any containers are still left running"):
+                        self.command(None, f"{self.docker_compose} ps | tee")
+
                     with And("executing docker-compose up"):
-                        cmd = self.command(None, f"{self.docker_compose} up -d 2>&1 | tee", timeout=timeout)
+                        for up_attempt in range(max_up_attempts):
+                            with By(f"attempt {up_attempt}/{max_up_attempts}"):
+                                cmd = self.command(None, f"{self.docker_compose} up --renew-anon-volumes --force-recreate --timeout 300 -d 2>&1 | tee", timeout=timeout)
+                                if "is unhealthy" not in cmd.output:
+                                    break
 
                     with Then("check there are no unhealthy containers"):
-                        if "is unhealthy" in cmd.output:
-                            self.command(None, f"{self.docker_compose} ps | tee")
+                        ps_cmd = self.command(None, f"{self.docker_compose} ps | tee | grep -v \"Exit 0\"")
+                        if "is unhealthy" in cmd.output or "Exit" in ps_cmd.output:
                             self.command(None, f"{self.docker_compose} logs | tee")
+                            continue
 
-                    if cmd.exitcode == 0:
+                    if cmd.exitcode == 0 and "is unhealthy" not in cmd.output and "Exit" not in ps_cmd.output:
                         break
 
-            if cmd.exitcode != 0:
+            if cmd.exitcode != 0 or "is unhealthy" in cmd.output or "Exit" in ps_cmd.output:
                 fail("could not bring up docker-compose cluster")
 
         with Then("wait all nodes report healhy"):
