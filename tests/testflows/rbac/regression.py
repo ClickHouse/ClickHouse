@@ -138,6 +138,12 @@ xfails = {
         [(Fail, issue_21083)],
     "privileges/: row policy/nested mat:":
         [(Fail, issue_21084)],
+    "privileges/show dictionaries/:/check privilege/check privilege=SHOW DICTIONARIES/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=CREATE DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=DROP DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
 }
 
 xflags = {
