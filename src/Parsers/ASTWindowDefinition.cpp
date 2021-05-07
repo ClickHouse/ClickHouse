@@ -35,6 +35,8 @@ String ASTWindowDefinition::getID(char) const
 void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     FormatState & state, FormatStateStacked format_frame) const
 {
+    format_frame.expression_list_prepend_whitespace = false;
+
     if (partition_by)
     {
         settings.ostr << "PARTITION BY ";
@@ -70,7 +72,8 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else
         {
-            settings.ostr << abs(frame.begin_offset);
+            settings.ostr << applyVisitor(FieldVisitorToString(),
+                frame.begin_offset);
             settings.ostr << " "
                 << (!frame.begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -85,7 +88,8 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else
         {
-            settings.ostr << abs(frame.end_offset);
+            settings.ostr << applyVisitor(FieldVisitorToString(),
+                frame.end_offset);
             settings.ostr << " "
                 << (!frame.end_preceding ? "FOLLOWING" : "PRECEDING");
         }

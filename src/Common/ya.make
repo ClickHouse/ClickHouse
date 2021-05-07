@@ -14,7 +14,7 @@ PEERDIR(
     clickhouse/base/common
     clickhouse/base/pcg-random
     clickhouse/base/widechar_width
-    contrib/libs/libcpuid/libcpuid
+    contrib/libs/libcpuid
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
@@ -47,6 +47,7 @@ SRCS(
     FileChecker.cpp
     IPv6ToBinary.cpp
     IntervalKind.cpp
+    JSONBuilder.cpp
     Macros.cpp
     MemoryStatisticsOS.cpp
     MemoryTracker.cpp

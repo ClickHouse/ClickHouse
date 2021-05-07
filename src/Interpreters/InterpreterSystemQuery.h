@@ -30,32 +30,34 @@ class ASTSystemQuery;
   * - start/stop actions for all existing tables.
   * Note that the actions for tables that will be created after this query will not be affected.
   */
-class InterpreterSystemQuery : public IInterpreter
+class InterpreterSystemQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextPtr context_);
 
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
-    Context & context;
     Poco::Logger * log = nullptr;
     StorageID table_id = StorageID::createEmpty();      /// Will be set up if query contains table name
     VolumePtr volume_ptr;
 
     /// Tries to get a replicated table and restart it
     /// Returns pointer to a newly created table if the restart was successful
-    StoragePtr tryRestartReplica(const StorageID & replica, Context & context, bool need_ddl_guard = true);
+    StoragePtr tryRestartReplica(const StorageID & replica, ContextPtr context, bool need_ddl_guard = true);
 
-    void restartReplicas(Context & system_context);
+    void restartReplicas(ContextPtr system_context);
     void syncReplica(ASTSystemQuery & query);
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
     void flushDistributed(ASTSystemQuery & query);
+    void restartDisk(String & name);
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
+
+    void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, ContextPtr) const override;
 };
 
 

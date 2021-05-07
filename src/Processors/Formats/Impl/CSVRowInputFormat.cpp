@@ -4,7 +4,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 
 
@@ -55,13 +55,13 @@ void CSVRowInputFormat::addInputColumn(const String & column_name)
     {
         if (format_settings.skip_unknown_fields)
         {
-            column_indexes_for_input_fields.push_back(std::nullopt);
+            column_mapping->column_indexes_for_input_fields.push_back(std::nullopt);
             return;
         }
 
         throw Exception(
                 "Unknown field found in CSV header: '" + column_name + "' " +
-                "at position " + std::to_string(column_indexes_for_input_fields.size()) +
+                "at position " + std::to_string(column_mapping->column_indexes_for_input_fields.size()) +
                 "\nSet the 'input_format_skip_unknown_fields' parameter explicitly to ignore and proceed",
                 ErrorCodes::INCORRECT_DATA
         );
@@ -69,11 +69,11 @@ void CSVRowInputFormat::addInputColumn(const String & column_name)
 
     const auto column_index = column_it->second;
 
-    if (read_columns[column_index])
+    if (column_mapping->read_columns[column_index])
         throw Exception("Duplicate field found while parsing CSV header: " + column_name, ErrorCodes::INCORRECT_DATA);
 
-    read_columns[column_index] = true;
-    column_indexes_for_input_fields.emplace_back(column_index);
+    column_mapping->read_columns[column_index] = true;
+    column_mapping->column_indexes_for_input_fields.emplace_back(column_index);
 }
 
 static void skipEndOfLine(ReadBuffer & in)
@@ -145,6 +145,16 @@ static void skipRow(ReadBuffer & in, const FormatSettings::CSV & settings, size_
     }
 }
 
+void CSVRowInputFormat::setupAllColumnsByTableSchema()
+{
+    const auto & header = getPort().getHeader();
+    column_mapping->read_columns.assign(header.columns(), true);
+    column_mapping->column_indexes_for_input_fields.resize(header.columns());
+
+    for (size_t i = 0; i < column_mapping->column_indexes_for_input_fields.size(); ++i)
+        column_mapping->column_indexes_for_input_fields[i] = i;
+}
+
 
 void CSVRowInputFormat::readPrefix()
 {
@@ -155,7 +165,9 @@ void CSVRowInputFormat::readPrefix()
     size_t num_columns = data_types.size();
     const auto & header = getPort().getHeader();
 
-    if (with_names)
+    /// This is a bit of abstraction leakage, but we have almost the same code in other places.
+    /// Thus, we check if this InputFormat is working with the "real" beginning of the data in case of parallel parsing.
+    if (with_names && getCurrentUnitNumber() == 0)
     {
         /// This CSV file has a header row with column names. Depending on the
         /// settings, use it or skip it.
@@ -163,7 +175,7 @@ void CSVRowInputFormat::readPrefix()
         {
             /// Look at the file header to see which columns we have there.
             /// The missing columns are filled with defaults.
-            read_columns.assign(header.columns(), false);
+            column_mapping->read_columns.assign(header.columns(), false);
             do
             {
                 String column_name;
@@ -177,7 +189,7 @@ void CSVRowInputFormat::readPrefix()
 
             skipDelimiter(in, format_settings.csv.delimiter, true);
 
-            for (auto read_column : read_columns)
+            for (auto read_column : column_mapping->read_columns)
             {
                 if (!read_column)
                 {
@@ -189,18 +201,13 @@ void CSVRowInputFormat::readPrefix()
             return;
         }
         else
+        {
             skipRow(in, format_settings.csv, num_columns);
+            setupAllColumnsByTableSchema();
+        }
     }
-
-    /// The default: map each column of the file to the column of the table with
-    /// the same index.
-    read_columns.assign(header.columns(), true);
-    column_indexes_for_input_fields.resize(header.columns());
-
-    for (size_t i = 0; i < column_indexes_for_input_fields.size(); ++i)
-    {
-        column_indexes_for_input_fields[i] = i;
-    }
+    else if (!column_mapping->is_set)
+        setupAllColumnsByTableSchema();
 }
 
 
@@ -216,17 +223,19 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
     /// it doesn't have to check it.
     bool have_default_columns = have_always_default_columns;
 
-    ext.read_columns.assign(read_columns.size(), true);
+    ext.read_columns.assign(column_mapping->read_columns.size(), true);
     const auto delimiter = format_settings.csv.delimiter;
-    for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
+    for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
     {
-        const auto & table_column = column_indexes_for_input_fields[file_column];
-        const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
+        const auto & table_column = column_mapping->column_indexes_for_input_fields[file_column];
+        const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
 
         if (table_column)
         {
             skipWhitespacesAndTabs(in);
-            ext.read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column], is_last_file_column);
+            ext.read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column],
+                serializations[*table_column], is_last_file_column);
+
             if (!ext.read_columns[*table_column])
                 have_default_columns = true;
             skipWhitespacesAndTabs(in);
@@ -243,9 +252,9 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
 
     if (have_default_columns)
     {
-        for (size_t i = 0; i < read_columns.size(); i++)
+        for (size_t i = 0; i < column_mapping->read_columns.size(); i++)
         {
-            if (!read_columns[i])
+            if (!column_mapping->read_columns[i])
             {
                 /// The column value for this row is going to be overwritten
                 /// with default by the caller, but the general assumption is
@@ -266,7 +275,7 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
 {
     const char delimiter = format_settings.csv.delimiter;
 
-    for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
+    for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
     {
         if (file_column == 0 && in.eof())
         {
@@ -275,10 +284,10 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         }
 
         skipWhitespacesAndTabs(in);
-        if (column_indexes_for_input_fields[file_column].has_value())
+        if (column_mapping->column_indexes_for_input_fields[file_column].has_value())
         {
             const auto & header = getPort().getHeader();
-            size_t col_idx = column_indexes_for_input_fields[file_column].value();
+            size_t col_idx = column_mapping->column_indexes_for_input_fields[file_column].value();
             if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx],
                                                         out, file_column))
                 return false;
@@ -294,7 +303,7 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         skipWhitespacesAndTabs(in);
 
         /// Delimiters
-        if (file_column + 1 == column_indexes_for_input_fields.size())
+        if (file_column + 1 == column_mapping->column_indexes_for_input_fields.size())
         {
             if (in.eof())
                 return false;
@@ -356,10 +365,11 @@ void CSVRowInputFormat::syncAfterError()
 
 void CSVRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
-    if (column_indexes_for_input_fields[file_column])
+    const auto & index = column_mapping->column_indexes_for_input_fields[file_column];
+    if (index)
     {
-        const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
-        readField(column, type, is_last_file_column);
+        const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
+        readField(column, type, serializations[*index], is_last_file_column);
     }
     else
     {
@@ -368,7 +378,7 @@ void CSVRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & 
     }
 }
 
-bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
+bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column)
 {
     const bool at_delimiter = !in.eof() && *in.position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
@@ -391,12 +401,12 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
     else if (format_settings.null_as_default && !type->isNullable())
     {
         /// If value is null but type is not nullable then use default value instead.
-        return DataTypeNullable::deserializeTextCSV(column, in, format_settings, type);
+        return SerializationNullable::deserializeTextCSVImpl(column, in, format_settings, serialization);
     }
     else
     {
         /// Read the column normally.
-        type->deserializeAsTextCSV(column, in, format_settings);
+        serialization->deserializeTextCSV(column, in, format_settings);
         return true;
     }
 }
@@ -404,8 +414,8 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
 void CSVRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
-    column_indexes_for_input_fields.clear();
-    read_columns.clear();
+    column_mapping->column_indexes_for_input_fields.clear();
+    column_mapping->read_columns.clear();
     have_always_default_columns = false;
 }
 
@@ -492,6 +502,7 @@ static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB
 void registerFileSegmentationEngineCSV(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("CSV", &fileSegmentationEngineCSVImpl);
+    factory.registerFileSegmentationEngine("CSVWithNames", &fileSegmentationEngineCSVImpl);
 }
 
 }

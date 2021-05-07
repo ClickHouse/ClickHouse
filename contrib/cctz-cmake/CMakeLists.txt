@@ -40,23 +40,23 @@ endif()
 
 if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
     set(USE_INTERNAL_CCTZ_LIBRARY 1)
-    set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/cctz)
+    set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/cctz")
 
     set (SRCS
-        ${LIBRARY_DIR}/src/civil_time_detail.cc
-        ${LIBRARY_DIR}/src/time_zone_fixed.cc
-        ${LIBRARY_DIR}/src/time_zone_format.cc
-        ${LIBRARY_DIR}/src/time_zone_if.cc
-        ${LIBRARY_DIR}/src/time_zone_impl.cc
-        ${LIBRARY_DIR}/src/time_zone_info.cc
-        ${LIBRARY_DIR}/src/time_zone_libc.cc
-        ${LIBRARY_DIR}/src/time_zone_lookup.cc
-        ${LIBRARY_DIR}/src/time_zone_posix.cc
-        ${LIBRARY_DIR}/src/zone_info_source.cc
+        "${LIBRARY_DIR}/src/civil_time_detail.cc"
+        "${LIBRARY_DIR}/src/time_zone_fixed.cc"
+        "${LIBRARY_DIR}/src/time_zone_format.cc"
+        "${LIBRARY_DIR}/src/time_zone_if.cc"
+        "${LIBRARY_DIR}/src/time_zone_impl.cc"
+        "${LIBRARY_DIR}/src/time_zone_info.cc"
+        "${LIBRARY_DIR}/src/time_zone_libc.cc"
+        "${LIBRARY_DIR}/src/time_zone_lookup.cc"
+        "${LIBRARY_DIR}/src/time_zone_posix.cc"
+        "${LIBRARY_DIR}/src/zone_info_source.cc"
     )
 
     add_library (cctz ${SRCS})
-    target_include_directories (cctz PUBLIC ${LIBRARY_DIR}/include)
+    target_include_directories (cctz PUBLIC "${LIBRARY_DIR}/include")
 
     if (OS_FREEBSD)
         # yes, need linux, because bsd check inside linux in time_zone_libc.cc:24
@@ -73,8 +73,8 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
     # Build a libray with embedded tzdata
     if (OS_LINUX)
         # get the list of timezones from tzdata shipped with cctz
-        set(TZDIR ${LIBRARY_DIR}/testdata/zoneinfo)
-        file(STRINGS ${LIBRARY_DIR}/testdata/version TZDATA_VERSION)
+        set(TZDIR "${LIBRARY_DIR}/testdata/zoneinfo")
+        file(STRINGS "${LIBRARY_DIR}/testdata/version" TZDATA_VERSION)
         set_property(GLOBAL PROPERTY TZDATA_VERSION_PROP "${TZDATA_VERSION}")
         message(STATUS "Packaging with tzdata version: ${TZDATA_VERSION}")
 
@@ -97,12 +97,19 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
             set(TZ_OBJS ${TZ_OBJS} ${TZ_OBJ})
 
             # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
-            add_custom_command(OUTPUT ${TZ_OBJ}
-                COMMAND cp ${TZDIR}/${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}
-                COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS}
+            # PPC64LE fails to do this with objcopy, use ld or lld instead
+            if (ARCH_PPC64LE)
+                add_custom_command(OUTPUT ${TZ_OBJ}
+                    COMMAND cp "${TZDIR}/${TIMEZONE}" "${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}"
+                    COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ${CMAKE_LINKER} -m elf64lppc -r -b binary -o ${TZ_OBJ} ${TIMEZONE_ID}
+                    COMMAND rm "${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}")
+            else()
+                add_custom_command(OUTPUT ${TZ_OBJ}
+                    COMMAND cp "${TZDIR}/${TIMEZONE}" "${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}"
+                    COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS}
                             --rename-section .data=.rodata,alloc,load,readonly,data,contents ${TIMEZONE_ID} ${TZ_OBJ}
-                COMMAND rm ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID})
-
+                    COMMAND rm "${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}")
+            endif()
             set_source_files_properties(${TZ_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
         endforeach(TIMEZONE)
 

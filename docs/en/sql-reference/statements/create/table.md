@@ -47,19 +47,38 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 Creates a table with the same result as that of the [table function](../../../sql-reference/table-functions/index.md#table-functions) specified. The created table will also work in the same way as the corresponding table function that was specified.
 
+### From SELECT query {#from-select-query}
+
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
-Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from SELECT.
+Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from `SELECT`. Also you can explicitly specify columns description.
 
-In all cases, if `IF NOT EXISTS` is specified, the query won’t return an error if the table already exists. In this case, the query won’t do anything.
+If the table already exists and `IF NOT EXISTS` is specified, the query won’t do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
 
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+Result:
+
+```text
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
+
 ## NULL Or NOT NULL Modifiers {#null-modifiers}
 
-`NULL` and `NOT NULL` modifiers after data type in column definition allow or do not allow it to be [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable). 
+`NULL` and `NOT NULL` modifiers after data type in column definition allow or do not allow it to be [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable).
 
 If the type is not `Nullable` and if `NULL` is specified, it will be treated as `Nullable`; if `NOT NULL` is specified, then no. For example, `INT NULL` is the same as `Nullable(INT)`. If the type is `Nullable` and `NULL` or `NOT NULL` modifiers are specified, the exception will be thrown.
 
@@ -109,16 +128,16 @@ It is not possible to set default values for elements in nested data structures.
 
 ## Primary Key {#primary-key}
 
-You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways: 
+You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways:
 
 - Inside the column list
 
 ``` sql
-CREATE TABLE db.table_name 
-( 
-    name1 type1, name2 type2, ..., 
+CREATE TABLE db.table_name
+(
+    name1 type1, name2 type2, ...,
     PRIMARY KEY(expr1[, expr2,...])]
-) 
+)
 ENGINE = engine;
 ```
 
@@ -126,9 +145,9 @@ ENGINE = engine;
 
 ``` sql
 CREATE TABLE db.table_name
-( 
+(
     name1 type1, name2 type2, ...
-) 
+)
 ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
@@ -285,7 +304,9 @@ REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
 
 ### Syntax
 
-{CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
+``` sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
 
 All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
 
@@ -333,5 +354,3 @@ SELECT * FROM base.t1;
 │ 3 │
 └───┘
 ```
-
- [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/table) <!--hide-->

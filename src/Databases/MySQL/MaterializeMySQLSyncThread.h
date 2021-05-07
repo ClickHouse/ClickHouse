@@ -36,14 +36,18 @@ namespace DB
  *  real-time pull incremental data:
  *      We will pull the binlog event of MySQL to parse and execute when the full data synchronization is completed.
  */
-class MaterializeMySQLSyncThread
+class MaterializeMySQLSyncThread : WithContext
 {
 public:
     ~MaterializeMySQLSyncThread();
 
     MaterializeMySQLSyncThread(
-        const Context & context, const String & database_name_, const String & mysql_database_name_
-        , mysqlxx::Pool && pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_);
+        ContextPtr context,
+        const String & database_name_,
+        const String & mysql_database_name_,
+        mysqlxx::Pool && pool_,
+        MySQLClient && client_,
+        MaterializeMySQLSettings * settings_);
 
     void stopSynchronization();
 
@@ -55,7 +59,6 @@ public:
 
 private:
     Poco::Logger * log;
-    const Context & global_context;
 
     String database_name;
     String mysql_database_name;
@@ -90,13 +93,13 @@ private:
 
         Buffers(const String & database_) : database(database_) {}
 
-        void commit(const Context & context);
+        void commit(ContextPtr context);
 
         void add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes);
 
         bool checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const;
 
-        BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, const Context & context);
+        BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, ContextPtr context);
     };
 
     void synchronization();
