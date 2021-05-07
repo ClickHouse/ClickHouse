@@ -40,7 +40,7 @@ namespace
 
 }
 
-ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::connection & connection_,
+ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::ConnectionHolder & connection_,
                                              const std::string & remote_database_name_,
                                              const std::string & remote_table_name_,
                                              const Block & sample_block_,
@@ -69,7 +69,7 @@ void ODBCBlockOutputStream::write(const Block & block)
     writer->write(block);
 
     std::string query = getInsertQuery(db_name, table_name, block.getColumnsWithTypeAndName(), quoting) + values_buf.str();
-    execute(connection, query);
+    execute(connection.get(), query);
 }
 
 }
