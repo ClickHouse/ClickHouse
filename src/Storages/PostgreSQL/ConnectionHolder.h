@@ -16,20 +16,23 @@ class ConnectionHolder
 {
 
 public:
-    ConnectionHolder(const String & connection_string_, PoolPtr pool_, size_t pool_wait_timeout_);
+    ConnectionHolder(PoolPtr pool_, ConnectionPtr connection_, const String & connection_string_)
+        : pool(pool_), connection(std::move(connection_)), connection_string(connection_string_) {}
 
     ConnectionHolder(const ConnectionHolder & other) = delete;
 
-    ~ConnectionHolder();
+    ~ConnectionHolder() { pool->returnObject(std::move(connection)); }
 
-    bool isValid() { return connection && connection->is_open(); }
-
-    pqxx::connection & get();
+    pqxx::connection & get()
+    {
+        assert(connection != nullptr);
+        return *connection;
+    }
 
 private:
-    String connection_string;
     PoolPtr pool;
     ConnectionPtr connection;
+    const String connection_string;
 };
 
 using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;
