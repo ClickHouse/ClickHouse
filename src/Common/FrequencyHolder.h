@@ -35,7 +35,7 @@ public:
     {
         path_to_enc_freq = pt;
         loadEncodingsFrequency(pt);
-//        loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
+       // loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
     }
 
     void parseEmotionalDict(const String & pt)

@@ -12,9 +12,11 @@ namespace DB
 {
 /** Functions for text classification:
   *
-  * charsetDetect(string data) - detect charset of data.
+  * detectCharset(string data) - detect charset of data.
   * Returns string name of most likely charset.
   * .
+  * detectLanguage(string data) - detect language of data in various encodings (not UTF-8)
+  *
   * getTonality(string data) - defines the emotional coloring of the text.
   * Returns NEG if text is negative, POS if text is postive or NEUT if text is neutral.
   * 

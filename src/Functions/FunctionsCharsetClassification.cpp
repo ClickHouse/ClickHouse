@@ -19,7 +19,7 @@ namespace DB
 {
 
 
-template <size_t N>
+template <size_t N, bool detect_language>
 struct CharsetClassificationImpl
 {
 
@@ -120,16 +120,25 @@ struct CharsetClassificationImpl
         std::unordered_map<UInt16, Float64> model;
         calculateStats(data.data(), data.size(), readCodePoints, model);
 
-        Float64 max_result = log(zero_frequency) * (model.size() + 1);
-        res = "Undefined";
+        Float64 max_result = 0;
+        String poss_ans;
         for (const auto& item : encodings_freq)
         {
-            const Float64 freq_pr = Naive_bayes(item.second, model);
-            if (max_result > freq_pr)
+            const Float64 score = Naive_bayes(item.second, model);
+            if (max_result == 0 || max_result < score)
             {
-                res = item.first;
-                max_result = freq_pr;
+                poss_ans = item.first;
+                max_result = score;
             }
+        }
+        size_t sep = poss_ans.find('_');
+        if (detect_language)
+        {
+            res = poss_ans.erase(0, sep + 1);
+        }
+        else
+        {
+            res = poss_ans.erase(sep, poss_ans.size() - sep);
         }
     }
 
@@ -154,42 +163,40 @@ struct CharsetClassificationImpl
             const char * haystack = reinterpret_cast<const char *>(&data[prev_offset]);
             String str = haystack;
 
-            String prom;
+            String poss_ans;
 
             std::unordered_map<UInt16, Float64> model;
             calculateStats(str.data(), str.size(), readCodePoints, model);
-/*
-            Float64 max_result = log(zero_frequency) * model.size();
 
-            prom = "Undefined";
-            for (const auto& item : encodings_freq)
-            {
-                const Float64 freq_pr = Naive_bayes(item.second, model);
-                if (max_result > freq_pr)
-                {
-                    prom = item.first;
-                    max_result = freq_pr;
-                }
-            }
-            */
-            std::vector<std::pair<std::string, Float64>> results;
+           Float64 max_result = 0;
            for (const auto& item : encodings_freq)
             {
-                results.push_back(std::make_pair(item.first, Naive_bayes(item.second, model)));
+                Float64 score = Naive_bayes(item.second, model);
+                if (max_result == 0 || max_result < score)
+                {
+                    max_result = score;
+                    poss_ans = item.first;
+                }
             }
-            std::sort(results.begin(), results.end(), [](auto &left, auto &right)
-            {
-                return left.second > right.second;
-            });
-
-            prom = results[0].first + " | " + results[1].first + " | " + results[2].first; 
             
-            const auto ans = prom.c_str();
+            size_t sep = poss_ans.find('_');
+            String ans_str;
+            if (detect_language)
+            {
+                ans_str = poss_ans.erase(0, sep + 1);
+            }
+            else
+            {
+                ans_str = poss_ans.erase(sep, poss_ans.size() - sep);
+            }
+
+            const auto ans = ans_str.c_str();
             size_t cur_offset = offsets[i];
 
-            res_data.resize(res_offset + strlen(ans) + 1);
-            memcpy(&res_data[res_offset], ans, strlen(ans));
-            res_offset += strlen(ans);
+            size_t ans_size = strlen(ans);
+            res_data.resize(res_offset + ans_size + 1);
+            memcpy(&res_data[res_offset], ans, ans_size);
+            res_offset += ans_size;
 
             res_data[res_offset] = 0;
             ++res_offset;
@@ -205,15 +212,22 @@ struct CharsetClassificationImpl
 
 struct NameCharsetDetect
 {
-    static constexpr auto name = "charsetDetect";
+    static constexpr auto name = "detectCharset";
+};
+
+struct NameLanguageDetect
+{
+    static constexpr auto name = "detectLanguage";
 };
 
 
-using FunctionCharsetDetect = FunctionsTextClassification<CharsetClassificationImpl<2>, NameCharsetDetect>;
+using FunctionCharsetDetect = FunctionsTextClassification<CharsetClassificationImpl<2, true>, NameCharsetDetect>;
+using FunctionLanguageDetect = FunctionsTextClassification<CharsetClassificationImpl<2, false>, NameLanguageDetect>;
 
 void registerFunctionsCharsetClassification(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCharsetDetect>();
+    factory.registerFunction<FunctionLanguageDetect>();
 }
 
 }
