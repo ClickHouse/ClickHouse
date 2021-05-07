@@ -672,8 +672,8 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     buf.write(s, sizeof(s));
 }
 
-template<typename DecimalType>
-inline void writeDecimalTypeFractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
+template <typename DecimalType>
+inline void writeDateTime64FractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
 {
     static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DecimalType>;
 
@@ -803,7 +803,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     if (scale > 0)
     {
         buf.write(fractional_time_delimiter);
-        writeDecimalTypeFractionalText<DateTime64>(components.fractional, scale, buf);
+        writeDateTime64FractionalText<DateTime64>(components.fractional, scale, buf);
     }
 }
 
@@ -856,7 +856,7 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     if (scale > 0) //-V547
     {
         buf.write('.');
-        writeDecimalTypeFractionalText<DateTime64>(components.fractional, scale, buf);
+        writeDateTime64FractionalText<DateTime64>(components.fractional, scale, buf);
     }
 }
 
@@ -910,7 +910,7 @@ String decimalFractional(const T & x, UInt32 scale)
         else if (x <= std::numeric_limits<UInt64>::max())
             return decimalFractional(static_cast<UInt64>(x), scale);
         else if (x <= std::numeric_limits<UInt128>::max())
-            return decimalFractional(static_cast<Int128>(x), scale);
+            return decimalFractional(static_cast<UInt128>(x), scale);
     }
     else if constexpr (std::is_same_v<T, Int128>)
     {
@@ -937,10 +937,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr)
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
 
-    if constexpr (std::is_same_v<T, Int256>)
-        writeText(part, ostr);
-    else
-        writeIntText(part, ostr);
+    writeIntText(part, ostr);
 
     if (scale)
     {
