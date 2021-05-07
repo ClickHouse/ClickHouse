@@ -21,7 +21,6 @@ services:
     security_opt:
       - label:disable
 
-
   phpldapadmin:
     image: osixia/phpldapadmin:0.9.0
     environment:
@@ -34,4 +33,3 @@ services:
       start_period: 300s
     security_opt:
       - label:disable
-
