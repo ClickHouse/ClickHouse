@@ -148,9 +148,6 @@ bool equalsOp(A a, B b)
 template <typename A, typename B>
 bool notEqualsOp(A a, B b)
 {
-    if (isNaN(a) || isNaN(b))
-        return false;
-
     return !equalsOp(a, b);
 }
 
