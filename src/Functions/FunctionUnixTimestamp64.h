@@ -50,7 +50,7 @@ public:
         const auto & src = arguments[0];
         const auto & col = *src.column;
 
-        auto res_column = ColumnUInt64::create(input_rows_count);
+        auto res_column = ColumnInt64::create(input_rows_count);
         auto & result_data = res_column->getData();
 
         const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
