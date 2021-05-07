@@ -354,10 +354,10 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
 
-            for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
+            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
             {
-                const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
-                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_idx).column->assumeMutable();
+                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
