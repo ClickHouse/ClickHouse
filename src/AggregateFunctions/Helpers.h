@@ -186,6 +186,29 @@ static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_ty
 }
 
 template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
+static IAggregateFunction * createWithTwoBasicNumericTypesSecond(const IDataType & second_type, TArgs && ... args)
+{
+    WhichDataType which(second_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<FirstType, TYPE>(std::forward<TArgs>(args)...);
+    FOR_BASIC_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    return nullptr;
+}
+
+template <template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
+static IAggregateFunction * createWithTwoBasicNumericTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
+{
+    WhichDataType which(first_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return createWithTwoBasicNumericTypesSecond<TYPE, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+    FOR_BASIC_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    return nullptr;
+}
+
+template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithTwoNumericOrDateTypesSecond(const IDataType & second_type, TArgs && ... args)
 {
     WhichDataType which(second_type);
