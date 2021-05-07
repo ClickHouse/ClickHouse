@@ -1559,24 +1559,16 @@ namespace
             read_function = [this]() -> UUID
             {
                 readStr(text_buffer);
-                return stringToUUID(text_buffer);
+                return parse<UUID>(text_buffer);
             };
 
-            default_function = [this]() -> UUID { return stringToUUID(field_descriptor.default_value_string()); };
+            default_function = [this]() -> UUID { return parse<UUID>(field_descriptor.default_value_string()); };
         }
 
         static void uuidToString(const UUID & uuid, String & str)
         {
             WriteBufferFromString buf{str};
             writeText(uuid, buf);
-        }
-
-        static UUID stringToUUID(const String & str)
-        {
-            ReadBufferFromString buf{str};
-            UUID uuid;
-            readUUIDText(uuid, buf);
-            return uuid;
         }
 
         std::function<void(UUID)> write_function;
