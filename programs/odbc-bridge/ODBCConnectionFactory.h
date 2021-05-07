@@ -40,6 +40,8 @@ private:
     PoolPtr pool;
     ConnectionPtr connection;
 };
+
+using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;
 }
 
 
@@ -58,7 +60,7 @@ public:
         return ret;
     }
 
-    nanodbc::ConnectionHolder get(const std::string & connection_string, size_t pool_size)
+    nanodbc::ConnectionHolderPtr get(const std::string & connection_string, size_t pool_size)
     {
         std::lock_guard lock(mutex);
 
@@ -83,7 +85,7 @@ public:
             pool->returnObject(std::move(connection));
         }
 
-        return nanodbc::ConnectionHolder(factory[connection_string], std::move(connection));
+        return std::make_unique<nanodbc::ConnectionHolder>(factory[connection_string], std::move(connection));
     }
 
 private:
