@@ -1,7 +1,7 @@
 #pragma once
 
 #if !defined(ARCADIA_BUILD)
-#    include "config_jsonparsers.h"
+#    include <Common/config.h>
 #endif
 
 #if USE_SIMDJSON
