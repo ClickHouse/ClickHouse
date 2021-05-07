@@ -14,7 +14,7 @@ namespace DB
 
 static constexpr auto meminfo_filename = "/proc/meminfo";
 
-static constexpr int READ_BUFFER_BUF_SIZE = (64 << 10);
+static constexpr size_t READ_BUFFER_BUF_SIZE = (64 << 10);
 
 void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf) 
 {
