@@ -249,7 +249,7 @@ private:
                 overflow |= common::mulOverflow(y, scale, y);
 
             if (overflow)
-                throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception("Can't compare decimal number due to overflow", ErrorCodes::DECIMAL_OVERFLOW);
         }
         else
         {
