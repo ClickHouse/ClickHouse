@@ -309,7 +309,15 @@ bool inline isSameDiskType(const IDisk & one, const IDisk & another)
 void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     if (isSameDiskType(*this, *to_disk))
-        fs::copy(fs::path(disk_path) / from_path, fs::path(to_disk->getPath()) / to_path); /// Use more optimal way.
+    {
+        fs::path from = fs::path(disk_path) / from_path;
+        if (from_path.ends_with('/'))
+            from = (fs::path(disk_path) / from_path.substr(0, from_path.size() - 1)).parent_path();
+        else if (fs::is_directory(from))
+            from = from.parent_path();
+
+        fs::copy(from, fs::path(to_disk->getPath()) / to_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
+    }
     else
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
