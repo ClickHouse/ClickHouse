@@ -511,8 +511,6 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
         node_to_data[node].all_parents_compilable = false;
     }
 
-    std::vector<Node *> nodes_to_compile;
-
     for (auto & node : nodes)
     {
         auto & node_data = node_to_data[&node];
@@ -525,20 +523,8 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
         if (!should_compile)
             continue;
 
-        nodes_to_compile.emplace_back(&node);
-    }
-
-    /** Sort nodes before compilation using their children size to avoid compiling subexpression before compile parent expression.
-      * For example we have expression SELECT a + 1 FROM test_table WHERE a + 1 > 0
-      * We can compile a + 1 and a + 1 > 0, but we should compile a + 1 after a + 1 > 0, because during compilation
-      * we change actions dag node children size.
-      */
-    std::sort(nodes_to_compile.begin(), nodes_to_compile.end(), [&](const Node * lhs, const Node * rhs) { return node_to_data[lhs].children_size > node_to_data[rhs].children_size; });
-
-    for (auto & node : nodes_to_compile)
-    {
         NodeRawConstPtrs new_children;
-        auto dag = getCompilableDAG(node, new_children);
+        auto dag = getCompilableDAG(&node, new_children);
 
         if (dag.getInputNodesCount() == 0)
             continue;
@@ -550,12 +536,12 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
             for (const auto * child : new_children)
                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
-            node->type = ActionsDAG::ActionType::FUNCTION;
-            node->function_base = fn;
-            node->function = fn->prepare(arguments);
-            node->children.swap(new_children);
-            node->is_function_compiled = true;
-            node->column = nullptr;
+            node.type = ActionsDAG::ActionType::FUNCTION;
+            node.function_base = fn;
+            node.function = fn->prepare(arguments);
+            node.children.swap(new_children);
+            node.is_function_compiled = true;
+            node.column = nullptr;
         }
     }
 }
