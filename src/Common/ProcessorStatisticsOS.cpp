@@ -7,6 +7,8 @@
 
 #include "ProcessorStatisticsOS.h"
 
+#include "Poco/String.h"
+
 #include <Core/Types.h>
 
 #include <common/logger_useful.h>
@@ -31,7 +33,7 @@ static constexpr auto loadavg_filename = "/proc/loadavg";
 static constexpr auto procst_filename  = "/proc/stat";
 static constexpr auto cpuinfo_filename = "/proc/cpuinfo";
 
-static const long USER_HZ = sysconf(_SC_CLK_TCK);
+static const uint64_t USER_HZ = static_cast<uint64_t>(sysconf(_SC_CLK_TCK));
 
 ProcessorStatisticsOS::ProcessorStatisticsOS()
     : loadavg_in(loadavg_filename, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY | O_CLOEXEC)
@@ -97,7 +99,7 @@ void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcS
 
     String field_name, field_val;
     uint64_t unused; 
-   
+    
     readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, procst_in);
 
     readIntTextAndSkipWhitespaceIfAny(proc_time.user,   procst_in);
@@ -124,7 +126,8 @@ void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcS
     do 
     {
         readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, procst_in);
-        readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_val,  procst_in);
+        readString(field_val,  procst_in);
+        skipWhitespaceIfAny(procst_in);
     } while (field_name != String("processes"));
     
     stload.processes = static_cast<uint32_t>(std::stoul(field_val));
@@ -148,7 +151,7 @@ void ProcessorStatisticsOS::readFreq(ProcFreq & freq)
     {
         do 
         {
-            readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, cpuinfo_in);
+            readStringAndSkipWhitespaceIfAny(field_name, cpuinfo_in);
         } while (!cpuinfo_in.eof() && field_name != String("cpu MHz"));
         
         if (cpuinfo_in.eof()) 
@@ -172,9 +175,15 @@ void ProcessorStatisticsOS::readFreq(ProcFreq & freq)
 }
 
 template<typename T>
-void ProcessorStatisticsOS::readIntTextAndSkipWhitespaceIfAny(T& x, ReadBuffer& buf)
+void ProcessorStatisticsOS::readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf)
 {
     readIntText(x, buf);
+    skipWhitespaceIfAny(buf);
+}
+
+void ProcessorStatisticsOS::readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf) 
+{
+    readString(s, buf);
     skipWhitespaceIfAny(buf);
 }
 

@@ -75,6 +75,8 @@ private:
     static void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf); 
 
     static void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf);
+    
+    static void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer& buf);
 
     static void readCharAndSkipWhitespaceIfAny(char & c, ReadBuffer & buf);
 
