@@ -795,6 +795,25 @@ public:
     {
         static_assert(std::is_unsigned_v<Signed>);
 
+        if constexpr (Bits == 128 && sizeof(base_type) == 8)
+        {
+            using CompilerUInt128 = unsigned __int128;
+
+            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0];
+            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0];
+            CompilerUInt128 c = a / b;
+
+            integer<Bits, Signed> res;
+            res.items[0] = c;
+            res.items[1] = c >> 64;
+
+            CompilerUInt128 remainder = a - b * c;
+            numerator.items[0] = remainder;
+            numerator.items[1] = remainder >> 64;
+
+            return res;
+        }
+
         if (is_zero(denominator))
             throwError("Division by zero");
 
