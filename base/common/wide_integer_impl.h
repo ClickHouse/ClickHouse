@@ -207,7 +207,7 @@ struct integer<Bits, Signed>::_impl
     }
 
     template <typename Integral>
-    constexpr static void wide_integer_from_bultin(integer<Bits, Signed> & self, Integral rhs) noexcept
+    constexpr static void wide_integer_from_builtin(integer<Bits, Signed> & self, Integral rhs) noexcept
     {
         static_assert(sizeof(Integral) <= sizeof(base_type));
 
@@ -258,7 +258,7 @@ struct integer<Bits, Signed>::_impl
         self += static_cast<uint64_t>(t - alpha * static_cast<T>(max_int)); // += b_i
     }
 
-    constexpr static void wide_integer_from_bultin(integer<Bits, Signed>& self, double rhs) noexcept
+    constexpr static void wide_integer_from_builtin(integer<Bits, Signed>& self, double rhs) noexcept
     {
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
         constexpr int64_t min_int = std::numeric_limits<int64_t>::min();
@@ -967,7 +967,7 @@ constexpr integer<Bits, Signed>::integer(T rhs) noexcept
     if constexpr (IsWideInteger<T>::value)
         _impl::wide_integer_from_wide_integer(*this, rhs);
     else
-        _impl::wide_integer_from_bultin(*this, rhs);
+        _impl::wide_integer_from_builtin(*this, rhs);
 }
 
 template <size_t Bits, typename Signed>
@@ -980,11 +980,11 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
         if constexpr (IsWideInteger<T>::value)
             _impl::wide_integer_from_wide_integer(*this, *il.begin());
         else
-            _impl::wide_integer_from_bultin(*this, *il.begin());
+            _impl::wide_integer_from_builtin(*this, *il.begin());
     }
     else if (il.size() == 0)
     {
-        _impl::wide_integer_from_bultin(*this, 0);
+        _impl::wide_integer_from_builtin(*this, 0);
     }
     else
     {
@@ -1007,7 +1007,7 @@ template <size_t Bits, typename Signed>
 template <typename T>
 constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator=(T rhs) noexcept
 {
-    _impl::wide_integer_from_bultin(*this, rhs);
+    _impl::wide_integer_from_builtin(*this, rhs);
     return *this;
 }
 
