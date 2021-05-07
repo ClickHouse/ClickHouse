@@ -13,7 +13,7 @@ namespace DB
 {
 
 std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
-    postgres::ConnectionHolderPtr entry, const String & postgres_table_name, bool use_nulls);
+    postgres::ConnectionHolderPtr connection_holder, const String & postgres_table_name, bool use_nulls);
 
 }
 

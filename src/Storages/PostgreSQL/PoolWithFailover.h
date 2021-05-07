@@ -37,13 +37,11 @@ public:
         size_t pool_wait_timeout = POSTGRESQL_POOL_WAIT_TIMEOUT,
         size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
-    PoolWithFailover(const PoolWithFailover & other);
+    PoolWithFailover(const PoolWithFailover & other) = delete;
 
     ConnectionHolderPtr get();
 
 private:
-    bool getAndValidateConnection();
-
     struct PoolHolder
     {
         String connection_string;

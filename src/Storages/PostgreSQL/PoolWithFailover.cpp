@@ -90,13 +90,6 @@ PoolWithFailover::PoolWithFailover(
     }
 }
 
-PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
-        : replicas_with_priority(other.replicas_with_priority)
-        , pool_wait_timeout(other.pool_wait_timeout)
-        , max_tries(other.max_tries)
-{
-}
-
 ConnectionHolderPtr PoolWithFailover::get()
 {
     std::lock_guard lock(mutex);
@@ -141,13 +134,13 @@ ConnectionHolderPtr PoolWithFailover::get()
                     throw;
                 }
 
-                auto entry = std::make_unique<ConnectionHolder>(replica.pool, std::move(connection), replica.connection_string);
+                auto connection_holder = std::make_unique<ConnectionHolder>(replica.pool, std::move(connection));
 
                 /// Move all traversed replicas to the end.
                 if (replicas.size() > 1)
                     std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
 
-                return entry;
+                return connection_holder;
             }
         }
     }

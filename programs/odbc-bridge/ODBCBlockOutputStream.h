@@ -16,7 +16,7 @@ class ODBCBlockOutputStream : public IBlockOutputStream
 
 public:
     ODBCBlockOutputStream(
-            nanodbc::ConnectionHolder & connection_,
+            nanodbc::ConnectionHolderPtr connection_,
             const std::string & remote_database_name_,
             const std::string & remote_table_name_,
             const Block & sample_block_,
@@ -29,7 +29,7 @@ public:
 private:
     Poco::Logger * log;
 
-    nanodbc::ConnectionHolder & connection;
+    nanodbc::ConnectionHolderPtr connection;
     std::string db_name;
     std::string table_name;
     Block sample_block;

@@ -13,7 +13,7 @@ namespace DB
 class ODBCBlockInputStream final : public IBlockInputStream
 {
 public:
-    ODBCBlockInputStream(nanodbc::ConnectionHolder & connection, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_);
+    ODBCBlockInputStream(nanodbc::ConnectionHolderPtr connection, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_);
 
     String getName() const override { return "ODBC"; }
 
