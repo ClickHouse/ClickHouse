@@ -124,20 +124,20 @@ static size_t formatIPWithPrefix(const unsigned char * src, UInt8 prefix_len, bo
 static void validateKeyTypes(const DataTypes & key_types)
 {
     if (key_types.empty() || key_types.size() > 2)
-        throw Exception{"Expected a single IP address or IP with mask", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a single IP address or IP with mask");
 
     const auto * key_ipv4type = typeid_cast<const DataTypeUInt32 *>(key_types[0].get());
     const auto * key_ipv6type = typeid_cast<const DataTypeFixedString *>(key_types[0].get());
 
     if (key_ipv4type == nullptr && (key_ipv6type == nullptr || key_ipv6type->getN() != 16))
-        throw Exception{"Key does not match, expected either `IPv4` (`UInt32`) or `IPv6` (`FixedString(16)`)",
-                        ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Key does not match, expected either `IPv4` (`UInt32`) or `IPv6` (`FixedString(16)`)");
 
     if (key_types.size() > 1)
     {
         const auto * mask_col_type = typeid_cast<const DataTypeUInt8 *>(key_types[1].get());
         if (mask_col_type == nullptr)
-            throw Exception{"Mask do not match, expected UInt8", ErrorCodes::TYPE_MISMATCH};
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Mask do not match, expected UInt8");
     }
 }
 
@@ -195,7 +195,7 @@ IPAddressDictionary::IPAddressDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -293,7 +293,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
         {
             auto addr = first_column->getDataAt(i);
             if (unlikely(addr.size != IPV6_BINARY_LENGTH))
-                throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected key to be FixedString(16)");
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             out[i] = (found != ipNotFound());
@@ -316,8 +316,10 @@ void IPAddressDictionary::createAttributes()
             attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
             if (attribute.hierarchical)
-                throw Exception{full_name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
-                                ErrorCodes::TYPE_MISMATCH};
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "{}: hierarchical attributes not supported for dictionary of type {}",
+                    full_name,
+                    getTypeName());
         }
     };
 
@@ -492,7 +494,7 @@ void IPAddressDictionary::loadData()
     LOG_TRACE(logger, "{} ip records are read", ip_records.size());
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", full_name);
 }
 
 template <typename T>
@@ -591,7 +593,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     {
         const auto * key_ip_column_ptr = typeid_cast<const ColumnVector<UInt32> *>(&*key_columns.front());
         if (key_ip_column_ptr == nullptr)
-            throw Exception{"Expected a UInt32 IP column", ErrorCodes::TYPE_MISMATCH};
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a UInt32 IP column");
 
         const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*key_columns.back());
 
@@ -625,7 +627,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
 
     const auto * key_ip_column_ptr = typeid_cast<const ColumnFixedString *>(&*key_columns.front());
     if (key_ip_column_ptr == nullptr || key_ip_column_ptr->getN() != IPV6_BINARY_LENGTH)
-        throw Exception{"Expected a FixedString(16) IP column", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a FixedString(16) IP column");
 
     const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*key_columns.back());
 
@@ -698,7 +700,7 @@ void IPAddressDictionary::getItemsImpl(
         {
             auto addr = first_column->getDataAt(i);
             if (addr.size != IPV6_BINARY_LENGTH)
-                throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected key to be FixedString(16)");
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             if (found != ipNotFound())
@@ -744,7 +746,7 @@ const IPAddressDictionary::Attribute & IPAddressDictionary::getAttribute(const s
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", full_name, attribute_name);
 
     return attributes[it->second];
 }
@@ -804,9 +806,6 @@ static auto keyViewGetter()
 
 BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<UInt64>;
-
-
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 
     auto get_keys = [is_ipv4](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
@@ -827,12 +826,12 @@ BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & colum
     if (is_ipv4)
     {
         auto get_view = keyViewGetter<ColumnVector<UInt32>, true>();
-        return std::make_shared<BlockInputStreamType>(
+        return std::make_shared<DictionaryBlockInputStream>(
             shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
     }
 
     auto get_view = keyViewGetter<ColumnFixedString, false>();
-    return std::make_shared<BlockInputStreamType>(
+    return std::make_shared<DictionaryBlockInputStream>(
         shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 
@@ -924,7 +923,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)
-            throw Exception{"Dictionary of layout 'ip_trie' has to have one 'key'", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary of layout 'ip_trie' has to have one 'key'");
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

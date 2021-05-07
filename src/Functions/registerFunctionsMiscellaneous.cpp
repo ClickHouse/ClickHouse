@@ -28,6 +28,7 @@ void registerFunctionSleep(FunctionFactory &);
 void registerFunctionSleepEachRow(FunctionFactory &);
 void registerFunctionMaterialize(FunctionFactory &);
 void registerFunctionIgnore(FunctionFactory &);
+void registerFunctionIndexHint(FunctionFactory &);
 void registerFunctionIdentity(FunctionFactory &);
 void registerFunctionArrayJoin(FunctionFactory &);
 void registerFunctionReplicate(FunctionFactory &);
@@ -70,7 +71,8 @@ void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
 void registerFunctionFile(FunctionFactory & factory);
-void registerFunctionConnectionID(FunctionFactory & factory);
+void registerFunctionConnectionId(FunctionFactory & factory);
+void registerFunctionPartitionId(FunctionFactory & factory);
 void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
 
 #if USE_ICU
@@ -100,6 +102,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionSleepEachRow(factory);
     registerFunctionMaterialize(factory);
     registerFunctionIgnore(factory);
+    registerFunctionIndexHint(factory);
     registerFunctionIdentity(factory);
     registerFunctionArrayJoin(factory);
     registerFunctionReplicate(factory);
@@ -142,7 +145,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTcpPort(factory);
     registerFunctionByteSize(factory);
     registerFunctionFile(factory);
-    registerFunctionConnectionID(factory);
+    registerFunctionConnectionId(factory);
+    registerFunctionPartitionId(factory);
     registerFunctionIsIPAddressContainedIn(factory);
 
 #if USE_ICU

@@ -7,7 +7,6 @@ fun:tolower
 
 # Suppress some failures in contrib so that we can enable MSan in CI.
 # Ideally, we should report these upstream.
-src:*/contrib/zlib-ng/*
 
 # Hyperscan
 fun:roseRunProgram

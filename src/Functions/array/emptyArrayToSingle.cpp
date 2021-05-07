@@ -27,7 +27,7 @@ class FunctionEmptyArrayToSingle : public IFunction
 {
 public:
     static constexpr auto name = "emptyArrayToSingle";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
 
     String getName() const override { return name; }
 

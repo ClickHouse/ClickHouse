@@ -8,6 +8,7 @@
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
+#include <Columns/ColumnConst.h>
 
 namespace DB
 {
@@ -250,12 +251,53 @@ static Pipes removeEmptyPipes(Pipes pipes)
     return res;
 }
 
-Pipe Pipe::unitePipes(Pipes pipes)
+/// Calculate common header for pipes.
+/// This function is needed only to remove ColumnConst from common header in case if some columns are const, and some not.
+/// E.g. if the first header is `x, const y, const z` and the second is `const x, y, const z`, the common header will be `x, y, const z`.
+static Block getCommonHeader(const Pipes & pipes)
 {
-    return Pipe::unitePipes(std::move(pipes), nullptr);
+    Block res;
+
+    for (const auto & pipe : pipes)
+    {
+        if (const auto & header = pipe.getHeader())
+        {
+            res = header;
+            break;
+        }
+    }
+
+    for (const auto & pipe : pipes)
+    {
+        const auto & header = pipe.getHeader();
+        for (size_t i = 0; i < res.columns(); ++i)
+        {
+            /// We do not check that headers are compatible here. Will do it later.
+
+            if (i >= header.columns())
+                break;
+
+            auto & common = res.getByPosition(i).column;
+            const auto & cur = header.getByPosition(i).column;
+
+            /// Only remove const from common header if it is not const for current pipe.
+            if (cur && common && !isColumnConst(*cur))
+            {
+                if (const auto * column_const = typeid_cast<const ColumnConst *>(common.get()))
+                    common = column_const->getDataColumnPtr();
+            }
+        }
+    }
+
+    return res;
 }
 
-Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors)
+Pipe Pipe::unitePipes(Pipes pipes)
+{
+    return Pipe::unitePipes(std::move(pipes), nullptr, false);
+}
+
+Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header)
 {
     Pipe res;
 
@@ -275,12 +317,14 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors)
 
     OutputPortRawPtrs totals;
     OutputPortRawPtrs extremes;
-    res.header = pipes.front().header;
     res.collected_processors = collected_processors;
+    res.header = getCommonHeader(pipes);
 
     for (auto & pipe : pipes)
     {
-        assertBlocksHaveEqualStructure(res.header, pipe.header, "Pipe::unitePipes");
+        if (!allow_empty_header || pipe.header)
+            assertCompatibleHeader(pipe.header, res.header, "Pipe::unitePipes");
+
         res.processors.insert(res.processors.end(), pipe.processors.begin(), pipe.processors.end());
         res.output_ports.insert(res.output_ports.end(), pipe.output_ports.begin(), pipe.output_ports.end());
 

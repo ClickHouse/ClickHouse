@@ -486,9 +486,13 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
     ConstantFilterDescription const_description(*new_filter);
     if (const_description.always_true)
+    {
         setFilterConstTrue();
+    }
     else if (const_description.always_false)
+    {
         clear();
+    }
     else
     {
         FilterDescription filter_description(*new_filter);
@@ -937,7 +941,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
             auto columns = block.getColumns();
             filterColumns(columns, row_level_filter);
-            block.setColumns(columns);
+            if (columns.empty())
+                block = block.cloneEmpty();
+            else
+                block.setColumns(columns);
         }
 
         prewhere_info->prewhere_actions->execute(block);

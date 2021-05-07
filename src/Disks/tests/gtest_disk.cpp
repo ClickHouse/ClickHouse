@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include "gtest_disk.h"
 
-#if !__clang__
+#if !defined(__clang__)
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
