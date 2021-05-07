@@ -408,7 +408,7 @@ void DatabaseConnectionMySQL::detachTablePermanently(ContextPtr, const String & 
 {
     std::lock_guard<std::mutex> lock{mutex};
 
-    Poco::File remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
+    Poco::File remove_flag(fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix));
 
     if (remove_or_detach_tables.count(table_name))
         throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",

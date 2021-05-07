@@ -209,8 +209,8 @@ MergeTreeData::MergeTreeData(
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
         disk->createDirectories(path);
-        disk->createDirectories(path + MergeTreeData::DETACHED_DIR_NAME);
-        auto current_version_file_path = path + MergeTreeData::FORMAT_VERSION_FILE_NAME;
+        disk->createDirectories(fs::path(path) / MergeTreeData::DETACHED_DIR_NAME);
+        String current_version_file_path = fs::path(path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
         if (disk->exists(current_version_file_path))
         {
             if (!version_file.first.empty())
@@ -224,7 +224,7 @@ MergeTreeData::MergeTreeData(
 
     /// If not choose any
     if (version_file.first.empty())
-        version_file = {relative_data_path + MergeTreeData::FORMAT_VERSION_FILE_NAME, getStoragePolicy()->getAnyDisk()};
+        version_file = {fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME, getStoragePolicy()->getAnyDisk()};
 
     bool version_file_exists = version_file.second->exists(version_file.first);
 
@@ -3854,10 +3854,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     const String & with_name,
     ContextPtr local_context)
 {
-    String clickhouse_path = fs::absolute(local_context->getPath());
-    String default_shadow_path = clickhouse_path + "shadow/";
+    String clickhouse_path = fs::canonical(local_context->getPath());
+    String default_shadow_path = fs::path(clickhouse_path) / "shadow/";
     fs::create_directories(default_shadow_path);
-    auto increment = Increment(default_shadow_path + "increment.txt").get(true);
+    auto increment = Increment(fs::path(default_shadow_path) / "increment.txt").get(true);
 
     const String shadow_path = "shadow/";
 
@@ -3865,7 +3865,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     const auto data_parts = getDataParts();
 
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
-    String backup_path = shadow_path + backup_name + "/";
+    String backup_path = fs::path(shadow_path) / backup_name / "";
 
     for (const auto & disk : getStoragePolicy()->getDisks())
         disk->onFreeze(backup_path);
@@ -3882,20 +3882,20 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         part->volume->getDisk()->createDirectories(backup_path);
 
-        String backup_part_path = backup_path + relative_data_path + part->relative_path;
+        String backup_part_path = fs::path(backup_path) / relative_data_path / part->relative_path;
         if (auto part_in_memory = asInMemoryPart(part))
-            part_in_memory->flushToDisk(backup_path + relative_data_path, part->relative_path, metadata_snapshot);
+            part_in_memory->flushToDisk(fs::path(backup_path) / relative_data_path, part->relative_path, metadata_snapshot);
         else
             localBackup(part->volume->getDisk(), part->getFullRelativePath(), backup_part_path);
 
-        part->volume->getDisk()->removeFileIfExists(backup_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+        part->volume->getDisk()->removeFileIfExists(fs::path(backup_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
             .partition_id = part->info.partition_id,
             .part_name = part->name,
-            .backup_path = part->volume->getDisk()->getPath() + backup_path,
-            .part_backup_path = part->volume->getDisk()->getPath() + backup_part_path,
+            .backup_path = fs::path(part->volume->getDisk()->getPath()) / backup_path,
+            .part_backup_path = fs::path(part->volume->getDisk()->getPath()) / backup_part_path,
             .backup_name = backup_name,
         });
         ++parts_processed;
