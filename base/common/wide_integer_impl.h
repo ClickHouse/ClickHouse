@@ -383,13 +383,13 @@ struct integer<Bits, Signed>::_impl
             if (bit_shift)
                 lhs.items[big(items_shift)] |= std::numeric_limits<base_type>::max() << (base_bits - bit_shift);
 
-            for (unsigned i = item_count - items_shift; i < items_shift; ++i)
-                lhs.items[little(i)] = std::numeric_limits<base_type>::max();
+            for (unsigned i = 0; i < items_shift; ++i)
+                lhs.items[big(i)] = std::numeric_limits<base_type>::max();
         }
         else
         {
-            for (unsigned i = item_count - items_shift; i < items_shift; ++i)
-                lhs.items[little(i)] = 0;
+            for (unsigned i = 0; i < items_shift; ++i)
+                lhs.items[big(i)] = 0;
         }
 
         return lhs;
