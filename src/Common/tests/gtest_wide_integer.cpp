@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <bit>
 #include <cstdint>
 #include <limits>
 #include <type_traits>

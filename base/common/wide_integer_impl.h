@@ -10,7 +10,6 @@
 #include <cfloat>
 #include <cassert>
 #include <limits>
-#include <common/unaligned.h>
 
 
 namespace wide
