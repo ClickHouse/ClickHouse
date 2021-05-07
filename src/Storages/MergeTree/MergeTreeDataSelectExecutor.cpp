@@ -235,7 +235,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
             select.setExpression(ASTSelectQuery::Expression::GROUP_BY, given_select.groupBy()->clone());
         auto interpreter = InterpreterSelectQuery(
-            ast, context, storage_from_base_parts_of_projection, nullptr, SelectQueryOptions{processed_stage}.ignoreAggregation());
+            ast,
+            context,
+            storage_from_base_parts_of_projection,
+            nullptr,
+            SelectQueryOptions{processed_stage}.ignoreAggregation().ignoreProjections());
         ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
     }
 

@@ -3943,6 +3943,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             candidate.prewhere_info = std::make_shared<PrewhereInfo>();
             candidate.prewhere_info->prewhere_column_name = prewhere_info->prewhere_column_name;
             candidate.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+            std::cerr << fmt::format("remove prewhere column : {}", candidate.prewhere_info->remove_prewhere_column) << std::endl;
             candidate.prewhere_info->row_level_column_name = prewhere_info->row_level_column_name;
             candidate.prewhere_info->need_filter = prewhere_info->need_filter;
 
@@ -4009,6 +4010,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         if (projection.type == ProjectionDescription::Type::Aggregate && analysis_result.need_aggregate && can_use_aggregate_projection)
         {
+            std::cerr << fmt::format("====== aggregate projection analysis: {} ======", projection.name) << std::endl;
             bool match = true;
             Block aggregates;
             // Let's first check if all aggregates are provided by current projection
@@ -4063,16 +4065,16 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     candidate.required_columns.push_back(aggregate.name);
                 candidates.push_back(std::move(candidate));
             }
+            std::cerr << fmt::format("====== aggregate projection analysis end: {} ======", projection.name) << std::endl;
         }
 
         if (projection.type == ProjectionDescription::Type::Normal && (analysis_result.hasWhere() || analysis_result.hasPrewhere()))
         {
-            // TODO is it possible?
-            if (!analysis_result.before_order_by)
-                continue;
-
+            std::cerr << fmt::format("====== normal projection analysis: {} ======", projection.name) << std::endl;
+            const auto & actions
+                = analysis_result.before_aggregation ? analysis_result.before_aggregation : analysis_result.before_order_by;
             NameSet required_columns;
-            for (const auto & column : analysis_result.before_order_by->getRequiredColumns())
+            for (const auto & column : actions->getRequiredColumns())
                 required_columns.insert(column.name);
 
             if (rewrite_before_where(candidate, projection, required_columns, projection.sample_block, {}))
@@ -4080,6 +4082,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                 candidate.required_columns = {required_columns.begin(), required_columns.end()};
                 candidates.push_back(std::move(candidate));
             }
+            std::cerr << fmt::format("====== normal projection analysis end: {} ======", projection.name) << std::endl;
         }
     }
 
