@@ -7,35 +7,35 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function run_test_once()
 {
     $CLICKHOUSE_CLIENT -nm -q "
-        DROP TABLE IF EXISTS 01863_simple_key_source_table;
-        CREATE TABLE 01863_simple_key_source_table
+        DROP TABLE IF EXISTS simple_key_source_table_01863;
+        CREATE TABLE simple_key_source_table_01863
         (
             id UInt64,
             value String
         ) ENGINE = TinyLog();
 
-        INSERT INTO 01863_simple_key_source_table VALUES (1, 'First');
-        INSERT INTO 01863_simple_key_source_table VALUES (1, 'First');
+        INSERT INTO simple_key_source_table_01863 VALUES (1, 'First');
+        INSERT INTO simple_key_source_table_01863 VALUES (1, 'First');
 
-        CREATE DICTIONARY 01863_simple_key_cache_dictionary
+        CREATE DICTIONARY simple_key_cache_dictionary_01863
         (
             id UInt64,
             value String
         )
         PRIMARY KEY id
-        SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE '01863_simple_key_source_table'))
+        SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'simple_key_source_table_01863'))
         LAYOUT(CACHE(SIZE_IN_CELLS 100000))
         LIFETIME(MIN 0 MAX 1000);
     "
 
     prev=$($CLICKHOUSE_CLIENT -nm -q "SELECT value FROM system.events WHERE event = 'DictCacheKeysRequestedMiss' SETTINGS system_events_show_zero_values=1")
     curr=$($CLICKHOUSE_CLIENT -nm -q "
-        SELECT toUInt64(1) as key, dictGet('01863_simple_key_cache_dictionary', 'value', key) FORMAT Null;
+        SELECT toUInt64(1) as key, dictGet('simple_key_cache_dictionary_01863', 'value', key) FORMAT Null;
         SELECT value FROM system.events WHERE event = 'DictCacheKeysRequestedMiss' SETTINGS system_events_show_zero_values=1
     ")
 
     $CLICKHOUSE_CLIENT -nm -q "
-        DROP DICTIONARY 01863_simple_key_cache_dictionary;
+        DROP DICTIONARY simple_key_cache_dictionary_01863;
     "
 
     if [ "$prev" == "$curr" ]; then
