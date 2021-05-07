@@ -33,6 +33,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/** Simple module to object file compiler.
+  * Result object cannot be used as machine code directly, it should be passed to linker.
+  */
 class JITCompiler
 {
 public:
@@ -77,6 +80,10 @@ private:
     llvm::TargetMachine & target_machine;
 };
 
+/** MemoryManager for module.
+  * Keep total allocated size during RuntimeDyld linker execution.
+  * Release compiled module memory in destructor.
+  */
 class JITModuleMemoryManager
 {
     class DefaultMMapper final : public llvm::SectionMemoryManager::MemoryMapper
@@ -141,6 +148,7 @@ private:
     std::unordered_map<std::string, void *> symbol_name_to_symbol_address;
 };
 
+/// GDB JITEventListener. Can be used if result machine code need to be debugged.
 // class JITEventListener
 // {
 // public:
@@ -171,6 +179,8 @@ CHJIT::CHJIT()
     , compiler(std::make_unique<JITCompiler>(*machine))
     , symbol_resolver(std::make_unique<JITSymbolResolver>())
 {
+    /// Define common symbols that can be generated during compilation
+    /// Necessary for valid linker symbol resolution
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
@@ -245,10 +255,8 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
         module_info.compiled_functions.emplace_back(std::move(function_name));
     }
 
-    auto module_identifier = module->getModuleIdentifier();
-
     module_info.size = module_memory_manager->getAllocatedSize();
-    module_info.module_identifier = current_module_key;
+    module_info.identifier = current_module_key;
 
     module_identifier_to_memory_manager[current_module_key] = std::move(module_memory_manager);
 
@@ -261,9 +269,9 @@ void CHJIT::deleteCompiledModule(const CHJIT::CompiledModuleInfo & module_info)
 {
     std::lock_guard<std::mutex> lock(jit_lock);
 
-    auto module_it = module_identifier_to_memory_manager.find(module_info.module_identifier);
+    auto module_it = module_identifier_to_memory_manager.find(module_info.identifier);
     if (module_it == module_identifier_to_memory_manager.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no compiled module with identifier {}", module_info.module_identifier);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no compiled module with identifier {}", module_info.identifier);
 
     for (const auto & function : module_info.compiled_functions)
         name_to_symbol.erase(function);
@@ -276,7 +284,7 @@ void * CHJIT::findCompiledFunction(const CompiledModuleInfo & module_info, const
 {
     std::lock_guard<std::mutex> lock(jit_lock);
 
-    std::string symbol_name = std::to_string(module_info.module_identifier) + '_' + function_name;
+    std::string symbol_name = std::to_string(module_info.identifier) + '_' + function_name;
     auto it = name_to_symbol.find(symbol_name);
     if (it != name_to_symbol.end())
         return it->second;
@@ -366,7 +374,7 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         options,
         llvm::None,
         llvm::None,
-        llvm::CodeGenOpt::Default,
+        llvm::CodeGenOpt::Aggressive,
         jit);
 
     if (!target_machine)

@@ -681,8 +681,12 @@ std::string ActionsDAG::dumpDAG() const
         out << " " << (node.column ? node.column->getName() : "(no column)");
         out << " " << (node.result_type ? node.result_type->getName() : "(no type)");
         out << " " << (!node.result_name.empty() ? node.result_name : "(no name)");
+
         if (node.function_base)
             out << " [" << node.function_base->getName() << "]";
+
+        if (node.is_function_compiled)
+            out << " [compiled]";
 
         out << "\n";
     }
