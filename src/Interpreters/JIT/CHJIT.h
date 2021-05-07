@@ -33,7 +33,7 @@ class JITCompiler;
   * will be release only during MCJIT instance destruction. It is too expensive to create MCJIT
   * instance for each compiled module.
   *
-  * Main reasong for custom implementation vs ORCv2.
+  * Main reasons for custom implementation vs ORCv2.
   * ORC is on request compiled, we does not need support for asynchronous compilation.
   * It was possible to remove compiled code with ORCv1 but it was deprecated.
   * In ORCv2 this probably can be done only with custom layer and materialization unit.
@@ -56,7 +56,7 @@ public:
         size_t size;
         /// Module identifier. Should not be changed by client
         uint64_t identifier;
-        /// Vector of compiled function nameds. Should not be changed by client.
+        /// Vector of compiled function nameds. Should not be changed by client
         std::vector<std::string> compiled_functions;
     };
 

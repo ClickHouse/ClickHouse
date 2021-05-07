@@ -146,17 +146,19 @@ static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr 
 
 static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index)
 {
+    if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
+    {
+        return getColumnNativeValue(builder, column_type, constant->getDataColumn(), 0);
+    }
+
     WhichDataType column_data_type(column_type);
+
     auto * type = toNativeType(builder, column_type);
 
     if (!type || column.size() <= index)
         return nullptr;
 
-    if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
-    {
-        return getColumnNativeValue(builder, column_type, constant->getDataColumn(), 0);
-    }
-    else if (column_data_type.isNullable())
+    if (column_data_type.isNullable())
     {
         const auto & nullable_data_type = assert_cast<const DataTypeNullable &>(*column_type);
         const auto & nullable_column = assert_cast<const ColumnNullable &>(column);

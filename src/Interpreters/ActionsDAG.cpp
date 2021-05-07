@@ -181,8 +181,12 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function_builder = function;
     node.children = std::move(children);
 
-    bool all_const = true;
     ColumnsWithTypeAndName arguments(num_arguments);
+
+    /// There are function that can check argument column address and if we want to properly emulate execute
+    /// call it is important that column arguments from same node have equal address
+    std::unordered_map<const Node *, ColumnPtr> child_to_dummy_column;
+    child_to_dummy_column.reserve(num_arguments);
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
@@ -193,8 +197,17 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         argument.type = child.result_type;
         argument.name = child.result_name;
 
-        if (!argument.column || !isColumnConst(*argument.column))
-            all_const = false;
+        if (!argument.column)
+        {
+            auto it = child_to_dummy_column.find(&child);
+            if (it != child_to_dummy_column.end())
+                argument.column = it->second;
+            else
+            {
+                argument.column = argument.type->createColumn();
+                child_to_dummy_column[&child] = argument.column;
+            }
+        }
 
         arguments[i] = std::move(argument);
     }
@@ -203,8 +216,9 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
 
-    /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (all_const && node.function_base->isSuitableForConstantFolding())
+    /// There are function that can be constant event if they arguments are not
+    /// For examples greater(x0, x0) will return constant result.
+    if (node.function_base->isSuitableForConstantFolding())
     {
         size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
         auto col = node.function->execute(arguments, node.result_type, num_rows, true);

@@ -46,7 +46,7 @@ llvm::Value * CompileDAG::compile(llvm::IRBuilderBase & builder, Values input_no
                 auto * native_value = getColumnNativeValue(b, node.result_type, *node.column, 0);
                 if (!native_value)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot native value for constant column with type {}",
+                    "Cannot find native value for constant column with type {}",
                     node.result_type->getName());
 
                 compiled_values[compiled_values_index] = native_value;
