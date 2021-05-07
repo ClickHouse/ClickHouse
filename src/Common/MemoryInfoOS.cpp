@@ -1,7 +1,5 @@
 #if defined(OS_LINUX)
 
-#include <unistd.h>
-#include <cassert>
 #include <string>
 
 #include "MemoryInfoOS.h"
@@ -15,9 +13,24 @@ namespace DB
 {
 
 static constexpr auto meminfo_filename = "/proc/meminfo";
-    
+
+static constexpr int READ_BUFFER_BUF_SIZE = (64 << 10);
+
+void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf) 
+{
+    readString(s, buf);
+    skipWhitespaceIfAny(buf);
+}
+
+template<typename T>
+void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf) 
+{
+    readIntText(x, buf);
+    skipWhitespaceIfAny(buf);
+}
+
 MemoryInfoOS::MemoryInfoOS() 
-    : meminfo_in(meminfo_filename, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY | O_CLOEXEC)
+    : meminfo_in(meminfo_filename, READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC)
 {}
 
 MemoryInfoOS::~MemoryInfoOS() {}
@@ -58,19 +71,6 @@ bool MemoryInfoOS::readField(unsigned long & field_val, const String & field_nam
 void MemoryInfoOS::skipField() 
 {
     skipToNextLineOrEOF(meminfo_in);
-}
-
-void MemoryInfoOS::readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf) 
-{
-    readString(s, buf);
-    skipWhitespaceIfAny(buf);
-}
-
-template<typename T>
-void MemoryInfoOS::readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf) 
-{
-    readIntText(x, buf);
-    skipWhitespaceIfAny(buf);
 }
 
 }
