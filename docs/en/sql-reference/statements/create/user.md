@@ -15,6 +15,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
+	GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
@@ -52,13 +53,24 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 
 !!! info "Warning"
     ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we don’t recommend to do so.
+	
+## GRANTEES Clause{#grantees}
+
+Specifies users or roles which are allowed to receive [grants](../../../sql-reference/statements/grant.md) from this user on the condition this user has also all required access granted with grant option. Values of the `GRANTEES` clause:
+
+-   `user` — Specifies user which is allowed to receive grants from this user.
+-   `role` — Specifies role which is allowed to receive grants from this user.
+-   `ANY` — User with grant option can grant to anyone, used by default.
+-   `NONE` — User with grant option provides to nobody.
+
+You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`.
 
 ## Examples {#create-user-examples}
 
 Create the user account `mira` protected by the password `qwerty`:
 
 ``` sql
-CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
 ```
 
 `mira` should start client app at the host where the ClickHouse server runs.
@@ -66,13 +78,13 @@ CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 Create the user account `john`, assign roles to it and make this roles default:
 
 ``` sql
-CREATE USER john DEFAULT ROLE role1, role2
+CREATE USER john DEFAULT ROLE role1, role2;
 ```
 
 Create the user account `john` and make all his future roles default:
 
 ``` sql
-CREATE USER user DEFAULT ROLE ALL
+CREATE USER john DEFAULT ROLE ALL;
 ```
 
 When some role is assigned to `john` in the future, it will become default automatically.
@@ -80,5 +92,13 @@ When some role is assigned to `john` in the future, it will become default autom
 Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
 
 ``` sql
-CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2
+CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2;
 ```
+
+Create the user account `john` and assign his grants to a user with a `jack` account:
+
+``` sql
+CREATE USER john GRANTEES jack;
+```
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/user/) <!--hide-->
