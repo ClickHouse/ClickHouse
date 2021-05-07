@@ -2583,7 +2583,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         /// Our metadata it not up to date with source replica metadata.
         /// Metadata is updated by ALTER_METADATA entries, but some entries are probably cleaned up from the log.
         /// It's also possible that some newer ALTER_METADATA entries are present in source_queue list,
-        /// and source replica are executing such entry right not (or had executed recently).
+        /// and source replica are executing such entry right now (or had executed recently).
         /// More than that, /metadata_version update is not atomic with /columns and /metadata update...
 
         /// Fortunately, ALTER_METADATA seems to be idempotent,
@@ -2627,12 +2627,12 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         dummy_alter.columns_str = source_columns;
         dummy_alter.alter_version = source_metadata_version;
         dummy_alter.create_time = time(nullptr);
-        /// We don't really know if it has mutation or not, but it doesn't matter.
-        dummy_alter.have_mutation = false;
 
         zookeeper->create(replica_path + "/queue/queue-", dummy_alter.toString(), zkutil::CreateMode::PersistentSequential);
 
-        /// TODO Do we also need to do something with mutation_pointer? Seems like we don't, but it's not clear from the code.
+        /// We don't need to do anything with mutation_pointer, because mutation log cleanup process is different from
+        /// replication log cleanup. A mutation is removed from ZooKeeper only if all replicas had executed the mutation,
+        /// so all mutations which are greater or equal to our mutation pointer are still present in ZooKeeper.
     }
 
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
@@ -3182,7 +3182,6 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.merge_type = merge_type;
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
-    entry.merge_type = merge_type;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -4472,6 +4471,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     if (entry.alter_version < metadata_version)
     {
         /// TODO Can we replace it with LOGICAL_ERROR?
+        /// As for now, it may rerely happen due to reordering of ALTER_METADATA entries in the queue of
+        /// non-initial replica and also may happen after stale replica recovery.
         LOG_WARNING(log, "Attempt to update metadata of version {} "
                          "to older version {} when processing log entry {}: {}",
                          metadata_version, entry.alter_version, entry.znode_name, entry.toString());
@@ -5279,11 +5280,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
         {
             auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
 
-            if (log_entries.empty())
-            {
-                res.log_max_index = 0;
-            }
-            else
+            if (!log_entries.empty())
             {
                 const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
                 res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
@@ -5295,7 +5292,6 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
             auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
             res.total_replicas = all_replicas.size();
 
-            res.active_replicas = 0;
             for (const String & replica : all_replicas)
                 if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
                     ++res.active_replicas;
@@ -5429,7 +5425,7 @@ void StorageReplicatedMergeTree::fetchPartition(
     ContextPtr query_context)
 {
     Macros::MacroExpansionInfo info;
-    info.expand_special_macros_only = false;
+    info.expand_special_macros_only = false; //-V1048
     info.table_id = getStorageID();
     info.table_id.uuid = UUIDHelpers::Nil;
     auto expand_from = query_context->getMacros()->expand(from_, info);
@@ -6381,7 +6377,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         entry_delete.type = LogEntry::DROP_RANGE;
         entry_delete.source_replica = replica_name;
         entry_delete.new_part_name = drop_range_fake_part_name;
-        entry_delete.detach = false;
+        entry_delete.detach = false; //-V1048
         entry_delete.create_time = time(nullptr);
     }
 
