@@ -251,6 +251,7 @@ static std::string getExtraExceptionInfo(const std::exception & e)
     String msg;
     try
     {
+        /// TODO: this has to be adjusted for std::filesystem
         if (const auto * file_exception = dynamic_cast<const Poco::FileException *>(&e))
         {
             if (file_exception->code() == ENOSPC)

@@ -1089,11 +1089,14 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     {
         volume->getDisk()->moveDirectory(from, to);
     }
-    catch (const Poco::FileNotFoundException &)
+    catch (const fs::filesystem_error & e)
     {
-        LOG_ERROR(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(volume->getDisk(), to));
-
-        return;
+        if (e.code() == std::errc::no_such_file_or_directory)
+        {
+            LOG_ERROR(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(volume->getDisk(), to));
+            return;
+        }
+        throw;
     }
 
     if (checksums.empty())

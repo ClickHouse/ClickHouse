@@ -24,7 +24,7 @@
 #    include <Common/parseAddress.h>
 #    include <Common/setThreadName.h>
 #    include <filesystem>
-#    include <Poco/File.h>
+#    include <Common/createFile.h>
 
 namespace fs = std::filesystem;
 
@@ -408,27 +408,25 @@ void DatabaseConnectionMySQL::detachTablePermanently(ContextPtr, const String & 
 {
     std::lock_guard<std::mutex> lock{mutex};
 
-    Poco::File remove_flag(fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix));
+    fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
     if (remove_or_detach_tables.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",
-            ErrorCodes::TABLE_IS_DROPPED);
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
-    if (remove_flag.exists())
-        throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(database_name) +
-            "." + backQuoteIfNeed(table_name) + " does not exists remove tables, it is bug.", ErrorCodes::LOGICAL_ERROR);
+    if (fs::exists(remove_flag))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exists remove tables, it is bug.",
+                        backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     auto table_iter = local_tables_cache.find(table_name);
     if (table_iter == local_tables_cache.end())
-        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
-            ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     remove_or_detach_tables.emplace(table_name);
 
     try
     {
         table_iter->second.second->drop();
-        remove_flag.createFile();
+        fs::createFile(remove_flag);
     }
     catch (...)
     {

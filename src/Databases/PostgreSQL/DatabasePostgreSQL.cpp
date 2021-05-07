@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
+#include <Common/createFile.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -253,10 +254,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
         throw Exception(fmt::format("Table {}.{} is already dropped/detached", database_name, table_name), ErrorCodes::TABLE_IS_DROPPED);
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-
-    FILE * file = fopen(mark_table_removed.string().data(), "a+");
-    if (file == nullptr)
-        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create file {}", mark_table_removed.string());
+    fs::createFile(mark_table_removed);
 
     if (cache_tables)
         cached_tables.erase(table_name);
