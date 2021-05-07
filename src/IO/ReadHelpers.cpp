@@ -244,7 +244,7 @@ void readString(String & s, ReadBuffer & buf)
 }
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-
+template void readStringInto<String>(String & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)

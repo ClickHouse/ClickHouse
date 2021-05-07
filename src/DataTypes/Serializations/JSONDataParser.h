@@ -50,7 +50,7 @@ public:
     using Path = std::vector<std::string_view>;
     using Paths = std::vector<Path>;
 
-    void readInto(String & s, ReadBuffer & buf)
+    void readJSON(String & s, ReadBuffer & buf)
     {
         readJSONObjectPossiblyInvalid(s, buf);
     }
