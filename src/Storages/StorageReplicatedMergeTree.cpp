@@ -2577,63 +2577,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     /// We should do it after copying queue, because some ALTER_METADATA entries can be lost otherwise.
-    Int32 source_metadata_version = parse<Int32>(zookeeper->get(source_path + "/metadata_version"));
-    if (metadata_version != source_metadata_version)
-    {
-        /// Our metadata it not up to date with source replica metadata.
-        /// Metadata is updated by ALTER_METADATA entries, but some entries are probably cleaned up from the log.
-        /// It's also possible that some newer ALTER_METADATA entries are present in source_queue list,
-        /// and source replica are executing such entry right now (or had executed recently).
-        /// More than that, /metadata_version update is not atomic with /columns and /metadata update...
-
-        /// Fortunately, ALTER_METADATA seems to be idempotent,
-        /// and older entries of such type can be replaced with newer entries.
-        /// Let's try to get consistent values of source replica's /columns and /metadata
-        /// and prepend dummy ALTER_METADATA to our replication queue.
-        /// It should not break anything if source_queue already contains ALTER_METADATA entry
-        /// with greater or equal metadata_version, but it will update our metadata
-        /// if all such entries were cleaned up from the log and source_queue.
-
-        LOG_WARNING(log, "Metadata version ({}) on replica is not up to date with metadata ({}) on source replica {}",
-                    metadata_version, source_metadata_version, source_replica);
-
-        String source_metadata;
-        String source_columns;
-        while (true)
-        {
-            Coordination::Stat metadata_stat;
-            Coordination::Stat columns_stat;
-            source_metadata = zookeeper->get(source_path + "/metadata", &metadata_stat);
-            source_columns = zookeeper->get(source_path + "/columns", &columns_stat);
-
-            Coordination::Requests ops;
-            Coordination::Responses responses;
-            ops.emplace_back(zkutil::makeCheckRequest(source_path + "/metadata", metadata_stat.version));
-            ops.emplace_back(zkutil::makeCheckRequest(source_path + "/columns", columns_stat.version));
-
-            Coordination::Error code = zookeeper->tryMulti(ops, responses);
-            if (code == Coordination::Error::ZOK)
-                break;
-            else if (code == Coordination::Error::ZBADVERSION)
-                LOG_WARNING(log, "Metadata of replica {} was changed", source_path);
-            else
-                zkutil::KeeperMultiException::check(code, ops, responses);
-        }
-
-        ReplicatedMergeTreeLogEntryData dummy_alter;
-        dummy_alter.type = LogEntry::ALTER_METADATA;
-        dummy_alter.source_replica = source_replica;
-        dummy_alter.metadata_str = source_metadata;
-        dummy_alter.columns_str = source_columns;
-        dummy_alter.alter_version = source_metadata_version;
-        dummy_alter.create_time = time(nullptr);
-
-        zookeeper->create(replica_path + "/queue/queue-", dummy_alter.toString(), zkutil::CreateMode::PersistentSequential);
-
-        /// We don't need to do anything with mutation_pointer, because mutation log cleanup process is different from
-        /// replication log cleanup. A mutation is removed from ZooKeeper only if all replicas had executed the mutation,
-        /// so all mutations which are greater or equal to our mutation pointer are still present in ZooKeeper.
-    }
+    cloneMetadataIfNeeded(source_replica, source_path, zookeeper);
 
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
     Strings source_replica_parts = zookeeper->getChildren(source_path + "/parts");
@@ -2698,6 +2642,81 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     LOG_DEBUG(log, "Copied {} queue entries", source_queue.size());
+}
+
+
+void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper)
+{
+    String source_metadata_version_str;
+    bool metadata_version_exists = zookeeper->tryGet(source_path + "/metadata_version", source_metadata_version_str);
+    if (!metadata_version_exists)
+    {
+        /// For compatibility with version older than 20.3
+        /// TODO fix tests and delete it
+        LOG_WARNING(log, "Node {} does not exist. "
+                         "Most likely it's because too old version of ClickHouse is running on replica {}. "
+                         "Will not check metadata consistency",
+                         source_path + "/metadata_version", source_replica);
+        return;
+    }
+
+    Int32 source_metadata_version = parse<Int32>(source_metadata_version_str);
+    if (metadata_version == source_metadata_version)
+        return;
+
+    /// Our metadata it not up to date with source replica metadata.
+    /// Metadata is updated by ALTER_METADATA entries, but some entries are probably cleaned up from the log.
+    /// It's also possible that some newer ALTER_METADATA entries are present in source_queue list,
+    /// and source replica are executing such entry right now (or had executed recently).
+    /// More than that, /metadata_version update is not atomic with /columns and /metadata update...
+
+    /// Fortunately, ALTER_METADATA seems to be idempotent,
+    /// and older entries of such type can be replaced with newer entries.
+    /// Let's try to get consistent values of source replica's /columns and /metadata
+    /// and prepend dummy ALTER_METADATA to our replication queue.
+    /// It should not break anything if source_queue already contains ALTER_METADATA entry
+    /// with greater or equal metadata_version, but it will update our metadata
+    /// if all such entries were cleaned up from the log and source_queue.
+
+    LOG_WARNING(log, "Metadata version ({}) on replica is not up to date with metadata ({}) on source replica {}",
+                metadata_version, source_metadata_version, source_replica);
+
+    String source_metadata;
+    String source_columns;
+    while (true)
+    {
+        Coordination::Stat metadata_stat;
+        Coordination::Stat columns_stat;
+        source_metadata = zookeeper->get(source_path + "/metadata", &metadata_stat);
+        source_columns = zookeeper->get(source_path + "/columns", &columns_stat);
+
+        Coordination::Requests ops;
+        Coordination::Responses responses;
+        ops.emplace_back(zkutil::makeCheckRequest(source_path + "/metadata", metadata_stat.version));
+        ops.emplace_back(zkutil::makeCheckRequest(source_path + "/columns", columns_stat.version));
+
+        Coordination::Error code = zookeeper->tryMulti(ops, responses);
+        if (code == Coordination::Error::ZOK)
+            break;
+        else if (code == Coordination::Error::ZBADVERSION)
+            LOG_WARNING(log, "Metadata of replica {} was changed", source_path);
+        else
+            zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+
+    ReplicatedMergeTreeLogEntryData dummy_alter;
+    dummy_alter.type = LogEntry::ALTER_METADATA;
+    dummy_alter.source_replica = source_replica;
+    dummy_alter.metadata_str = source_metadata;
+    dummy_alter.columns_str = source_columns;
+    dummy_alter.alter_version = source_metadata_version;
+    dummy_alter.create_time = time(nullptr);
+
+    zookeeper->create(replica_path + "/queue/queue-", dummy_alter.toString(), zkutil::CreateMode::PersistentSequential);
+
+    /// We don't need to do anything with mutation_pointer, because mutation log cleanup process is different from
+    /// replication log cleanup. A mutation is removed from ZooKeeper only if all replicas had executed the mutation,
+    /// so all mutations which are greater or equal to our mutation pointer are still present in ZooKeeper.
 }
 
 
