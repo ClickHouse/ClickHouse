@@ -1,6 +1,5 @@
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/JSONDataParser.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -8,9 +7,7 @@
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/FieldVisitors.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnArray.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <IO/ReadHelpers.h>
@@ -29,18 +26,14 @@ namespace ErrorCodes
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeText(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
-}
-
-template <typename Parser>
-void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+template <typename Reader>
+void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader && reader) const
 {
     auto & column_object = assert_cast<ColumnObject &>(column);
 
     String buf;
-    parser.readInto(buf, istr);
+    reader(buf);
+
     auto result = parser.parse(buf.data(), buf.size());
     if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse object");
@@ -81,6 +74,36 @@ void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer &
         if (!paths_set.count(key))
             subcolumn.insertDefault();
     }
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    deserializeTextImpl(column, [&](String & s) { readStringInto(s, istr); });
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    deserializeTextImpl(column, [&](String & s) { readEscapedStringInto(s, istr); });
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    deserializeTextImpl(column, [&](String & s) { readQuotedStringInto<true>(s, istr); });
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    deserializeTextImpl(column, [&](String & s) { parser.readJSON(s, istr); });
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextImpl(column, [&](String & s) { readCSVStringInto(s, istr, settings.csv); });
 }
 
 template <typename Parser>
@@ -225,25 +248,55 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeBinary(const Field & /*field*/, WriteBuffer & /*ostr*/) const
+void SerializationObject<Parser>::serializeBinary(const Field &, WriteBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(Field & /*field*/, ReadBuffer & /*istr*/) const
+void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeBinary(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/) const
+void SerializationObject<Parser>::serializeBinary(const IColumn &, size_t, WriteBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(IColumn & /*column*/, ReadBuffer & /*istr*/) const
+void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextEscaped(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextQuoted(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextJSON(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextCSV(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
