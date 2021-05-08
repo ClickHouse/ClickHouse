@@ -179,7 +179,14 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, 
 
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback, timeouts, 0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
+        uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        out_stream_callback,
+        timeouts,
+        0,
+        credentials,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        header_entries);
     return createWrappedBuffer(std::move(in_ptr));
 }
 
