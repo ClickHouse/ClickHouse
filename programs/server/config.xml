@@ -518,10 +518,11 @@
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>
 
-    <!-- Uncomment below in order to use JDBC table engine and function.
+    <![CDATA[
+         Uncomment below in order to use JDBC table engine and function.
 
          To install and run JDBC bridge in background:
-         * [Debian/UBuntu]
+         * [Debian/Ubuntu]
            export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
            export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
            wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
@@ -536,7 +537,7 @@
            clickhouse-jdbc-bridge &
 
          Please refer to https://github.com/ClickHouse/clickhouse-jdbc-bridge#usage for more information.
-    -->
+    ]]>
     <!--
     <jdbc_bridge>
         <host>127.0.0.1</host>
