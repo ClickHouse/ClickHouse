@@ -91,7 +91,7 @@ SELECT count() FROM constraint_test_constants WHERE 9 < b; ---> assumption -> 1
 SELECT count() FROM constraint_test_constants WHERE 11 < b; ---> assumption -> 0
 SELECT count() FROM constraint_test_constants WHERE 10 <= b; ---> assumption -> 1
 SELECT count() FROM constraint_test_constants WHERE 9 < a; ---> assumption -> 1
-SELECT count() FROM constraint_test_constants WHERE 10 < a; ---> assumption -> 0
+SELECT count() FROM constraint_test_constants WHERE 10 < a; ---> assumption -> 1
 SELECT count() FROM constraint_test_constants WHERE 9 <= a; ---> assumption -> 1
 SELECT count() FROM constraint_test_constants WHERE 11 <= a; ---> assumption -> 0
 

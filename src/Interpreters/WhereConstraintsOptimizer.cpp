@@ -48,16 +48,24 @@ MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
 
 bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const ConstraintsDescription & constraints_description)
 {
+    const auto & constraints_data = constraints_description.getConstraintData();
+    std::vector<size_t> found(constraints_data.size(), 0);
+    for (size_t i = 0; i < constraints_data.size(); ++i)
+        found[i] = constraints_data[i].size();
+
     for (const auto & atom : group)
     {
         const auto constraint_atom_ids = constraints_description.getAtomIds(atom.ast);
         if (constraint_atom_ids)
         {
-            for (const auto & constraint_atom : constraints_description.getAtomsById(constraint_atom_ids.value()))
+            const auto constraint_atoms = constraints_description.getAtomsById(constraint_atom_ids.value());
+            for (size_t i = 0; i < constraint_atoms.size(); ++i)
             {
-                const auto match_result = match(constraint_atom, atom);
-                if (match_result == MatchState::FULL_MATCH)
-                    return true;
+                if (match(constraint_atoms[i], atom) == MatchState::FULL_MATCH)
+                {
+                    if ((--found[(*constraint_atom_ids)[i].and_group]) == 0)
+                        return true;
+                }
             }
         }
     }
