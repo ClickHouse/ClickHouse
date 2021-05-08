@@ -2,7 +2,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/GCDLCMImpl.h>
 
-#include <boost/math/common_factor.hpp>
+#include <boost/integer/common_factor.hpp>
 
 
 namespace DB
