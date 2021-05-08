@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <ext/range.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -93,46 +94,9 @@ std::string toString(AttributeUnderlyingType type)
 {
     switch (type)
     {
-        case AttributeUnderlyingType::UInt8:
-            return "UInt8";
-        case AttributeUnderlyingType::UInt16:
-            return "UInt16";
-        case AttributeUnderlyingType::UInt32:
-            return "UInt32";
-        case AttributeUnderlyingType::UInt64:
-            return "UInt64";
-        case AttributeUnderlyingType::UInt128:
-            return "UInt128";
-        case AttributeUnderlyingType::UInt256:
-            return "UInt256";
-        case AttributeUnderlyingType::Int8:
-            return "Int8";
-        case AttributeUnderlyingType::Int16:
-            return "Int16";
-        case AttributeUnderlyingType::Int32:
-            return "Int32";
-        case AttributeUnderlyingType::Int64:
-            return "Int64";
-        case AttributeUnderlyingType::Int128:
-            return "Int128";
-        case AttributeUnderlyingType::Int256:
-            return "Int256";
-        case AttributeUnderlyingType::Float32:
-            return "Float32";
-        case AttributeUnderlyingType::Float64:
-            return "Float64";
-        case AttributeUnderlyingType::Decimal32:
-            return "Decimal32";
-        case AttributeUnderlyingType::Decimal64:
-            return "Decimal64";
-        case AttributeUnderlyingType::Decimal128:
-            return "Decimal128";
-        case AttributeUnderlyingType::Decimal256:
-            return "Decimal256";
-        case AttributeUnderlyingType::UUID:
-            return "UUID";
-        case AttributeUnderlyingType::String:
-            return "String";
+#define M(TYPE) case AttributeUnderlyingType::TYPE: return #TYPE;
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
     }
 
     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Unknown dictionary attribute type {}", toString(static_cast<int>(type)));

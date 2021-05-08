@@ -13,31 +13,37 @@
 #include <Interpreters/IExternalLoadable.h>
 
 
+#define FOR_ATTRIBUTE_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(UInt128) \
+    M(UInt256) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Int128) \
+    M(Int256) \
+    M(Float32) \
+    M(Float64) \
+    M(Decimal32) \
+    M(Decimal64) \
+    M(Decimal128) \
+    M(Decimal256) \
+    M(UUID) \
+    M(String) \
+
+
 namespace DB
 {
 
 enum class AttributeUnderlyingType
 {
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    UInt256,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Int256,
-    Float32,
-    Float64,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    Decimal256,
-    UUID,
-    String
+#define M(TYPE) TYPE,
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
 };
 
 
@@ -85,66 +91,12 @@ void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
 {
     switch (type)
     {
-        case AttributeUnderlyingType::UInt8:
-            func(DictionaryAttributeType<UInt8>());
+#define M(TYPE) \
+        case AttributeUnderlyingType::TYPE: \
+            func(DictionaryAttributeType<TYPE>()); \
             break;
-        case AttributeUnderlyingType::UInt16:
-            func(DictionaryAttributeType<UInt16>());
-            break;
-        case AttributeUnderlyingType::UInt32:
-            func(DictionaryAttributeType<UInt32>());
-            break;
-        case AttributeUnderlyingType::UInt64:
-            func(DictionaryAttributeType<UInt64>());
-            break;
-        case AttributeUnderlyingType::UInt128:
-            func(DictionaryAttributeType<UInt128>());
-            break;
-        case AttributeUnderlyingType::UInt256:
-            func(DictionaryAttributeType<UInt128>());
-            break;
-        case AttributeUnderlyingType::Int8:
-            func(DictionaryAttributeType<Int8>());
-            break;
-        case AttributeUnderlyingType::Int16:
-            func(DictionaryAttributeType<Int16>());
-            break;
-        case AttributeUnderlyingType::Int32:
-            func(DictionaryAttributeType<Int32>());
-            break;
-        case AttributeUnderlyingType::Int64:
-            func(DictionaryAttributeType<Int64>());
-            break;
-        case AttributeUnderlyingType::Int128:
-            func(DictionaryAttributeType<Int64>());
-            break;
-        case AttributeUnderlyingType::Int256:
-            func(DictionaryAttributeType<Int64>());
-            break;
-        case AttributeUnderlyingType::Float32:
-            func(DictionaryAttributeType<Float32>());
-            break;
-        case AttributeUnderlyingType::Float64:
-            func(DictionaryAttributeType<Float64>());
-            break;
-        case AttributeUnderlyingType::String:
-            func(DictionaryAttributeType<String>());
-            break;
-        case AttributeUnderlyingType::Decimal32:
-            func(DictionaryAttributeType<Decimal32>());
-            break;
-        case AttributeUnderlyingType::Decimal64:
-            func(DictionaryAttributeType<Decimal64>());
-            break;
-        case AttributeUnderlyingType::Decimal128:
-            func(DictionaryAttributeType<Decimal128>());
-            break;
-        case AttributeUnderlyingType::Decimal256:
-            func(DictionaryAttributeType<Decimal256>());
-            break;
-        case AttributeUnderlyingType::UUID:
-            func(DictionaryAttributeType<UUID>());
-            break;
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
     }
 };
 
