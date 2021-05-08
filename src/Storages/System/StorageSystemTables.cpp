@@ -389,14 +389,13 @@ protected:
                     src_index += 2;
 
                 StorageMetadataPtr metadata_snapshot;
-                if (table != nullptr)
-                    metadata_snapshot = table->getInMemoryMetadataPtr();
+                assert(table != nullptr);
+                metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -404,8 +403,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -413,8 +411,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -422,8 +419,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getSamplingKeyAST()))
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -431,7 +427,6 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
                     auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
@@ -441,7 +436,6 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
                     auto total_rows = table->totalRows(context->getSettingsRef());
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
@@ -451,7 +445,6 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
                     auto total_bytes = table->totalBytes(context->getSettingsRef());
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
@@ -461,7 +454,6 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
                     auto lifetime_rows = table->lifetimeRows();
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
@@ -471,7 +463,6 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
                     auto lifetime_bytes = table->lifetimeBytes();
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
