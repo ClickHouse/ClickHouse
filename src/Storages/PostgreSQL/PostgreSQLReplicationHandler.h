@@ -8,9 +8,8 @@
 
 #include "MaterializePostgreSQLConsumer.h"
 #include "MaterializePostgreSQLMetadata.h"
-
-#include <Core/PostgreSQL/PostgreSQLConnection.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Core/PostgreSQL/Utils.h>
 
 
 namespace DB
@@ -114,7 +113,7 @@ private:
 
     String replication_slot, publication_name;
 
-    postgres::ConnectionPtr connection;
+    postgres::Connection connection;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     std::shared_ptr<MaterializePostgreSQLConsumer> consumer;

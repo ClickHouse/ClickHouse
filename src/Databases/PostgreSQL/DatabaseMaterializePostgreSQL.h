@@ -64,7 +64,7 @@ private:
 
     ASTPtr database_engine_define;
     String remote_database_name;
-    postgres::ConnectionPtr connection;
+    postgres::ConnectionInfo connection_info;
     std::unique_ptr<MaterializePostgreSQLSettings> settings;
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;

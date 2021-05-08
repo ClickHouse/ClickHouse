@@ -2,8 +2,8 @@
 
 #if USE_LIBPQXX
 
-#include <Core/PostgreSQL/PostgreSQLConnection.h>
 #include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -19,7 +19,6 @@
 #include <Common/escapeForFileName.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/Macros.h>
 #include <common/logger_useful.h>
 
@@ -41,12 +40,12 @@ DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & database_name_,
         const String & postgres_database_name,
-        const postgres::ConnectionInfo & connection_info,
+        const postgres::ConnectionInfo & connection_info_,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializePostgreSQL<Atomic> (" + database_name_ + ")", context_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database_name(postgres_database_name)
-    , connection(std::make_shared<postgres::Connection>(connection_info))
+    , connection_info(connection_info_)
     , settings(std::move(settings_))
 {
 }
@@ -57,7 +56,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
             database_name,
-            connection->getConnectionInfo(),
+            connection_info,
             metadata_path + METADATA_SUFFIX,
             getContext(),
             settings->materialize_postgresql_max_block_size.value,
@@ -65,7 +64,8 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
             /* is_materialize_postgresql_database = */ true,
             settings->materialize_postgresql_tables_list.value);
 
-    std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection->getRef());
+    postgres::Connection connection(connection_info);
+    std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection.getRef());
 
     for (const auto & table_name : tables_to_replicate)
     {

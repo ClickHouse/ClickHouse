@@ -10,7 +10,8 @@
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
-#include <Core/PostgreSQL/PostgreSQLConnection.h>
+#include <Core/PostgreSQL/ConnectionHolder.h>
+#include <Core/PostgreSQL/Utils.h>
 
 
 namespace DB
@@ -22,8 +23,8 @@ class PostgreSQLBlockInputStream : public IBlockInputStream
 
 public:
     PostgreSQLBlockInputStream(
-        postgres::ConnectionHolderPtr connection_,
-        const std::string & query_str_,
+        postgres::ConnectionHolderPtr connection_holder_,
+        const String & query_str_,
         const Block & sample_block,
         const UInt64 max_block_size_);
 
@@ -54,7 +55,7 @@ private:
     bool auto_commit = true;
     ExternalResultDescription description;
 
-    postgres::ConnectionHolderPtr connection;
+    postgres::ConnectionHolderPtr connection_holder;
 
     std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
 };

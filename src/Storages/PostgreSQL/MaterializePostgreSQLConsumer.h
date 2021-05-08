@@ -6,7 +6,7 @@
 
 #if USE_LIBPQXX
 #include "MaterializePostgreSQLMetadata.h"
-#include <Core/PostgreSQL/PostgreSQLConnection.h>
+#include <Core/PostgreSQL/Connection.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -28,7 +28,7 @@ public:
 
     MaterializePostgreSQLConsumer(
             ContextPtr context_,
-            postgres::ConnectionPtr connection_,
+            postgres::Connection && connection_,
             const std::string & replication_slot_name_,
             const std::string & publication_name_,
             const std::string & metadata_path,
@@ -106,7 +106,7 @@ private:
     const std::string replication_slot_name, publication_name;
 
     MaterializePostgreSQLMetadata metadata;
-    postgres::ConnectionPtr connection;
+    postgres::Connection connection;
 
     std::string current_lsn, final_lsn;
     const size_t max_block_size;

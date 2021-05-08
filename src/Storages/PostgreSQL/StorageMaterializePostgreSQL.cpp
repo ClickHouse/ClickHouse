@@ -22,7 +22,7 @@
 #include <Storages/StorageFactory.h>
 #include <common/logger_useful.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
-#include <Core/PostgreSQL/PostgreSQLConnectionPool.h>
+#include <Core/PostgreSQL/Connection.h>
 
 
 namespace DB

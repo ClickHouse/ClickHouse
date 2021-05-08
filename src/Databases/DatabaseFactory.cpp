@@ -39,7 +39,6 @@
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
 #include <Databases/PostgreSQL/DatabaseMaterializePostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializePostgreSQLSettings.h>
-#include <Core/PostgreSQL/PostgreSQLConnectionPool.h>
 #endif
 
 namespace DB
