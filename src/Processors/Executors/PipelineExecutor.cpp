@@ -1,14 +1,15 @@
-#include <Processors/Executors/PipelineExecutor.h>
 #include <queue>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/printPipeline.h>
 #include <Common/EventCounter.h>
-#include <ext/scope_guard.h>
 #include <Common/CurrentThread.h>
-#include <Processors/ISource.h>
 #include <Common/setThreadName.h>
+#include <Common/MemoryTracker.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/printPipeline.h>
+#include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <ext/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -740,7 +741,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
     bool finished_flag = false;
 
-    SCOPE_EXIT(
+    SCOPE_EXIT_SAFE(
         if (!finished_flag)
         {
             finish();
@@ -766,9 +767,9 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
 
-                SCOPE_EXIT(
-                        if (thread_group)
-                            CurrentThread::detachQueryIfNotDetached();
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
                 );
 
                 try

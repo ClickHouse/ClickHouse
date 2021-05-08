@@ -125,17 +125,17 @@ static Field convertDecimalType(const Field & from, const To & type)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
+    // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatible type.
+    if (from_type_hint && from_type_hint->equals(type))
+    {
+        return src;
+    }
+
     WhichDataType which_type(type);
     WhichDataType which_from_type;
     if (from_type_hint)
     {
         which_from_type = WhichDataType(*from_type_hint);
-
-        // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatible type.
-        if (from_type_hint && from_type_hint->equals(type))
-        {
-            return src;
-        }
     }
 
     /// Conversion between Date and DateTime and vice versa.

@@ -551,6 +551,15 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
     out->next();
 }
 
+
+void Connection::sendReadTaskResponse(const String & response)
+{
+    writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
+    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+    writeStringBinary(response, *out);
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -671,8 +680,12 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
+        if (!elem->pipe)
+            elem->pipe = elem->creating_pipe_callback();
+
         QueryPipeline pipeline;
         pipeline.init(std::move(*elem->pipe));
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
@@ -807,6 +820,9 @@ Packet Connection::receivePacket()
                 readVectorBinary(res.part_uuids, *in);
                 return res;
 
+            case Protocol::Server::ReadTaskRequest:
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -907,13 +923,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException()
+std::unique_ptr<Exception> Connection::receiveException() const
 {
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -923,7 +939,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 }
 
 
-Progress Connection::receiveProgress()
+Progress Connection::receiveProgress() const
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -931,7 +947,7 @@ Progress Connection::receiveProgress()
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo()
+BlockStreamProfileInfo Connection::receiveProfileInfo() const
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);
