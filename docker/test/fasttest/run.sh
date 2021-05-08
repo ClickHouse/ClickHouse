@@ -185,7 +185,6 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
-            contrib/llvm
         )
 
         git submodule sync
@@ -202,6 +201,7 @@ function run_cmake
         "-DENABLE_LIBRARIES=0"
         "-DENABLE_TESTS=0"
         "-DENABLE_UTILS=0"
+        "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
@@ -370,6 +370,9 @@ function run_tests
 
         # Depends on AWS
         01801_s3_cluster
+
+        # Depents on LLVM JIT
+        01852_jit_if
     )
 
     (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
