@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     ContextPtr context_,
-    postgres::Connection && connection_,
+    std::shared_ptr<postgres::Connection> connection_,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
     const std::string & metadata_path,
@@ -37,7 +37,7 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     , replication_slot_name(replication_slot_name_)
     , publication_name(publication_name_)
     , metadata(metadata_path)
-    , connection(std::move(connection_))
+    , connection(connection_)
     , current_lsn(start_lsn)
     , max_block_size(max_block_size_)
     , allow_automatic_update(allow_automatic_update_)
@@ -88,7 +88,7 @@ void MaterializePostgreSQLConsumer::readMetadata()
 
         if (!metadata.lsn().empty())
         {
-            auto tx = std::make_shared<pqxx::nontransaction>(connection.getRef());
+            auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
             final_lsn = metadata.lsn();
             final_lsn = advanceLSN(tx);
             tx->commit();
@@ -600,7 +600,7 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
 
     try
     {
-        tx = std::make_shared<pqxx::nontransaction>(connection.getRef());
+        tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
 
         /// Read up to max_block_size rows changes (upto_n_changes parameter). It might return larger number as the limit
         /// is checked only after each transaction block.

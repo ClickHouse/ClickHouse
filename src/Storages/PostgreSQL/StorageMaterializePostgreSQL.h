@@ -173,7 +173,7 @@ private:
     /// It results in the fact: single MaterializePostgreSQL storage is created only if its nested table is created.
     /// In case of attach - this setup will be done in a separate thread in the background. It will also
     /// be checked for nested table and attempted to load it if it does not exist for some reason.
-    bool is_attach;
+    bool is_attach = true;
 };
 
 }
