@@ -205,6 +205,8 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                 tuple = &literal->value.get<Tuple>();
             }
 
+            assert(tuple || func);
+
             size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
             if (tuple_size != num_columns)
                 throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
