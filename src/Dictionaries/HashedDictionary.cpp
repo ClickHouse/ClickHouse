@@ -369,64 +369,11 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
     }
     else
     {
-        size_t skip_keys_size_offset = dict_struct.getKeysSize();
-
-        Columns saved_block_key_columns;
-        saved_block_key_columns.reserve(skip_keys_size_offset);
-
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < skip_keys_size_offset; ++i)
-            saved_block_key_columns.emplace_back(saved_block->safeGetByPosition(i).column);
-
-
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-        DictionaryKeysExtractor<dictionary_key_type> saved_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
-        auto saved_keys_extracted_from_block = saved_keys_extractor.extractAllKeys();
-
         auto stream = source_ptr->loadUpdatedAll();
-        stream->readPrefix();
-
-        while (Block block = stream->read())
-        {
-            /// TODO: Rewrite
-            Columns block_key_columns;
-            block_key_columns.reserve(skip_keys_size_offset);
-
-            /// Split into keys columns and attribute columns
-            for (size_t i = 0; i < skip_keys_size_offset; ++i)
-                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
-            auto keys_extracted_from_block = block_keys_extractor.extractAllKeys();
-
-            absl::flat_hash_map<KeyType, std::vector<size_t>, DefaultHash<KeyType>> update_keys;
-            for (size_t row = 0; row < keys_extracted_from_block.size(); ++row)
-            {
-                auto key = keys_extracted_from_block[row];
-                update_keys[key].push_back(row);
-            }
-
-            IColumn::Filter filter(saved_keys_extracted_from_block.size());
-
-            for (size_t row = 0; row < saved_keys_extracted_from_block.size(); ++row)
-            {
-                auto key = saved_keys_extracted_from_block[row];
-                auto it = update_keys.find(key);
-                filter[row] = (it == update_keys.end());
-            }
-
-            auto block_columns = block.mutateColumns();
-            for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
-            {
-                auto & column = saved_block->safeGetByPosition(attribute_idx).column;
-                const auto & filtered_column = column->filter(filter, -1);
-                block_columns[attribute_idx]->insertRangeFrom(*filtered_column.get(), 0, filtered_column->size());
-            }
-
-            saved_block->setColumns(std::move(block_columns));
-        }
-
-        stream->readSuffix();
+        mergeBlockWithStream<dictionary_key_type>(
+            dict_struct.getKeysSize(),
+            *saved_block,
+            stream);
     }
 
     if (saved_block)
