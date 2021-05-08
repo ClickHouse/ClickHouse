@@ -419,7 +419,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             throw Exception("Got 'send_s3_metadata' cookie for in-memory part", ErrorCodes::INCORRECT_PART_TYPE);
 
         UUID part_uuid = UUIDHelpers::Nil;
-        if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+
+        /// Always true due to values of constants. But we keep this condition just in case.
+        if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID) //-V547
             readUUIDText(part_uuid, in);
 
         try
