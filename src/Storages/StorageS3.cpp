@@ -36,6 +36,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
