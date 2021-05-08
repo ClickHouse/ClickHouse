@@ -23,16 +23,20 @@ enum class AttributeUnderlyingType
     utUInt32,
     utUInt64,
     utUInt128,
+    utUInt256,
     utInt8,
     utInt16,
     utInt32,
     utInt64,
+    utInt128,
+    utInt256,
     utFloat32,
     utFloat64,
     utDecimal32,
     utDecimal64,
     utDecimal128,
     utDecimal256,
+    utUUID,
     utString
 };
 
@@ -96,6 +100,9 @@ void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
         case AttributeUnderlyingType::utUInt128:
             func(DictionaryAttributeType<UInt128>());
             break;
+        case AttributeUnderlyingType::utUInt256:
+            func(DictionaryAttributeType<UInt128>());
+            break;
         case AttributeUnderlyingType::utInt8:
             func(DictionaryAttributeType<Int8>());
             break;
@@ -106,6 +113,12 @@ void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
             func(DictionaryAttributeType<Int32>());
             break;
         case AttributeUnderlyingType::utInt64:
+            func(DictionaryAttributeType<Int64>());
+            break;
+        case AttributeUnderlyingType::utInt128:
+            func(DictionaryAttributeType<Int64>());
+            break;
+        case AttributeUnderlyingType::utInt256:
             func(DictionaryAttributeType<Int64>());
             break;
         case AttributeUnderlyingType::utFloat32:
@@ -128,6 +141,9 @@ void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
             break;
         case AttributeUnderlyingType::utDecimal256:
             func(DictionaryAttributeType<Decimal256>());
+            break;
+        case AttributeUnderlyingType::utUUID:
+            func(DictionaryAttributeType<UUID>());
             break;
     }
 };

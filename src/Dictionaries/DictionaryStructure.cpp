@@ -53,11 +53,14 @@ AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
         case TypeIndex::UInt32:         return AttributeUnderlyingType::utUInt32;
         case TypeIndex::UInt64:         return AttributeUnderlyingType::utUInt64;
         case TypeIndex::UInt128:        return AttributeUnderlyingType::utUInt128;
+        case TypeIndex::UInt256:        return AttributeUnderlyingType::utUInt256;
 
         case TypeIndex::Int8:           return AttributeUnderlyingType::utInt8;
         case TypeIndex::Int16:          return AttributeUnderlyingType::utInt16;
         case TypeIndex::Int32:          return AttributeUnderlyingType::utInt32;
         case TypeIndex::Int64:          return AttributeUnderlyingType::utInt64;
+        case TypeIndex::Int128:         return AttributeUnderlyingType::utInt128;
+        case TypeIndex::Int256:         return AttributeUnderlyingType::utInt256;
 
         case TypeIndex::Float32:        return AttributeUnderlyingType::utFloat32;
         case TypeIndex::Float64:        return AttributeUnderlyingType::utFloat64;
@@ -71,7 +74,7 @@ AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
         case TypeIndex::DateTime:       return AttributeUnderlyingType::utUInt32;
         case TypeIndex::DateTime64:     return AttributeUnderlyingType::utUInt64;
 
-        case TypeIndex::UUID:           return AttributeUnderlyingType::utUInt128;
+        case TypeIndex::UUID:           return AttributeUnderlyingType::utUUID;
 
         case TypeIndex::String:         return AttributeUnderlyingType::utString;
 
@@ -99,7 +102,9 @@ std::string toString(AttributeUnderlyingType type)
         case AttributeUnderlyingType::utUInt64:
             return "UInt64";
         case AttributeUnderlyingType::utUInt128:
-            return "UUID";
+            return "UInt128";
+        case AttributeUnderlyingType::utUInt256:
+            return "UInt256";
         case AttributeUnderlyingType::utInt8:
             return "Int8";
         case AttributeUnderlyingType::utInt16:
@@ -108,6 +113,10 @@ std::string toString(AttributeUnderlyingType type)
             return "Int32";
         case AttributeUnderlyingType::utInt64:
             return "Int64";
+        case AttributeUnderlyingType::utInt128:
+            return "Int128";
+        case AttributeUnderlyingType::utInt256:
+            return "Int256";
         case AttributeUnderlyingType::utFloat32:
             return "Float32";
         case AttributeUnderlyingType::utFloat64:
@@ -120,6 +129,8 @@ std::string toString(AttributeUnderlyingType type)
             return "Decimal128";
         case AttributeUnderlyingType::utDecimal256:
             return "Decimal256";
+        case AttributeUnderlyingType::utUUID:
+            return "UUID";
         case AttributeUnderlyingType::utString:
             return "String";
     }
