@@ -50,11 +50,8 @@ struct common_type<Arithmetic, wide::integer<Bits, Signed>>;
 namespace wide
 {
 
-/// Attribute 'packed' does not make sense to this class itself
-/// but it is needed to allow to use this type in other structs with attribute packed.
-
 template <size_t Bits, typename Signed>
-class __attribute__((__packed__)) integer
+class integer
 {
 public:
     using base_type = uint64_t;
