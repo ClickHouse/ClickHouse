@@ -58,6 +58,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
 }
@@ -189,24 +190,22 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
                 case AttributeUnderlyingType::utUInt16:
                 case AttributeUnderlyingType::utUInt32:
                 case AttributeUnderlyingType::utUInt64:
-                case AttributeUnderlyingType::utUInt128:
                 case AttributeUnderlyingType::utInt8:
                 case AttributeUnderlyingType::utInt16:
                 case AttributeUnderlyingType::utInt32:
                 case AttributeUnderlyingType::utInt64:
-                case AttributeUnderlyingType::utDecimal32:
-                case AttributeUnderlyingType::utDecimal64:
-                case AttributeUnderlyingType::utDecimal128:
-                case AttributeUnderlyingType::utDecimal256:
+                {
                     key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
                     break;
-
+                }
                 case AttributeUnderlyingType::utFloat32:
                 case AttributeUnderlyingType::utFloat64:
+                {
                     key.add(attr.second.name, key_columns[attr.first]->getFloat64(row_idx));
                     break;
-
+                }
                 case AttributeUnderlyingType::utString:
+                {
                     String loaded_str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
                     if (attr.second.is_object_id)
@@ -219,6 +218,9 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
                         key.add(attr.second.name, loaded_str);
                     }
                     break;
+                }
+                default:
+                    throw Exception("Unsupported dictionary attribute type for MongoDB dictionary source", ErrorCodes::NOT_IMPLEMENTED);
             }
         }
     }
