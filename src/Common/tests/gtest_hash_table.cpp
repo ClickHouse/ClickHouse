@@ -1,6 +1,8 @@
 #include <iomanip>
 #include <iostream>
 
+#include <common/wide_integer_to_string.h>
+
 #include <Interpreters/AggregationCommon.h>
 
 #include <Common/HashTable/HashMap.h>

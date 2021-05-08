@@ -260,7 +260,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
-    UnsignedT res = 0;
+    UnsignedT res{};
     if (buf.eof())
     {
         if constexpr (throw_exception)
