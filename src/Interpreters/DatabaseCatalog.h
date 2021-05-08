@@ -234,7 +234,7 @@ private:
         StorageID table_id = StorageID::createEmpty();
         StoragePtr table;
         String metadata_path;
-        time_t drop_time;
+        time_t drop_time{};
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
