@@ -1153,11 +1153,11 @@ public:
                 || IsOperation<Op>::less_or_equals
                 || IsOperation<Op>::greater_or_equals)
             {
-                return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
+                return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
             }
             else
             {
-                return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+                return DataTypeUInt8().createColumnConst(input_rows_count, 0u)->convertToFullColumnIfConst();
             }
         }
 
