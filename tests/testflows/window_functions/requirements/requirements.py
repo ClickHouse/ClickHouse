@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.210312.1172513.
+# document by TestFlows v1.6.210505.1133630.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -3796,7 +3796,13 @@ All the updates are tracked using the [Revision History].
 
 ## Introduction
 
-This software requirements specification covers requirements for `Map(key, value)` data type in [ClickHouse].
+This software requirements specification covers requirements for supporting window functions in [ClickHouse].
+Similar functionality exists in [MySQL] and [PostreSQL]. [PostreSQL] defines a window function as follows:
+
+> A window function performs a calculation across a set of table rows that are somehow related to the current row.
+> This is comparable to the type of calculation that can be done with an aggregate function.
+> But unlike regular aggregate functions, use of a window function does not cause rows to
+> become grouped into a single output row — the rows retain their separate identities.
 
 ## Requirements
 
@@ -5884,4 +5890,6 @@ version: 1.0
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/window_functions/requirements/requirements.md
 [Git]: https://git-scm.com/
 [GitHub]: https://github.com
+[PostreSQL]: https://www.postgresql.org/docs/9.2/tutorial-window.html
+[MySQL]: https://dev.mysql.com/doc/refman/8.0/en/window-functions.html
 ''')
