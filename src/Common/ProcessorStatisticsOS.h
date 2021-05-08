@@ -71,17 +71,6 @@ private:
         uint64_t guest_nice;
     };
 
-    template<typename T>
-    static void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf); 
-
-    static void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf);
-    
-    static void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer& buf);
-
-    static void readCharAndSkipWhitespaceIfAny(char & c, ReadBuffer & buf);
-
-    static void readFloatAndSkipWhitespaceIfAny(float & f, ReadBuffer & buf);
-
     void readLoadavg(ProcLoadavg & loadavg);
     void calcStLoad(ProcStLoad   & stload);
     void readFreq(ProcFreq       & freq);

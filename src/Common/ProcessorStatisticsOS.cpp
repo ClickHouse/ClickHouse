@@ -35,10 +35,43 @@ static constexpr auto cpuinfo_filename = "/proc/cpuinfo";
 
 static const uint64_t USER_HZ = static_cast<uint64_t>(sysconf(_SC_CLK_TCK));
 
+static constexpr size_t READ_BUFFER_BUF_SIZE = (64 << 10);
+
+template<typename T>
+void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf)
+{
+    readIntText(x, buf);
+    skipWhitespaceIfAny(buf);
+}
+
+void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf) 
+{
+    readString(s, buf);
+    skipWhitespaceIfAny(buf);
+}
+
+void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
+{
+    readStringUntilWhitespace(s, buf);
+    skipWhitespaceIfAny(buf);
+}
+
+void readCharAndSkipWhitespaceIfAny(char & c, ReadBuffer & buf)
+{
+    readChar(c, buf);
+    skipWhitespaceIfAny(buf);
+}
+
+void readFloatAndSkipWhitespaceIfAny(float & f, ReadBuffer & buf)
+{
+    readFloatText(f, buf);
+    skipWhitespaceIfAny(buf);
+}
+
 ProcessorStatisticsOS::ProcessorStatisticsOS()
-    : loadavg_in(loadavg_filename, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY | O_CLOEXEC)
-    , procst_in(procst_filename,   DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY | O_CLOEXEC)
-    , cpuinfo_in(cpuinfo_filename, DBMS_DEFAULT_BUFFER_SIZE, O_RDONLY | O_CLOEXEC)
+    : loadavg_in(loadavg_filename, READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC)
+    , procst_in(procst_filename,   READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC)
+    , cpuinfo_in(cpuinfo_filename, READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC)
 {
     ProcStLoad unused;
     calcStLoad(unused);
@@ -171,37 +204,6 @@ void ProcessorStatisticsOS::readFreq(ProcFreq & freq)
     } while (true);
 
     freq.avg /= static_cast<float>(cpu_count);
-}
-
-template<typename T>
-void ProcessorStatisticsOS::readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf)
-{
-    readIntText(x, buf);
-    skipWhitespaceIfAny(buf);
-}
-
-void ProcessorStatisticsOS::readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf) 
-{
-    readString(s, buf);
-    skipWhitespaceIfAny(buf);
-}
-
-void ProcessorStatisticsOS::readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
-{
-    readStringUntilWhitespace(s, buf);
-    skipWhitespaceIfAny(buf);
-}
-
-void ProcessorStatisticsOS::readCharAndSkipWhitespaceIfAny(char & c, ReadBuffer & buf)
-{
-    readChar(c, buf);
-    skipWhitespaceIfAny(buf);
-}
-
-void ProcessorStatisticsOS::readFloatAndSkipWhitespaceIfAny(float & f, ReadBuffer & buf)
-{
-    readFloatText(f, buf);
-    skipWhitespaceIfAny(buf);
 }
 
 }
