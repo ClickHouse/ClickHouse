@@ -94,15 +94,15 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
 
 void Settings::addProgramOptions(boost::program_options::options_description & options)
 {
-    for (const auto & field : all())
+    for (const auto & setting : all())
     {
-        const std::string_view name = field.getName();
+        const std::string_view name = setting.getName();
         auto on_program_option
             = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
         options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
             name.data(),
-            boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
-            field.getDescription())));
+            boost::program_options::value<std::string>()->implicit_value(setting.getValueString())->composing()->notifier(on_program_option),
+            setting.getDescription())));
     }
 }
 
