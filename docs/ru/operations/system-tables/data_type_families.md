@@ -1,6 +1,6 @@
 # system.data_type_families {#system_tables-data_type_families}
 
-Содержит информацию о поддерживаемых [типах данных](../../sql-reference/data-types/index.md).
+Содержит информацию о поддерживаемых [типах данных](../../sql-reference/data-types/).
 
 Столбцы:
 
@@ -33,3 +33,4 @@ SELECT * FROM system.data_type_families WHERE alias_to = 'String'
 
 -   [Синтаксис](../../sql-reference/syntax.md) — поддерживаемый SQL синтаксис.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/data_type_families) <!--hide-->

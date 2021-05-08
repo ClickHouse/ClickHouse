@@ -98,7 +98,7 @@ private:
             PacketReceiver & receiver;
             Fiber & sink;
 
-            void operator()(int, Poco::Timespan timeout, const std::string &)
+            void operator()(int, const Poco::Timespan & timeout, const std::string &)
             {
                 receiver.receive_timeout.setRelative(timeout);
                 receiver.is_read_in_process = true;

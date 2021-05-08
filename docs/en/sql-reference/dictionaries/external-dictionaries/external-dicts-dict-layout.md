@@ -7,9 +7,9 @@ toc_title: Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed), which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section [cache](#cache).
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section “[cache](#cache)”.
 
 There are several ways to improve dictionary performance:
 
@@ -68,9 +68,9 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
 
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type and the value is limited to `max_array_size` (by default — 500,000). If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary. Dictionary flat arrays initial size is controlled by `initial_array_size` setting (by default — 1024).
+The dictionary key has the `UInt64` type and the value is limited to 500,000. If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in it entirety.
+All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 This method provides the best performance among all available methods of storing the dictionary.
 
@@ -78,17 +78,14 @@ Configuration example:
 
 ``` xml
 <layout>
-  <flat>
-    <initial_array_size>50000</initial_array_size>
-    <max_array_size>5000000</max_array_size>
-  </flat>
+  <flat />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+LAYOUT(FLAT())
 ```
 
 ### hashed {#dicts-external_dicts_dict_layout-hashed}
@@ -323,6 +320,8 @@ Similar to `cache`, but stores data on SSD and index in RAM.
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
         <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
+        <max_stored_keys>1048576</max_stored_keys>
     </ssd_cache>
 </layout>
 ```
@@ -330,8 +329,8 @@ Similar to `cache`, but stores data on SSD and index in RAM.
 or
 
 ``` sql
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
+LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
@@ -446,3 +445,4 @@ Other types are not supported yet. The function returns the attribute for the pr
 
 Data must completely fit into RAM.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

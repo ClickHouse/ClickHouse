@@ -9,7 +9,6 @@
 #include <common/getMemoryAmount.h>
 #include <common/logger_useful.h>
 
-#include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>

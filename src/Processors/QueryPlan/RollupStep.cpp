@@ -30,7 +30,7 @@ RollupStep::RollupStep(const DataStream & input_stream_, AggregatingTransformPar
         output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
 }
 
-void RollupStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void RollupStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.resize(1);
 

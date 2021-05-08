@@ -44,13 +44,14 @@ struct WindowFrame
     // Offset might be both preceding and following, controlled by begin_preceding,
     // but the offset value must be positive.
     BoundaryType begin_type = BoundaryType::Unbounded;
-    Field begin_offset = 0;
+    // This should have been a Field but I'm getting some crazy linker errors.
+    int64_t begin_offset = 0;
     bool begin_preceding = true;
 
     // Here as well, Unbounded can only be UNBOUNDED FOLLOWING, and end_preceding
     // must be false.
     BoundaryType end_type = BoundaryType::Current;
-    Field end_offset = 0;
+    int64_t end_offset = 0;
     bool end_preceding = false;
 
 

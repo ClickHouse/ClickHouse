@@ -245,7 +245,7 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FETCH "
-                      << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
+                      << "PARTITION " << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
         settings.ostr << (settings.hilite ? hilite_keyword : "")
                       << " FROM " << (settings.hilite ? hilite_none : "") << DB::quote << from;
@@ -264,27 +264,6 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::FREEZE_ALL)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE";
-
-        if (!with_name.empty())
-        {
-            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
-                          << " " << DB::quote << with_name;
-        }
-    }
-    else if (type == ASTAlterCommand::UNFREEZE_PARTITION)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UNFREEZE PARTITION " << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(settings, state, frame);
-
-        if (!with_name.empty())
-        {
-            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
-                          << " " << DB::quote << with_name;
-        }
-    }
-    else if (type == ASTAlterCommand::UNFREEZE_ALL)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UNFREEZE";
 
         if (!with_name.empty())
         {
@@ -389,8 +368,7 @@ bool ASTAlterQuery::isSettingsAlter() const
 
 bool ASTAlterQuery::isFreezeAlter() const
 {
-    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL)
-        || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
+    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL);
 }
 
 /** Get the text that identifies this element. */

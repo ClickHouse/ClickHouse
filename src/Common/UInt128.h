@@ -19,7 +19,7 @@ namespace DB
 struct UInt128
 {
 /// Suppress gcc7 warnings: 'prev_key.DB::UInt128::low' may be used uninitialized in this function
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -92,7 +92,7 @@ struct UInt128
             return static_cast<T>(low);
     }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
@@ -150,7 +150,7 @@ struct DummyUInt256
 {
 
 /// Suppress gcc7 warnings: 'prev_key.DB::UInt256::a' may be used uninitialized in this function
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -179,7 +179,7 @@ struct DummyUInt256
     bool operator== (const UInt64 rhs) const { return a == rhs && b == 0 && c == 0 && d == 0; }
     bool operator!= (const UInt64 rhs) const { return !operator==(rhs); }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
