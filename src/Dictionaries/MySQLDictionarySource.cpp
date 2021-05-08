@@ -164,7 +164,7 @@ bool MySQLDictionarySource::isModified() const
     if (!invalidate_query.empty())
     {
         auto response = doInvalidateQuery(invalidate_query);
-        if (response == invalidate_query_response)
+        if (response == invalidate_query_response) //-V1051
             return false;
         invalidate_query_response = response;
         return true;
