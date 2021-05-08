@@ -115,7 +115,7 @@ struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::
 /// Satisfiable when rank storage is small enough.
 template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode>
-class __attribute__ ((packed)) details::Denominator<precision, max_rank, HashValueType, DenominatorType,
+class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,
     std::enable_if_t<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>>
 {
