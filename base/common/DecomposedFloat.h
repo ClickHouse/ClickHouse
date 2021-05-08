@@ -114,23 +114,28 @@ struct DecomposedFloat
                 return rhs >= 0 ? -1 : 1;
         }
 
+        /// The case of the most negative integer
+        if constexpr (is_signed_v<Int>)
+        {
+            if (rhs == std::numeric_limits<Int>::lowest())
+            {
+                assert(is_negative());
+
+                if (normalized_exponent() < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+                    return 1;
+                if (normalized_exponent() > static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+                    return -1;
+
+                if (mantissa() == 0)
+                    return 0;
+                else
+                    return -1;
+            }
+        }
+
         /// Too large number: abs(float) > abs(rhs). Also the case with infinities and NaN.
         if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
-        {
-            /// The case of most negative integer - it can be equal to float
-            if constexpr (is_signed_v<Int>)
-            {
-                if (rhs == std::numeric_limits<Int>::lowest()
-                    && normalized_exponent() == static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>)
-                    && is_negative()
-                    && mantissa() == 0)
-                {
-                    return 0;
-                }
-            }
-
             return is_negative() ? -1 : 1;
-        }
 
         using UInt = make_unsigned_t<Int>;
         UInt uint_rhs = rhs < 0 ? -rhs : rhs;
