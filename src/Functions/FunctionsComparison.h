@@ -1148,17 +1148,27 @@ public:
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
         if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
+            bool constant_arguments = isColumnConst(*col_left_untyped);
+
+            ColumnPtr result_column;
+
             /// Always true: =, <=, >=
             if constexpr (IsOperation<Op>::equals
                 || IsOperation<Op>::less_or_equals
                 || IsOperation<Op>::greater_or_equals)
             {
-                return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
+                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
             }
             else
             {
-                return DataTypeUInt8().createColumnConst(input_rows_count, 0u)->convertToFullColumnIfConst();
+                result_column = result_type->createColumnConst(input_rows_count, 1u);
             }
+
+            /// We avoid returning constant result for non constant arguments
+            if (!constant_arguments)
+                result_column = result_column->convertToFullColumnIfConst();
+
+            return result_column;
         }
 
         WhichDataType which_left{left_type};
