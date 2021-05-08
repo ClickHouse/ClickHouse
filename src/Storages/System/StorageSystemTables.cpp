@@ -389,8 +389,8 @@ protected:
                     src_index += 2;
 
                 StorageMetadataPtr metadata_snapshot;
-                assert(table != nullptr);
-                metadata_snapshot = table->getInMemoryMetadataPtr();
+                if (table)
+                    metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
@@ -427,7 +427,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table->getStoragePolicy();
+                    auto policy = table ? table->getStoragePolicy() : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
@@ -436,7 +436,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto total_rows = table->totalRows(context->getSettingsRef());
+                    auto total_rows = table ? table->totalRows(context->getSettingsRef()) : std::nullopt;
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -445,7 +445,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto total_bytes = table->totalBytes(context->getSettingsRef());
+                    auto total_bytes = table ? table->totalBytes(context->getSettingsRef()) : std::nullopt;
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -454,7 +454,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table->lifetimeRows();
+                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -463,7 +463,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table->lifetimeBytes();
+                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
