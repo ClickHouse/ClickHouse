@@ -401,7 +401,7 @@ void StorageRabbitMQ::bindExchange()
         }
     }
 
-    while (!binding_created)
+    while (!binding_created) //-V1044
     {
         event_handler->iterateLoop();
     }
@@ -462,7 +462,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id)
     const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
     setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
 
-    while (!binding_created)
+    while (!binding_created) //-V1044
     {
         event_handler->iterateLoop();
     }
