@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 /** Tracks the leftmost and rightmost (x, y) data points.
   */
-struct AggregateFunctionBoundingRatioData
+struct AggregateFunctionBoundingRatioData //-V730
 {
     struct Point
     {
