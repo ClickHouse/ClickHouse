@@ -111,6 +111,7 @@ private:
             Int32,
             Int64,
             Int128,
+            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
