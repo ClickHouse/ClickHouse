@@ -82,7 +82,7 @@ public:
             res.items[T::_impl::big(0)] = std::numeric_limits<typename wide::integer<Bits, Signed>::signed_base_type>::min();
             return res;
         }
-        return 0;
+        return wide::integer<Bits, Signed>(0);
     }
 
     static constexpr wide::integer<Bits, Signed> max() noexcept
@@ -1314,7 +1314,7 @@ template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> operator<<(const integer<Bits, Signed> & lhs, int n) noexcept
 {
     if (static_cast<size_t>(n) >= Bits)
-        return 0;
+        return integer<Bits, Signed>(0);
     if (n <= 0)
         return lhs;
     return integer<Bits, Signed>::_impl::shift_left(lhs, n);
@@ -1323,7 +1323,7 @@ template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> operator>>(const integer<Bits, Signed> & lhs, int n) noexcept
 {
     if (static_cast<size_t>(n) >= Bits)
-        return 0;
+        return integer<Bits, Signed>(0);
     if (n <= 0)
         return lhs;
     return integer<Bits, Signed>::_impl::shift_right(lhs, n);

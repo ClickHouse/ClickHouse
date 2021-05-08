@@ -13,7 +13,6 @@
 #include <common/LocalDateTime.h>
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
-#include <common/wide_integer_to_string.h>
 #include <common/DecomposedFloat.h>
 
 #include <Core/DecimalFunctions.h>
@@ -52,11 +51,6 @@ namespace ErrorCodes
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 }
 
-template <typename T>
-inline std::string bigintToString(const T & x)
-{
-    return to_string(x);
-}
 
 /// Helper functions for formatted and binary output.
 
