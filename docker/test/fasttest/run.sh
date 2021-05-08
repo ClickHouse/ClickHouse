@@ -371,7 +371,7 @@ function run_tests
         # Depends on AWS
         01801_s3_cluster
 
-        # Depents on LLVM JIT
+        # Depends on LLVM JIT
         01852_jit_if
         01865_jit_comparison_constant_result
     )
