@@ -16,6 +16,7 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>

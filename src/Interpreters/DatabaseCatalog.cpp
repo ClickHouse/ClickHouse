@@ -16,6 +16,7 @@
 #include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
 #include <common/logger_useful.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
