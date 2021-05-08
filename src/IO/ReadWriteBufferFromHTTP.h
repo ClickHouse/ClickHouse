@@ -92,7 +92,7 @@ namespace detail
     protected:
         Poco::URI uri;
         std::string method;
-	std::string compress_method;
+	    std::string compress_method;
 
         UpdatableSessionPtr session;
         std::istream * istr; /// owned by session
@@ -138,7 +138,7 @@ namespace detail
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
-		compress_method = response.get("Content-Encoding");
+                compress_method = response.get("Content-Encoding");
                 return istr;
 
             }
@@ -167,6 +167,7 @@ namespace detail
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
+            , compress_method{}
             , session {session_}
             , out_stream_callback {out_stream_callback_}
             , credentials {credentials_}
@@ -233,9 +234,10 @@ namespace detail
             next_callback(count());
         }
 
-	std::string getCompressMethod() const {
-	    return compress_method;
-	}
+        std::string getCompressMethod() const
+        {
+            return compress_method;
+        }
     };
 }
 
