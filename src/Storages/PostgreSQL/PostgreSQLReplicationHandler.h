@@ -113,7 +113,8 @@ private:
 
     String replication_slot, publication_name;
 
-    postgres::Connection connection;
+    /// Shared between replication_consumer and replication_handler, but never accessed concurrently.
+    std::shared_ptr<postgres::Connection> connection;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     std::shared_ptr<MaterializePostgreSQLConsumer> consumer;
