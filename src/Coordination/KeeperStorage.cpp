@@ -405,8 +405,6 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
 
             response.names.insert(response.names.end(), it->value.children.begin(), it->value.children.end());
 
-            std::sort(response.names.begin(), response.names.end());
-
             response.stat = it->value.stat;
             response.error = Coordination::Error::ZOK;
         }

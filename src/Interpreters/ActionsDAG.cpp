@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 
 #include <stack>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -25,6 +26,47 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
+}
+
+const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
+{
+    switch (type)
+    {
+        case ActionType::INPUT:
+            return "Input";
+        case ActionType::COLUMN:
+            return "Column";
+        case ActionType::ALIAS:
+            return "Alias";
+        case ActionType::ARRAY_JOIN:
+            return "ArrayJoin";
+        case ActionType::FUNCTION:
+            return "Function";
+    }
+
+    __builtin_unreachable();
+}
+
+void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
+{
+    map.add("Node Type", ActionsDAG::typeToString(type));
+
+    if (result_type)
+        map.add("Result Type", result_type->getName());
+
+    if (!result_name.empty())
+        map.add("Result Type", ActionsDAG::typeToString(type));
+
+    if (column)
+        map.add("Column", column->getName());
+
+    if (function_base)
+        map.add("Function", function_base->getName());
+    else if (function_builder)
+        map.add("Function", function_builder->getName());
+
+    if (type == ActionType::FUNCTION)
+        map.add("Compiled", is_function_compiled);
 }
 
 
@@ -181,7 +223,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         }
     }
 
-    /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
+    /// Some functions like ignore(), indexHint() or getTypeName() always return constant result even if arguments are not constant.
     /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
     /// unnecessary materialization.
     if (!node.column && node.function_base->isSuitableForConstantFolding())
@@ -965,7 +1007,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     struct Frame
     {
-        const Node * node;
+        const Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 
@@ -1349,7 +1391,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 /// Create actions which calculate conjunction of selected nodes.
 /// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
 ///
-/// Result actions add single column with conjunction result (it is always last in index).
+/// Result actions add single column with conjunction result (it is always first in index).
 /// No other columns are added or removed.
 ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
@@ -1414,6 +1456,20 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
         }
     }
 
+    const Node * result_predicate = nodes_mapping[*conjunction.begin()];
+
+    if (conjunction.size() > 1)
+    {
+        NodeRawConstPtrs args;
+        args.reserve(conjunction.size());
+        for (const auto * predicate : conjunction)
+            args.emplace_back(nodes_mapping[predicate]);
+
+        result_predicate = &actions->addFunction(func_builder_and, std::move(args), {});
+    }
+
+    actions->index.push_back(result_predicate);
+
     for (const auto & col : all_inputs)
     {
         const Node * input;
@@ -1430,19 +1486,6 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
         actions->index.push_back(input);
     }
 
-    const Node * result_predicate = nodes_mapping[*conjunction.begin()];
-
-    if (conjunction.size() > 1)
-    {
-        NodeRawConstPtrs args;
-        args.reserve(conjunction.size());
-        for (const auto * predicate : conjunction)
-            args.emplace_back(nodes_mapping[predicate]);
-
-        result_predicate = &actions->addFunction(func_builder_and, std::move(args), {});
-    }
-
-    actions->index.push_back(result_predicate);
     return actions;
 }
 
@@ -1457,6 +1500,11 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
                             filter_name, dumpDAG());
+
+    /// If condition is constant let's do nothing.
+    /// It means there is nothing to push down or optimization was already applied.
+    if (predicate->type == ActionType::COLUMN)
+        return nullptr;
 
     std::unordered_set<const Node *> allowed_nodes;
 
@@ -1507,7 +1555,19 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             node.result_name = std::move(predicate->result_name);
             node.result_type = std::move(predicate->result_type);
             node.column = node.result_type->createColumnConst(0, 1);
-            *predicate = std::move(node);
+
+            if (predicate->type != ActionType::INPUT)
+                *predicate = std::move(node);
+            else
+            {
+                /// Special case. We cannot replace input to constant inplace.
+                /// Because we cannot affect inputs list for actions.
+                /// So we just add a new constant and update index.
+                const auto * new_predicate = &addNode(node);
+                for (auto & index_node : index)
+                    if (index_node == predicate)
+                        index_node = new_predicate;
+            }
         }
 
         removeUnusedActions(false);

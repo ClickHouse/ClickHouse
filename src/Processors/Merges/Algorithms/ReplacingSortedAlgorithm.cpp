@@ -93,6 +93,10 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         }
     }
 
+    /// If have enough rows, return block, because it prohibited to overflow requested number of rows.
+    if (merged_data.hasEnoughRows())
+        return Status(merged_data.pull());
+
     /// We will write the data for the last primary key.
     if (!selected_row.empty())
         insertRow();

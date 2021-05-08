@@ -17,9 +17,9 @@ class LibraryBridgeHelper : public IBridgeHelper
 public:
     static constexpr inline size_t DEFAULT_PORT = 9012;
 
-    LibraryBridgeHelper(const Context & context_, const Block & sample_block, const Field & dictionary_id_);
+    LibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_);
 
-    bool initLibrary(const std::string & library_path, const std::string library_settings, const std::string attributes_names);
+    bool initLibrary(const std::string & library_path, std::string library_settings, std::string attributes_names);
 
     bool cloneLibrary(const Field & other_dictionary_id);
 
@@ -31,7 +31,7 @@ public:
 
     BlockInputStreamPtr loadAll();
 
-    BlockInputStreamPtr loadIds(const std::string ids_string);
+    BlockInputStreamPtr loadIds(std::string ids_string);
 
     BlockInputStreamPtr loadKeys(const Block & requested_block);
 
@@ -43,23 +43,21 @@ public:
 protected:
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override;
 
-    const String serviceAlias() const override { return "clickhouse-library-bridge"; }
+    String serviceAlias() const override { return "clickhouse-library-bridge"; }
 
-    const String serviceFileName() const override { return serviceAlias(); }
+    String serviceFileName() const override { return serviceAlias(); }
 
     size_t getDefaultPort() const override { return DEFAULT_PORT; }
 
     bool startBridgeManually() const override { return false; }
 
-    const String configPrefix() const override { return "library_bridge"; }
-
-    const Context & getContext() const override { return context; }
+    String configPrefix() const override { return "library_bridge"; }
 
     const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
     Poco::Logger * getLog() const override { return log; }
 
-    const Poco::Timespan & getHTTPTimeout() const override { return http_timeout; }
+    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
     Poco::URI createBaseURI() const override;
 
@@ -76,7 +74,6 @@ private:
     Poco::URI createRequestURI(const String & method) const;
 
     Poco::Logger * log;
-    const Context & context;
     const Block sample_block;
     const Poco::Util::AbstractConfiguration & config;
     const Poco::Timespan http_timeout;
@@ -85,4 +82,5 @@ private:
     std::string bridge_host;
     size_t bridge_port;
 };
+
 }
