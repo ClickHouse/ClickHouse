@@ -293,7 +293,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , pool(std::move(pool_))
     , disk(disk_)
     , relative_path(relative_path_)
-    , path(disk->getPath() + relative_path + '/')
+    , path(fs::path(disk->getPath()) / relative_path / "")
     , should_batch_inserts(storage.getContext()->getSettingsRef().distributed_directory_monitor_batch_inserts)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
     , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
@@ -1023,7 +1023,7 @@ void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_rela
     {
         std::lock_guard status_lock(status_mutex);
         relative_path = new_relative_path;
-        path = disk->getPath() + relative_path + '/';
+        path = fs::path(disk->getPath()) / relative_path / "";
     }
     current_batch_file_path = path + "current_batch.txt";
 

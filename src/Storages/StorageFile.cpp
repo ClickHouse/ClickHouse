@@ -99,7 +99,7 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                Strings result_part = listFilesWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
+                Strings result_part = listFilesWithRegexpMatching(fs::path(full_path) / "", suffix_with_globs.substr(next_slash));
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -200,7 +200,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     if (args.format_name == "Distributed")
         throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    String table_dir_path = base_path + relative_table_dir_path + "/";
+    String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
     paths = {getTablePath(table_dir_path, format_name)};
 }

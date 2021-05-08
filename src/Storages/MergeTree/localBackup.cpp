@@ -29,7 +29,7 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
     for (auto it = disk->iterateDirectory(source_path); it->isValid(); it->next())
     {
         auto source = it->path();
-        auto destination = destination_path + "/" + it->name();
+        auto destination = fs::path(destination_path) / it->name();
 
         if (!disk->isDirectory(source))
         {

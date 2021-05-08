@@ -133,7 +133,7 @@ using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
 static std::string toString(const RelativeSize & x)
 {
-    return ASTSampleRatio::toString(x.numerator()) + "/" + ASTSampleRatio::toString(x.denominator());
+    return fs::path(ASTSampleRatio::toString(x.numerator())) / ASTSampleRatio::toString(x.denominator());
 }
 
 /// Converts sample size to an approximate number of rows (ex. `SAMPLE 1000000`) to relative value (ex. `SAMPLE 0.1`).
