@@ -241,7 +241,7 @@ Pipe StorageMerge::read(
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("optimize_move_to_prewhere", false);
+    modified_context->setSetting("optimize_move_to_prewhere", Field{false});
 
     /// What will be result structure depending on query processed stage in source tables?
     Block header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
