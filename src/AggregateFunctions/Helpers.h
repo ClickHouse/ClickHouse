@@ -110,6 +110,7 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
     if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data<UInt64>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt128) return new AggregateFunctionTemplate<UInt128, Data<UInt128>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UInt256) return new AggregateFunctionTemplate<UInt256, Data<UInt256>>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -120,11 +121,11 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     if (f)
         return f;
 
-    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32 and UUID based on UInt128
+    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UInt128>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -219,7 +220,7 @@ static IAggregateFunction * createWithTwoNumericOrDateTypesSecond(const IDataTyp
     if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<FirstType, Int8>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<FirstType, Int16>(std::forward<TArgs>(args)...);
 
-    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32 and UUID based on UInt128
+    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<FirstType, UInt16>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<FirstType, UInt32>(std::forward<TArgs>(args)...);
 
@@ -240,7 +241,7 @@ static IAggregateFunction * createWithTwoNumericOrDateTypes(const IDataType & fi
     if (which.idx == TypeIndex::Enum16)
         return createWithTwoNumericOrDateTypesSecond<Int16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
 
-    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32 and UUID based on UInt128
+    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
     if (which.idx == TypeIndex::Date)
         return createWithTwoNumericOrDateTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime)
