@@ -1505,7 +1505,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
 
             LOG_DEBUG(log, "Move directory to 'detached' {} -> {}", path, detached_path);
 
-            fs::rename(fs::path(metadata_path) / path, fs::path(metadata_path) / detached_path);
+            Poco::File(fs::path(metadata_path) / path).moveTo(fs::path(metadata_path) / detached_path);
         }
     }
 
