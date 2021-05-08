@@ -4,7 +4,6 @@
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -93,17 +92,6 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
             first = false;
             settings.out << action.toString() << '\n';
         }
-    }
-}
-
-void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Mode", totalsModeToString(totals_mode, auto_include_threshold));
-    if (actions_dag)
-    {
-        map.add("Filter column", filter_column_name);
-        auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
-        map.add("Expression", expression->toTree());
     }
 }
 

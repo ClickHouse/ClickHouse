@@ -12,7 +12,7 @@
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-#    include <Formats/MySQLBlockInputStream.h>
+
 
 namespace Poco
 {
@@ -34,9 +34,8 @@ public:
     MySQLDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        const Block & sample_block_,
-        const StreamSettings & settings_);
+        const std::string & config_prefix,
+        const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
     MySQLDictionarySource(const MySQLDictionarySource & other);
@@ -61,8 +60,6 @@ public:
     std::string toString() const override;
 
 private:
-    BlockInputStreamPtr loadFromQuery(const String & query);
-
     std::string getUpdateFieldAndDate();
 
     static std::string quoteForLike(const std::string s);
@@ -71,6 +68,9 @@ private:
 
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
+
+    /// A helper method for recovering from "Lost connection to MySQL server during query" errors
+    BlockInputStreamPtr retriedCreateMySqlBIStream(const std::string & query_str, const size_t max_tries);
 
     Poco::Logger * log;
 
@@ -82,13 +82,14 @@ private:
     const std::string update_field;
     const bool dont_check_update_time;
     Block sample_block;
-    mutable mysqlxx::PoolWithFailoverPtr pool;
+    mutable mysqlxx::PoolWithFailover pool;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     LocalDateTime last_modification;
     std::string invalidate_query;
     mutable std::string invalidate_query_response;
-    const StreamSettings settings;
+    const bool close_connection;
+    const size_t max_tries_for_mysql_block_input_stream;
 };
 
 }

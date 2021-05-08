@@ -1012,16 +1012,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-void ZooKeeper::executeGenericRequest(
-    const ZooKeeperRequestPtr & request,
-    ResponseCallback callback)
-{
-    RequestInfo request_info;
-    request_info.request = request;
-    request_info.callback = callback;
-
-    pushRequest(std::move(request_info));
-}
 
 void ZooKeeper::create(
     const String & path,

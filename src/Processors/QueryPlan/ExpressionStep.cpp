@@ -4,10 +4,6 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Interpreters/JoinSwitcher.h>
-
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -24,6 +20,22 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions)
         },
         {
             .preserves_number_of_rows = !actions->hasArrayJoin(),
+        }
+    };
+}
+
+static ITransformingStep::Traits getJoinTraits()
+{
+    return ITransformingStep::Traits
+    {
+        {
+            .preserves_distinct_columns = false,
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
+            .preserves_sorting = false,
+        },
+        {
+            .preserves_number_of_rows = false,
         }
     };
 }
@@ -96,10 +108,30 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     settings.out << '\n';
 }
 
-void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
+JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_)
+    : ITransformingStep(
+        input_stream_,
+        Transform::transformHeader(input_stream_.header, join_),
+        getJoinTraits())
+    , join(std::move(join_))
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
-    map.add("Expression", expression->toTree());
+}
+
+void JoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+{
+    /// In case joined subquery has totals, and we don't, add default chunk to totals.
+    bool add_default_totals = false;
+    if (!pipeline.hasTotals())
+    {
+        pipeline.addDefaultTotals();
+        add_default_totals = true;
+    }
+
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+    {
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+        return std::make_shared<Transform>(header, join, on_totals, add_default_totals);
+    });
 }
 
 }

@@ -224,7 +224,7 @@ assumeNotNull(x)
 **Returned values**
 
 -   The original value from the non-`Nullable` type, if it is not `NULL`.
--   Implementation specific result if the original value was `NULL`.
+-   The default value for the non-`Nullable` type if the original value was `NULL`.
 
 **Example**
 

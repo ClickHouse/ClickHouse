@@ -1,7 +1,6 @@
 import pytest
 import time
 import psycopg2
-from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -10,7 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=[
     'configs/config.xml',
     'configs/dictionaries/postgres_dict.xml',
-    'configs/log_conf.xml'], with_postgres=True, with_postgres_cluster=True)
+    'configs/log_conf.xml'], with_postgres=True)
 
 postgres_dict_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
@@ -63,7 +62,7 @@ def started_cluster():
         print("postgres1 connected")
         create_postgres_db(postgres_conn, 'clickhouse')
 
-        postgres_conn = get_postgres_conn(port=5421)
+        postgres_conn = get_postgres_conn(port=5441)
         print("postgres2 connected")
         create_postgres_db(postgres_conn, 'clickhouse')
 
@@ -132,7 +131,7 @@ def test_invalidate_query(started_cluster):
 def test_dictionary_with_replicas(started_cluster):
     conn1 = get_postgres_conn(port=5432, database=True)
     cursor1 = conn1.cursor()
-    conn2 = get_postgres_conn(port=5421, database=True)
+    conn2 = get_postgres_conn(port=5441, database=True)
     cursor2 = conn2.cursor()
 
     create_postgres_table(cursor1, 'test1')
@@ -145,7 +144,7 @@ def test_dictionary_with_replicas(started_cluster):
     result = node1.query("SELECT * FROM `test`.`dict_table_test1` ORDER BY id")
 
     # priority 0 - non running port
-    assert node1.contains_in_log('PostgreSQLConnectionPool: Connection error*')
+    assert node1.contains_in_log('Unable to setup connection to postgres2:5433*')
 
     # priority 1 - postgres2, table contains rows with values 100-200
     # priority 2 - postgres1, table contains rows with values 0-100

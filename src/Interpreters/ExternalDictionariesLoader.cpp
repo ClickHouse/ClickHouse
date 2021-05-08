@@ -23,14 +23,15 @@ namespace ErrorCodes
 }
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
-ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context_)
+ExternalDictionariesLoader::ExternalDictionariesLoader(Context & global_context_)
     : ExternalLoader("external dictionary", &Poco::Logger::get("ExternalDictionariesLoader"))
-    , WithContext(global_context_)
+    , global_context(global_context_)
 {
     setConfigSettings({"dictionary", "name", "database", "uuid"});
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
 }
+
 
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
@@ -39,31 +40,31 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.
     bool dictionary_from_database = !repository_name.empty();
-    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), dictionary_from_database);
+    return DictionaryFactory::instance().create(name, config, key_in_config, global_context, dictionary_from_database);
 }
 
-ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
+ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, const Context & context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, context.getCurrentDatabase());
     return std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 }
 
-ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
+ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, const Context & context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, context.getCurrentDatabase());
     return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 }
 
 
-void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
+void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, const Context & context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, context.getCurrentDatabase());
     loadOrReload(resolved_dictionary_name);
 }
 
-DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
+DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, const Context & query_context) const
 {
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context.getCurrentDatabase());
 
     auto load_result = getLoadResult(resolved_name);
     if (!load_result.config)
@@ -109,7 +110,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     std::string maybe_database_name = name.substr(0, pos);
     std::string maybe_table_name = name.substr(pos + 1);
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, getContext());
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, global_context);
     if (!db)
         return name;
     assert(table);

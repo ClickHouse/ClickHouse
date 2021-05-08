@@ -2,7 +2,6 @@
 #include <Processors/OffsetTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -40,11 +39,6 @@ void OffsetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPip
 void OffsetStep::describeActions(FormatSettings & settings) const
 {
     settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
-}
-
-void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Offset", offset);
 }
 
 }

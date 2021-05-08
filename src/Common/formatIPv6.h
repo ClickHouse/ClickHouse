@@ -85,19 +85,19 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
             return clear_dst();
 
     unsigned char tmp[IPV6_BINARY_LENGTH]{};
-    unsigned char * tp = tmp;
-    unsigned char * endp = tp + IPV6_BINARY_LENGTH;
-    const char * curtok = src;
-    bool saw_xdigit = false;
+    auto * tp = tmp;
+    auto * endp = tp + IPV6_BINARY_LENGTH;
+    const auto * curtok = src;
+    auto saw_xdigit = false;
     UInt32 val{};
     unsigned char * colonp = nullptr;
 
     /// Assuming zero-terminated string.
-    while (char ch = *src++)
+    while (const auto ch = *src++)
     {
-        UInt8 num = unhex(ch);
+        const auto num = unhex(ch);
 
-        if (num != 0xFF)
+        if (num != u8'\xff')
         {
             val <<= 4;
             val |= num;

@@ -121,7 +121,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         is_case_insensitive = true;
     }
 
-    ContextPtr query_context;
+    const Context * query_context = nullptr;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 

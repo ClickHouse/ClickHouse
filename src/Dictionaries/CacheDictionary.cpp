@@ -70,7 +70,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
+        throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -133,7 +133,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
 template <DictionaryKeyType dictionary_key_type>
 Columns CacheDictionary<dictionary_key_type>::getColumns(
     const Strings & attribute_names,
-    const DataTypes & result_types,
+    const DataTypes &,
     const Columns & key_columns,
     const DataTypes & key_types,
     const Columns & default_values_columns) const
@@ -159,7 +159,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     auto keys = extractor.extractAllKeys();
 
-    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, default_values_columns);
+    DictionaryStorageFetchRequest request(dict_struct, attribute_names, default_values_columns);
 
     FetchResult result_of_fetch_from_storage;
 
@@ -277,7 +277,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     const auto keys = extractor.extractAllKeys();
 
     /// We make empty request just to fetch if keys exists
-    DictionaryStorageFetchRequest request(dict_struct, {}, {}, {});
+    DictionaryStorageFetchRequest request(dict_struct, {}, {});
 
     FetchResult result_of_fetch_from_storage;
 
@@ -520,6 +520,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     */
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
 
+    size_t found_keys_size = 0;
+
     Arena * complex_key_arena = update_unit_ptr->complex_keys_arena_holder.getComplexKeyArena();
     DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, complex_key_arena);
     auto requested_keys = requested_keys_extractor.extractAllKeys();
@@ -608,8 +610,9 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                     auto fetched_key_from_source = keys_extracted_from_block[i];
 
                     not_found_keys.erase(fetched_key_from_source);
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
+                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_size;
                     found_keys_in_source.emplace_back(fetched_key_from_source);
+                    ++found_keys_size;
                 }
             }
 
@@ -663,8 +666,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             }
         }
 
-        /// The underlying source can have duplicates, so count only unique keys this formula is used.
-        size_t found_keys_size = requested_keys_size - not_found_keys.size();
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, requested_keys_size - found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheRequests);

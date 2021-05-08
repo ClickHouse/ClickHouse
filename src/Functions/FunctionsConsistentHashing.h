@@ -6,7 +6,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -24,7 +23,7 @@ class FunctionConsistentHashImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionConsistentHashImpl<Impl>>();
     }

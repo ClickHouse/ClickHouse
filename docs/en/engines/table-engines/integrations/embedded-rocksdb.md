@@ -1,5 +1,5 @@
 ---
-toc_priority: 9
+toc_priority: 6
 toc_title: EmbeddedRocksDB
 ---
 

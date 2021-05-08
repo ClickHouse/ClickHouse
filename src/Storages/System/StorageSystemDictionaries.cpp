@@ -57,16 +57,12 @@ NamesAndTypesList StorageSystemDictionaries::getVirtuals() const
     };
 }
 
-void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & /*query_info*/) const
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
-    const auto access = context->getAccess();
-    const bool check_access_for_dictionaries = access->isGranted(AccessType::SHOW_DICTIONARIES);
+    const auto access = context.getAccess();
+    const bool check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
 
-    const auto & external_dictionaries = context->getExternalDictionariesLoader();
-
-    if (!check_access_for_dictionaries)
-        return;
-
+    const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & load_result : external_dictionaries.getLoadResults())
     {
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionary>(load_result.object);
@@ -81,7 +77,8 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
             dict_id.table_name = load_result.name;
 
         String db_or_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
-        if (!access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
+        if (check_access_for_dictionaries
+            && !access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
             continue;
 
         size_t i = 0;

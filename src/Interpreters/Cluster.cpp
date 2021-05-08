@@ -103,14 +103,10 @@ Cluster::Address::Address(
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    compression = config.getBool(config_prefix + ".compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     is_local = isLocal(config.getInt(port_type, 0));
-
-    /// By default compression is disabled if address looks like localhost.
-    /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
-    compression = config.getBool(config_prefix + ".compression", !is_local)
-        ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 }
 
 
@@ -296,7 +292,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
     std::lock_guard lock(mutex);
 
-    /// If old config is set, remove deleted clusters from impl, otherwise just clear it.
+    /// If old congig is set, remove deleted clusters from impl, otherwise just clear it.
     if (old_config)
     {
         for (const auto & key : deleted_keys)
@@ -541,7 +537,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 }
 
 
-Poco::Timespan Cluster::saturate(Poco::Timespan v, Poco::Timespan limit)
+Poco::Timespan Cluster::saturate(const Poco::Timespan & v, const Poco::Timespan & limit)
 {
     if (limit.totalMicroseconds() == 0)
         return v;

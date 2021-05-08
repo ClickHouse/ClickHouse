@@ -28,13 +28,13 @@ namespace ErrorCodes
 }
 
 PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
-    postgres::ConnectionHolderPtr connection_holder_,
+    PostgreSQLConnectionHolderPtr connection_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
     : query_str(query_str_)
     , max_block_size(max_block_size_)
-    , connection_holder(std::move(connection_holder_))
+    , connection(std::move(connection_))
 {
     description.init(sample_block);
     for (const auto idx : ext::range(0, description.sample_block.columns()))
@@ -48,7 +48,7 @@ PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
 
 void PostgreSQLBlockInputStream::readPrefix()
 {
-    tx = std::make_unique<pqxx::read_transaction>(connection_holder->get());
+    tx = std::make_unique<pqxx::read_transaction>(connection->conn());
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 
@@ -120,15 +120,8 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
     switch (type)
     {
         case ValueType::vtUInt8:
-        {
-            if (value == "t")
-                assert_cast<ColumnUInt8 &>(column).insertValue(1);
-            else if (value == "f")
-                assert_cast<ColumnUInt8 &>(column).insertValue(0);
-            else
-                assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
+            assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
             break;
-        }
         case ValueType::vtUInt16:
             assert_cast<ColumnUInt16 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
             break;

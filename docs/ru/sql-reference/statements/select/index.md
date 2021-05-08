@@ -45,7 +45,6 @@ SELECT [DISTINCT] expr_list
 -   [Секция SELECT](#select-clause)
 -   [Секция DISTINCT](distinct.md)
 -   [Секция LIMIT](limit.md)
-    [Секция OFFSET](offset.md)
 -   [Секция UNION ALL](union.md)
 -   [Секция INTO OUTFILE](into-outfile.md)
 -   [Секция FORMAT](format.md)

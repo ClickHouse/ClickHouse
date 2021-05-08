@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-You have to provide the following information whenever possible.
+(you don't have to strictly follow this form)
 
 **Describe the bug**
 A clear and concise description of what works not as it is supposed to.

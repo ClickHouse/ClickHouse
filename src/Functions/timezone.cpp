@@ -16,7 +16,7 @@ class FunctionTimezone : public IFunction
 {
 public:
     static constexpr auto name = "timezone";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionTimezone>();
     }

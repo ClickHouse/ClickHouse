@@ -47,7 +47,6 @@ SRCS(
     FileChecker.cpp
     IPv6ToBinary.cpp
     IntervalKind.cpp
-    JSONBuilder.cpp
     Macros.cpp
     MemoryStatisticsOS.cpp
     MemoryTracker.cpp

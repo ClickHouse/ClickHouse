@@ -3,7 +3,7 @@
 #include <Storages/StorageXDBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <Common/XDBCBridgeHelper.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -18,18 +18,18 @@ namespace DB
 class ITableFunctionXDBC : public ITableFunction
 {
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
-    virtual BridgeHelperPtr createBridgeHelper(ContextPtr context,
-        Poco::Timespan http_timeout_,
+    virtual BridgeHelperPtr createBridgeHelper(Context & context,
+        const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const = 0;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(const Context & context) const override;
 
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    void startBridgeIfNot(ContextPtr context) const;
+    void startBridgeIfNot(const Context & context) const;
 
     String connection_string;
     String schema_name;
@@ -47,8 +47,8 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(ContextPtr context,
-        Poco::Timespan http_timeout_,
+    BridgeHelperPtr createBridgeHelper(Context & context,
+        const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const override
     {
         return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_);
@@ -67,8 +67,8 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(ContextPtr context,
-        Poco::Timespan http_timeout_,
+    BridgeHelperPtr createBridgeHelper(Context & context,
+        const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const override
     {
         return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_);

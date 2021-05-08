@@ -3,7 +3,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
-#include <Interpreters/Context_fwd.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -28,14 +27,6 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class CompiledExpressionCache;
-
-namespace JSONBuilder
-{
-    class JSONMap;
-
-    class IItem;
-    using ItemPtr = std::unique_ptr<IItem>;
-}
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -63,8 +54,6 @@ public:
         FUNCTION,
     };
 
-    static const char * typeToString(ActionType type);
-
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
@@ -91,8 +80,6 @@ public:
         /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
         /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
         bool allow_constant_folding = true;
-
-        void toTree(JSONBuilder::JSONMap & map) const;
     };
 
     /// NOTE: std::list is an implementation detail.
