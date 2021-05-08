@@ -1,4 +1,4 @@
-SELECT count()
+SELECT uniqCombined(number)
 FROM numbers(10000)
 GROUP BY number
     WITH TOTALS
