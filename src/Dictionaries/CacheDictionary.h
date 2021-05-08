@@ -85,7 +85,10 @@ public:
 
     double getHitRate() const override
     {
-        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / queries;
     }
 
     bool supportUpdates() const override { return false; }
