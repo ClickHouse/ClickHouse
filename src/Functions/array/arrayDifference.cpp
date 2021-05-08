@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 /** arrayDifference() - returns an array with the difference between all pairs of neighboring elements.
@@ -63,7 +64,23 @@ struct ArrayDifferenceImpl
             else
             {
                 Element curr = src[pos];
-                dst[pos] = curr - prev;
+
+                if constexpr (IsDecimalNumber<Element>)
+                {
+                    using ResultNativeType = typename Result::NativeType;
+
+                    ResultNativeType result_value;
+                    bool overflow = common::subOverflow(static_cast<ResultNativeType>(curr.value), static_cast<ResultNativeType>(prev), result_value);
+                    if (overflow)
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+
+                    dst[pos] = Result(result_value);
+                }
+                else
+                {
+                    dst[pos] = curr - prev;
+                }
+
                 prev = curr;
             }
         }
