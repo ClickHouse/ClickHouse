@@ -69,6 +69,7 @@ std::pair<String, uint64_t> MemoryInfoOS::readField()
     
     readStringUntilWhitespaceAndSkipWhitespaceIfAny(key, meminfo_in);
     readIntTextAndSkipWhitespaceIfAny(val, meminfo_in);
+    skipToNextLineOrEOF(meminfo_in);
 
     // Delete the read ":" from the end
     key.pop_back();
