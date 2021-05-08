@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Core/Field.h>
@@ -13,31 +12,32 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
 
+
 namespace DB
 {
 
 enum class AttributeUnderlyingType
 {
-    utUInt8,
-    utUInt16,
-    utUInt32,
-    utUInt64,
-    utUInt128,
-    utUInt256,
-    utInt8,
-    utInt16,
-    utInt32,
-    utInt64,
-    utInt128,
-    utInt256,
-    utFloat32,
-    utFloat64,
-    utDecimal32,
-    utDecimal64,
-    utDecimal128,
-    utDecimal256,
-    utUUID,
-    utString
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt128,
+    UInt256,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Int128,
+    Int256,
+    Float32,
+    Float64,
+    Decimal32,
+    Decimal64,
+    Decimal128,
+    Decimal256,
+    UUID,
+    String
 };
 
 
@@ -85,64 +85,64 @@ void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
 {
     switch (type)
     {
-        case AttributeUnderlyingType::utUInt8:
+        case AttributeUnderlyingType::UInt8:
             func(DictionaryAttributeType<UInt8>());
             break;
-        case AttributeUnderlyingType::utUInt16:
+        case AttributeUnderlyingType::UInt16:
             func(DictionaryAttributeType<UInt16>());
             break;
-        case AttributeUnderlyingType::utUInt32:
+        case AttributeUnderlyingType::UInt32:
             func(DictionaryAttributeType<UInt32>());
             break;
-        case AttributeUnderlyingType::utUInt64:
+        case AttributeUnderlyingType::UInt64:
             func(DictionaryAttributeType<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt128:
+        case AttributeUnderlyingType::UInt128:
             func(DictionaryAttributeType<UInt128>());
             break;
-        case AttributeUnderlyingType::utUInt256:
+        case AttributeUnderlyingType::UInt256:
             func(DictionaryAttributeType<UInt128>());
             break;
-        case AttributeUnderlyingType::utInt8:
+        case AttributeUnderlyingType::Int8:
             func(DictionaryAttributeType<Int8>());
             break;
-        case AttributeUnderlyingType::utInt16:
+        case AttributeUnderlyingType::Int16:
             func(DictionaryAttributeType<Int16>());
             break;
-        case AttributeUnderlyingType::utInt32:
+        case AttributeUnderlyingType::Int32:
             func(DictionaryAttributeType<Int32>());
             break;
-        case AttributeUnderlyingType::utInt64:
+        case AttributeUnderlyingType::Int64:
             func(DictionaryAttributeType<Int64>());
             break;
-        case AttributeUnderlyingType::utInt128:
+        case AttributeUnderlyingType::Int128:
             func(DictionaryAttributeType<Int64>());
             break;
-        case AttributeUnderlyingType::utInt256:
+        case AttributeUnderlyingType::Int256:
             func(DictionaryAttributeType<Int64>());
             break;
-        case AttributeUnderlyingType::utFloat32:
+        case AttributeUnderlyingType::Float32:
             func(DictionaryAttributeType<Float32>());
             break;
-        case AttributeUnderlyingType::utFloat64:
+        case AttributeUnderlyingType::Float64:
             func(DictionaryAttributeType<Float64>());
             break;
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::String:
             func(DictionaryAttributeType<String>());
             break;
-        case AttributeUnderlyingType::utDecimal32:
+        case AttributeUnderlyingType::Decimal32:
             func(DictionaryAttributeType<Decimal32>());
             break;
-        case AttributeUnderlyingType::utDecimal64:
+        case AttributeUnderlyingType::Decimal64:
             func(DictionaryAttributeType<Decimal64>());
             break;
-        case AttributeUnderlyingType::utDecimal128:
+        case AttributeUnderlyingType::Decimal128:
             func(DictionaryAttributeType<Decimal128>());
             break;
-        case AttributeUnderlyingType::utDecimal256:
+        case AttributeUnderlyingType::Decimal256:
             func(DictionaryAttributeType<Decimal256>());
             break;
-        case AttributeUnderlyingType::utUUID:
+        case AttributeUnderlyingType::UUID:
             func(DictionaryAttributeType<UUID>());
             break;
     }

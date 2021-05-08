@@ -186,25 +186,25 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
         {
             switch (attr.second.underlying_type)
             {
-                case AttributeUnderlyingType::utUInt8:
-                case AttributeUnderlyingType::utUInt16:
-                case AttributeUnderlyingType::utUInt32:
-                case AttributeUnderlyingType::utUInt64:
-                case AttributeUnderlyingType::utInt8:
-                case AttributeUnderlyingType::utInt16:
-                case AttributeUnderlyingType::utInt32:
-                case AttributeUnderlyingType::utInt64:
+                case AttributeUnderlyingType::UInt8:
+                case AttributeUnderlyingType::UInt16:
+                case AttributeUnderlyingType::UInt32:
+                case AttributeUnderlyingType::UInt64:
+                case AttributeUnderlyingType::Int8:
+                case AttributeUnderlyingType::Int16:
+                case AttributeUnderlyingType::Int32:
+                case AttributeUnderlyingType::Int64:
                 {
                     key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
                     break;
                 }
-                case AttributeUnderlyingType::utFloat32:
-                case AttributeUnderlyingType::utFloat64:
+                case AttributeUnderlyingType::Float32:
+                case AttributeUnderlyingType::Float64:
                 {
                     key.add(attr.second.name, key_columns[attr.first]->getFloat64(row_idx));
                     break;
                 }
-                case AttributeUnderlyingType::utString:
+                case AttributeUnderlyingType::String:
                 {
                     String loaded_str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
