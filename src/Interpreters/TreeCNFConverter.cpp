@@ -23,7 +23,7 @@ void splitMultiLogic(ASTPtr & node)
 
         if (func->arguments->children.size() > 2)
         {
-            ASTPtr res = func->arguments->children.front()->clone();
+            ASTPtr res = func->arguments->children[0]->clone();
             for (size_t i = 1; i < func->arguments->children.size(); ++i)
             {
                 res = makeASTFunction(func->name, res, func->arguments->children[i]->clone());
@@ -32,6 +32,7 @@ void splitMultiLogic(ASTPtr & node)
         }
 
         auto * new_func = node->as<ASTFunction>();
+        Poco::Logger::get("new_func_children").information(std::to_string(new_func->arguments->children.size()));
         for (auto & child : new_func->arguments->children)
             splitMultiLogic(child);
     }
@@ -121,7 +122,11 @@ void pushOr(ASTPtr & query)
 
         const auto * and_func = or_func->arguments->children[and_node_id]->as<ASTFunction>();
         if (and_func->arguments->children.size() != 2)
+        {
+            Poco::Logger::get("$$$$$").information(and_func->name);
+            Poco::Logger::get("CHILDREN: ").information(std::to_string(and_func->arguments->children.size()));
             throw Exception("Bad AND function", ErrorCodes::LOGICAL_ERROR);
+        }
 
         auto a = or_func->arguments->children[other_node_id];
         auto b = and_func->arguments->children[0];

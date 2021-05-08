@@ -38,8 +38,7 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
 {
     if (atomic_formulas.empty())
         return;
-    static const std::unordered_map<std::string, Edge::Type> relation_to_enum =
-    {
+    static const std::unordered_map<std::string, Edge::Type> relation_to_enum = {
         {"equals", Edge::Type::EQUAL},
         {"less", Edge::Type::LESS},
         {"lessOrEquals", Edge::Type::LESS_OR_EQUAL},
@@ -51,16 +50,14 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
         const auto atom = ComparisonGraph::normalizeAtom(atom_raw);
 
         const auto bad_term = std::numeric_limits<std::size_t>::max();
-        auto get_index = [](const ASTPtr & ast, Graph & asts_graph) -> std::size_t
-        {
+        auto get_index = [](const ASTPtr & ast, Graph & asts_graph) -> std::size_t {
             const auto it = asts_graph.ast_hash_to_component.find(ast->getTreeHash());
             if (it != std::end(asts_graph.ast_hash_to_component))
             {
                 if (!std::any_of(
                         std::cbegin(asts_graph.vertices[it->second].asts),
                         std::cend(asts_graph.vertices[it->second].asts),
-                        [ast](const ASTPtr & constraint_ast)
-                        {
+                        [ast](const ASTPtr & constraint_ast) {
                             return constraint_ast->getTreeHash() == ast->getTreeHash()
                                 && constraint_ast->getColumnName() == ast->getColumnName();
                         }))
@@ -80,7 +77,7 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
         };
 
         const auto * func = atom->as<ASTFunction>();
-        if (func)
+        if (func && func->arguments->children.size() == 2)
         {
             const size_t index_left = get_index(func->arguments->children[0], g);
             const size_t index_right = get_index(func->arguments->children[1], g);
@@ -98,8 +95,7 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
                 }
                 else if (func->name == "notEquals")
                 {
-                    not_equal.emplace(index_left, index_right);
-                    not_equal.emplace(index_right, index_left);
+                    /// Do nothing.
                 }
             }
         }
@@ -108,8 +104,19 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
     graph = ComparisonGraph::BuildGraphFromAstsGraph(g);
     dists = ComparisonGraph::BuildDistsFromGraph(graph);
     std::tie(ast_const_lower_bound, ast_const_upper_bound) = buildConstBounds();
-}
 
+    for (const auto & atom_raw : atomic_formulas)
+    {
+        const auto atom = ComparisonGraph::normalizeAtom(atom_raw);
+        if (const auto * func = atom->as<ASTFunction>(); func)
+        {
+            auto index_left = graph.ast_hash_to_component.at(func->arguments->children[0]->getTreeHash());
+            auto index_right = graph.ast_hash_to_component.at(func->arguments->children[1]->getTreeHash());
+            not_equal.emplace(index_left, index_right);
+            not_equal.emplace(index_right, index_left);
+        }
+    }
+}
 /// returns {is less, is strict}
 /// {true, true} = <
 /// {true, false} = =<
