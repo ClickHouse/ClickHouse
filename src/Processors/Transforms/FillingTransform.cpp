@@ -51,6 +51,11 @@ FillingTransform::FillingTransform(
         else
             return false;
 
+        if (descr.fill_from.getType() > max_type
+            || descr.fill_to.getType() > max_type
+            || descr.fill_step.getType() > max_type)
+            return false;
+
         descr.fill_from = convertFieldToType(descr.fill_from, *to_type);
         descr.fill_to = convertFieldToType(descr.fill_to, *to_type);
         descr.fill_step = convertFieldToType(descr.fill_step, *to_type);
