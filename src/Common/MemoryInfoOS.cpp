@@ -1,6 +1,8 @@
 #if defined(OS_LINUX)
 
 #include <string>
+#include <unordered_map>
+#include <utility>
 
 #include "MemoryInfoOS.h"
 
@@ -16,9 +18,9 @@ static constexpr auto meminfo_filename = "/proc/meminfo";
 
 static constexpr size_t READ_BUFFER_BUF_SIZE = (64 << 10);
 
-void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf) 
+void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
 {
-    readString(s, buf);
+    readStringUntilWhitespace(s, buf);
     skipWhitespaceIfAny(buf);
 }
 
@@ -42,35 +44,36 @@ MemoryInfoOS::Data MemoryInfoOS::get()
     MemoryInfoOS::Data data;
     String field_name;
 
-    assert(readField(data.total, String("MemTotal")));
-    assert(readField(data.free, String("MemFree")));
-    skipField();
-    assert(readField(data.buffers, String("Buffers")));
-    assert(readField(data.cached, String("Cached")));
+    std::unordered_map<String, uint64_t> meminfo;
+
+    while (!meminfo_in.eof())
+        meminfo.insert(readField());
+    
+    data.total       = meminfo["MemTotal"];
+    data.free        = meminfo["MemFree"];
+    data.buffers     = meminfo["Buffers"];
+    data.cached      = meminfo["Cached"];
+    data.swap_total  = meminfo["SwapTotal"];
+    data.swap_cached = meminfo["SwapCached"];
+    data.swap_free   = meminfo["SwapFree"];
 
     data.free_and_cached = data.free + data.cached;
-
-    assert(readField(data.swap_cached, String("SwapCached")));
-    
-    while (!readField(data.swap_total, String("SwapTotal"))) {}
-
-    assert(readField(data.swap_free, String("SwapFree")));
 
     return data;
 }
 
-bool MemoryInfoOS::readField(unsigned long & field_val, const String & field_name_target)
+std::pair<String, uint64_t> MemoryInfoOS::readField()
 {
-    String field_name;
+    String key;
+    uint64_t val;
     
-    readStringAndSkipWhitespaceIfAny(field_name, meminfo_in);
-    readIntTextAndSkipWhitespaceIfAny(field_val, meminfo_in);
-    return (field_name == (field_name_target + String(":")));
-}
+    readStringUntilWhitespaceAndSkipWhitespaceIfAny(key, meminfo_in);
+    readIntTextAndSkipWhitespaceIfAny(val, meminfo_in);
 
-void MemoryInfoOS::skipField() 
-{
-    skipToNextLineOrEOF(meminfo_in);
+    // Delete the read ":" from the end
+    key.pop_back();
+
+    return std::make_pair(key, val);
 }
 
 }
