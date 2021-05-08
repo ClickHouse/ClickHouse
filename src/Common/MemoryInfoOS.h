@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 #include <Core/Types.h>
 
@@ -40,9 +41,7 @@ public:
 private:
     ReadBufferFromFile meminfo_in;
     
-    bool readField(uint64_t & field_val, const String & field_name_target);
-
-    void skipField();
+    std::pair<String, uint64_t> readField();
 };
 
 }
