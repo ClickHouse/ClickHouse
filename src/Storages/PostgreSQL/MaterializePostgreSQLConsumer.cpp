@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     ContextPtr context_,
-    postgres::ConnectionPtr connection_,
+    postgres::Connection && connection_,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
     const std::string & metadata_path,
@@ -88,7 +88,7 @@ void MaterializePostgreSQLConsumer::readMetadata()
 
         if (!metadata.lsn().empty())
         {
-            auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+            auto tx = std::make_shared<pqxx::nontransaction>(connection.getRef());
             final_lsn = metadata.lsn();
             final_lsn = advanceLSN(tx);
             tx->commit();
@@ -600,7 +600,7 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
 
     try
     {
-        tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        tx = std::make_shared<pqxx::nontransaction>(connection.getRef());
 
         /// Read up to max_block_size rows changes (upto_n_changes parameter). It might return larger number as the limit
         /// is checked only after each transaction block.

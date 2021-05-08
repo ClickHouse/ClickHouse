@@ -42,7 +42,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , allow_automatic_update(allow_automatic_update_)
     , is_materialize_postgresql_database(is_materialize_postgresql_database_)
     , tables_list(tables_list_)
-    , connection(std::make_shared<postgres::Connection>(connection_info_))
+    , connection(connection_info_)
 {
     replication_slot = fmt::format("{}_ch_replication_slot", current_database_name);
     publication_name = fmt::format("{}_ch_publication", current_database_name);
@@ -69,7 +69,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     try
     {
         /// Will throw pqxx::broken_connection if no connection at the moment
-        connection->get();
+        connection.isValid();
         startSynchronization(false);
     }
     catch (const pqxx::broken_connection & pqxx_error)
@@ -95,12 +95,12 @@ void PostgreSQLReplicationHandler::shutdown()
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     {
-        postgres::Transaction<pqxx::work> tx(connection->getRef());
+        postgres::Transaction<pqxx::work> tx(connection.getRef());
         createPublicationIfNeeded(tx.getRef());
     }
 
-    auto replication_connection = postgres::createReplicationConnection(connection_info);
-    postgres::Transaction<pqxx::nontransaction> tx(replication_connection->getRef());
+    postgres::Connection replication_connection(connection_info, /* replication */true);
+    postgres::Transaction<pqxx::nontransaction> tx(replication_connection.getRef());
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
     std::unordered_map<String, StoragePtr> nested_storages;
@@ -181,7 +181,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
     consumer = std::make_shared<MaterializePostgreSQLConsumer>(
             context,
-            connection,
+            std::move(connection),
             replication_slot,
             publication_name,
             metadata_path,
@@ -200,7 +200,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name, const String & table_name,
                                                           StorageMaterializePostgreSQL * materialized_storage)
 {
-    auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection->getRef());
+    auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
 
     std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
     tx->exec(query_str);
@@ -373,8 +373,8 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     if (Poco::File(metadata_path).exists())
         Poco::File(metadata_path).remove();
 
-    connection = std::make_shared<postgres::Connection>(connection_info);
-    postgres::Transaction<pqxx::nontransaction> tx(connection->getRef());
+    postgres::Connection connection_(connection_info);
+    postgres::Transaction<pqxx::nontransaction> tx(connection_.getRef());
 
     dropPublication(tx.getRef());
     if (isReplicationSlotExist(tx.getRef(), replication_slot))
@@ -434,8 +434,8 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
     /// This is only allowed for MaterializePostgreSQL database engine.
     try
     {
-        auto replication_connection = postgres::createReplicationConnection(connection_info);
-        postgres::Transaction<pqxx::nontransaction> tx(replication_connection->getRef());
+        postgres::Connection replication_connection(connection_info, /* replication */true);
+        postgres::Transaction<pqxx::nontransaction> tx(replication_connection.getRef());
 
         std::string snapshot_name, start_lsn;
         createReplicationSlot(tx.getRef(), start_lsn, snapshot_name, true);

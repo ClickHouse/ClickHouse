@@ -13,7 +13,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/quoteString.h>
-#include <pqxx/pqxx>
+#include <Core/PostgreSQL/Utils.h>
 
 
 namespace DB
@@ -40,7 +40,7 @@ std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx)
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable = false, uint16_t dimensions = 0)
+static DataTypePtr convertPostgreSQLDataType(String & type, bool is_nullable = false, uint16_t dimensions = 0)
 {
     DataTypePtr res;
 

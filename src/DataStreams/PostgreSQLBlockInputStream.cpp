@@ -25,13 +25,13 @@ namespace DB
 
 template<typename T>
 PostgreSQLBlockInputStream<T>::PostgreSQLBlockInputStream(
-    postgres::ConnectionHolderPtr connection_,
+    postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
     : query_str(query_str_)
     , max_block_size(max_block_size_)
-    , connection(std::move(connection_))
+    , connection_holder(std::move(connection_holder_))
 {
     init(sample_block);
 }
@@ -70,7 +70,7 @@ void PostgreSQLBlockInputStream<T>::init(const Block & sample_block)
 template<typename T>
 void PostgreSQLBlockInputStream<T>::readPrefix()
 {
-    tx = std::make_shared<T>(connection->conn());
+    tx = std::make_shared<T>(connection_holder->get());
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 

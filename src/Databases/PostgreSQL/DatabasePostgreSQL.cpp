@@ -58,8 +58,8 @@ bool DatabasePostgreSQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    auto connection = pool->get();
-    auto tables_list = fetchPostgreSQLTablesList(connection->conn());
+    auto connection_holder = pool->get();
+    auto tables_list = fetchPostgreSQLTablesList(connection_holder->get());
 
     for (const auto & table_name : tables_list)
         if (!detached_or_dropped.count(table_name))
@@ -74,8 +74,8 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     std::lock_guard<std::mutex> lock(mutex);
 
     Tables tables;
-    auto connection = pool->get();
-    auto table_names = fetchPostgreSQLTablesList(connection->conn());
+    auto connection_holder = pool->get();
+    auto table_names = fetchPostgreSQLTablesList(connection_holder->get());
 
     for (const auto & table_name : table_names)
         if (!detached_or_dropped.count(table_name))
@@ -94,8 +94,8 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
     }
 
-    auto connection = pool->get();
-    pqxx::nontransaction tx(connection->conn());
+    auto connection_holder = pool->get();
+    pqxx::nontransaction tx(connection_holder->get());
 
     try
     {
@@ -150,14 +150,14 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto use_nulls = local_context->getSettingsRef().external_databases_use_nulls;
-        auto connection = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection->conn(), doubleQuoteString(table_name), use_nulls).columns;
+        auto connection_holder = pool->get();
+        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), doubleQuoteString(table_name), use_nulls).columns;
 
         if (!columns)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), *pool, table_name,
+                StorageID(database_name, table_name), pool, table_name,
                 ColumnsDescription{*columns}, ConstraintsDescription{}, local_context);
 
         if (cache_tables)
@@ -288,8 +288,8 @@ void DatabasePostgreSQL::loadStoredObjects(ContextPtr /* context */, bool, bool 
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard<std::mutex> lock{mutex};
-    auto connection = pool->get();
-    auto actual_tables = fetchPostgreSQLTablesList(connection->conn());
+    auto connection_holder = pool->get();
+    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get());
 
     if (cache_tables)
     {
