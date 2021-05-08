@@ -18,8 +18,12 @@ namespace ErrorCodes
 MergeTreeIndexMergedCondition::MergeTreeIndexMergedCondition(
     const SelectQueryInfo & query_,
     ContextPtr /*context_*/,
-    const size_t granularity_)
+    const size_t granularity_,
+    const NamesAndTypesList & source_columns_,
+    const bool use_smt_)
     : granularity(granularity_)
+    , source_columns(source_columns_)
+    , use_smt(use_smt_)
 {
     const auto & select = query_.query->as<ASTSelectQuery &>();
 
@@ -58,7 +62,6 @@ void MergeTreeIndexMergedCondition::addIndex(const MergeTreeIndexPtr & index)
     {
         if (group.size() == 1)
         {
-            hypotheses_data.push_back(group);
             CNFQuery::AtomicFormula atomic_formula = *group.begin();
             CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
             pushNotIn(atom);
@@ -69,9 +72,10 @@ void MergeTreeIndexMergedCondition::addIndex(const MergeTreeIndexPtr & index)
             if (func && relations.count(func->name))
                 compare_hypotheses_data.push_back(atom.ast);
         }
+        hypotheses_data.push_back(group);
     }
     index_to_compare_atomic_hypotheses.push_back(compare_hypotheses_data);
-    index_to_atomic_hypotheses.push_back(hypotheses_data);
+    index_to_hypotheses.push_back(hypotheses_data);
 }
 
 void MergeTreeIndexMergedCondition::addConstraints(const ConstraintsDescription & constraints_description)
@@ -83,6 +87,9 @@ void MergeTreeIndexMergedCondition::addConstraints(const ConstraintsDescription 
         pushNotIn(atom);
         atomic_constraints.push_back(atom.ast);
     }
+
+    for (const auto & formula : constraints_description.getConstraints())
+        all_constraints.push_back(formula->as<ASTConstraintDeclaration>()->expr->clone());
 }
 
 namespace
@@ -103,9 +110,18 @@ ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula 
 
 }
 
-/// Replaces < -> <=, > -> >= and assumes that all hypotheses are true then checks if path exists
 bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const
 {
+    if (!use_smt)
+        return alwaysUnknownOrTrueGraph();
+    else
+        return alwaysUnknownOrTrueSMT();
+}
+
+bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrueGraph() const
+{
+    /// Replaces < -> <=, > -> >= and assumes that all hypotheses are true then checks if path exists
+
     std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
     for (const auto & hypothesis : index_to_compare_atomic_hypotheses)
     {
@@ -141,15 +157,25 @@ bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const
                 {
                     const auto left = weak_graph->getComponentId(func->arguments->children[0]);
                     const auto right = weak_graph->getComponentId(func->arguments->children[1]);
-                    if (left && right && weak_graph->hasPath(left.value(), right.value()))
+                    if (!(left && right && weak_graph->hasPath(left.value(), right.value())))
                     {
-                        useless = false;
                         return;
                     }
                 }
+                else
+                {
+                    return;
+                }
             }
+
+            useless = false;
         });
     return useless;
+}
+
+bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrueSMT() const
+{
+    return true;
 }
 
 bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const
@@ -162,8 +188,51 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
             throw Exception("Only hypothesis index is supported here.", ErrorCodes::LOGICAL_ERROR);
         values.push_back(granule->met);
     }
-    const auto & graph = getGraph(values);
 
+    if (!use_smt)
+        return mayBeTrueOnGranuleUsingGraph(values);
+    else
+        return mayBeTrueOnGranuleUsingSMT(values);
+}
+
+std::unique_ptr<TreeSMTSolver> MergeTreeIndexMergedCondition::buildSolver(const std::vector<bool> & values) const
+{
+    Poco::Logger::get("MergeTreeIndexMergedCondition").information("New solver");
+    std::vector<ASTPtr> active_formulas(all_constraints);
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (values[i])
+        {
+            const auto hypotheses =
+                TreeCNFConverter::fromCNF(
+                    CNFQuery::AndGroup(
+                        std::begin(index_to_hypotheses[i]),
+                        std::end(index_to_hypotheses[i])));
+            active_formulas.push_back(hypotheses);
+        }
+    }
+    auto solver = std::make_unique<TreeSMTSolver>(TreeSMTSolver::STRICTNESS::FULL, source_columns);
+    for (const auto & ast : active_formulas)
+        solver->addConstraint(ast);
+    return solver;
+}
+
+TreeSMTSolver & MergeTreeIndexMergedCondition::getSolver(const std::vector<bool> & values) const
+{
+    if (!solverCache.contains(values))
+        solverCache[values] = buildSolver(values);
+    return *solverCache.at(values);
+}
+
+bool MergeTreeIndexMergedCondition::mayBeTrueOnGranuleUsingSMT(const std::vector<bool> & values) const
+{
+    auto & solver = getSolver(values);
+    return !solver.alwaysFalse(expression_ast);
+}
+
+bool MergeTreeIndexMergedCondition::mayBeTrueOnGranuleUsingGraph(const std::vector<bool> & values) const
+{
+    const auto & graph = getGraph(values);
     bool always_false = false;
     expression_cnf->iterateGroups(
         [&](const CNFQuery::OrGroup & or_group)
@@ -175,7 +244,6 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
             {
                 CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
                 pushNotIn(atom);
-                Poco::Logger::get("KEK").information(atom.ast->dumpTree());
                 const auto * func = atom.ast->as<ASTFunction>();
                 if (func && func->arguments->children.size() == 2)
                 {
@@ -189,7 +257,7 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
                 }
             }
             always_false = true;
-       });
+        });
     return !always_false;
 }
 

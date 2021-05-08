@@ -124,7 +124,7 @@ bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const
     return false;
 }
 
-bool checkIfAtomAlwaysFalseFullMatch(CNFQuery::AtomicFormula atom,  TreeSMTSolver & solver)
+bool checkIfAtomAlwaysFalseSMT(CNFQuery::AtomicFormula atom, TreeSMTSolver & solver)
 {
     atom.ast = atom.ast->clone();
     pushNotIn(atom);
@@ -196,7 +196,7 @@ void WhereConstraintsOptimizer::perform()
             .filterAlwaysFalseAtoms([&smt, this](const auto & atom)
             {
                 /// remove always false atoms from CNF
-                return !optimize_use_smt || !checkIfAtomAlwaysFalseFullMatch(atom, smt);
+                return !optimize_use_smt || !checkIfAtomAlwaysFalseSMT(atom, smt);
             })
             .filterAlwaysTrueGroups([&compare_graph, this](const auto & group)
             {

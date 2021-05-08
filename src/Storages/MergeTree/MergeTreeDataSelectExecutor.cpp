@@ -646,7 +646,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 merged_indices.emplace(
                     index_helper->getGranularity(),
                     std::make_shared<MergedDataSkippingIndexAndCondition>(
-                        std::make_shared<MergeTreeIndexMergedCondition>(query_info, context, index_helper->getGranularity())));
+                        std::make_shared<MergeTreeIndexMergedCondition>(
+                            query_info,
+                            context,
+                            index_helper->getGranularity(),
+                            metadata_snapshot->getColumns().getAll(),
+                            settings.optimize_using_smt)));
                 merged_indices.at(index_helper->getGranularity())->condition->addConstraints(metadata_snapshot->getConstraints());
             }
             merged_indices.at(index_helper->getGranularity())->addIndex(index_helper);
