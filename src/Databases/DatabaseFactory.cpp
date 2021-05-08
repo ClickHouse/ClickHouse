@@ -37,7 +37,7 @@
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
-#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
+#include <Storages/PostgreSQL/PoolWithFailover.h>
 #endif
 
 namespace DB
