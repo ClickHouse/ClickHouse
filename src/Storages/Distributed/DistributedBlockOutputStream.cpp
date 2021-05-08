@@ -717,7 +717,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         // Create hardlink here to reuse increment number
-        const std::string block_file_path(path + '/' + file_name);
+        const std::string block_file_path(fs::path(path) / file_name);
         createHardLink(first_file_tmp_path, block_file_path);
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
@@ -726,10 +726,10 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(disk_path + data_path + *it);
+        const std::string path(fs::path(disk_path) / (data_path + *it));
         fs::create_directory(path);
 
-        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
+        const std::string block_file_path(fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin"));
         createHardLink(first_file_tmp_path, block_file_path);
         auto dir_sync_guard = make_directory_sync_guard(*it);
     }
