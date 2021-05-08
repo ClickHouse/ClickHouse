@@ -1,6 +1,9 @@
 #ifndef _LIBM_H
 #define _LIBM_H
 
+// Disable warnings by PVS-Studio
+//-V::GA
+
 #include <stdint.h>
 #include <float.h>
 #include <math.h>
