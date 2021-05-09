@@ -44,7 +44,7 @@ CSV_DATA = "Hello, 1\nWorld, 2\nThis, 152\nis, 9283\ntesting, 2313213\ndata, 555
 # (Will change during test, need to check standart data sending, to make sure that nothing broke)
 COMPRESS_METHOD = 'none'
 ADDING_ENDING = ''
-ENDINGS = ['gz', 'xz']
+ENDINGS = ['.gz', '.xz']
 
 def get_ch_answer(query):
     url = os.environ.get('CLICKHOUSE_URL', 'http://{host}:{port}'.format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP))

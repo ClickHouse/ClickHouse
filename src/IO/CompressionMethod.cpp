@@ -46,13 +46,6 @@ std::string toContentEncodingName(CompressionMethod method)
     __builtin_unreachable();
 }
 
-bool pathExtensionIsCorrect(const std::string& ending)
-{
-    return ending == "gzip" || ending == "gz" || ending == "deflate" ||
-           ending == "brotli" || ending == "br" || ending == "lzma" ||
-           ending == "xz" || ending == "zstd" || ending == "zst";
-}
-
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)
 {
     std::string file_extension;
@@ -62,9 +55,6 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         if (pos != std::string::npos)
             file_extension = path.substr(pos + 1, std::string::npos);
     }
-
-    if (!pathExtensionIsCorrect(file_extension))
-        file_extension.clear();
 
     std::string method_str = file_extension.empty() ? hint : std::move(file_extension);
     boost::algorithm::to_lower(method_str);
