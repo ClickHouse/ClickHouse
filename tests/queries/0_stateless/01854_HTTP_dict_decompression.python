@@ -43,6 +43,8 @@ CSV_DATA = "Hello, 1\nWorld, 2\nThis, 152\nis, 9283\ntesting, 2313213\ndata, 555
 # Choose compression method 
 # (Will change during test, need to check standart data sending, to make sure that nothing broke)
 COMPRESS_METHOD = 'none'
+ADDING_ENDING = ''
+ENDINGS = ['gz', 'xz']
 
 def get_ch_answer(query):
     url = os.environ.get('CLICKHOUSE_URL', 'http://{host}:{port}'.format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP))
@@ -109,28 +111,34 @@ def start_server(requests_amount):
 #####################################################################
 
 def test_select(dict_name="", schema="word String, counter UInt32", requests=[], answers=[], test_data=""):
+    global ADDING_ENDING
     for i in range(len(requests)):
+        if i > 2:
+            ADDING_ENDING = ENDINGS[i-3]
         if dict_name:
             get_ch_answer("drop dictionary if exists {}".format(dict_name))
             get_ch_answer('''CREATE DICTIONARY {} ({})
             PRIMARY KEY word
             SOURCE(HTTP(url '{}' format 'CSV'))
             LAYOUT(complex_key_hashed())
-            LIFETIME(0)'''.format(dict_name, schema, HTTP_SERVER_URL_STR+'/test.csv'))
+            LIFETIME(0)'''.format(dict_name, schema, HTTP_SERVER_URL_STR+'/test.csv' + ADDING_ENDING))
 
         COMPRESS_METHOD = requests[i]
         # print(get_ch_answer("select * from {}".format(dict_name)))
         check_answers("select * from {}".format(dict_name), answers[i])
 
 def main():
+    # first three for encoding, second three for url
     insert_requests = [
             'none',
             'gzip',
-            'lzma'
+            'lzma',
+            'none',
+            'none'
     ]
 
     # This answers got experemently in non compressed mode and they are correct
-    answers = ['''This	152\nHello	1\nis	9283\ndata	555\nWorld	2\ntesting	2313213'''] * 3
+    answers = ['''This	152\nHello	1\nis	9283\ndata	555\nWorld	2\ntesting	2313213'''] * 5
 
     t = start_server(len(insert_requests))
     t.start()

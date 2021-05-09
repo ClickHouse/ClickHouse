@@ -1,14 +1,14 @@
 #pragma once
 
-#include <IO/CompressionMethod.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Interpreters/Context.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <common/LocalDateTime.h>
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
+#include <Interpreters/Context.h>
+#include <IO/CompressionMethod.h>
 
 namespace Poco
 {
@@ -74,3 +74,4 @@ private:
 };
 
 }
+
