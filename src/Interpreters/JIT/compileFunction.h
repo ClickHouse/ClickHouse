@@ -23,7 +23,7 @@ struct ColumnData
 };
 
 /** Returns ColumnData for column.
-  * If constant column is passed, LOGICAL_ERROR will be throwed.
+  * If constant column is passed, LOGICAL_ERROR will be thrown.
   */
 ColumnData getColumnData(const IColumn * column);
 

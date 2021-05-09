@@ -30,7 +30,7 @@ namespace DB
   * Node a, Constant 1, Function add(a + 1), Input b, Constant 1, Function add(b, 1), Function add(add(a + 1), add(a + 1)).
   *
   * Compile function must be called with input_nodes_values equal to input nodes count.
-  * During compile funciton call CompileDAG is compiled in order of added nodes.
+  * When compile method is called added nodes are compiled in order.
   */
 class CompileDAG
 {
