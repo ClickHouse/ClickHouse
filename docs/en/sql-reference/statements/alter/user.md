@@ -23,7 +23,7 @@ To use `ALTER USER` you must have the [ALTER USER](../../../sql-reference/statem
 
 ## GRANTEES Clause {#grantees}
 
-Specifies users or roles which are allowed to receive [grants](../../../sql-reference/statements/grant.md) from this user on the condition this user has also all required access granted with grant option. Values of the `GRANTEES` clause:
+Specifies users or roles which are allowed to receive [grants](../../../sql-reference/statements/grant.md) from this user on the condition this user has also all required access granted with grant option. Options of the `GRANTEES` clause:
 
 -   `user` — Specifies user which is allowed to receive grants from this user.
 -   `role` — Specifies role which is allowed to receive grants from this user.
