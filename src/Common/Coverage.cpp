@@ -338,15 +338,26 @@ void Writer::writeCCREntry(const Writer::TestData& test_data)
     {
         const SourceFileData& source = test_data.data[i];
 
-        fmt::print(report_file.file(), "SOURCE {}\nFUNCTIONS {}\n", i, source.functions_hit.size());
+        if (source.functions_hit.empty() && source.lines_hit.empty())
+            continue;
 
-        for (const auto [edge_index, call_count]: source.functions_hit)
-            fmt::print(report_file.file(), "{} {}\n", edge_index, call_count);
+        fmt::print(report_file.file(), "SOURCE {}\n", i);
 
-        fmt::print(report_file.file(), "LINES {}\n", source.lines_hit.size());
+        if (!source.functions_hit.empty())
+        {
+            fmt::print(report_file.file(), "FUNCTIONS {}\n", source.functions_hit.size());
 
-        for (const auto [line, call_count]: source.lines_hit)
-            fmt::print(report_file.file(), "{} {}\n", line, call_count);
+            for (const auto [edge_index, call_count]: source.functions_hit)
+                fmt::print(report_file.file(), "{} {}\n", edge_index, call_count);
+        }
+
+        if (!source.lines_hit.empty())
+        {
+            fmt::print(report_file.file(), "LINES {}\n", source.lines_hit.size());
+
+            for (const auto [line, call_count]: source.lines_hit)
+                fmt::print(report_file.file(), "{} {}\n", line, call_count);
+        }
     }
 
     LOG_INFO(test_data.log, "Finished writing test entry");

@@ -344,6 +344,8 @@ def run_tests_array(all_tests_with_params):
         return True, failures
 
     if args.coverage:
+        # We don't care if server answered to that query as this query does not really set the setting
+        # (it just invokes coverage runtime routines).
         run_query("SET coverage_tests_count={};".format(len(all_tests)), 0, False)
 
     for case in all_tests:
