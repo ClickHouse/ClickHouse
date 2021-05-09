@@ -73,7 +73,7 @@ public:
     {
         NodeRawConstPtrs children;
 
-        ActionType type;
+        ActionType type{};
 
         std::string result_name;
         DataTypePtr result_type;

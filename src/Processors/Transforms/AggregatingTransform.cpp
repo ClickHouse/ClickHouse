@@ -95,7 +95,7 @@ public:
     struct SharedData
     {
         std::atomic<UInt32> next_bucket_to_merge = 0;
-        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed;
+        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed{};
         std::atomic<bool> is_cancelled = false;
 
         SharedData()
