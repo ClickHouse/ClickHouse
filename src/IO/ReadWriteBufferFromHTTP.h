@@ -137,7 +137,7 @@ namespace detail
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
-                content_encoding = response.get("Content-Encoding");
+                content_encoding = response.get("Content-Encoding", "");
                 return istr;
 
             }

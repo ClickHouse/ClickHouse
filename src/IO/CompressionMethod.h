@@ -37,8 +37,6 @@ enum class CompressionMethod
 /// How the compression method is named in HTTP.
 std::string toContentEncodingName(CompressionMethod method);
 
-bool pathExtensionIsCorrect(const std::string& ending);
-
 /** Choose compression method from path and hint.
   * if hint is "auto" or empty string, then path is analyzed,
   *  otherwise path parameter is ignored and hint is used as compression method name.
