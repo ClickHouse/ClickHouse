@@ -858,9 +858,9 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
 
     LOG_DEBUG(log,
-        "Written part in {} sec., {} rows, {} uncompressed, {} compressed,"
-        " {} uncompressed bytes per row, {} compressed bytes per row, compression rate: {}"
-        " ({} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
+        "Written part in {:.3f} sec., {} rows, {} uncompressed, {} compressed,"
+        " {:.3f} uncompressed bytes per row, {:.3f} compressed bytes per row, compression rate: {:.3f}"
+        " ({:.3f} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
         elapsed_seconds,
         rows,
         ReadableSize(uncompressed_bytes),
@@ -1493,7 +1493,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_DEBUG(log,
-        "Converted aggregated data to blocks. {} rows, {} in {} sec. ({} rows/sec., {}/sec.)",
+        "Converted aggregated data to blocks. {} rows, {} in {} sec. ({:.3f} rows/sec., {}/sec.)",
         rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
         ReadableSize(bytes / elapsed_seconds));
@@ -2097,7 +2097,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_DEBUG(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_DEBUG(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({:.3f} rows/sec., {}/sec.)",
         rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
         ReadableSize(bytes / elapsed_seconds));
