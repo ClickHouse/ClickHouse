@@ -474,19 +474,19 @@ namespace MySQLReplication
                     }
                     case MYSQL_TYPE_NEWDECIMAL:
                     {
-                        const auto & dispatch = [](const size_t & precision, const size_t & scale, const auto & function) -> Field
+                        const auto & dispatch = [](size_t precision, size_t scale, const auto & function) -> Field
                         {
                             if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
                         };
 
-                        const auto & read_decimal = [&](const size_t & precision, const size_t & scale, auto decimal)
+                        const auto & read_decimal = [&](size_t precision, size_t scale, auto decimal)
                         {
                             using DecimalType = decltype(decimal);
                             static constexpr size_t digits_per_integer = 9;
@@ -543,7 +543,7 @@ namespace MySQLReplication
                                     UInt32 val = 0;
                                     size_t to_read = compressed_bytes_map[compressed_decimals];
 
-                                    if (to_read)
+                                    if (to_read) //-V547
                                     {
                                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
                                         res *= intExp10OfSize<DecimalType>(compressed_decimals);

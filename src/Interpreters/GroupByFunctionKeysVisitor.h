@@ -97,7 +97,7 @@ public:
         KeepFunctionVisitor::Data keep_data{data.key_names_to_keep, keep_key};
         KeepFunctionVisitor(keep_data).visit(function_node->arguments);
 
-        if (!keep_key)
+        if (!keep_key) //-V547
             (data.key_names_to_keep).erase(function_node->getColumnName());
     }
 
