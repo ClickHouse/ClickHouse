@@ -12,6 +12,11 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
 
+#if defined(__GNUC__)
+    /// GCC mistakenly warns about the names in enum class.
+    #pragma GCC diagnostic ignored "-Wshadow"
+#endif
+
 
 #define FOR_ATTRIBUTE_TYPES(M) \
     M(UInt8) \
