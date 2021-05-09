@@ -229,7 +229,7 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 
     LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
-    const String table_metadata_path = getMetadataPath() + "/" + escapeForFileName(table_name) + ".sql";
+    const String table_metadata_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + ".sql");
 
     try
     {

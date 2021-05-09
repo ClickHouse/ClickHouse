@@ -254,7 +254,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , zookeeper_name(extractZooKeeperName(zookeeper_path_))
     , zookeeper_path(extractZooKeeperPath(zookeeper_path_))
     , replica_name(replica_name_)
-    , replica_path(zookeeper_path + "/replicas/" + replica_name_)
+    , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name_)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
@@ -473,14 +473,14 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Mutation maybe killed or whole replica was deleted.
             /// Wait event will unblock at this moment.
             Coordination::Stat exists_stat;
-            if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id, &exists_stat, wait_event))
+            if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id, &exists_stat, wait_event))
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
             }
 
             auto zookeeper = getZooKeeper();
             /// Replica could be inactive.
-            if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+            if (!zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
             {
                 LOG_WARNING(log, "Replica {} is not active during mutation. Mutation will be done asynchronously when replica becomes active.", replica);
 
@@ -488,7 +488,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
                 break;
             }
 
-            String mutation_pointer = zookeeper_path + "/replicas/" + replica + "/mutation_pointer";
+            String mutation_pointer = fs::path(zookeeper_path) / "replicas" / replica / "mutation_pointer";
             std::string mutation_pointer_value;
             /// Replica could be removed
             if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
@@ -512,7 +512,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
         /// It maybe already removed from zk, but local in-memory mutations
         /// state was not updated.
-        if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id))
+        if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id))
         {
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
         }

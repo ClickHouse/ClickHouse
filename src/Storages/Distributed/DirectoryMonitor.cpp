@@ -958,13 +958,13 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     const auto last_path_separator_pos = file_path.rfind('/');
     const auto & base_path = file_path.substr(0, last_path_separator_pos + 1);
     const auto & file_name = file_path.substr(last_path_separator_pos + 1);
-    const auto & broken_path = base_path + "broken/";
-    const auto & broken_file_path = broken_path + file_name;
+    const String & broken_path = fs::path(base_path) / "broken/";
+    const String & broken_file_path = fs::path(broken_path) / file_name;
 
     fs::create_directory(broken_path);
 
     auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
-    auto broken_dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path + "/broken/");
+    auto broken_dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, fs::path(relative_path) / "broken/");
 
     {
         std::lock_guard status_lock(status_mutex);

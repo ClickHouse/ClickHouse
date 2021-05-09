@@ -58,7 +58,7 @@ static std::string numberFromHost(const std::string & s)
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
-    return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
+    return endsWith(fs::path(path).stem(), PREPROCESSED_SUFFIX);
 }
 
 
@@ -412,15 +412,15 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 {
     Files files;
 
-    Poco::Path merge_dir_path(config_path);
+    fs::path merge_dir_path(config_path);
     std::set<std::string> merge_dirs;
 
     /// Add path_to_config/config_name.d dir
-    merge_dir_path.setExtension("d");
-    merge_dirs.insert(merge_dir_path.toString());
+    merge_dir_path = merge_dir_path.parent_path() / (merge_dir_path.stem().string() + ".d");
+    merge_dirs.insert(merge_dir_path);
     /// Add path_to_config/conf.d dir
-    merge_dir_path.setBaseName("conf");
-    merge_dirs.insert(merge_dir_path.toString());
+    merge_dir_path = merge_dir_path.parent_path() / "conf.d";
+    merge_dirs.insert(merge_dir_path);
 
     for (const std::string & merge_dir_name : merge_dirs)
     {

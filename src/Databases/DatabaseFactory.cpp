@@ -61,7 +61,8 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     try
     {
         /// Creates store/xxx/ for Atomic
-        Poco::File(Poco::Path(metadata_path).makeParent()).createDirectories();
+        fs::create_directories(fs::path(metadata_path).parent_path());
+
         /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
         /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
         /// So we should remove metadata directory if database creation failed.

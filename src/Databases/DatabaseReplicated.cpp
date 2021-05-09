@@ -212,7 +212,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
             createDatabaseNodesInZooKeeper(current_zookeeper);
         }
 
-        replica_path = zookeeper_path + "/replicas/" + getFullReplicaName();
+        replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
 
         String replica_host_id;
         if (current_zookeeper->tryGet(replica_path, replica_host_id))
