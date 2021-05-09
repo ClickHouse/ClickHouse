@@ -45,6 +45,7 @@ CSV_DATA = "Hello, 1\nWorld, 2\nThis, 152\nis, 9283\ntesting, 2313213\ndata, 555
 COMPRESS_METHOD = 'none'
 ADDING_ENDING = ''
 ENDINGS = ['.gz', '.xz']
+SEND_ENCODING = True
 
 def get_ch_answer(query):
     url = os.environ.get('CLICKHOUSE_URL', 'http://{host}:{port}'.format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP))
@@ -62,7 +63,8 @@ def check_answers(query, answer):
 class HttpProcessor(SimpleHTTPRequestHandler):
     def _set_headers(self):
         self.send_response(200)
-        self.send_header('Content-Encoding', COMPRESS_METHOD)
+        if SEND_ENCODING:
+            self.send_header('Content-Encoding', COMPRESS_METHOD)
         if COMPRESS_METHOD == 'none':
             self.send_header('Content-Length', len(CSV_DATA.encode()))
         else:
@@ -112,9 +114,13 @@ def start_server(requests_amount):
 
 def test_select(dict_name="", schema="word String, counter UInt32", requests=[], answers=[], test_data=""):
     global ADDING_ENDING
+    global SEND_ENCODING
+    global COMPRESS_METHOD
     for i in range(len(requests)):
         if i > 2:
             ADDING_ENDING = ENDINGS[i-3]
+            SEND_ENCODING = False
+        
         if dict_name:
             get_ch_answer("drop dictionary if exists {}".format(dict_name))
             get_ch_answer('''CREATE DICTIONARY {} ({})
@@ -124,7 +130,7 @@ def test_select(dict_name="", schema="word String, counter UInt32", requests=[],
             LIFETIME(0)'''.format(dict_name, schema, HTTP_SERVER_URL_STR+'/test.csv' + ADDING_ENDING))
 
         COMPRESS_METHOD = requests[i]
-        # print(get_ch_answer("select * from {}".format(dict_name)))
+        print(i, COMPRESS_METHOD, ADDING_ENDING, SEND_ENCODING)
         check_answers("select * from {}".format(dict_name), answers[i])
 
 def main():
@@ -133,8 +139,8 @@ def main():
             'none',
             'gzip',
             'lzma',
-            'none',
-            'none'
+            'gzip',
+            'lzma'
     ]
 
     # This answers got experemently in non compressed mode and they are correct
@@ -158,4 +164,5 @@ if __name__ == "__main__":
         sys.stderr.flush()
 
         os._exit(1)
+
 
