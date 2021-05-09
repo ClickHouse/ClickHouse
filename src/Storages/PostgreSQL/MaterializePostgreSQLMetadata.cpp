@@ -78,7 +78,6 @@ void MaterializePostgreSQLMetadata::commitMetadata(std::string & lsn, const std:
     try
     {
         actual_lsn = finalizeStreamFunc();
-
         /// This is not supposed to happen
         if (actual_lsn != last_lsn)
         {

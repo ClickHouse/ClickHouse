@@ -2,6 +2,7 @@
 
 #include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
+#include <boost/noncopyable.hpp>
 
 
 namespace postgres
@@ -9,12 +10,10 @@ namespace postgres
 using ConnectionInfo = std::pair<String, String>;
 using ConnectionPtr = std::unique_ptr<pqxx::connection>;
 
-class Connection
+class Connection : private boost::noncopyable
 {
 public:
     Connection(const ConnectionInfo & connection_info_, bool replication_ = false);
-
-    Connection(const Connection & other) = delete;
 
     pqxx::connection & getRef();
 
