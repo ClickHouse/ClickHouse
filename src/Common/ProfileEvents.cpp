@@ -42,6 +42,10 @@
     M(TableFunctionExecute, "") \
     M(MarkCacheHits, "") \
     M(MarkCacheMisses, "") \
+    M(QueryCacheHits, "") \
+    M(QueryCacheMisses, "") \
+    M(QueryCacheInsertSuccess, "") \
+    M(QueryCacheInsertFails, "") \
     M(CreatedReadBufferOrdinary, "") \
     M(CreatedReadBufferAIO, "") \
     M(CreatedReadBufferAIOFailed, "") \
