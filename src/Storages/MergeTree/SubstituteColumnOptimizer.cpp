@@ -10,6 +10,8 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/IStorage.h>
 
+#include <z3++.h>
+
 
 namespace DB
 {
@@ -234,10 +236,12 @@ void bruteforce(
 SubstituteColumnOptimizer::SubstituteColumnOptimizer(
     ASTSelectQuery * select_query_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const ConstStoragePtr & storage_)
+    const ConstStoragePtr & storage_,
+    const bool optimize_use_smt_)
     : select_query(select_query_)
     , metadata_snapshot(metadata_snapshot_)
     , storage(storage_)
+    , optimize_use_smt(optimize_use_smt_)
 {
 }
 
@@ -310,26 +314,84 @@ void SubstituteColumnOptimizer::perform()
         else
             components_list.push_back(component);
 
-    std::vector<ASTPtr> expressions_stack;
-    ColumnPrice min_price(std::numeric_limits<Int64>::max(), std::numeric_limits<Int64>::max());
-    std::vector<ASTPtr> min_expressions;
-    bruteforce(compare_graph,
-               components_list,
-               0,
-               column_prices,
-               ColumnPrice(0, 0),
-               expressions_stack,
-               min_price,
-               min_expressions);
+    if (!optimize_use_smt)
+    {
+        std::vector<ASTPtr> expressions_stack;
+        ColumnPrice min_price(std::numeric_limits<Int64>::max(), std::numeric_limits<Int64>::max());
+        std::vector<ASTPtr> min_expressions;
+        bruteforce(compare_graph,
+                   components_list,
+                   0,
+                   column_prices,
+                   ColumnPrice(0, 0),
+                   expressions_stack,
+                   min_price,
+                   min_expressions);
 
-    for (size_t i = 0; i < components_list.size(); ++i)
-        id_to_expression_map[components_list[i]] = min_expressions[i];
+        for (size_t i = 0; i < components_list.size(); ++i)
+            id_to_expression_map[components_list[i]] = min_expressions[i];
+    }
+    else
+    {
+        z3::context context;
+        z3::optimize opt(context);
+        std::unordered_map<String, z3::expr> column_flags;
+        std::map<IAST::Hash, z3::expr> expression_flags;
 
-    /*Poco::Logger::get("comp list").information("CL");
-    for (const auto id : components_list)
-        Poco::Logger::get("comp list").information(std::to_string(id));
-    for (const auto & [k, v] : id_to_expression_map)
-        Poco::Logger::get("id2expr").information(std::to_string(k) + " " + v->dumpTree());*/
+        /// Linear Mixed Integer Programming problem
+        for (const auto & column : metadata_snapshot->getColumns().getAll().getNames())
+        {
+            column_flags.emplace(column, context.int_const(column.c_str()));
+            opt.add(0 <= column_flags.at(column) && column_flags.at(column) <= 1);
+        }
+
+        for (const auto component : components_list)
+        {
+            z3::expr comp = context.bool_val(false);
+            for (const auto & ast : compare_graph.getComponent(component))
+            {
+                z3::expr expr = context.bool_val(true);
+
+                std::unordered_set<String> used_columns;
+                collectIdentifiers(ast, used_columns);
+                for (const auto & used_column : used_columns)
+                {
+                    if (column_flags.contains(used_column))
+                        expr = expr && (column_flags.at(used_column) == 1);
+                    else
+                        Poco::Logger::get("SubstituteColumnOptimizer").warning("Unknown column");
+                }
+
+                expression_flags.emplace(ast->getTreeHash(), expr);
+
+                comp = comp || expr;
+            }
+
+            opt.add(comp);
+        }
+
+        z3::expr column_sum = context.int_val(0);
+        for (const auto & [column, price] : column_prices)
+            if (column_flags.contains(column))
+                column_sum = column_sum + column_flags.at(column) * context.int_val(price.compressed_size);
+
+        z3::optimize::handle min_cost = opt.minimize(column_sum);
+        if (opt.check() != z3::sat)
+            throw Exception("Column swap error", ErrorCodes::LOGICAL_ERROR);
+        for (const auto component : components_list)
+        {
+            for (const auto & ast : compare_graph.getComponent(component))
+            {
+                if (opt.get_model().eval(expression_flags.at(ast->getTreeHash())).is_true())
+                {
+                    id_to_expression_map[component] = ast;
+                    break;
+                }
+            }
+            if (!id_to_expression_map.contains(component))
+                throw Exception("Column swap error", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
 
     auto process = [&](ASTPtr & ast, bool is_select)
     {

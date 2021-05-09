@@ -531,9 +531,10 @@ void optimizeSubstituteColumn(ASTSelectQuery * select_query,
                               const NameSet & /*source_columns_set*/,
                               const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
                               const StorageMetadataPtr & metadata_snapshot,
-                              const ConstStoragePtr & storage)
+                              const ConstStoragePtr & storage,
+                              const bool optimize_use_smt)
 {
-    SubstituteColumnOptimizer(select_query, metadata_snapshot, storage).perform();
+    SubstituteColumnOptimizer(select_query, metadata_snapshot, storage, optimize_use_smt).perform();
 }
 
 /// transform where to CNF for more convenient optimization
@@ -662,7 +663,7 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
             settings.optimize_append_index,
             settings.optimize_using_smt);
         if (settings.optimize_substitute_columns)
-            optimizeSubstituteColumn(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage);
+            optimizeSubstituteColumn(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage, settings.optimize_using_smt);
     }
     if (select_query->where())
     {

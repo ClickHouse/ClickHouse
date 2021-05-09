@@ -20,7 +20,8 @@ public:
     SubstituteColumnOptimizer(
         ASTSelectQuery * select_query,
         const StorageMetadataPtr & metadata_snapshot,
-        const ConstStoragePtr & storage);
+        const ConstStoragePtr & storage,
+        const bool optimize_use_smt);
 
     void perform();
 
@@ -28,6 +29,7 @@ private:
     ASTSelectQuery * select_query;
     const StorageMetadataPtr & metadata_snapshot;
     ConstStoragePtr storage;
+    const bool optimize_use_smt;
 };
 
 }
