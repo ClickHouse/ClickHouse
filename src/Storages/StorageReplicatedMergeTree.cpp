@@ -2541,7 +2541,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         source_queue_names = zookeeper->getChildren(fs::path(source_path) / "queue");
 
         /// Check that log pointer of source replica didn't changed while we read queue entries
-        ops.push_back(zkutil::makeCheckRequest(fs:path(source_path) / "log_pointer", log_pointer_stat.version));
+        ops.push_back(zkutil::makeCheckRequest(fs::path(source_path) / "log_pointer", log_pointer_stat.version));
 
         auto rc = zookeeper->tryMulti(ops, responses);
 
