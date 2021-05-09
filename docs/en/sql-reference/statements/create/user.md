@@ -56,7 +56,7 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 	
 ## GRANTEES Clause{#grantees}
 
-Specifies users or roles which are allowed to receive [grants](../../../sql-reference/statements/grant.md) from this user on the condition this user has also all required access granted with grant option. Values of the `GRANTEES` clause:
+Specifies users or roles which are allowed to receive [grants](../../../sql-reference/statements/grant.md) from this user on the condition this user has also all required access granted with grant option. Options of the `GRANTEES` clause:
 
 -   `user` — Specifies user which is allowed to receive grants from this user.
 -   `role` — Specifies role which is allowed to receive grants from this user.
