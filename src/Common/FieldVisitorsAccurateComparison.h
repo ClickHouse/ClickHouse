@@ -36,6 +36,7 @@ public:
             if constexpr (std::is_arithmetic_v<T> && std::is_arithmetic_v<U>)
                 return accurate::equalsOp(l, r);
 
+            /// TODO This is wrong (does not respect scale).
             if constexpr (isDecimalField<T>() && isDecimalField<U>())
                 return l == r;
 
@@ -84,6 +85,7 @@ public:
             if constexpr (std::is_arithmetic_v<T> && std::is_arithmetic_v<U>)
                 return accurate::lessOp(l, r);
 
+            /// TODO This is wrong (does not respect scale).
             if constexpr (isDecimalField<T>() && isDecimalField<U>())
                 return l < r;
 
