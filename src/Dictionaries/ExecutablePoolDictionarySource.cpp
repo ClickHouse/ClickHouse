@@ -68,12 +68,12 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource with implicit_key does not support loadAll method");
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource with implicit_key does not support loadAll method");
 }

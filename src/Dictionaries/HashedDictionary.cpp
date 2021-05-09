@@ -556,7 +556,7 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 
         BlockInputStreamPtr stream;
         if (configuration.preallocate)
-            stream = source_ptr->loadAll(&new_size);
+            stream = source_ptr->loadAllWithSizeHint(&new_size);
         else
             stream = source_ptr->loadAll();
 

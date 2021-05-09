@@ -49,7 +49,7 @@ public:
             const String & config_prefix,
             Block & sample_block);
 
-    BlockInputStreamPtr loadAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
+    BlockInputStreamPtr loadAll() override;
 
     bool supportsSelectiveLoad() const override { return true; }
 
@@ -66,7 +66,7 @@ public:
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    BlockInputStreamPtr loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
+    BlockInputStreamPtr loadUpdatedAll() override;
 
     String toString() const override;
 

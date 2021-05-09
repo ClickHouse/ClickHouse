@@ -25,13 +25,13 @@ public:
     ExecutableDictionarySource(const ExecutableDictionarySource & other);
     ExecutableDictionarySource & operator=(const ExecutableDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll(std::atomic<size_t> * /* result_size_hint */) override;
+    BlockInputStreamPtr loadAll() override;
 
     /** The logic of this method is flawed, absolutely incorrect and ignorant.
       * It may lead to skipping some values due to clock sync or timezone changes.
       * The intended usage of "update_field" is totally different.
       */
-    BlockInputStreamPtr loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */) override;
+    BlockInputStreamPtr loadUpdatedAll() override;
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 

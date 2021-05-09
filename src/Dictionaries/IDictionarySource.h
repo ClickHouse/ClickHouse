@@ -21,8 +21,8 @@ class IDictionarySource
 {
 public:
     /**
-     * @param result_size_hint - approx number of rows in the stream.
-     * @return an input stream with all the data available from this source.
+     * result_size_hint - approx number of rows in the stream.
+     * Returns an input stream with all the data available from this source.
      *
      * NOTE: result_size_hint may be changed during you are reading (usually it
      * will be non zero for the first block and zero for others, since it uses
@@ -52,10 +52,16 @@ public:
      *   stream->readSuffix();
      *   ...
      */
-    virtual BlockInputStreamPtr loadAll(std::atomic<size_t> * result_size_hint = nullptr) = 0;
+    virtual BlockInputStreamPtr loadAllWithSizeHint(std::atomic<size_t> * /* result_size_hint */)
+    {
+        return loadAll();
+    }
+
+    /// Returns an input stream with all the data available from this source.
+    virtual BlockInputStreamPtr loadAll() = 0;
 
     /// Returns an input stream with updated data available from this source.
-    virtual BlockInputStreamPtr loadUpdatedAll(std::atomic<size_t> * result_size_hint = nullptr) = 0;
+    virtual BlockInputStreamPtr loadUpdatedAll() = 0;
 
     /** Indicates whether this source supports "random access" loading of data
       *  loadId and loadIds can only be used if this function returns true.

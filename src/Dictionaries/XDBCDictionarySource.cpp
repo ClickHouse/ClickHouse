@@ -166,14 +166,14 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 }
 
 
-BlockInputStreamPtr XDBCDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr XDBCDictionarySource::loadAll()
 {
     LOG_TRACE(log, load_all_query);
     return loadFromQuery(bridge_url, sample_block, load_all_query);
 }
 
 
-BlockInputStreamPtr XDBCDictionarySource::loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
 

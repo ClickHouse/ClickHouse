@@ -59,9 +59,9 @@ namespace ErrorCodes
 
         ~RedisDictionarySource() override;
 
-        BlockInputStreamPtr loadAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
+        BlockInputStreamPtr loadAll() override;
 
-        BlockInputStreamPtr loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override
+        BlockInputStreamPtr loadUpdatedAll() override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
         }

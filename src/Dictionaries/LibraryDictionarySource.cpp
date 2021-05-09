@@ -94,7 +94,7 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-BlockInputStreamPtr LibraryDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     return bridge_helper->loadAll();
