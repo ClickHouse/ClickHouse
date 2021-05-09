@@ -15,10 +15,10 @@ namespace
 {
     struct ColumnDataPlaceholder
     {
-        llvm::Value * data_init; /// first row
-        llvm::Value * null_init;
-        llvm::PHINode * data; /// current row
-        llvm::PHINode * null;
+        llvm::Value * data_init = nullptr; /// first row
+        llvm::Value * null_init = nullptr;
+        llvm::PHINode * data = nullptr; /// current row
+        llvm::PHINode * null = nullptr;
     };
 }
 
@@ -78,11 +78,11 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & fun
     llvm::Value * counter_arg = &*args++;
     llvm::Value * columns_arg = &*args++;
 
-    /// Initialize ColumnDataPlaceholder llvm represenation of ColumnData
-    /// Last columns ColumnDataPlaceholder is result column
+    /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
     b.SetInsertPoint(entry);
+
     std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
     for (size_t i = 0; i <= arg_types.size(); ++i)
     {

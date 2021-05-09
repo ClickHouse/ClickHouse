@@ -45,8 +45,6 @@ static Poco::Logger * getLogger()
 
 class LLVMExecutableFunction : public IExecutableFunctionImpl
 {
-    std::string name;
-    JITCompiledFunction function = nullptr;
 public:
 
     explicit LLVMExecutableFunction(const std::string & name_, JITCompiledFunction function_)
@@ -73,13 +71,13 @@ public:
             result_column = result_column->cloneResized(input_rows_count);
 
             std::vector<ColumnData> columns(arguments.size() + 1);
+            std::vector<ColumnPtr> columns_backup;
+
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                const auto * column = arguments[i].column.get();
-                if (!column)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is missing", arguments[i].name);
-
-                columns[i] = getColumnData(column);
+                auto column = arguments[i].column->convertToFullColumnIfConst();
+                columns_backup.emplace_back(column);
+                columns[i] = getColumnData(column.get());
             }
 
             columns[arguments.size()] = getColumnData(result_column.get());
@@ -111,6 +109,9 @@ public:
         return result_column;
     }
 
+private:
+    std::string name;
+    JITCompiledFunction function = nullptr;
 };
 
 class LLVMFunction : public IFunctionBaseImpl
