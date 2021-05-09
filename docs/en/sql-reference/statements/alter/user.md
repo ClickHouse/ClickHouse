@@ -21,7 +21,7 @@ ALTER USER [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1]
 
 To use `ALTER USER` you must have the [ALTER USER](../../../sql-reference/statements/grant.md#grant-access-management) privilege.
 
-## GRANTEES Clause{#grantees}
+## GRANTEES Clause {#grantees}
 
 Specifies users or roles which are allowed to receive [grants](../../../sql-reference/statements/grant.md) from this user on the condition this user has also all required access granted with grant option. Values of the `GRANTEES` clause:
 
