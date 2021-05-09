@@ -70,7 +70,10 @@ struct ArrayDifferenceImpl
                     using ResultNativeType = typename Result::NativeType;
 
                     ResultNativeType result_value;
-                    bool overflow = common::subOverflow(static_cast<ResultNativeType>(curr.value), static_cast<ResultNativeType>(prev), result_value);
+                    bool overflow = common::subOverflow(
+                        static_cast<ResultNativeType>(curr.value),
+                        static_cast<ResultNativeType>(prev.value),
+                        result_value);
                     if (overflow)
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
