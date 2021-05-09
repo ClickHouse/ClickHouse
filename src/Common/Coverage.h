@@ -123,7 +123,6 @@ class FileWrapper
 public:
     inline FileWrapper(): handle(nullptr) {}
     inline void set(const std::string& pathname, const char * mode) { handle = fopen(pathname.data(), mode); }
-    inline FILE * file() { return handle; }
     inline void close() { fclose(handle); handle = nullptr; }
     inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), 1, mb.size(), handle); }
 };

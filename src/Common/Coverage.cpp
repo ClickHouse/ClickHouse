@@ -324,6 +324,8 @@ void Writer::writeCCREntry(const Writer::TestData& test_data)
 {
     LOG_INFO(test_data.log, "Started writing test entry");
 
+    fmt::memory_buffer mb;
+
     /**
      * TEST <test id>
      * SOURCE <source file id>
@@ -332,7 +334,7 @@ void Writer::writeCCREntry(const Writer::TestData& test_data)
      * LINES <count>
      * <line number> <call count>
      */
-    fmt::print(report_file.file(), "TEST {}\n", test_data.test_index);
+    fmt::format_to(mb, "TEST {}\n", test_data.test_index);
 
     for (size_t i = 0; i < test_data.data.size(); ++i)
     {
@@ -341,42 +343,49 @@ void Writer::writeCCREntry(const Writer::TestData& test_data)
         if (source.functions_hit.empty() && source.lines_hit.empty())
             continue;
 
-        fmt::print(report_file.file(), "SOURCE {}\n", i);
+        fmt::format_to(mb, "SOURCE {}\n", i);
 
         if (!source.functions_hit.empty())
         {
-            fmt::print(report_file.file(), "FUNCTIONS {}\n", source.functions_hit.size());
+            fmt::format_to(mb, "FUNCTIONS {}\n", source.functions_hit.size());
 
             for (const auto [edge_index, call_count]: source.functions_hit)
-                fmt::print(report_file.file(), "{} {}\n", edge_index, call_count);
+                fmt::format_to(mb, "{} {}\n", edge_index, call_count);
         }
 
         if (!source.lines_hit.empty())
         {
-            fmt::print(report_file.file(), "LINES {}\n", source.lines_hit.size());
+            fmt::format_to(mb, "LINES {}\n", source.lines_hit.size());
 
             for (const auto [line, call_count]: source.lines_hit)
-                fmt::print(report_file.file(), "{} {}\n", line, call_count);
+                fmt::format_to(mb, "{} {}\n", line, call_count);
         }
     }
+
+    report_file.write(mb);
 
     LOG_INFO(test_data.log, "Finished writing test entry");
 }
 
 void Writer::writeCCRFooter()
 {
+    fmt::memory_buffer mb;
+
     /**
      * TESTS // Note -- no "tests_count", test names are till end of file.
      * <test 1 name>
      * <test 2 name>
      */
-    fmt::print(report_file.file(), "TESTS\n");
+
+    fmt::format_to(mb, "TESTS\n");
 
     for (const auto& test : tests)
     {
         if (test.name.empty()) break;
-        fmt::print(report_file.file(), "{}\n", test.name);
+        fmt::format_to(mb, "{}\n", test.name);
     }
+
+    report_file.write(mb);
 }
 
 template <bool is_func_cache, class CacheItem>
