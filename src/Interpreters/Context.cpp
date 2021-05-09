@@ -1119,13 +1119,20 @@ void Context::setSetting(const StringRef & name, const Field & value)
     const std::string_view name_view {name};
 
 #if WITH_COVERAGE
+    /// Note that we just use setting mechanism to notify coverage runtime, settings are not actually set but it's ok
+    /// as we don't use them anywhere else.
+
     // Despite value being string, this method get called instead of the above one.
     if (name_view == ::detail::Writer::coverage_test_name_setting_name)
     {
-        /// Note that we just use setting mechanism to notify coverage runtime, setting is not actually set but it's ok
-        /// as we're not using it anywhere else.
         /// We don't move this check up the stack to ensure that dumpAndChangeTestName is called under exclusive lock.
         ::detail::Writer::instance().dumpAndChangeTestName(value.get<String>());
+        return;
+    }
+
+    if (name_view == ::detail::Writer::coverage_tests_count_setting_name)
+    {
+        ::detail::Writer::instance().setTestsCount(value.get<UInt64>());
         return;
     }
 #endif

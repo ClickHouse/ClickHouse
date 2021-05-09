@@ -1,13 +1,16 @@
 #pragma once
 
+#include <cstdio>
+
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <filesystem>
 #include <functional>
 #include <iterator>
 #include <mutex>
 #include <optional>
-#include <shared_mutex>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -28,39 +31,6 @@ namespace detail
 {
 using namespace DB;
 
-/// To be able to search by std::string_view in std::string key container
-struct StringHash
-{
-    using hash_type = std::hash<std::string_view>;
-    using is_transparent = void;
-
-    size_t operator()(std::string_view str) const   { return hash_type{}(str); }
-    size_t operator()(std::string const& str) const { return hash_type{}(str); }
-};
-
-static inline std::string getNameFromPath(const std::string& path)
-{
-    return path.substr(path.rfind('/') + 1);
-}
-
-static inline auto valueOr(auto& container, auto key,
-    std::remove_cvref_t<decltype(container.at(key))> default_value)
-{
-    if (auto it = container.find(key); it != container.end())
-        return it->second;
-    return default_value;
-}
-
-static inline void setOrIncrement(auto& container, auto key,
-    std::remove_cvref_t<decltype(container.at(key))> value)
-{
-    if (auto it = container.find(key); it != container.end())
-        it->second += value;
-    else
-        container[key] = value;
-}
-
-
 using EdgeIndex = uint32_t;
 using Addr = void *;
 
@@ -69,18 +39,18 @@ using Line = size_t;
 
 /**
  * Simplified FreeThreadPool. Not intended for general use (some invariants broken).
- * 1. Does not use job priorities.
- * 2. Does not throw.
- * 3. Does not use metrics.
- * 4. Does not remove threads after job finish, max_threads_ run all the time.
- * 5. Invokes job with job index.
- * 6. Some operations are not thread-safe.
+ * - Does not use job priorities.
+ * - Does not throw.
+ * - Does not use metrics.
+ * - Does not remove threads after job finish, max_threads run all the time.
+ * - Spawns max_threads on startup.
+ * - Invokes job with job index.
+ * - Some operations are not thread-safe.
  */
 class TaskQueue
 {
 public:
-    explicit inline TaskQueue(size_t max_threads_)
-        : max_threads(max_threads_)
+    explicit inline TaskQueue(size_t max_threads_): max_threads(max_threads_)
     {
         for (size_t i = 0; i < max_threads; ++i)
             spawnThread(i);
@@ -120,6 +90,8 @@ public:
             spawnThread(i);
     }
 
+    void finalize();
+
 private:
     using Job = std::function<void(size_t)>;
     using Thread = std::thread;
@@ -143,27 +115,41 @@ private:
     {
         threads.emplace_front([this, thread_index] { worker(thread_index); });
     }
-
-    inline void finalize()
-    {
-        {
-            std::unique_lock lock(mutex);
-            shutdown = true;
-        }
-
-        new_job_or_shutdown.notify_all();
-
-        for (auto & thread : threads)
-            thread.join();
-
-        threads.clear();
-    }
 };
+
+class FileWrapper
+{
+    FILE * handle;
+public:
+    inline FileWrapper(): handle(nullptr) {}
+    inline void set(const std::string& pathname, const char * mode) { handle = fopen(pathname.data(), mode); }
+    inline FILE * file() { return handle; }
+    inline void close() { fclose(handle); handle = nullptr; }
+    inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), 1, mb.size(), handle); }
+};
+
+static constexpr std::string_view report_name = "report.ccr";
+
+inline std::string renameOldReportAndGetName()
+{
+    auto src_path = std::filesystem::current_path() / "../../";
+    auto report_pathname = (src_path / report_name).lexically_normal();
+
+    if (std::filesystem::exists(report_pathname))
+    {
+        auto new_name = report_pathname;
+        new_name += ".old";
+        std::filesystem::rename(report_pathname, new_name);
+    }
+
+    return report_pathname.string();
+}
 
 class Writer
 {
 public:
     static constexpr std::string_view coverage_test_name_setting_name = "coverage_test_name";
+    static constexpr std::string_view coverage_tests_count_setting_name = "coverage_tests_count";
 
     static inline Writer& instance()
     {
@@ -177,20 +163,20 @@ public:
     {
         /// Before server has initialized, we can't log data to Poco.
         base_log = &Poco::Logger::get(std::string{logger_base_name});
+
+        // Also we can't call fwrite in Writer() because it should be called after fopen internal structs
+        // initialization.
+        report_file.set(renameOldReportAndGetName(), "w");
+
         symbolizeInstrumentedData();
     }
 
-    inline void hit(EdgeIndex edge_index)
+    void hit(EdgeIndex edge_index);
+
+    inline void setTestsCount(size_t tests_count)
     {
-        /**
-         * If we are not copying data: it's like multithreaded value increment -- will probably get less hits, but
-         * it's still good approximation.
-         *
-         * If we are copying data: the only place where edges_hit is used is pointer swap with a temporary vector.
-         * In -O3 this code will surely be optimized to something like https://godbolt.org/z/8rerbshzT,
-         * where only lines 32-36 swap the pointers, so we'll just probably count some new hits for old test.
-         */
-        ++edges_hit[edge_index];
+        /// Note: this is an upper bound (as we don't know which tests will be skipped before running them).
+        tests.resize(tests_count);
     }
 
     /// String is passed by value as it's swapped with _test_.
@@ -200,54 +186,52 @@ private:
     Writer();
 
     static constexpr std::string_view logger_base_name = "Coverage";
-    static constexpr std::string_view coverage_dir_relative_path = "../../coverage";
     static constexpr size_t thread_pool_size_for_tests = 1;
 
-    /**
-     * We use all threads (including hyper-threading) for symbolization as server does nothing else.
-     */
+    static constexpr size_t total_source_files_hint = 5000; /// each LocalCache pre-allocates this / pool_size for a small speedup.
+
+    //static constexpr size_t formatted_buffer_size = 20 * 1024 * 1024;
+
     const size_t hardware_concurrency;
 
     size_t functions_count;
     size_t addrs_count;
-
-    ///Basically, a sum of two above == edges_hit.size() == edges_to_addrs.size() == edge_is_func_entry.size()
     size_t edges_count;
 
-    const Poco::Logger * base_log; /// do not use the logger before call of serverHasInitialized.
+    const Poco::Logger * base_log; //Note: do not use the logger before call of serverHasInitialized.
 
-    const std::filesystem::path coverage_dir;
+    const std::filesystem::path clickhouse_src_dir_abs_path;
 
     const MultiVersion<SymbolIndex>::Version symbol_index;
     const Dwarf dwarf;
 
-    TaskQueue pool;
+    TaskQueue tasks_queue;
 
     using EdgesHit = std::vector<EdgeIndex>;
-
     EdgesHit edges_hit;
-    std::string test;
 
     /// Two caches filled on binary startup from PC table created by clang.
     using EdgesToAddrs = std::vector<Addr>;
     EdgesToAddrs edges_to_addrs;
     std::vector<bool> edge_is_func_entry;
 
+    using SourceRelativePath = std::string; // from ClickHouse src/ directory
+
     struct SourceFileInfo
     {
-        std::string path;
+        SourceRelativePath relative_path;
         std::vector<EdgeIndex> instrumented_functions;
         std::vector<Line> instrumented_lines;
 
         explicit SourceFileInfo(std::string path_)
-            : path(std::move(path_)), instrumented_functions(), instrumented_lines() {}
+            : relative_path(std::move(path_)), instrumented_functions(), instrumented_lines() {}
     };
 
     /// Two caches filled in symbolizeAllInstrumentedAddrs being read-only by the tests start.
     /// Never cleared.
     std::vector<SourceFileInfo> source_files_cache;
     using SourceFileIndex = decltype(source_files_cache)::size_type;
-    std::unordered_map<std::string, SourceFileIndex, StringHash, std::equal_to<>> source_name_to_index;
+    std::unordered_map<SourceRelativePath, SourceFileIndex> source_rel_path_to_index;
 
     struct EdgeInfo
     {
@@ -262,45 +246,11 @@ private:
     /// vector index = edge_index.
     std::vector<EdgeInfo> edges_cache;
 
-    struct SourceLocation
-    {
-        std::string full_path;
-        Line line;
-    };
-
-    inline SourceLocation getSourceLocation(EdgeIndex index) const
-    {
-        /// This binary gets loaded first, so binary_virtual_offset = 0
-        const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[index]));
-        return {loc.file.toString(), loc.line};
-    }
-
-    inline std::string_view symbolize(EdgeIndex index) const
-    {
-        return symbol_index->findSymbol(edges_to_addrs[index])->name;
-    }
-
-    struct TestInfo
-    {
-        std::string_view name;
-        const Poco::Logger * log;
-    };
-
     struct SourceFileData
     {
         std::unordered_map<EdgeIndex, CallCount> functions_hit;
         std::unordered_map<Line, CallCount> lines_hit;
     };
-
-    /// Pre-allocated buffer for thread processing the tests
-    /// Will be used for uncompressed data and memory for zlib.
-    std::vector<char> tests_buffers;
-    static constexpr size_t formatted_buffer_size = 20 * 1024 * 1024;
-
-public:
-    // From zlib.h -- memory usage (1 << (15+2)) +  (1 << (memLevel+9)) ~ 400kb, will reserve 1MB.
-    static constexpr size_t zlib_buffer_shift = 19 * 1024 * 1024;
-private:
 
     inline void resizeBuffersAndCaches()
     {
@@ -310,13 +260,44 @@ private:
         edges_to_addrs.resize(edges_count);
         edge_is_func_entry.resize(edges_count);
 
-        tests_buffers.resize(formatted_buffer_size, 0);
+        //tests_buffers.resize(formatted_buffer_size, 0);
     }
 
-    using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
+    inline void deinitRuntime()
+    {
+        tasks_queue.wait();
+        tasks_queue.finalize();
+        writeCCRFooter();
+        report_file.close();
+    }
 
-    void prepareDataAndDump(TestInfo test_info, const EdgesHit& hits);
-    void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
+    struct TestData
+    {
+        std::string name; // If is empty, there is no data for test.
+        size_t test_index;
+        const Poco::Logger * log;
+        std::vector<SourceFileData> data; // [i] means source file in source_files_cache with index i.
+    };
+
+    /// Data accumulated for all tests.
+    std::vector<TestData> tests;
+    size_t test_index;
+    FileWrapper report_file;
+
+    void prepareDataAndDump(TestData& test_data, const EdgesHit& hits);
+
+    /**
+     * CCR (ClickHouse coverage report) is a genhtml-like format for accumulating large coverage reports while
+     * preserving per-test coverage data.
+     */
+    void writeCCRHeader();
+    void writeCCRFooter();
+    void writeCCREntry(const TestData& test_data);
+
+    inline std::string_view symbolize(EdgeIndex index) const
+    {
+        return symbol_index->findSymbol(edges_to_addrs[index])->name;
+    }
 
     /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
     void symbolizeInstrumentedData();
@@ -337,20 +318,12 @@ private:
     {
         /**
          * Template instantiations get mangled into different names, e.g.
-         * FN:151,_ZNK2DB7DecimalIiE9convertToIlEET_v
-         * FNDA:0,_ZNK2DB7DecimalIiE9convertToIlEET_v
-         * FN:151,_ZNK2DB7DecimalIlE9convertToIlEET_v
-         * FNDA:0,_ZNK2DB7DecimalIlE9convertToIlEET_v
-         * FN:151,_ZNK2DB7DecimalInE9convertToIlEET_v
-         * FNDA:0,_ZNK2DB7DecimalInE9convertToIlEET_v
+         * _ZNK2DB7DecimalIiE9convertToIlEET_v
+         * _ZNK2DB7DecimalIlE9convertToIlEET_v
+         * _ZNK2DB7DecimalInE9convertToIlEET_v
          *
          * We can't use predicate "all functions with same line are considered same" as it's easily
          * contradicted -- multiple functions can be invoked in the same source line, e.g. foo(bar(baz)):
-         *
-         * FN:166,_ZN2DB7DecimalInEmLERKn
-         * FNDA:0,_ZN2DB7DecimalInEmLERKn
-         * FN:166,_ZN2DB7DecimalIN4wide7integerILm256EiEEEmLERKS3_
-         * FNDA:0,_ZN2DB7DecimalIN4wide7integerILm256EiEEEmLERKS3_
          *
          * However, instantiations are located in different binary parts, so it's safe to use edge_index
          * as a hashing key (current solution is to just use a vector to avoid hash calculation).
@@ -367,82 +340,17 @@ private:
     };
 
     template <class CacheItem>
-    struct LocalCacheItem
-    {
-       std::string full_path;
-       typename CacheItem::Container items;
-    };
-
-    template <class CacheItem>
-    using LocalCache = std::unordered_map<std::string/*source name*/, LocalCacheItem<CacheItem>>;
+    using LocalCache = std::unordered_map<SourceRelativePath, typename CacheItem::Container>;
 
     template <class CacheItem>
     using LocalCaches = std::vector<LocalCache<CacheItem>>;
 
     template <bool is_func_cache>
-    static constexpr const std::string_view thread_name = is_func_cache
-        ? "func"
-        : "addr";
+    static constexpr const std::string_view thread_name = is_func_cache ? "func" : "addr";
 
-    /// each LocalCache pre-allocates this / pool_size for a small speedup.
-    static constexpr size_t total_source_files_hint = 5000;
-
-    /**
-     * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
-     */
+    /// Spawn workers symbolizing addresses obtained from PC table to internal local caches.
     template <bool is_func_cache, class CacheItem>
-    void scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
-    {
-        for (size_t k = 0; k < hardware_concurrency; ++k)
-            pool.schedule([this, &local_caches, &data](size_t thread_index)
-            {
-                const size_t step = data.size() / hardware_concurrency;
-                const size_t start_index = thread_index * step;
-                const size_t end_index = std::min(start_index + step, data.size() - 1);
-                const size_t count = end_index - start_index;
-
-                const Poco::Logger * const log = &Poco::Logger::get(
-                    fmt::format("{}.{}{}", logger_base_name, thread_name<is_func_cache>, thread_index));
-
-                LocalCache<CacheItem>& cache = local_caches[thread_index];
-                cache.reserve(total_source_files_hint / hardware_concurrency);
-
-                for (size_t i = start_index; i < end_index; ++i)
-                {
-                    const EdgeIndex edge_index = data[i];
-                    SourceLocation source = getSourceLocation(edge_index);
-
-                    /**
-                     * Getting source name as a string (reverse search + allocation) is a bit cheaper than hashing
-                     * the full path.
-                     */
-                    std::string source_name = getNameFromPath(source.full_path);
-                    auto cache_it = cache.find(source_name);
-
-                    if constexpr (is_func_cache)
-                    {
-                        const std::string_view name = symbolize(edge_index);
-
-                        if (cache_it != cache.end())
-                            cache_it->second.items.emplace_back(source.line, edge_index, name);
-                        else
-                            cache[std::move(source_name)] =
-                                {std::move(source.full_path), {{source.line, edge_index, name}}};
-                    }
-                    else
-                    {
-                        if (cache_it != cache.end())
-                            cache_it->second.items.emplace(source.line, edge_index);
-                        else
-                            cache[std::move(source_name)] =
-                                {std::move(source.full_path), {{source.line, edge_index}}};
-                    }
-
-                    if (i % 512 == 0)
-                        LOG_DEBUG(log, "{}/{}", i - start_index, count);
-                }
-            });
-    }
+    void scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data);
 
     template <bool is_func_cache>
     static inline auto& getInstrumented(SourceFileInfo& info)
@@ -455,53 +363,6 @@ private:
 
     /// Merge local caches' symbolized data [obtained from multiple threads] into global caches.
     template<bool is_func_cache, class CacheItem>
-    void mergeDataToCaches(const LocalCaches<CacheItem>& data)
-    {
-        LOG_INFO(base_log, "Started merging {} data to caches", thread_name<is_func_cache>);
-
-        for (const auto& cache : data)
-            for (const auto& [source_name, path_and_addrs] : cache)
-            {
-                const auto& [source_path, addrs_data] = path_and_addrs;
-
-                SourceFileIndex source_index;
-
-                if (auto it = source_name_to_index.find(source_name); it != source_name_to_index.end())
-                    source_index = it->second;
-                else
-                {
-                    source_index = source_name_to_index.size();
-                    source_name_to_index.emplace(source_name, source_index);
-                    source_files_cache.emplace_back(source_path);
-                }
-
-                SourceFileInfo& info = source_files_cache[source_index];
-                auto& instrumented = getInstrumented<is_func_cache>(info);
-
-                instrumented.reserve(addrs_data.size());
-
-                if constexpr (is_func_cache)
-                    for (auto [line, edge_index, name] : addrs_data)
-                    {
-                        instrumented.push_back(edge_index);
-                        edges_cache[edge_index] = {line, source_index, name};
-                    }
-                else
-                {
-                    std::unordered_set<Line> lines;
-
-                    for (auto [line, edge_index] : addrs_data)
-                    {
-                        if (!lines.contains(line))
-                            instrumented.push_back(line);
-
-                        edges_cache[edge_index] = {line, source_index, {}};
-                        lines.insert(line);
-                    }
-                }
-            }
-
-        LOG_INFO(base_log, "Finished merging {} data to caches", thread_name<is_func_cache>);
-    }
+    void mergeDataToCaches(const LocalCaches<CacheItem>& data);
 };
 }

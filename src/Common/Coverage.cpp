@@ -2,20 +2,20 @@
 
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
-
-#include <zlib.h>
 
 #include "Common/ProfileEvents.h"
 
@@ -42,6 +42,23 @@ inline auto getInstanceAndInitGlobalCounters()
     ProfileEvents::global_counters = ProfileEvents::Counters(ProfileEvents::global_counters_array);
 
     return SymbolIndex::instance();
+}
+
+inline auto valueOr(auto& container, auto key,
+    std::remove_cvref_t<decltype(container.at(key))> default_value)
+{
+    if (auto it = container.find(key); it != container.end())
+        return it->second;
+    return default_value;
+}
+
+inline void setOrIncrement(auto& container, auto key,
+    std::remove_cvref_t<decltype(container.at(key))> value)
+{
+    if (auto it = container.find(key); it != container.end())
+        it->second += value;
+    else
+        container[key] = value;
 }
 }
 
@@ -74,31 +91,30 @@ void TaskQueue::worker(size_t thread_id)
     }
 }
 
+void TaskQueue::finalize()
+{
+    {
+        std::unique_lock lock(mutex);
+        shutdown = true;
+    }
+
+    new_job_or_shutdown.notify_all();
+
+    for (auto & thread : threads)
+        thread.join();
+
+    threads.clear();
+}
+
 Writer::Writer()
     : hardware_concurrency(std::thread::hardware_concurrency()),
       base_log(nullptr),
-      coverage_dir(std::filesystem::current_path() / Writer::coverage_dir_relative_path),
+      clickhouse_src_dir_abs_path((std::filesystem::current_path() / "../../src/").lexically_normal()),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
-      // Set the initial pool size to all thread as we'll need all resources to symbolize fast.
-      pool(hardware_concurrency)
-{
-    //if (std::filesystem::exists(coverage_dir))
-    //{
-    //    size_t suffix = 1;
-    //    const std::string dir_path = coverage_dir.string();
-
-    //    while (std::filesystem::exists(dir_path + "_" + std::to_string(suffix)))
-    //        ++suffix;
-
-    //    const std::string dir_new_path = dir_path + "_" + std::to_string(suffix);
-    //    std::filesystem::rename(coverage_dir, dir_new_path);
-    //}
-
-    // BUG Creating folder out of CH folder
-    std::filesystem::remove_all(coverage_dir);
-    std::filesystem::create_directory(coverage_dir);
-}
+      // Set the initial pool size to all threads as we'll need all resources to symbolize fast.
+      tasks_queue(hardware_concurrency),
+      test_index(0) {}
 
 void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_array_end)
 {
@@ -145,6 +161,19 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
     /// If starting now, we won't be able to log to Poco or std::cout;
 }
 
+void Writer::hit(EdgeIndex edge_index)
+{
+    /**
+     * If we are not copying data: it's like multithreaded value increment -- will probably get less hits, but
+     * it's still good approximation.
+     *
+     * If we are copying data: the only place where edges_hit is used is pointer swap with a temporary vector.
+     * In -O3 this code will surely be optimized to something like https://godbolt.org/z/8rerbshzT,
+     * where only lines 32-36 swap the pointers, so we'll just probably count some new hits for old test.
+     */
+    ++edges_hit[edge_index];
+}
+
 void Writer::symbolizeInstrumentedData()
 {
     std::vector<EdgeIndex> function_indices(functions_count);
@@ -160,72 +189,79 @@ void Writer::symbolizeInstrumentedData()
             addr_indices[k++] = i;
 
     LOG_INFO(base_log,
-        "Split addresses into function entries ({}) and normal ones ({}), {} total."
-        "Started symbolizing addresses, using thread pool of size {}",
+        "Split addresses into function entries ({}) and normal ones ({}), {} total. "
+        "Symbolizing addresses, thread pool of size {}",
         functions_count, addrs_count, edges_to_addrs.size(), hardware_concurrency);
 
-    scheduleSymbolizationJobs<true>(func_caches, function_indices);
+    scheduleSymbolizationJobs<true, FuncSym>(func_caches, function_indices);
 
-    pool.wait();
+    tasks_queue.wait();
 
-    LOG_INFO(base_log, "Symbolized all functions, populating address cache");
+    LOG_INFO(base_log, "Symbolized all functions");
 
     /// Pre-populate addr_caches with already found source files.
     for (const auto& local_func_cache : func_caches)
-        for (const auto& [source_name, data] : local_func_cache)
+        for (const auto& [source_rel_path, data] : local_func_cache)
             for (auto & local_addr_cache : addr_caches)
-                local_addr_cache[source_name] = {data.full_path, {}};
+                local_addr_cache[source_rel_path] = {};
 
-    LOG_INFO(base_log, "Finished populating address caches");
-
-    scheduleSymbolizationJobs<false>(addr_caches, addr_indices);
+    scheduleSymbolizationJobs<false, AddrSym>(addr_caches, addr_indices);
 
     /// Merge functions data while other threads process addresses.
-    mergeDataToCaches<true>(func_caches);
+    mergeDataToCaches<true, FuncSym>(func_caches);
 
-    pool.wait();
+    tasks_queue.wait();
 
-    mergeDataToCaches<false>(addr_caches);
+    mergeDataToCaches<false, AddrSym>(addr_caches);
 
-    pool.changePoolSizeAndRespawnThreads(thread_pool_size_for_tests);
+    tasks_queue.changePoolSizeAndRespawnThreads(thread_pool_size_for_tests);
 
     LOG_INFO(base_log, "Symbolized all addresses");
+
+    writeCCRHeader();
+
+    LOG_INFO(base_log, "Wrote report header");
 }
 
 void Writer::dumpAndChangeTestName(std::string old_test_name)
 {
-    /// In Context.cpp :: setSetting() setting is set under a unique lock. That means the hook also calls this function
-    /// under a lock, so no mutex is needed.
     /// Note: this function slows down setSetting, so it should be as fast as possible.
+
+    if (test_index == 0) // Processing the first test
+    {
+        tests[0].name = std::move(old_test_name);
+        ++test_index;
+        return;
+    }
 
     /// https://godbolt.org/z/qqTYdr5Gz, explicit 0 state generates slightly better assembly than without it.
     EdgesHit edges_hit_swap(edges_count, 0);
 
-    test.swap(old_test_name);
-
-    if (old_test_name.empty())
-        return;
+    const size_t test_that_finished = test_index - 1;
+    const size_t test_that_will_run_next = test_index;
+    ++test_index;
 
     edges_hit.swap(edges_hit_swap);
 
-    /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
-    /// Move is evaluated within current function's lifetime during function constructor call.
-    pool.schedule([this, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_swap)] (auto) mutable
+    tasks_queue.schedule([this, test_that_finished, edges = std::move(edges_hit_swap)] (auto) mutable
     {
-        /// genhtml doesn't allow '.' in test names
-        std::replace(test_name.begin(), test_name.end(), '.', '_');
-
-        const Poco::Logger * log = &Poco::Logger::get(std::string{logger_base_name} + "." + test_name);
-
-        prepareDataAndDump({test_name, log}, edges_copied);
+        TestData & data = tests[test_that_finished];
+        data.test_index = test_that_finished;
+        data.log = &Poco::Logger::get(std::string{logger_base_name} + "." + data.name);
+        prepareDataAndDump(data, edges);
     });
+
+    if (!old_test_name.empty())
+        tests[test_that_will_run_next].name = std::move(old_test_name);
+    else
+        deinitRuntime();
 }
 
-void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
+void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
 {
-    LOG_INFO(test_info.log, "Started filling internal structures");
+    LOG_INFO(test_data.log, "Started filling internal structures");
 
-    TestData test_data(source_files_cache.size());
+    test_data.data.resize(source_files_cache.size());
 
     for (size_t edge_index = 0; edge_index < edges_count; ++edge_index)
     {
@@ -235,156 +271,202 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
             continue;
 
         if (const EdgeInfo& info = edges_cache[edge_index]; info.isFunctionEntry())
-            setOrIncrement(test_data[info.index].functions_hit, edge_index, hit);
+            setOrIncrement(test_data.data[info.index].functions_hit, edge_index, hit);
         else
-            setOrIncrement(test_data[info.index].lines_hit, info.line, hit);
+            setOrIncrement(test_data.data[info.index].lines_hit, info.line, hit);
     }
 
-    LOG_INFO(test_info.log, "Finished filling internal structures");
-    convertToLCOVAndDump(test_info, test_data);
+    LOG_INFO(test_data.log, "Finished filling internal structures");
+    writeCCREntry(test_data);
 }
 
-namespace
+void Writer::writeCCRHeader()
 {
-constexpr size_t BUFLEN = 64000;
+    fmt::memory_buffer mb;
+    constexpr size_t header_size_hint = 10 * 1025 * 1024;
+    mb.reserve(header_size_hint);
 
-extern "C" void gzip(FILE * out_file, void * buf, size_t len)
-{
-    z_stream strm;
-    unsigned char out[BUFLEN];
-
-    strm.zalloc = Z_NULL;
-    strm.zfree = Z_NULL;
-
-    //strm.zalloc = [](void * buffer, auto a, auto b)
-    //{
-    //    const size_t size = a * b;
-    //    void * const old = buffer;
-    //    buffer = static_cast<char *>(buffer) + size;
-    //    return old;
-    //};
-    //strm.zfree = [](auto, auto) {};
-    //strm.opaque = static_cast<char *>(buf) + Writer::zlib_buffer_shift;
-
-    strm.data_type = Z_TEXT;
-
-    // idk why c++ warnings appear in c code
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wold-style-cast"
-    deflateInit2(
-        &strm,
-        Z_DEFAULT_COMPRESSION,
-        Z_DEFLATED,
-        15 + 16, // window bits, default value for gzip
-        9, // mem level -- use most memory for best speed
-        Z_DEFAULT_STRATEGY);
-#pragma clang diagnostic pop
-#pragma GCC diagnostic pop
-
-    strm.next_in = static_cast<unsigned char *>(buf);
-    strm.avail_in = len;
-
-    do {
-        strm.next_out = out;
-        strm.avail_out = BUFLEN;
-
-        deflate(&strm, Z_NO_FLUSH);
-        fwrite(out, 1, BUFLEN - strm.avail_out, out_file);
-    } while (strm.avail_out == 0);
-
-    strm.next_in = Z_NULL;
-    strm.avail_in = 0;
-
-    do {
-        strm.next_out = out;
-        strm.avail_out = BUFLEN;
-
-        deflate(&strm, Z_FINISH);
-        fwrite(out, 1, BUFLEN - strm.avail_out, out_file);
-    } while (strm.avail_out == 0);
-
-    deflateEnd(&strm);
-}
-}
-
-void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
-{
     /**
-     * [incomplete] LCOV .info format reference, parsed from
-     * https://github.com/linux-test-project/lcov/blob/master/bin/geninfo
+     * /absolute/path/to/ch/src/directory <- e.g.  /home/user/ch/src
+     * FILES <source files count>
+     * <source file 1 relative path from src/> <functions> <lines> <- e.g. Access/Myaccess.cpp 8 100
+     * <sf 1 function 1 mangled name> <function start line> <function edge index>
+     * <sf 1 function 2 mangled name> <function start line> <function edge index>
+     * <sf 1 instrumented line 1>
+     * <sf 1 instrumented line 2>
+     * <source file 2 relative path from src/> <functions> <lines>
      *
-     * TN:<test name>
-     *
-     * for each source file:
-     *     SF:<absolute path to the source file>
-     *
-     *     for each instrumented function:
-     *         FN:<line number of function start>,<function name>
-     *         FNDA:<call-count>, <function-name>
-     *
-     *     if >0 functions instrumented:
-     *         FNF:<number of functions instrumented>
-     *         FNH:<number of functions hit>
-     *
-     *     for each instrumented line:
-     *         DA:<line number>,<execution count> [, <line checksum, we don't use it>]
-     *
-     *     LF:<number of lines instrumented>
-     *     LH:<number of lines hit>
-     *     end_of_record
+     * Need of function edge index: multiple functions may be called in single line
      */
+    fmt::format_to(mb, "{}\nFILES {}\n",
+        clickhouse_src_dir_abs_path.string(),
+        source_files_cache.size());
 
-    LOG_INFO(test_info.log, "Started dumping");
-
-    const std::string test_path =
-        (coverage_dir / (std::string{test_info.name} + ".gz"))
-        // common use case is to run CH from build/programs directory. All source files paths look like
-        // /home/user/ch/build/programs../../src/, so we can slightly reduce their size by removing
-        // /build/programs/../../
-        .lexically_normal()
-        .string();
-
-    auto begin = tests_buffers.begin();
-    auto out = begin;
-
-    out = fmt::format_to(out, "TN:{}\n", test_info.name);
-
-    for (size_t i = 0; i < test_data.size(); ++i)
+    for (const SourceFileInfo& file : source_files_cache)
     {
-        const auto& [funcs_hit, lines_hit] = test_data[i];
-        const auto& [path, funcs_instrumented, lines_instrumented] = source_files_cache[i];
+        fmt::format_to(mb, "{} {} {}\n",
+            file.relative_path, file.instrumented_functions.size(), file.instrumented_lines.size());
 
-        out = fmt::format_to(out, "SF:{}\n", path);
-
-        for (EdgeIndex index : funcs_instrumented)
+        for (EdgeIndex index : file.instrumented_functions)
         {
             const EdgeInfo& func_info = edges_cache[index];
-            const CallCount call_count = valueOr(funcs_hit, index, 0);
-
-            out = fmt::format_to(out, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
+            fmt::format_to(mb, "{} {} {}\n", func_info.name, func_info.line, index);
         }
 
-        out = fmt::format_to(out, "FNF:{}\nFNH:{}\n", funcs_instrumented.size(), funcs_hit.size());
-
-        for (size_t line : lines_instrumented)
-        {
-            const CallCount call_count = valueOr(lines_hit, line, 0);
-            out = fmt::format_to(out, "DA:{},{}\n", line, call_count);
-        }
-
-        out = fmt::format_to(out, "LF:{}\nLH:{}\nend_of_record\n", lines_instrumented.size(), lines_hit.size());
+        if (!file.instrumented_lines.empty())
+            fmt::format_to(mb, "{}\n", fmt::join(file.instrumented_lines, "\n"));
     }
 
-    LOG_INFO(test_info.log, "Finished writing to format buffer");
-
-    FILE * const out_file = fopen(test_path.data(), "w");
-    gzip(out_file, begin.base(), out - begin);
-    fclose(out_file);
-
-    LOG_INFO(test_info.log, "Finished compressing");
-
-    //Poco::Logger::destroy(test_info.log->name());
+    report_file.write(mb);
 }
+
+void Writer::writeCCREntry(const Writer::TestData& test_data)
+{
+    LOG_INFO(test_data.log, "Started writing test entry");
+
+    /**
+     * TEST <test id>
+     * SOURCE <source file id>
+     * FUNCTIONS <count>
+     * <function edge index> <call count>
+     * LINES <count>
+     * <line number> <call count>
+     */
+    fmt::print(report_file.file(), "TEST {}\n", test_data.test_index);
+
+    for (size_t i = 0; i < test_data.data.size(); ++i)
+    {
+        const SourceFileData& source = test_data.data[i];
+
+        fmt::print(report_file.file(), "SOURCE {}\nFUNCTIONS {}\n", i, source.functions_hit.size());
+
+        for (const auto [edge_index, call_count]: source.functions_hit)
+            fmt::print(report_file.file(), "{} {}\n", edge_index, call_count);
+
+        fmt::print(report_file.file(), "LINES {}\n", source.lines_hit.size());
+
+        for (const auto [line, call_count]: source.lines_hit)
+            fmt::print(report_file.file(), "{} {}\n", line, call_count);
+    }
+
+    LOG_INFO(test_data.log, "Finished writing test entry");
+}
+
+void Writer::writeCCRFooter()
+{
+    /**
+     * TESTS // Note -- no "tests_count", test names are till end of file.
+     * <test 1 name>
+     * <test 2 name>
+     */
+    fmt::print(report_file.file(), "TESTS\n");
+
+    for (const auto& test : tests)
+    {
+        if (test.name.empty()) break;
+        fmt::print(report_file.file(), "{}\n", test.name);
+    }
+}
+
+template <bool is_func_cache, class CacheItem>
+void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
+{
+    for (size_t k = 0; k < hardware_concurrency; ++k)
+        tasks_queue.schedule([this, &local_caches, &data](size_t thread_index)
+        {
+            const size_t step = data.size() / hardware_concurrency;
+            const size_t start_index = thread_index * step;
+            const size_t end_index = std::min(start_index + step, data.size() - 1);
+
+            LocalCache<CacheItem>& cache = local_caches[thread_index];
+            cache.reserve(total_source_files_hint / hardware_concurrency);
+
+            for (size_t i = start_index; i < end_index; ++i)
+            {
+                const EdgeIndex edge_index = data[i];
+
+                const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[edge_index]));
+
+                SourceRelativePath source_rel_path = std::filesystem::path(loc.file.toString())
+                    .lexically_relative(clickhouse_src_dir_abs_path)
+                    .lexically_normal()
+                    .string();
+
+                const size_t line = loc.line;
+
+                auto cache_it = cache.find(source_rel_path);
+
+                if constexpr (is_func_cache)
+                {
+                    const std::string_view name = symbolize(edge_index);
+
+                    if (cache_it != cache.end())
+                        cache_it->second.emplace_back(line, edge_index, name);
+                    else
+                        cache[std::move(source_rel_path)] = {{line, edge_index, name}};
+                }
+                else
+                {
+                    if (cache_it != cache.end())
+                        cache_it->second.emplace(line, edge_index);
+                    else
+                        cache[std::move(source_rel_path)] = {{line, edge_index}};
+                }
+            }
+        });
+}
+
+template void Writer::scheduleSymbolizationJobs<true, Writer::FuncSym>(LocalCaches<Writer::FuncSym>&, const std::vector<EdgeIndex>&);
+template void Writer::scheduleSymbolizationJobs<false, Writer::AddrSym>(LocalCaches<Writer::AddrSym>&, const std::vector<EdgeIndex>&);
+
+template<bool is_func_cache, class CacheItem>
+void Writer::mergeDataToCaches(const LocalCaches<CacheItem>& data)
+{
+    LOG_INFO(base_log, "Started merging {} data to caches", thread_name<is_func_cache>);
+
+    for (const auto& cache : data)
+        for (const auto& [source_rel_path, addrs_data] : cache)
+        {
+            SourceFileIndex source_index;
+
+            if (auto it = source_rel_path_to_index.find(source_rel_path); it != source_rel_path_to_index.end())
+                source_index = it->second;
+            else
+            {
+                source_index = source_rel_path_to_index.size();
+                source_rel_path_to_index.emplace(source_rel_path, source_index);
+                source_files_cache.emplace_back(source_rel_path);
+            }
+
+            SourceFileInfo& info = source_files_cache[source_index];
+            auto& instrumented = getInstrumented<is_func_cache>(info);
+
+            instrumented.reserve(addrs_data.size());
+
+            if constexpr (is_func_cache)
+                for (auto [line, edge_index, name] : addrs_data)
+                {
+                    instrumented.push_back(edge_index);
+                    edges_cache[edge_index] = {line, source_index, name};
+                }
+            else
+            {
+                std::unordered_set<Line> lines;
+
+                for (auto [line, edge_index] : addrs_data)
+                {
+                    if (!lines.contains(line))
+                        instrumented.push_back(line);
+
+                    edges_cache[edge_index] = {line, source_index, {}};
+                    lines.insert(line);
+                }
+            }
+        }
+
+    LOG_INFO(base_log, "Finished merging {} data to caches", thread_name<is_func_cache>);
+}
+
+template void Writer::mergeDataToCaches<true, Writer::FuncSym>(const LocalCaches<Writer::FuncSym>&);
+template void Writer::mergeDataToCaches<false, Writer::AddrSym>(const LocalCaches<Writer::AddrSym>&);
 }
