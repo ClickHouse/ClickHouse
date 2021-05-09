@@ -42,7 +42,7 @@ DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializePostgreSQL<Atomic> (" + database_name_ + ")", context_)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializePostgreSQL (" + database_name_ + ")", context_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
@@ -72,15 +72,15 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
         /// Check nested ReplacingMergeTree table.
         auto storage = DatabaseAtomic::tryGetTable(table_name, getContext());
 
-        if (!storage)
-        {
-            /// Nested table does not exist and will be created by replication thread.
-            storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), getContext());
-        }
-        else
+        if (storage)
         {
             /// Nested table was already created and synchronized.
             storage = StorageMaterializePostgreSQL::create(storage, getContext());
+        }
+        else
+        {
+            /// Nested table does not exist and will be created by replication thread.
+            storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), getContext());
         }
 
         /// Cache MaterializePostgreSQL wrapper over nested table.
@@ -90,7 +90,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
         replication_handler->addStorage(table_name, storage->as<StorageMaterializePostgreSQL>());
     }
 
-    LOG_TRACE(log, "Loaded {} tables. Starting synchronization, (database: {})", materialized_tables.size(), database_name);
+    LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
     replication_handler->startup();
 }
 

@@ -14,7 +14,7 @@ public:
 
     void readMetadata();
 
-    size_t version() { return last_version++; }
+    size_t getAndIncrementVersion() { return last_version++; }
 
     std::string lsn() { return last_lsn; }
 

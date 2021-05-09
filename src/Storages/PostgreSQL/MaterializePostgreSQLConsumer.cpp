@@ -241,14 +241,14 @@ void MaterializePostgreSQLConsumer::readTupleData(
         case PostgreSQLQuery::INSERT:
         {
             buffer.columns[num_columns]->insert(Int8(1));
-            buffer.columns[num_columns + 1]->insert(UInt64(metadata.version()));
+            buffer.columns[num_columns + 1]->insert(UInt64(metadata.getAndIncrementVersion()));
 
             break;
         }
         case PostgreSQLQuery::DELETE:
         {
             buffer.columns[num_columns]->insert(Int8(-1));
-            buffer.columns[num_columns + 1]->insert(UInt64(metadata.version()));
+            buffer.columns[num_columns + 1]->insert(UInt64(metadata.getAndIncrementVersion()));
 
             break;
         }
@@ -260,7 +260,7 @@ void MaterializePostgreSQLConsumer::readTupleData(
             else
                 buffer.columns[num_columns]->insert(Int8(1));
 
-            buffer.columns[num_columns + 1]->insert(UInt64(metadata.version()));
+            buffer.columns[num_columns + 1]->insert(UInt64(metadata.getAndIncrementVersion()));
 
             break;
         }
