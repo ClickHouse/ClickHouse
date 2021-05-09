@@ -95,7 +95,7 @@ Create the user account `john` and make all his future roles default excepting `
 CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2;
 ```
 
-Create the user account `john` and assign his grants to a user with a `jack` account:
+Create the user account `john` and allow him to grant his privileges to the user with `jack` account:
 
 ``` sql
 CREATE USER john GRANTEES jack;
