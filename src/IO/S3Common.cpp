@@ -606,7 +606,7 @@ namespace S3
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
-        static const RE2 path_style_pattern("^/([^/]*)/(.*)");
+        static const RE2 path_style_pattern("^/([^/]*)(/.*)");
 
         static constexpr auto S3 = "S3";
         static constexpr auto COSN = "COSN";
@@ -665,7 +665,7 @@ namespace S3
                 throw Exception(
                     "Bucket name length is out of bounds in path style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
-            if (key.empty() || key == "/")
+            if (key.empty())
                 throw Exception("Key name is empty in path style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else
