@@ -29,7 +29,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int CANNOT_OPEN_FILE;
 }
 
 static const auto suffix = ".removed";
