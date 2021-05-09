@@ -1,8 +1,6 @@
 #include <iomanip>
 #include <iostream>
 
-#include <common/wide_integer_to_string.h>
-
 #include <Interpreters/AggregationCommon.h>
 
 #include <Common/HashTable/HashMap.h>
@@ -10,6 +8,7 @@
 #include <Common/HashTable/Hash.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <gtest/gtest.h>
 
@@ -25,12 +24,12 @@ struct DummyHash
 };
 
 template<typename HashTable>
-std::set<typename HashTable::value_type> convertToSet(const HashTable& table)
+std::set<std::string> convertToSet(const HashTable & table)
 {
-    std::set<typename HashTable::value_type> result;
+    std::set<std::string> result;
 
     for (auto v: table)
-        result.emplace(v.getValue());
+        result.emplace(toString(v.getValue()));
 
     return result;
 }
@@ -98,8 +97,8 @@ TEST(HashTable, Iteration)
     cont.insert(2);
     cont.insert(3);
 
-    std::set<int> expected = {1, 2, 3};
-    std::set<int> actual = convertToSet(cont);
+    std::set<std::string> expected = {"1", "2", "3"};
+    std::set<std::string> actual = convertToSet(cont);
 
     ASSERT_EQ(actual, expected);
 }
@@ -366,8 +365,8 @@ TEST(HashTable, Resize)
         cont.insert(3);
         cont.insert(1);
 
-        std::set<int> expected = {1, 3};
-        std::set<int> actual = convertToSet(cont);
+        std::set<std::string> expected = {"1", "3"};
+        std::set<std::string> actual = convertToSet(cont);
 
         ASSERT_EQ(actual, expected);
     }
