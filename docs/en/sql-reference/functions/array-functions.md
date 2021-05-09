@@ -1544,3 +1544,52 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
+## arrayProduct {#arrayproduct}
+
+The `arrayProduct` function multiplies elements of an [array](../../sql-reference/data-types/array.md).
+
+**Syntax**
+
+``` sql
+arrayProduct(arr)
+```
+
+**Arguments**
+
+-   `arr` — Numeric values [array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+-   A number — production of array's elements
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayProduct([1,2,3,4,5,6]) as res;
+```
+
+Result:
+
+``` text
+┌─res───┐
+│ 720   │
+└───────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(a);
+```
+
+Return value type is always [Float64](../../sql-reference/data-types/float.md). Result:
+
+``` text
+┌─res───┬─toTypeName(a)─┐
+│ 6     │ Float64       │
+└───────┴───────────────┘
+```
