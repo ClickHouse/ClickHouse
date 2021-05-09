@@ -160,7 +160,7 @@ namespace DB
         __builtin_unreachable();
     }
 
-    BlockInputStreamPtr RedisDictionarySource::loadAll()
+    BlockInputStreamPtr RedisDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
     {
         if (!client->isConnected())
             client->connect(host, port);

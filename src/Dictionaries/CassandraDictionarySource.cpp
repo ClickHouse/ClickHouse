@@ -132,7 +132,7 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
     query += " ALLOW FILTERING;";
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadAll()
+BlockInputStreamPtr CassandraDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
@@ -183,7 +183,7 @@ BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_colu
     return std::make_shared<UnionBlockInputStream>(streams, nullptr, settings.max_threads);
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadUpdatedAll()
+BlockInputStreamPtr CassandraDictionarySource::loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }

@@ -42,9 +42,9 @@ public:
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
+    BlockInputStreamPtr loadAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
 
-    BlockInputStreamPtr loadUpdatedAll() override;
+    BlockInputStreamPtr loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 

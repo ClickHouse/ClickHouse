@@ -126,7 +126,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadFromQuery(const String & query)
             pool, query, sample_block, settings);
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadAll()
+BlockInputStreamPtr MySQLDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -135,7 +135,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
     return loadFromQuery(load_all_query);
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
+BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */)
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);

@@ -61,7 +61,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-BlockInputStreamPtr FileDictionarySource::loadAll()
+BlockInputStreamPtr FileDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
 {
     LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
