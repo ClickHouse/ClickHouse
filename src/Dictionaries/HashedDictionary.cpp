@@ -162,6 +162,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 
     const auto & attribute = attributes.front();
     bool is_attribute_nullable = attribute.is_nullable_set.has_value();
+    size_t keys_found = 0;
 
     getAttributeContainer(0, [&](const auto & container)
     {
@@ -171,6 +172,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 
             out[requested_key_index] = container.find(requested_key) != container.end();
 
+            keys_found += out[requested_key_index];
+
             if (is_attribute_nullable && !out[requested_key_index])
                 out[requested_key_index] = attribute.is_nullable_set->find(requested_key) != nullptr;
 
@@ -179,6 +182,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     });
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -201,6 +205,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
         auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
 
+        size_t keys_found = 0;
+
         auto get_parent_func = [&](auto & hierarchy_key)
         {
             std::optional<UInt64> result;
@@ -210,12 +216,15 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
             if (it != parent_keys_map.end())
                 result = getValueFromCell(it);
 
+            keys_found +=result.has_value();
+
             return result;
         };
 
         auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return dictionary_hierarchy_array;
     }
@@ -247,6 +256,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
         auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
 
+        size_t keys_found = 0;
+
         auto get_parent_func = [&](auto & hierarchy_key)
         {
             std::optional<UInt64> result;
@@ -256,12 +267,15 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
             if (it != parent_keys_map.end())
                 result = getValueFromCell(it);
 
+            keys_found += result.has_value();
+
             return result;
         };
 
         auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return result;
     }
@@ -290,9 +304,11 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
         for (const auto & [key, value] : parent_keys)
             parent_to_child[value].emplace_back(key);
 
-        auto result = getKeysDescendantsArray(keys, parent_to_child, level);
+        size_t keys_found;
+        auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return result;
     }
@@ -493,6 +509,8 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
 
     bool is_attribute_nullable = attribute.is_nullable_set.has_value();
 
+    size_t keys_found = 0;
+
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
         auto key = keys_extractor.extractCurrentKey();
@@ -500,7 +518,10 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
         const auto it = attribute_container.find(key);
 
         if (it != attribute_container.end())
+        {
             set_value(key_index, getValueFromCell(it));
+            ++keys_found;
+        }
         else
         {
             if (is_attribute_nullable && attribute.is_nullable_set->find(key) != nullptr)
@@ -513,6 +534,7 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     }
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
