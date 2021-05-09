@@ -295,7 +295,7 @@ set_source_files_properties(
     Common/Dwarf.cpp
     Common/SymbolIndex.cpp
 
-    PROPERTIES COMPILE_FLAGS "-O3 -g3 -finline-functions ${WITHOUT_COVERAGE}")
+    PROPERTIES COMPILE_FLAGS "-O3 -ggdb -g3 -finline-functions ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE

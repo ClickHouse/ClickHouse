@@ -187,7 +187,7 @@ void Writer::symbolizeInstrumentedData()
 
     mergeDataToCaches<false>(addr_caches);
 
-    pool.changePoolSizeAndRespawnThreads(threadsCountForTests());
+    pool.changePoolSizeAndRespawnThreads(thread_pool_size_for_tests);
 
     LOG_INFO(base_log, "Symbolized all addresses");
 }
@@ -210,15 +210,14 @@ void Writer::dumpAndChangeTestName(std::string old_test_name)
 
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// Move is evaluated within current function's lifetime during function constructor call.
-    pool.schedule([this, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_swap)]
-        (size_t task_index) mutable
+    pool.schedule([this, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_swap)] (auto) mutable
     {
         /// genhtml doesn't allow '.' in test names
         std::replace(test_name.begin(), test_name.end(), '.', '_');
 
         const Poco::Logger * log = &Poco::Logger::get(std::string{logger_base_name} + "." + test_name);
 
-        prepareDataAndDump({test_name, task_index, log}, edges_copied);
+        prepareDataAndDump({test_name, log}, edges_copied);
     });
 }
 
@@ -247,23 +246,40 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
 
 namespace
 {
-constexpr size_t BUFLEN = 16384;
+constexpr size_t BUFLEN = 64000;
 
 extern "C" void gzip(FILE * out_file, void * buf, size_t len)
 {
     z_stream strm;
     unsigned char out[BUFLEN];
 
-    strm.zalloc = [](auto, auto n, auto m) { return calloc(n, m); };
-    strm.zfree = [](auto, auto p) { free(p); };
-    strm.opaque = Z_NULL;
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+
+    //strm.zalloc = [](void * buffer, auto a, auto b)
+    //{
+    //    const size_t size = a * b;
+    //    void * const old = buffer;
+    //    buffer = static_cast<char *>(buffer) + size;
+    //    return old;
+    //};
+    //strm.zfree = [](auto, auto) {};
+    //strm.opaque = static_cast<char *>(buf) + Writer::zlib_buffer_shift;
+
+    strm.data_type = Z_TEXT;
 
     // idk why c++ warnings appear in c code
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
-    deflateInit2(&strm, -1, 8, 15 + 16, 8, 0);
+    deflateInit2(
+        &strm,
+        Z_DEFAULT_COMPRESSION,
+        Z_DEFLATED,
+        15 + 16, // window bits, default value for gzip
+        9, // mem level -- use most memory for best speed
+        Z_DEFAULT_STRATEGY);
 #pragma clang diagnostic pop
 #pragma GCC diagnostic pop
 
@@ -330,7 +346,7 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
         .lexically_normal()
         .string();
 
-    auto begin = tests_buffers.begin() + threadsCountForTests() * test_info.buffer_index;
+    auto begin = tests_buffers.begin();
     auto out = begin;
 
     out = fmt::format_to(out, "TN:{}\n", test_info.name);

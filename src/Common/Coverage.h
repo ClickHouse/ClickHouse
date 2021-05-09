@@ -67,13 +67,15 @@ using Addr = void *;
 using CallCount = size_t;
 using Line = size_t;
 
-/// Simplified FreeThreadPool. Not intended for general use (some invariants broken).
-/// 1. Does not use job priorities.
-/// 2. Does not throw.
-/// 3. Does not use metrics.
-/// 4. Does not remove threads after job finish, max_threads_ run all the time.
-/// 5. Invokes job with job index.
-/// 6. Some operations are not thread-safe.
+/**
+ * Simplified FreeThreadPool. Not intended for general use (some invariants broken).
+ * 1. Does not use job priorities.
+ * 2. Does not throw.
+ * 3. Does not use metrics.
+ * 4. Does not remove threads after job finish, max_threads_ run all the time.
+ * 5. Invokes job with job index.
+ * 6. Some operations are not thread-safe.
+ */
 class TaskQueue
 {
 public:
@@ -199,10 +201,10 @@ private:
 
     static constexpr std::string_view logger_base_name = "Coverage";
     static constexpr std::string_view coverage_dir_relative_path = "../../coverage";
+    static constexpr size_t thread_pool_size_for_tests = 1;
 
     /**
      * We use all threads (including hyper-threading) for symbolization as server does nothing else.
-     * For test processing, we divide the pool size by 2 as some test spawn many threads.
      */
     const size_t hardware_concurrency;
 
@@ -281,7 +283,6 @@ private:
     struct TestInfo
     {
         std::string_view name;
-        size_t buffer_index; // [0; hardware_concurrency \ 2)
         const Poco::Logger * log;
     };
 
@@ -291,10 +292,15 @@ private:
         std::unordered_map<Line, CallCount> lines_hit;
     };
 
-    /// Pre-allocated buffers for all threads in thread pool
+    /// Pre-allocated buffer for thread processing the tests
+    /// Will be used for uncompressed data and memory for zlib.
     std::vector<char> tests_buffers;
+    static constexpr size_t formatted_buffer_size = 20 * 1024 * 1024;
 
-    static constexpr size_t threadsCountForTests()  { return 1; }
+public:
+    // From zlib.h -- memory usage (1 << (15+2)) +  (1 << (memLevel+9)) ~ 400kb, will reserve 1MB.
+    static constexpr size_t zlib_buffer_shift = 19 * 1024 * 1024;
+private:
 
     inline void resizeBuffersAndCaches()
     {
@@ -304,8 +310,7 @@ private:
         edges_to_addrs.resize(edges_count);
         edge_is_func_entry.resize(edges_count);
 
-        constexpr size_t buffer_size_per_thread = 20 * 1024 * 1024; // 20 MB
-        tests_buffers.resize(buffer_size_per_thread * threadsCountForTests());
+        tests_buffers.resize(formatted_buffer_size, 0);
     }
 
     using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
@@ -384,13 +389,6 @@ private:
 
     /**
      * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
-     *
-     * TODO
-     * Unlike function caches, addresses symbolization jobs tend to work nonuniformly.
-     * Usually, all but one jobs finish, and the last eats up about 1 extra minute.
-     * The idea is to spawn 2x jobs with same thread pool size, so the chance most threads will be idle is lower.
-     * The drawback here is that all source files locations must be recalculated in each thread, so it will
-     * take some extra time.
      */
     template <bool is_func_cache, class CacheItem>
     void scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
