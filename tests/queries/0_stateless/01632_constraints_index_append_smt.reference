@@ -1,0 +1,17 @@
+SELECT i
+FROM index_append_test_test
+PREWHERE a = 0
+WHERE indexHint(i >= -39) AND (a = 0)
+SELECT i
+FROM index_append_test_test
+WHERE 0
+SELECT i
+FROM index_append_test_test
+SELECT i
+FROM index_append_test_test
+PREWHERE (2 * b) < 100
+WHERE indexHint(i >= -39) AND indexHint(i <= 98) AND ((2 * b) < 100)
+SELECT i
+FROM index_append_test_test
+PREWHERE (a >= 0) OR ((2 * b) < 100)
+WHERE ((a >= 0) OR ((2 * b) < 100)) AND indexHint(i >= -39)

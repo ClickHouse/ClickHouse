@@ -30,6 +30,10 @@ public:
     bool alwaysTrue(const ASTPtr & ast);
     bool alwaysFalse(const ASTPtr & ast);
 
+    /// Find min/max for expression.
+    /// Primary key columns prefered.
+    ASTPtr minimize(const ASTPtr & ast);
+    ASTPtr maximize(const ASTPtr & ast);
 private:
     const z3::expr & getOrCreateColumn(const String & name);
     const z3::expr & getColumn(const String & name) const;

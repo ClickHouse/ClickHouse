@@ -216,7 +216,7 @@ void WhereConstraintsOptimizer::perform()
             .pushNotInFuntions();
 
         if (optimize_append_index)
-            AddIndexConstraintsOptimizer(metadata_snapshot).perform(cnf);
+            AddIndexConstraintsOptimizer(metadata_snapshot, optimize_use_smt).perform(cnf);
 
         Poco::Logger::get("AFTER OPT").information(cnf.dump());
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, TreeCNFConverter::fromCNF(cnf));

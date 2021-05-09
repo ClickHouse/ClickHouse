@@ -20,12 +20,14 @@ class AddIndexConstraintsOptimizer final
 {
 public:
     AddIndexConstraintsOptimizer(
-        const StorageMetadataPtr & metadata_snapshot);
+        const StorageMetadataPtr & metadata_snapshot,
+        const bool optimize_use_smt);
 
     void perform(CNFQuery & cnf_query);
 
 private:
     const StorageMetadataPtr & metadata_snapshot;
+    const bool optimize_use_smt;
 };
 
 }

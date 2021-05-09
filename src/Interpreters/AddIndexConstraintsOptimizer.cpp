@@ -8,16 +8,11 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/TreeSMTSolver.h>
 #include <Poco/Logger.h>
 
 namespace DB
 {
-
-AddIndexConstraintsOptimizer::AddIndexConstraintsOptimizer(
-    const StorageMetadataPtr & metadata_snapshot_)
-    : metadata_snapshot(metadata_snapshot_)
-{
-}
 
 namespace
 {
@@ -110,7 +105,7 @@ namespace
     }
 
     /// Create OR-group for index_hint
-    CNFQuery::OrGroup createIndexHintGroup(
+    CNFQuery::OrGroup createIndexHintGroupGraph(
         const CNFQuery::OrGroup & group,
         const ComparisonGraph & graph,
         const ASTs & primary_key_only_asts)
@@ -158,30 +153,76 @@ namespace
     }
 }
 
+AddIndexConstraintsOptimizer::AddIndexConstraintsOptimizer(
+    const StorageMetadataPtr & metadata_snapshot_,
+    const bool optimize_use_smt_)
+    : metadata_snapshot(metadata_snapshot_)
+    , optimize_use_smt(optimize_use_smt_)
+{
+}
+
 void AddIndexConstraintsOptimizer::perform(CNFQuery & cnf_query)
 {
     const auto primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
-    const auto & graph = metadata_snapshot->getConstraints().getGraph();
-    const std::unordered_set<std::string_view> primary_key_set(std::begin(primary_key), std::end(primary_key));
-
-    ASTs primary_key_only_asts;
-    for (const auto & vertex : graph.getVertices())
-        for (const auto & ast : vertex)
-            if (hasIndexColumns(ast, primary_key_set) && onlyIndexColumns(ast, primary_key_set))
-                primary_key_only_asts.push_back(ast);
-
-    CNFQuery::AndGroup and_group;
-    cnf_query.iterateGroups([&and_group, &graph, &primary_key_only_asts](const auto & or_group)
+    if (!optimize_use_smt)
     {
-        auto add_group = createIndexHintGroup(or_group, graph, primary_key_only_asts);
-        if (!add_group.empty())
-            and_group.emplace(std::move(add_group));
-    });
-    if (!and_group.empty())
+        const auto & graph = metadata_snapshot->getConstraints().getGraph();
+        const std::unordered_set<std::string_view> primary_key_set(std::begin(primary_key), std::end(primary_key));
+
+        ASTs primary_key_only_asts;
+        for (const auto & vertex : graph.getVertices())
+            for (const auto & ast : vertex)
+                if (hasIndexColumns(ast, primary_key_set) && onlyIndexColumns(ast, primary_key_set))
+                    primary_key_only_asts.push_back(ast);
+
+        CNFQuery::AndGroup and_group;
+        cnf_query.iterateGroups([&and_group, &graph, &primary_key_only_asts](const auto & or_group)
+        {
+            CNFQuery::OrGroup add_group = createIndexHintGroupGraph(or_group, graph, primary_key_only_asts);
+
+            if (!add_group.empty())
+                and_group.emplace(std::move(add_group));
+        });
+        if (!and_group.empty())
+        {
+            CNFQuery::OrGroup new_or_group;
+            new_or_group.insert(CNFQuery::AtomicFormula{false, makeASTFunction("indexHint", TreeCNFConverter::fromCNF(CNFQuery(std::move(and_group))))});
+            cnf_query.appendGroup(CNFQuery::AndGroup{new_or_group});
+        }
+    }
+    else
     {
-        CNFQuery::OrGroup new_or_group;
-        new_or_group.insert(CNFQuery::AtomicFormula{false, makeASTFunction("indexHint", TreeCNFConverter::fromCNF(CNFQuery(std::move(and_group))))});
-        cnf_query.appendGroup(CNFQuery::AndGroup{new_or_group});
+        const auto query = TreeCNFConverter::fromCNF(cnf_query);
+        if (!query)
+            return;
+        Poco::Logger::get("QUERY").information(query->dumpTree());
+        TreeSMTSolver solver(TreeSMTSolver::STRICTNESS::FULL, metadata_snapshot->getColumns().getAll());
+        for (const auto & constraint : metadata_snapshot->getConstraints().getConstraints())
+            solver.addConstraint(constraint->as<ASTConstraintDeclaration>()->expr->clone());
+        solver.addConstraint(query);
+        for (const auto & key : primary_key)
+        {
+            ASTPtr minimum = solver.minimize(std::make_shared<ASTIdentifier>(key));
+            if (minimum)
+                cnf_query.appendGroup(
+                    CNFQuery::AndGroup{
+                        CNFQuery::OrGroup{
+                            CNFQuery::AtomicFormula{false,
+                                                    makeASTFunction("indexHint",
+                                                                    makeASTFunction("greaterOrEquals",
+                                                                        std::make_shared<ASTIdentifier>(key),
+                                                                        minimum))}}});
+            ASTPtr maximum = solver.maximize(std::make_shared<ASTIdentifier>(key));
+            if (maximum)
+                cnf_query.appendGroup(
+                    CNFQuery::AndGroup{
+                        CNFQuery::OrGroup{
+                            CNFQuery::AtomicFormula{false,
+                                                    makeASTFunction("indexHint",
+                                                                makeASTFunction("lessOrEquals",
+                                                                        std::make_shared<ASTIdentifier>(key),
+                                                                        maximum))}}});
+        }
     }
 }
 

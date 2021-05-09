@@ -8,6 +8,8 @@
 
 #include <Poco/Logger.h>
 
+#include <math.h>
+
 namespace DB
 {
 
@@ -157,6 +159,56 @@ bool TreeSMTSolver::alwaysFalse(const ASTPtr & ast)
     }
 }
 
+ASTPtr TreeSMTSolver::minimize(const ASTPtr & ast)
+{
+    auto opt_expr = transformToLogicExpressionImpl(ast);
+    if (!opt_expr || !opt_expr->is_arith())
+        return nullptr;
+    z3::optimize opt(*context);
+    for (const auto & constraint : constraints)
+        opt.add(constraint);
+    z3::optimize::handle handle = opt.minimize(*opt_expr);
+    if (opt.check() != z3::sat)
+        return nullptr;
+    auto res = opt.lower(handle);
+
+    uint64_t t_ui64;
+    if (res.is_numeral_u64(t_ui64))
+        return std::make_shared<ASTLiteral>(t_ui64);
+    int64_t t_i64;
+    if (res.is_numeral_i64(t_i64))
+        return std::make_shared<ASTLiteral>(t_i64);
+    double t_d;
+    if (res.is_numeral(t_d) && !isinf(t_d) && !isnan(t_d))
+        return std::make_shared<ASTLiteral>(t_d);
+    return nullptr;
+}
+
+ASTPtr TreeSMTSolver::maximize(const ASTPtr & ast)
+{
+    auto opt_expr = transformToLogicExpressionImpl(ast);
+    if (!opt_expr || !opt_expr->is_arith())
+        return nullptr;
+    z3::optimize opt(*context);
+    for (const auto & constraint : constraints)
+        opt.add(constraint);
+    z3::optimize::handle handle = opt.maximize(*opt_expr);
+    if (opt.check() != z3::sat)
+        return nullptr;
+    auto res = opt.upper(handle);
+
+    uint64_t t_ui64;
+    if (res.is_numeral_u64(t_ui64))
+        return std::make_shared<ASTLiteral>(t_ui64);
+    int64_t t_i64;
+    if (res.is_numeral_i64(t_i64))
+        return std::make_shared<ASTLiteral>(t_i64);
+    double t_d;
+    if (res.is_numeral(t_d) && !isinf(t_d) && !isnan(t_d))
+        return std::make_shared<ASTLiteral>(t_d);
+    return nullptr;
+}
+
 z3::expr TreeSMTSolver::transformToLogicExpression(const ASTPtr & ast)
 {
     z3::expr expr = transformToLogicExpressionImpl(ast).value_or(
@@ -229,8 +281,8 @@ std::optional<z3::expr> TreeSMTSolver::transformToLogicExpressionImpl(const ASTP
                     arguments.push_back(raw_arguments[i].value());
                 else
                     arguments.push_back(context->constant(
-                        ("UNKNOWN_" + std::to_string(func->arguments->children[i]->getTreeHash().first)).c_str(),
-                        (*it)->get_sort()));
+                        ("UNKNOWN_" + std::to_string(func->arguments->children[i]->getTreeHash().first) + (*it)->get_sort().name().str()).c_str(),
+                        (*it)->get_sort())); // TODO int -> real
             }
         }
         else
