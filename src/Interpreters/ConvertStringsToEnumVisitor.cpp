@@ -144,13 +144,13 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (function_node.arguments->children.size() != 2)
             return;
 
-        auto literal1 = function_node.arguments->children[1]->as<ASTLiteral>();
-        auto literal2 = function_node.arguments->children[2]->as<ASTLiteral>();
+        const ASTLiteral * literal1 = function_node.arguments->children[1]->as<ASTLiteral>();
+        const ASTLiteral * literal2 = function_node.arguments->children[2]->as<ASTLiteral>();
         if (!literal1 || !literal2)
             return;
 
-        if (String(literal1->value.getTypeName()) != "String" ||
-            String(literal2->value.getTypeName()) != "String")
+        if (literal1->value.getTypeName() != std::string_view{"String"}
+            || literal2->value.getTypeName() != std::string_view{"String"})
             return;
 
         changeIfArguments(function_node.arguments->children[1],
@@ -161,13 +161,13 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (function_node.arguments->children.size() != 4)
             return;
 
-        auto literal_to = function_node.arguments->children[2]->as<ASTLiteral>();
-        auto literal_other = function_node.arguments->children[3]->as<ASTLiteral>();
+        const ASTLiteral * literal_to = function_node.arguments->children[2]->as<ASTLiteral>();
+        const ASTLiteral * literal_other = function_node.arguments->children[3]->as<ASTLiteral>();
         if (!literal_to || !literal_other)
             return;
 
-        if (String(literal_to->value.getTypeName()) != "Array" ||
-            String(literal_other->value.getTypeName()) != "String")
+        if (literal_to->value.getTypeName() != std::string_view{"Array"}
+            || literal_other->value.getTypeName() != std::string_view{"String"})
             return;
 
         Array array_to = literal_to->value.get<Array>();
