@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefinedFunction.h>
 
 #include <Interpreters/Context.h>
 
@@ -131,6 +132,21 @@ FunctionFactory & FunctionFactory::instance()
 {
     static FunctionFactory ret;
     return ret;
+}
+
+void FunctionFactory::registerUserDefinedFunction(
+        const ASTCreateFunctionQuery & create_function_query,
+        CaseSensitiveness case_sensitiveness)
+{
+    registerFunction(create_function_query.function_name, [create_function_query](ContextPtr context)
+    {
+        auto function = UserDefinedFunction::create(context);
+        function->setName(create_function_query.function_name);
+        function->setFunctionCore(create_function_query.function_core);
+
+        FunctionOverloadResolverImplPtr res = std::make_unique<DefaultOverloadResolver>(function);
+        return res;
+    }, case_sensitiveness);
 }
 
 }
