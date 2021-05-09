@@ -171,7 +171,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
             return;
 
         Array array_to = literal_to->value.get<Array>();
-        if (array_to.size() == 0)
+        if (array_to.empty())
             return;
 
         bool to_strings = checkSameType(array_to, "String");
