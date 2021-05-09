@@ -115,6 +115,7 @@ struct ReplicatedMergeTreeLogEntryData
     int alter_version = -1; /// May be equal to -1, if it's normal mutation, not metadata update.
 
     /// only ALTER METADATA command
+    /// NOTE It's never used
     bool have_mutation = false; /// If this alter requires additional mutation step, for data update
 
     String columns_str; /// New columns data corresponding to alter_version
