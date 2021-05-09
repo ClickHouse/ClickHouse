@@ -252,7 +252,7 @@ public:
             auto scale = getDecimalScale(*dictionary_attribute.nested_type);
             return ColumnType::create(size, scale);
         }
-        else if constexpr (IsNumber<DictionaryAttributeType>)
+        else if constexpr (is_arithmetic_v<DictionaryAttributeType>)
         {
             return ColumnType::create(size);
         }
