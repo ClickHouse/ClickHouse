@@ -223,7 +223,7 @@ def login_after_user_cn_changed_in_ldap(self, server, rbac=False):
     RQ_SRS_007_LDAP_Authentication_Valid("1.0"),
     RQ_SRS_007_LDAP_Authentication_LDAPServerRestart("1.0")
 )
-def login_after_ldap_server_is_restarted(self, server, timeout=60, rbac=False):
+def login_after_ldap_server_is_restarted(self, server, timeout=300, rbac=False):
     """Check that login succeeds after LDAP server is restarted.
     """
     self.context.ldap_node = self.context.cluster.node(server)
@@ -259,7 +259,7 @@ def login_after_ldap_server_is_restarted(self, server, timeout=60, rbac=False):
     RQ_SRS_007_LDAP_Authentication_Valid("1.0"),
     RQ_SRS_007_LDAP_Authentication_ClickHouseServerRestart("1.0")
 )
-def login_after_clickhouse_server_is_restarted(self, server, timeout=60, rbac=False):
+def login_after_clickhouse_server_is_restarted(self, server, timeout=300, rbac=False):
     """Check that login succeeds after ClickHouse server is restarted.
     """
     self.context.ldap_node = self.context.cluster.node(server)
@@ -481,7 +481,7 @@ def empty_username_and_empty_password(self, server=None, rbac=False):
 @Requirements(
     RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Default("1.0")
 )
-def default_verification_cooldown_value(self, server, rbac=False, timeout=20):
+def default_verification_cooldown_value(self, server, rbac=False):
     """Check that the default value (0) for the verification cooldown parameter
     disables caching and forces contacting the LDAP server for each
     authentication request.
@@ -525,7 +525,7 @@ def default_verification_cooldown_value(self, server, rbac=False, timeout=20):
 @Requirements(
     RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown("1.0")
 )
-def valid_verification_cooldown_value_cn_change(self, server, rbac=False, timeout=20):
+def valid_verification_cooldown_value_cn_change(self, server, rbac=False):
     """Check that we can perform requests without contacting the LDAP server
     after successful authentication when the verification_cooldown parameter
     is set and the user cn is changed.
@@ -570,7 +570,7 @@ def valid_verification_cooldown_value_cn_change(self, server, rbac=False, timeou
 @Requirements(
     RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown("1.0")
 )
-def valid_verification_cooldown_value_password_change(self, server, rbac=False, timeout=20):
+def valid_verification_cooldown_value_password_change(self, server, rbac=False):
     """Check that we can perform requests without contacting the LDAP server
     after successful authentication when the verification_cooldown parameter
     is set and the user password is changed.
@@ -614,7 +614,7 @@ def valid_verification_cooldown_value_password_change(self, server, rbac=False, 
 @Requirements(
     RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown("1.0")
 )
-def valid_verification_cooldown_value_ldap_unavailable(self, server, rbac=False, timeout=20):
+def valid_verification_cooldown_value_ldap_unavailable(self, server, rbac=False):
     """Check that we can perform requests without contacting the LDAP server
     after successful authentication when the verification_cooldown parameter
     is set, even when the LDAP server is offline.
