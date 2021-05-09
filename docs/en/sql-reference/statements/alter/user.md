@@ -56,7 +56,7 @@ Set all the assigned roles to default, excepting `role1` and `role2`:
 ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-Assigns grants from a user with a `john` account to a user with a `jack` account:
+Allows the user with `john` account to grant his privileges to the user with `jack` account:
 
 ``` sql
 ALTER USER john GRANTEES jack;
