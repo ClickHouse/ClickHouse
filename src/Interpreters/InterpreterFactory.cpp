@@ -33,6 +33,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/InterpreterCreateRoleQuery.h>
@@ -263,6 +264,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextPtr
     else if (query->as<ASTExternalDDLQuery>())
     {
         return std::make_unique<InterpreterExternalDDLQuery>(query, context);
+    }
+    else if (query->as<ASTCreateFunctionQuery>())
+    {
+        return std::make_unique<InterpreterCreateFunctionQuery>(query, context);
     }
     else
     {

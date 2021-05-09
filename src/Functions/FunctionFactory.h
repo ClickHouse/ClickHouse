@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/UserDefinedFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 
 #include <functional>
 #include <memory>
@@ -12,6 +14,8 @@
 
 namespace DB
 {
+
+class UserDefinedFunction;
 
 /** Creates function by name.
   * Function could use for initialization (take ownership of shared_ptr, for example)
@@ -37,6 +41,10 @@ public:
         else
             registerFunction(name, &Function::create, case_sensitiveness);
     }
+
+    void registerUserDefinedFunction(
+            const ASTCreateFunctionQuery & create_function_query,
+            CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     /// This function is used by YQL - internal Yandex product that depends on ClickHouse by source code.
     std::vector<std::string> getAllNames() const;
