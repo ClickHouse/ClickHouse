@@ -60,7 +60,7 @@ Specifies users or roles which are allowed to receive [grants](../../../sql-refe
 
 -   `user` — Specifies user which is allowed to receive grants from this user.
 -   `role` — Specifies role which is allowed to receive grants from this user.
--   `ANY` — User with grant option can grant to anyone, used by default.
+-   `ANY` — User with grant option can grant to anyone. Used by default.
 -   `NONE` — User with grant option provides to nobody.
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`.
