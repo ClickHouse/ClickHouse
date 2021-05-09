@@ -68,6 +68,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
@@ -562,13 +563,34 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
-    QueryPlan query_plan;
 
-    buildQueryPlan(query_plan);
+    auto query_cache = context->getQueryCache();
+    BlockInputStreamPtr stream;
+    QueryPipelinePtr pipeline;
+    UInt128 key;
+    if (query_cache) 
+    {
+        key = query_cache->hash(query_ptr);
+        stream = query_cache->get(key);
+    }
+    if (!stream)
+    {
+        QueryPlan query_plan;
 
-    res.pipeline = std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context)));
+        buildQueryPlan(query_plan);
+
+        pipeline = std::make_unique<QueryPipeline>(std::move(*query_plan.buildQueryPipeline(
+            QueryPlanOptimizationSettings::fromContext(context),
+            BuildQueryPipelineSettings::fromContext(context))));
+    }
+    if (query_cache)
+    {
+        stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
+        stream = query_cache->trySet(key, stream);
+        res.in = stream;
+    } 
+    else 
+        res.pipeline = std::move(*pipeline);
     return res;
 }
 

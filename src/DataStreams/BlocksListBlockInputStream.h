@@ -17,7 +17,7 @@ public:
         : list(std::move(list_)), it(list.begin()), end(list.end()) {}
 
     /// Uses a list of blocks lying somewhere else.
-    BlocksListBlockInputStream(BlocksList::iterator & begin_, BlocksList::iterator & end_)
+    BlocksListBlockInputStream(const BlocksList::iterator & begin_, const BlocksList::iterator & end_)
         : it(begin_), end(end_) {}
 
     String getName() const override { return "BlocksList"; }
