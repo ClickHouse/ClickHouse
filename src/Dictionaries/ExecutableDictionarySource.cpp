@@ -101,7 +101,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-BlockInputStreamPtr ExecutableDictionarySource::loadAll()
+BlockInputStreamPtr ExecutableDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
 {
     if (implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -112,7 +112,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
     return std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
 }
 
-BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
+BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */)
 {
     if (implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");

@@ -348,6 +348,7 @@
         "01508_partition_pruning_long",
         "01509_check_parallel_quorum_inserts_long",
         "01509_parallel_quorum_and_merge_long",
+        "01509_dictionary_preallocate",
         "01515_mv_and_array_join_optimisation_bag",
         "01516_create_table_primary_key",
         "01517_drop_mv_with_inner_table",

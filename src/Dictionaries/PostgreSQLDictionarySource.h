@@ -33,8 +33,8 @@ public:
     PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other);
     PostgreSQLDictionarySource & operator=(const PostgreSQLDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
-    BlockInputStreamPtr loadUpdatedAll() override;
+    BlockInputStreamPtr loadAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
+    BlockInputStreamPtr loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
