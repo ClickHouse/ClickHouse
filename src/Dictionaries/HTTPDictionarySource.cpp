@@ -104,7 +104,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-BlockInputStreamPtr HTTPDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     Poco::URI uri(url);
@@ -115,7 +115,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadAll(std::atomic<size_t> * /* resul
     return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
 }
 
-BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(url);
     getUpdateFieldAndDate(uri);

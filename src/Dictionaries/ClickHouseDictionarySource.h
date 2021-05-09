@@ -43,9 +43,11 @@ public:
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll(std::atomic<size_t> * result_size_hint = nullptr) override;
+    BlockInputStreamPtr loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
 
-    BlockInputStreamPtr loadUpdatedAll(std::atomic<size_t> * result_size_hint = nullptr) override;
+    BlockInputStreamPtr loadAll() override;
+
+    BlockInputStreamPtr loadUpdatedAll() override;
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 

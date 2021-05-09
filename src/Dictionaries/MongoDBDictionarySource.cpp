@@ -143,7 +143,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-BlockInputStreamPtr MongoDBDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 {
     return std::make_shared<MongoDBBlockInputStream>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size);
 }

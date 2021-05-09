@@ -105,15 +105,20 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::loadAll(std::atomic<size_t> * result_size_hint)
+BlockInputStreamPtr ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
 {
     return createStreamForQuery(load_all_query, result_size_hint);
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll(std::atomic<size_t> * result_size_hint)
+BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
+{
+    return createStreamForQuery(load_all_query);
+}
+
+BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
-    return createStreamForQuery(load_update_query, result_size_hint);
+    return createStreamForQuery(load_update_query);
 }
 
 BlockInputStreamPtr ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)

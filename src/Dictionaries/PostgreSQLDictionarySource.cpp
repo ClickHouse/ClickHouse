@@ -65,14 +65,14 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-BlockInputStreamPtr PostgreSQLDictionarySource::loadAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, load_all_query);
     return loadBase(load_all_query);
 }
 
 
-BlockInputStreamPtr PostgreSQLDictionarySource::loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */)
+BlockInputStreamPtr PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);

@@ -32,9 +32,9 @@ public:
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
+    BlockInputStreamPtr loadAll() override;
 
-    BlockInputStreamPtr loadUpdatedAll(std::atomic<size_t> * /* result_size_hint */ = nullptr) override;
+    BlockInputStreamPtr loadUpdatedAll() override;
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
