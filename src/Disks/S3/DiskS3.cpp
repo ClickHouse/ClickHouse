@@ -1537,7 +1537,9 @@ String DiskS3::revisionToString(UInt64 revision)
 
 String DiskS3::pathToDetached(const String & source_path)
 {
-    return Poco::Path(source_path).parent().append(Poco::Path("detached")).toString() + '/';
+    if (source_path.ends_with('/'))
+        return fs::path(source_path).parent_path().parent_path() / "detached/";
+    return fs::path(source_path).parent_path() / "detached/";
 }
 
 void DiskS3::onFreeze(const String & path)

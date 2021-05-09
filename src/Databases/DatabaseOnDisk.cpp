@@ -671,8 +671,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     auto & create = ast->as<ASTCreateQuery &>();
     if (!create.table.empty() && create.uuid != UUIDHelpers::Nil)
     {
-        String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
-        table_name = unescapeForFileName(table_name);
+        String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());
 
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
             LOG_WARNING(
