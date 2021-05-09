@@ -90,7 +90,7 @@ BlockInputStreamPtr HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<Re
 {
     String http_request_compression_method_str = http_buffer_ptr->getCompressMethod();
     auto in_ptr_wrapped
-        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod({}, http_request_compression_method_str));
+        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(url, http_request_compression_method_str));
     auto input_stream = context->getInputFormat(format, *in_ptr_wrapped, sample_block, max_block_size);
     return std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(in_ptr_wrapped));
 }
