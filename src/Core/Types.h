@@ -73,25 +73,6 @@ using Int256 = ::Int256;
 STRONG_TYPEDEF(UInt128, UUID)
 
 
-/** Note that for types not used in DB, IsNumber is false.
-  */
-template <typename T> constexpr bool IsNumber = false;
-
-template <> inline constexpr bool IsNumber<UInt8> = true;
-template <> inline constexpr bool IsNumber<UInt16> = true;
-template <> inline constexpr bool IsNumber<UInt32> = true;
-template <> inline constexpr bool IsNumber<UInt64> = true;
-template <> inline constexpr bool IsNumber<UInt128> = true;
-template <> inline constexpr bool IsNumber<UInt256> = true;
-template <> inline constexpr bool IsNumber<Int8> = true;
-template <> inline constexpr bool IsNumber<Int16> = true;
-template <> inline constexpr bool IsNumber<Int32> = true;
-template <> inline constexpr bool IsNumber<Int64> = true;
-template <> inline constexpr bool IsNumber<Int128> = true;
-template <> inline constexpr bool IsNumber<Int256> = true;
-template <> inline constexpr bool IsNumber<Float32> = true;
-template <> inline constexpr bool IsNumber<Float64> = true;
-
 template <typename T> constexpr const char * TypeName = "";
 
 template <> inline constexpr const char * TypeName<UInt8> = "UInt8";

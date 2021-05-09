@@ -505,7 +505,7 @@ class Dispatcher
 public:
     static ColumnPtr apply(const IColumn * column, Scale scale_arg)
     {
-        if constexpr (IsNumber<T>)
+        if constexpr (is_arithmetic_v<T>)
             return apply(checkAndGetColumn<ColumnVector<T>>(column), scale_arg);
         else if constexpr (IsDecimalNumber<T>)
             return apply(checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg);

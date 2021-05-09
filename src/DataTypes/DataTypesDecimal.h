@@ -1,6 +1,7 @@
 #pragma once
 
 #include <common/arithmeticOverflow.h>
+#include <common/extended_types.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
@@ -150,7 +151,7 @@ tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsNumber<typename ToDataType::FieldType>, ReturnType>
+inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>, ReturnType>
 convertFromDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -160,7 +161,7 @@ convertFromDecimalImpl(const typename FromDataType::FieldType & value, UInt32 sc
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsNumber<typename ToDataType::FieldType>, typename ToDataType::FieldType>
+inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>, typename ToDataType::FieldType>
 convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
@@ -171,14 +172,14 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsNumber<typename ToDataType::FieldType>, bool>
+inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>, bool>
 tryConvertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     return convertFromDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
-inline std::enable_if_t<IsNumber<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, ReturnType>
+inline std::enable_if_t<is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, ReturnType>
 convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -225,7 +226,7 @@ convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scal
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsNumber<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, typename ToDataType::FieldType>
+inline std::enable_if_t<is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, typename ToDataType::FieldType>
 convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
@@ -234,7 +235,7 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsNumber<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, bool>
+inline std::enable_if_t<is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, bool>
 tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     return convertToDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);

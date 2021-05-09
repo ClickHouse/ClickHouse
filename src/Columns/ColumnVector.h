@@ -125,7 +125,7 @@ private:
     ColumnVector(std::initializer_list<T> il) : data{il} {}
 
 public:
-    bool isNumeric() const override { return IsNumber<T>; }
+    bool isNumeric() const override { return is_arithmetic_v<T>; }
 
     size_t size() const override
     {
@@ -252,7 +252,7 @@ public:
     /// Out of range conversion is permitted.
     UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
-        if constexpr (IsNumber<T>)
+        if constexpr (is_arithmetic_v<T>)
             return UInt64(data[n]);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
@@ -261,7 +261,7 @@ public:
     /// Out of range conversion is permitted.
     Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
     {
-        if constexpr (IsNumber<T>)
+        if constexpr (is_arithmetic_v<T>)
             return Int64(data[n]);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
@@ -269,7 +269,7 @@ public:
 
     bool getBool(size_t n) const override
     {
-        if constexpr (IsNumber<T>)
+        if constexpr (is_arithmetic_v<T>)
             return bool(data[n]);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
