@@ -132,7 +132,7 @@ class ClickHouseNode(Node):
         with By(f"waiting until container {self.name} is healthy"):
             start_time = time.time()
             while True:
-                if self.query("select 1", no_checks=1, timeout=10, steps=False).exitcode == 0:
+                if self.query("select 1", no_checks=1, timeout=300, steps=False).exitcode == 0:
                     break
                 if time.time() - start_time < timeout:
                     time.sleep(2)
@@ -149,7 +149,7 @@ class ClickHouseNode(Node):
             with By("waiting for 5 sec for moves and merges to stop"):
                 time.sleep(5)
             with And("forcing to sync everything to disk"):
-                self.command("sync", timeout=30)
+                self.command("sync", timeout=300)
 
         self.close_bashes()
 
@@ -179,7 +179,7 @@ class ClickHouseNode(Node):
             with By("waiting for 5 sec for moves and merges to stop"):
                 time.sleep(5)
             with And("forcing to sync everything to disk"):
-                self.command("sync", timeout=30)
+                self.command("sync", timeout=300)
 
         self.close_bashes()
 
