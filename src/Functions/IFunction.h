@@ -54,7 +54,7 @@ public:
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
 
-using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
+using Values = std::vector<llvm::Value *>;
 
 /// Function with known arguments and return type (when the specific overload was chosen).
 /// It is also the point where all function-specific properties are known.
@@ -90,7 +90,7 @@ public:
       *       templates with default arguments is impossible and including LLVM in such a generic header
       *       as this one is a major pain.
       */
-    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const
+    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, Values /*values*/) const
     {
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
