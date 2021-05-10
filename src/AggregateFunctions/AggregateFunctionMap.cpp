@@ -4,6 +4,12 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 class AggregateFunctionCombinatorMap final : public IAggregateFunctionCombinator
 {
 public:
@@ -89,7 +95,9 @@ public:
             {
                 bool match;
                 const auto * tup_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
-                auto check_func = [](DataTypePtr t) {
+
+                auto check_func = [](DataTypePtr t)
+                {
                     return t->getTypeId() == TypeIndex::Array;
                 };
 
