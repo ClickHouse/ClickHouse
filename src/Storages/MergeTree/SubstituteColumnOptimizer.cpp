@@ -375,7 +375,7 @@ void SubstituteColumnOptimizer::perform()
             if (column_flags.contains(column))
                 column_sum = column_sum + column_flags.at(column) * context.int_val(price.compressed_size);
 
-        z3::optimize::handle min_cost = opt.minimize(column_sum);
+        opt.minimize(column_sum);
         if (opt.check() != z3::sat)
             throw Exception("Column swap error", ErrorCodes::LOGICAL_ERROR);
         for (const auto component : components_list)
