@@ -29,6 +29,11 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
         "kerberos": ("kerberos", ),
     }
 
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
+
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "kerberos_env")) as cluster:
         self.context.cluster = cluster

@@ -35,14 +35,14 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
 
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
+
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "ldap_role_mapping_env")) as cluster:
         self.context.cluster = cluster
-        
-        if stress is not None or not hasattr(self.context, "stress"):
-            self.context.stress = stress
-        if parallel is not None or not hasattr(self.context, "parallel"):
-            self.context.parallel = parallel
 
         Scenario(run=load("ldap.authentication.tests.sanity", "scenario"), name="ldap sanity")
         Feature(run=load("ldap.role_mapping.tests.server_config", "feature"))
