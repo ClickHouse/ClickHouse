@@ -6,9 +6,9 @@ toc_priority: 141
 
 Sums the arithmetic difference between consecutive rows. If the difference is negative, it is ignored.
 
-Note that the underlying data must be sorted in order for this function to work properly.
-If you would like to use this function in a materialized view, you most likely want to use the
-[deltaSumTimestamp](deltasumtimestamp.md) method instead.
+Note that the underlying data must be sorted for this function to work properly.
+
+If you would like to use this function in a [materialized view](../../sql-reference/statements/create/view.md#materialized), you most likely want to use the [deltaSumTimestamp](deltasumtimestamp.md) method instead.
 
 **Syntax**
 
