@@ -2275,7 +2275,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.partition_id != drop_range.partition_id)
             throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (part->info.min_block < drop_range.min_block)
+        if (part->info.min_block < drop_range.min_block)    /// Always false, because drop_range.min_block == 0
         {
             if (drop_range.min_block <= part->info.max_block)
             {

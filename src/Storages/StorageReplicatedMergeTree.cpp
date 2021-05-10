@@ -6321,7 +6321,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         MergeTreePartInfo drop_range_dest;
         drop_range_dest.partition_id = drop_range.partition_id;
         drop_range_dest.max_block = drop_range.max_block;
-        drop_range_dest.min_block = drop_range.max_block;
+        drop_range_dest.min_block = drop_range.max_block;   //FIXME typo?
         drop_range_dest.level = drop_range.level;
         drop_range_dest.mutation = drop_range.mutation;
 

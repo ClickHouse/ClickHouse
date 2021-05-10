@@ -237,11 +237,6 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
-    /// Returns list of currently executing parts blocking execution a command modifying specified range
-    size_t getConflictsCountForRange(
-        const MergeTreePartInfo & range, const LogEntry & entry, String * out_description,
-        std::lock_guard<std::mutex> & state_lock) const;
-
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
     {
@@ -321,10 +316,6 @@ public:
       * And also wait for the completion of their execution, if they are now being executed.
       */
     void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
-
-    /** Throws and exception if there are currently executing entries in the range .
-     */
-    void checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const LogEntry & entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -477,7 +468,7 @@ public:
 
     /// Can we assign a merge this part and some other part?
     /// For example a merge of a part and itself is needed for TTL.
-    /// This predicate is checked for the first part of each partitition.
+    /// This predicate is checked for the first part of each range.
     bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
 
     /// Return nonempty optional of desired mutation version and alter version.

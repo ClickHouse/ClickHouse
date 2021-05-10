@@ -926,12 +926,12 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     {
         auto type = (*it)->type;
 
-        if (((type == LogEntry::GET_PART ||
-              type == LogEntry::ATTACH_PART ||
-              type == LogEntry::MERGE_PARTS ||
-              type == LogEntry::MUTATE_PART)
-             && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version)))
-            || checkReplaceRangeCanBeRemoved(part_info, *it, current))
+        bool is_simple_producing_op = type == LogEntry::GET_PART ||
+                                      type == LogEntry::ATTACH_PART ||
+                                      type == LogEntry::MERGE_PARTS ||
+                                      type == LogEntry::MUTATE_PART;
+        bool simple_op_covered = is_simple_producing_op && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version));
+        if (simple_op_covered || checkReplaceRangeCanBeRemoved(part_info, *it, current))
         {
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
@@ -961,50 +961,6 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     /// Let's wait for the operations with the parts contained in the range to be deleted.
     for (LogEntryPtr & entry : to_wait)
         entry->execution_complete.wait(lock, [&entry] { return !entry->currently_executing; });
-}
-
-
-size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
-    const MergeTreePartInfo & range, const LogEntry & entry,
-    String * out_description, std::lock_guard<std::mutex> & /* queue_lock */) const
-{
-    std::vector<std::pair<String, LogEntryPtr>> conflicts;
-
-    for (const auto & future_part_elem : future_parts)
-    {
-        /// Do not check itself log entry
-        if (future_part_elem.second->znode_name == entry.znode_name)
-            continue;
-
-        if (!range.isDisjoint(MergeTreePartInfo::fromPartName(future_part_elem.first, format_version)))
-        {
-            conflicts.emplace_back(future_part_elem.first, future_part_elem.second);
-            continue;
-        }
-    }
-
-    if (out_description)
-    {
-        WriteBufferFromOwnString ss;
-        ss << "Can't execute command for range " << range.getPartName() << " (entry " << entry.znode_name << "). ";
-        ss << "There are " << conflicts.size() << " currently executing entries blocking it: ";
-        for (const auto & conflict : conflicts)
-            ss << conflict.second->typeToString() << " part " << conflict.first << ", ";
-
-        *out_description = ss.str();
-    }
-
-    return conflicts.size();
-}
-
-
-void ReplicatedMergeTreeQueue::checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const LogEntry & entry)
-{
-    String conflicts_description;
-    std::lock_guard lock(state_mutex);
-
-    if (0 != getConflictsCountForRange(range, entry, &conflicts_description, lock))
-        throw Exception(conflicts_description, ErrorCodes::UNFINISHED);
 }
 
 
@@ -1625,8 +1581,11 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
 void ReplicatedMergeTreeQueue::disableMergesInBlockRange(const String & part_name)
 {
-    std::lock_guard lock(state_mutex);
-    virtual_parts.add(part_name);
+    {
+        std::lock_guard lock(state_mutex);
+        virtual_parts.add(part_name);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));    //FIXME
 }
 
 
@@ -1912,9 +1871,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     if (left->info.partition_id != right->info.partition_id)
     {
-        if (out_reason)
-            *out_reason = "Parts " + left->name + " and " + right->name + " belong to different partitions";
-        return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} belong to different partitions", left->name, right->name);
     }
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
