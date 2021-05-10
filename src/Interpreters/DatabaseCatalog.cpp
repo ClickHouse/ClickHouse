@@ -56,7 +56,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
     String global_name;
-    if (query)
+    if (create)
     {
         original_create = create->clone();
         if (create->uuid == UUIDHelpers::Nil)

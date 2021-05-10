@@ -1179,7 +1179,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         part_log_elem.event_type = PartLogElement::REMOVE_PART;
         part_log_elem.event_time = time(nullptr);
-        part_log_elem.duration_ms = 0;
+        part_log_elem.duration_ms = 0; //-V1048
 
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
@@ -3022,6 +3022,9 @@ Pipe MergeTreeData::alterPartition(
             }
 
             break;
+
+            default:
+                throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
         }
         for (auto & command_result : current_command_results)
             command_result.command_type = command.typeToString();

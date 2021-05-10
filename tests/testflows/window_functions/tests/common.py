@@ -100,7 +100,7 @@ def t1_table(self, name="t1", distributed=False):
             create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, rand())"
+            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, f1 % toUInt8(getMacro('shard')))"
             table = create_table(name=name, statement=sql)
 
         with And("populating table with data"):
@@ -155,7 +155,7 @@ def datetimes_table(self, name="datetimes", distributed=False):
             create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, rand())"
+            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, id % toUInt8(getMacro('shard')))"
             table = create_table(name=name, statement=sql)
 
         with And("populating table with data"):
@@ -213,7 +213,7 @@ def numerics_table(self, name="numerics", distributed=False):
             create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, rand())"
+            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, id % toUInt8(getMacro('shard')))"
             table = create_table(name=name, statement=sql)
 
         with And("populating table with data"):
@@ -282,7 +282,7 @@ def tenk1_table(self, name="tenk1", distributed=False):
             create_table(name=name + '_source', statement=sql, on_cluster="sharded_cluster")
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, rand())"
+            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, unique1 % toUInt8(getMacro('shard')))"
             table = create_table(name=name, statement=sql)
 
         with And("populating table with data"):
@@ -353,7 +353,7 @@ def empsalary_table(self, name="empsalary", distributed=False):
                 create_table(name=name + "_source", statement=sql, on_cluster="sharded_cluster")
 
         with And("a distributed table"):
-            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, rand())"
+            sql = "CREATE TABLE {name} AS " + name + '_source' + " ENGINE = Distributed(sharded_cluster, default, " + f"{name + '_source'}, empno % toUInt8(getMacro('shard')))"
             table = create_table(name=name, statement=sql)
 
         with And("populating distributed table with data"):

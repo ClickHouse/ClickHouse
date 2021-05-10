@@ -976,7 +976,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
+std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
 {
     if (shutdown_called)
         return {};
