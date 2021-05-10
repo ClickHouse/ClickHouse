@@ -1,8 +1,6 @@
 #include "MaterializePostgreSQLConsumer.h"
 
-#if USE_LIBPQXX
 #include "StorageMaterializePostgreSQL.h"
-
 #include <Columns/ColumnNullable.h>
 #include <Common/hex.h>
 #include <DataStreams/copyData.h>
@@ -27,7 +25,6 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     std::shared_ptr<postgres::Connection> connection_,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
-    const std::string & metadata_path,
     const std::string & start_lsn,
     const size_t max_block_size_,
     bool allow_automatic_update_,
@@ -36,7 +33,6 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     , context(context_)
     , replication_slot_name(replication_slot_name_)
     , publication_name(publication_name_)
-    , metadata(metadata_path)
     , connection(connection_)
     , current_lsn(start_lsn)
     , max_block_size(max_block_size_)
@@ -77,27 +73,6 @@ void MaterializePostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage
     }
 
     columnsAST = std::move(insert_columns);
-}
-
-
-void MaterializePostgreSQLConsumer::readMetadata()
-{
-    try
-    {
-        metadata.readMetadata();
-
-        if (!metadata.lsn().empty())
-        {
-            auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
-            final_lsn = metadata.lsn();
-            final_lsn = advanceLSN(tx);
-            tx->commit();
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 
@@ -241,14 +216,14 @@ void MaterializePostgreSQLConsumer::readTupleData(
         case PostgreSQLQuery::INSERT:
         {
             buffer.columns[num_columns]->insert(Int8(1));
-            buffer.columns[num_columns + 1]->insert(UInt64(metadata.getAndIncrementVersion()));
+            buffer.columns[num_columns + 1]->insert(lsn_value);
 
             break;
         }
         case PostgreSQLQuery::DELETE:
         {
             buffer.columns[num_columns]->insert(Int8(-1));
-            buffer.columns[num_columns + 1]->insert(UInt64(metadata.getAndIncrementVersion()));
+            buffer.columns[num_columns + 1]->insert(lsn_value);
 
             break;
         }
@@ -260,7 +235,7 @@ void MaterializePostgreSQLConsumer::readTupleData(
             else
                 buffer.columns[num_columns]->insert(Int8(1));
 
-            buffer.columns[num_columns + 1]->insert(UInt64(metadata.getAndIncrementVersion()));
+            buffer.columns[num_columns + 1]->insert(lsn_value);
 
             break;
         }
@@ -488,30 +463,27 @@ void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransact
 
             if (result_rows.rows())
             {
-                metadata.commitMetadata(final_lsn, [&]()
-                {
-                    auto storage = storages[table_name];
+                auto storage = storages[table_name];
 
-                    auto insert = std::make_shared<ASTInsertQuery>();
-                    insert->table_id = storage->getStorageID();
-                    insert->columns = buffer.columnsAST;
+                auto insert = std::make_shared<ASTInsertQuery>();
+                insert->table_id = storage->getStorageID();
+                insert->columns = buffer.columnsAST;
 
-                    auto insert_context = Context::createCopy(context);
-                    insert_context->makeQueryContext();
-                    insert_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
+                auto insert_context = Context::createCopy(context);
+                insert_context->makeQueryContext();
+                insert_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
-                    InterpreterInsertQuery interpreter(insert, insert_context, true);
-                    auto block_io = interpreter.execute();
-                    OneBlockInputStream input(result_rows);
+                InterpreterInsertQuery interpreter(insert, insert_context, true);
+                auto block_io = interpreter.execute();
+                OneBlockInputStream input(result_rows);
 
-                    assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica table sync");
-                    copyData(input, *block_io.out);
+                assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica table sync");
+                copyData(input, *block_io.out);
 
-                    auto actual_lsn = advanceLSN(tx);
-                    buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
-
-                    return actual_lsn;
-                });
+                /// The next attempt to read data will start with actual_lsn, returned from advanceLSN. current_lsn acts as
+                /// a version for rows in RelplacingMergeTree table.
+                current_lsn = advanceLSN(tx);
+                buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
             }
         }
         catch (...)
@@ -632,6 +604,8 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
 
             slot_empty = false;
             current_lsn = (*row)[0];
+            lsn_value = getLSNValue(current_lsn);
+            LOG_DEBUG(log, "Current lsn: {}, value: {}", current_lsn, lsn_value);
 
             processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
@@ -704,7 +678,4 @@ void MaterializePostgreSQLConsumer::updateNested(const String & table_name, Stor
     skip_list[table_id] = table_start_lsn;
 }
 
-
 }
-
-#endif

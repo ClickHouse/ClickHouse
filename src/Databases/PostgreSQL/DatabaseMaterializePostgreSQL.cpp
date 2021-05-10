@@ -31,8 +31,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-static const auto METADATA_SUFFIX = ".materialize_postgresql_metadata";
-
 DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
         ContextPtr context_,
         const String & metadata_path_,
@@ -57,7 +55,6 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
             remote_database_name,
             database_name,
             connection_info,
-            metadata_path + METADATA_SUFFIX,
             getContext(),
             settings->materialize_postgresql_max_block_size.value,
             settings->materialize_postgresql_allow_automatic_update,
@@ -188,12 +185,6 @@ void DatabaseMaterializePostgreSQL::drop(ContextPtr local_context)
 {
     if (replication_handler)
         replication_handler->shutdownFinal();
-
-    /// Remove metadata
-    Poco::File metadata(getMetadataPath() + METADATA_SUFFIX);
-
-    if (metadata.exists())
-        metadata.remove(false);
 
     DatabaseAtomic::drop(StorageMaterializePostgreSQL::makeNestedTableContext(local_context));
 }

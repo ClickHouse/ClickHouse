@@ -1,6 +1,5 @@
 #include "PostgreSQLReplicationHandler.h"
 
-#if USE_LIBPQXX
 #include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
@@ -8,8 +7,8 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Common/setThreadName.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/copyData.h>
-#include <filesystem>
 
 
 namespace DB
@@ -26,7 +25,6 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const String & remote_database_name_,
     const String & current_database_name_,
     const postgres::ConnectionInfo & connection_info_,
-    const std::string & metadata_path_,
     ContextPtr context_,
     const size_t max_block_size_,
     bool allow_automatic_update_,
@@ -36,7 +34,6 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , context(context_)
     , remote_database_name(remote_database_name_)
     , current_database_name(current_database_name_)
-    , metadata_path(metadata_path_)
     , connection_info(connection_info_)
     , max_block_size(max_block_size_)
     , allow_automatic_update(allow_automatic_update_)
@@ -103,7 +100,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
     std::unordered_map<String, StoragePtr> nested_storages;
-    std::string snapshot_name, start_lsn;
+
+    /// snapshot_name is initialized only if a new replication slot is created.
+    /// start_lsn is initialized in two places:
+    /// 1. if replication slot does not exist, start_lsn will be returned with its creation return parameters;
+    /// 2. if replication slot already exist, start_lsn is read from pg_replication_slots as
+    ///    `confirmed_flush_lsn` - the address (LSN) up to which the logical slot's consumer has confirmed receiving data.
+    ///    Data older than this is not available anymore.
+    ///    TODO: more tests
+    String snapshot_name, start_lsn;
 
     auto initial_sync = [&]()
     {
@@ -131,12 +136,13 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// There is one replication slot for each replication handler. In case of MaterializePostgreSQL database engine,
     /// there is one replication slot per database. Its lifetime must be equal to the lifetime of replication handler.
     /// Recreation of a replication slot imposes reloading of all tables.
-    if (!isReplicationSlotExist(tx.getRef(), replication_slot))
+    if (!isReplicationSlotExist(tx.getRef(), replication_slot, start_lsn))
     {
         initial_sync();
     }
     /// Replication slot depends on publication, so if replication slot exists and new
     /// publication was just created - drop that replication slot and start from scratch.
+    /// TODO: tests
     else if (new_publication_created)
     {
         dropReplicationSlot(tx.getRef());
@@ -189,7 +195,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             connection,
             replication_slot,
             publication_name,
-            metadata_path,
             start_lsn,
             max_block_size,
             allow_automatic_update,
@@ -317,24 +322,26 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx, bo
 }
 
 
-bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction & tx, std::string & slot_name)
+bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction & tx, String & slot_name, String & start_lsn)
 {
-    std::string query_str = fmt::format("SELECT active, restart_lsn FROM pg_replication_slots WHERE slot_name = '{}'", slot_name);
+    std::string query_str = fmt::format("SELECT active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = '{}'", slot_name);
     pqxx::result result{tx.exec(query_str)};
 
     /// Replication slot does not exist
     if (result.empty())
         return false;
 
-    LOG_TRACE(log, "Replication slot {} already exists (active: {}). Restart lsn position is {}",
-            slot_name, result[0][0].as<bool>(), result[0][0].as<std::string>());
+    start_lsn = result[0][2].as<std::string>();
+
+    LOG_TRACE(log, "Replication slot {} already exists (active: {}). Restart lsn position: {}, confirmed flush lsn: {}",
+            slot_name, result[0][0].as<bool>(), result[0][1].as<std::string>(), start_lsn);
 
     return true;
 }
 
 
 void PostgreSQLReplicationHandler::createReplicationSlot(
-        pqxx::nontransaction & tx, std::string & start_lsn, std::string & snapshot_name, bool temporary)
+        pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary)
 {
     std::string query_str;
 
@@ -385,12 +392,10 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
-    if (std::filesystem::exists(metadata_path))
-        std::filesystem::remove(metadata_path);
-
     postgres::Transaction<pqxx::nontransaction> tx(connection->getRef());
     dropPublication(tx.getRef());
-    if (isReplicationSlotExist(tx.getRef(), replication_slot))
+    String last_committed_lsn;
+    if (isReplicationSlotExist(tx.getRef(), replication_slot, last_committed_lsn))
         dropReplicationSlot(tx.getRef());
 }
 
@@ -508,6 +513,5 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
     dropReplicationSlot(tx.getRef(), /* temporary */true);
 }
-}
 
-#endif
+}
