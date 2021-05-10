@@ -3,6 +3,7 @@
 #include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
 #include "Connection.h"
+#include <Common/Exception.h>
 
 namespace pqxx
 {
@@ -24,7 +25,17 @@ class Transaction
 public:
     Transaction(pqxx::connection & connection) : transaction(connection) {}
 
-    ~Transaction() { transaction.commit(); }
+    ~Transaction()
+    {
+        try
+        {
+            transaction.commit();
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
     T & getRef() { return transaction; }
 

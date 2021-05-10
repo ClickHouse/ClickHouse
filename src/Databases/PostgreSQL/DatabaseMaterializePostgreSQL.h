@@ -55,8 +55,6 @@ public:
 
     void drop(ContextPtr local_context) override;
 
-    void shutdown() override;
-
     void stopReplication();
 
 private:

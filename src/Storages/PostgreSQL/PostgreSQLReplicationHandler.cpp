@@ -136,7 +136,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// There is one replication slot for each replication handler. In case of MaterializePostgreSQL database engine,
     /// there is one replication slot per database. Its lifetime must be equal to the lifetime of replication handler.
     /// Recreation of a replication slot imposes reloading of all tables.
-    if (!isReplicationSlotExist(tx.getRef(), replication_slot, start_lsn))
+    if (!isReplicationSlotExist(tx.getRef(), start_lsn, /* temporary */false))
     {
         initial_sync();
     }
@@ -322,9 +322,15 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx, bo
 }
 
 
-bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction & tx, String & slot_name, String & start_lsn)
+bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction & tx, String & start_lsn, bool temporary)
 {
-    std::string query_str = fmt::format("SELECT active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = '{}'", slot_name);
+    String slot_name;
+    if (temporary)
+        slot_name = replication_slot + "_tmp";
+    else
+        slot_name = replication_slot;
+
+    String query_str = fmt::format("SELECT active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = '{}'", slot_name);
     pqxx::result result{tx.exec(query_str)};
 
     /// Replication slot does not exist
@@ -343,9 +349,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
 void PostgreSQLReplicationHandler::createReplicationSlot(
         pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary)
 {
-    std::string query_str;
-
-    std::string slot_name;
+    String query_str, slot_name;
     if (temporary)
         slot_name = replication_slot + "_tmp";
     else
@@ -395,8 +399,10 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     postgres::Transaction<pqxx::nontransaction> tx(connection->getRef());
     dropPublication(tx.getRef());
     String last_committed_lsn;
-    if (isReplicationSlotExist(tx.getRef(), replication_slot, last_committed_lsn))
-        dropReplicationSlot(tx.getRef());
+    if (isReplicationSlotExist(tx.getRef(), last_committed_lsn, /* temporary */false))
+        dropReplicationSlot(tx.getRef(), /* temporary */false);
+    if (isReplicationSlotExist(tx.getRef(), last_committed_lsn, /* temporary */true))
+        dropReplicationSlot(tx.getRef(), /* temporary */true);
 }
 
 
@@ -453,8 +459,10 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
     postgres::Connection replication_connection(connection_info, /* replication */true);
     postgres::Transaction<pqxx::nontransaction> tx(replication_connection.getRef());
 
-    std::string snapshot_name, start_lsn;
-    createReplicationSlot(tx.getRef(), start_lsn, snapshot_name, true);
+    String snapshot_name, start_lsn;
+    if (isReplicationSlotExist(tx.getRef(), start_lsn, /* temporary */true))
+        dropReplicationSlot(tx.getRef(), /* temporary */true);
+    createReplicationSlot(tx.getRef(), start_lsn, snapshot_name, /* temporary */true);
 
     for (const auto & [relation_id, table_name] : relation_data)
     {

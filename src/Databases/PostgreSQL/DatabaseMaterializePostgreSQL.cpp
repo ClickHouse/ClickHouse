@@ -92,13 +92,6 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
 }
 
 
-void DatabaseMaterializePostgreSQL::shutdown()
-{
-    if (replication_handler)
-        replication_handler->shutdown();
-}
-
-
 void DatabaseMaterializePostgreSQL::loadStoredObjects(ContextPtr local_context, bool has_force_restore_data_flag, bool force_attach)
 {
     DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
