@@ -16,6 +16,10 @@ public:
     BlockIO execute() override;
 
 private:
+    static void validateFunction(ASTPtr function);
+    static void getIdentifiers(ASTPtr node, std::vector<String> & identifiers);
+
+private:
     ASTPtr query_ptr;
 };
 
