@@ -83,7 +83,7 @@ void findOrs(ASTPtr & node, std::vector<std::reference_wrapper<ASTPtr>> & ors)
     if (func && func->name == "or")
         ors.push_back(node);
 
-    if (func)
+    if (func && (func->name == "and" || func->name == "not"))
     {
         for (auto & child : func->arguments->children)
             findOrs(child, ors);
