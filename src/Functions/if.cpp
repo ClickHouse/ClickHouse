@@ -169,7 +169,7 @@ public:
 };
 
 
-class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
+class FunctionIf : public FunctionIfBase
 {
 public:
     static constexpr auto name = "if";
