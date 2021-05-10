@@ -135,14 +135,36 @@ std::string CompileDAG::dump() const
 
 UInt128 CompileDAG::hash() const
 {
-    std::string dag_dump = dump();
-
     SipHash hash;
-    hash.update(dag_dump);
+    for (const auto & node : nodes)
+    {
+        hash.update(node.type);
+        hash.update(node.result_type->getName());
+
+        switch (node.type)
+        {
+            case CompileType::CONSTANT:
+            {
+                assert_cast<const ColumnConst *>(node.column.get())->getDataColumn().updateHashWithValue(0, hash);
+                break;
+            }
+            case CompileType::FUNCTION:
+            {
+                hash.update(node.function->getName());
+                for (size_t arg : node.arguments)
+                    hash.update(arg);
+
+                break;
+            }
+            case CompileType::INPUT:
+            {
+                break;
+            }
+        }
+    }
 
     UInt128 result;
     hash.get128(result.low, result.high);
-
     return result;
 }
 
