@@ -13,7 +13,7 @@ SELECT k, js1.s, t2.s FROM (SELECT toUInt64(number / 3) AS k, sum(number) as s F
 
 SELECT k, js1.s, t2.s FROM (SELECT number AS k, number AS s FROM system.numbers LIMIT 10) js1 ANY LEFT JOIN t2 ON js1.k == t2.k;
 
--- geting qualified key columns from Join table still doen't work
+-- getting qualified key columns from Join table still doen't work
 SELECT t2.k FROM (SELECT number AS k, number AS s FROM system.numbers LIMIT 10) js1 ANY LEFT JOIN t2 ON js1.k == t2.k; -- { serverError 8 }
 
 DROP TABLE t2;
