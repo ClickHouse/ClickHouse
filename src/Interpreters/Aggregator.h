@@ -1043,12 +1043,12 @@ private:
       */
     struct AggregateFunctionInstruction
     {
-        const IAggregateFunction * that;
-        size_t state_offset;
-        const IColumn ** arguments;
-        const IAggregateFunction * batch_that;
-        const IColumn ** batch_arguments;
-        const UInt64 * offsets = nullptr;
+        const IAggregateFunction * that{};
+        size_t state_offset{};
+        const IColumn ** arguments{};
+        const IAggregateFunction * batch_that{};
+        const IColumn ** batch_arguments{};
+        const UInt64 * offsets{};
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;

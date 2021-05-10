@@ -29,7 +29,7 @@ namespace ErrorCodes
     struct Error
     {
         /// Number of times Exception with this ErrorCode had been throw.
-        Value count;
+        Value count = 0;
         /// Time of the last error.
         UInt64 error_time_ms = 0;
         /// Message for the last error.
