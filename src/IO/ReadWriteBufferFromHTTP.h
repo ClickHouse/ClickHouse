@@ -91,7 +91,8 @@ namespace detail
 
     protected:
         Poco::URI uri;
-        std::string method, content_encoding;
+        std::string method;
+        std::string content_encoding;
 
         UpdatableSessionPtr session;
         std::istream * istr; /// owned by session
@@ -232,7 +233,7 @@ namespace detail
             next_callback(count());
         }
 
-        const std::string& getCompressMethod() const
+        const std::string & getCompressionMethod() const
         {
             return content_encoding;
         }
