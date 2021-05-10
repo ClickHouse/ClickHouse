@@ -717,7 +717,7 @@ public:
 
         for (const auto & src_column : block_with_columns_to_add)
         {
-            /// Column names `src_column.name` and `qualified_name` can be differ for StorageJoin,
+            /// Column names `src_column.name` and `qualified_name` can differ for StorageJoin,
             /// because it uses not qualified right block column names
             auto qualified_name = join.getTableJoin().renamedRightColumnName(src_column.name);
             /// Don't insert column if it's in left block
