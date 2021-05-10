@@ -25,7 +25,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 
 !!! attention "Attention"
-    For `dict_name` argument, if database name is not fully qualified for dictionaries created with DDL, current database is used.
+    For `dict_name` argument, if database name is not specified for dictionaries created with DDL, current database is used.
 
 **Returned value**
 
@@ -115,7 +115,7 @@ dictHas('dict_name', id_expr)
 -   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
 
 !!! attention "Attention"
-    For `dict_name` argument, if database name is not fully qualified for dictionaries created with DDL, current database is used.
+    For `dict_name` argument, if database name is not specified for dictionaries created with DDL, current database is used.
 
 **Returned value**
 
