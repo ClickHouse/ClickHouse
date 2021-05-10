@@ -31,14 +31,15 @@ postgres_table_template_3 = """
     key1 Integer NOT NULL, value1 Integer, key2 Integer NOT NULL, value2 Integer NOT NULL)
     """
 
-def get_postgres_conn(database=False):
+def get_postgres_conn(database=False, auto_commit=True):
     if database == True:
         conn_string = "host='localhost' dbname='postgres_database' user='postgres' password='mysecretpassword'"
     else:
         conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
     conn = psycopg2.connect(conn_string)
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    conn.autocommit = True
+    if auto_commit:
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        conn.autocommit = True
     return conn
 
 
@@ -445,7 +446,7 @@ def test_random_queries(started_cluster):
     query = ['DELETE FROM postgresql_replica_{} WHERE (value*value) % 3 = 0;',
         'UPDATE postgresql_replica_{} SET value = value - 125 WHERE key % 2 = 0;',
         'DELETE FROM postgresql_replica_{} WHERE key % 10 = 0;',
-        'UPDATE postgresql_replica_{} SET value = value*value WHERE key % 2 = 1;',
+        'UPDATE postgresql_replica_{} SET value = value*5 WHERE key % 2 = 1;',
         'DELETE FROM postgresql_replica_{} WHERE value % 2 = 0;',
         'UPDATE postgresql_replica_{} SET value = value + 2000 WHERE key % 5 = 0;',
         'DELETE FROM postgresql_replica_{} WHERE value % 3 = 0;',
@@ -509,6 +510,53 @@ def test_random_queries(started_cluster):
 
     instance.query("DROP DATABASE test_database")
     assert 'test_database' not in instance.query('SHOW DATABASES')
+
+
+@pytest.mark.timeout(120)
+def test_single_transaction(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(database=True, auto_commit=False)
+    cursor = conn.cursor()
+
+    create_postgres_table(cursor, 'postgresql_replica_0');
+    conn.commit()
+    instance.query(
+        "CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+    assert_nested_table_is_created('postgresql_replica_0')
+
+    queries = [
+        'INSERT INTO postgresql_replica_{} select i, i from generate_series(0, 10000) as t(i);',
+        'DELETE FROM postgresql_replica_{} WHERE (value*value) % 3 = 0;',
+        'UPDATE postgresql_replica_{} SET value = value - 125 WHERE key % 2 = 0;',
+        "UPDATE postgresql_replica_{} SET key=key+20000 WHERE key%2=0",
+        'INSERT INTO postgresql_replica_{} select i, i from generate_series(40000, 50000) as t(i);',
+        'DELETE FROM postgresql_replica_{} WHERE key % 10 = 0;',
+        'UPDATE postgresql_replica_{} SET value = value + 101 WHERE key % 2 = 1;',
+        "UPDATE postgresql_replica_{} SET key=key+80000 WHERE key%2=1",
+        'DELETE FROM postgresql_replica_{} WHERE value % 2 = 0;',
+        'UPDATE postgresql_replica_{} SET value = value + 2000 WHERE key % 5 = 0;',
+        'INSERT INTO postgresql_replica_{} select i, i from generate_series(200000, 250000) as t(i);',
+        'DELETE FROM postgresql_replica_{} WHERE value % 3 = 0;',
+        'UPDATE postgresql_replica_{} SET value = value * 2 WHERE key % 3 = 0;',
+        "UPDATE postgresql_replica_{} SET key=key+500000 WHERE key%2=1",
+        'INSERT INTO postgresql_replica_{} select i, i from generate_series(1000000, 1050000) as t(i);',
+        'DELETE FROM postgresql_replica_{} WHERE value % 9 = 2;',
+        "UPDATE postgresql_replica_{} SET key=key+10000000",
+        'UPDATE postgresql_replica_{} SET value = value + 2  WHERE key % 3 = 1;',
+        'DELETE FROM postgresql_replica_{} WHERE value%5 = 0;']
+
+    for query in queries:
+        print('query {}'.format(query))
+        cursor.execute(query.format(0))
+
+    time.sleep(5)
+    result = instance.query("select count() from test_database.postgresql_replica_0")
+    # no commit yet
+    assert(int(result) == 0)
+
+    conn.commit()
+    check_tables_are_synchronized('postgresql_replica_{}'.format(0));
+    instance.query("DROP DATABASE test_database")
 
 
 if __name__ == '__main__':
