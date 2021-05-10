@@ -4,6 +4,7 @@
 
 namespace DB
 {
+
 /// CREATE FUNCTION test AS x -> x || '1'
 class ParserCreateFunctionQuery : public IParserBase
 {

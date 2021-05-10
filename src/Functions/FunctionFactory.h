@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/UserDefinedFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -14,8 +13,6 @@
 
 namespace DB
 {
-
-class UserDefinedFunction;
 
 /** Creates function by name.
   * Function could use for initialization (take ownership of shared_ptr, for example)
