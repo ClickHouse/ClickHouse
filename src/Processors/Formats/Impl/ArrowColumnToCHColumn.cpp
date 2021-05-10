@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-
 namespace DB
 {
     namespace ErrorCodes
@@ -76,6 +75,21 @@ namespace DB
         nested_column.reserve(nested_column_length);
     }
 
+    /// Creates a null bytemap from arrow's null bitmap
+    static void fillByteMapFromArrowColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & bytemap)
+    {
+        PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*bytemap).getData();
+        bytemap_data.reserve(arrow_column->length());
+
+        for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->num_chunks()); ++chunk_i)
+        {
+            std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
+
+            for (size_t value_i = 0; value_i != static_cast<size_t>(chunk->length()); ++value_i)
+                bytemap_data.emplace_back(chunk->IsNull(value_i));
+        }
+    }
+
 /// Inserts numeric data right into internal column data to reduce an overhead
     template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
     static void fillColumnWithNumericData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
@@ -97,35 +111,63 @@ namespace DB
     template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
     static void fillColumnWithArrayNumericData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
-        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
-        ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
+        ColumnArray & column_array = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = column_array.getOffsets();
 
-        VectorType & nested_column = static_cast<VectorType &>(array_column.getData());
+        const bool is_column_array_nullable = column_array.getData().isNullable();
+        ColumnNullable * column_nullable = is_column_array_nullable ? static_cast<ColumnNullable *>(&column_array.getData()) : nullptr;
+
+        IColumn & array_nested_column =
+            is_column_array_nullable ? static_cast<ColumnNullable &>(column_array.getData()).getNestedColumn() :
+            column_array.getData();
+        VectorType & nested_column = static_cast<VectorType &>(array_nested_column);
         auto & nested_column_data = nested_column.getData();
 
-        reserveArrayColumn(arrow_column, array_column, nested_column);
+        reserveArrayColumn(arrow_column, column_array, nested_column);
 
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
             arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
 
+            const std::shared_ptr<arrow::Array> array = list_chunk.values();
+            std::shared_ptr<arrow::Buffer> buffer = array->data()->buffers[1];
+            const auto * raw_data = reinterpret_cast<const NumericType *>(buffer->data());
+            nested_column_data.insert_assume_reserved(raw_data, raw_data + array->length());
+
             for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
             {
                 const std::shared_ptr<arrow::Array> chunk = list_chunk.value_slice(array_idx);
                 /// buffers[0] is a null bitmap and buffers[1] are actual values
-                std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
+                std::shared_ptr<arrow::Buffer> inner_buffer = chunk->data()->buffers[1];
 
-                const auto * raw_data = reinterpret_cast<const NumericType *>(buffer->data());
-                nested_column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
+                const size_t chunk_length = list_chunk.value_length(array_idx);
+
+                for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
+                {
+                    if (!chunk->IsNull(offset_i) && inner_buffer)
+                    {
+                        if (is_column_array_nullable && column_nullable)
+                        {
+                            column_nullable->getNullMapData().push_back(0);
+                        }
+                    }
+                    else
+                    {
+                        if (is_column_array_nullable && column_nullable)
+                        {
+                            column_nullable->getNullMapData().push_back(1);
+                        }
+                    }
+                }
 
                 column_array_offsets.emplace_back(column_array_offsets.back() + chunk->length());
             }
         }
     }
 
-/// Inserts chars and offsets right into internal column data to reduce an overhead.
-/// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
-/// Also internal strings are null terminated.
+    /// Inserts chars and offsets right into internal column data to reduce an overhead.
+    /// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
+    /// Also internal strings are null terminated.
     static void fillColumnWithStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*internal_column).getChars();
@@ -169,7 +211,13 @@ namespace DB
         ColumnArray & column_array = assert_cast<ColumnArray &>(*internal_column);
         ColumnArray::Offsets & column_array_offsets = column_array.getOffsets();
 
-        ColumnString & nested_column = typeid_cast<ColumnString &>(column_array.getData());
+        const bool is_column_array_nullable = column_array.getData().isNullable();
+        ColumnNullable * column_nullable = is_column_array_nullable ? static_cast<ColumnNullable *>(&column_array.getData()) : nullptr;
+
+        IColumn & array_nested_column =
+            is_column_array_nullable ? static_cast<ColumnNullable &>(column_array.getData()).getNestedColumn() :
+            column_array.getData();
+        ColumnString & nested_column = static_cast<ColumnString &>(array_nested_column);
         PaddedPODArray<UInt8> & nested_column_chars = nested_column.getChars();
         PaddedPODArray<UInt64> & nested_column_offsets = nested_column.getOffsets();
 
@@ -212,6 +260,17 @@ namespace DB
                     {
                         const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
                         nested_column_chars.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
+                        if (is_column_array_nullable && column_nullable)
+                        {
+                            column_nullable->getNullMapData().push_back(0);
+                        }
+                    }
+                    else
+                    {
+                        if (is_column_array_nullable && column_nullable)
+                        {
+                            column_nullable->getNullMapData().push_back(1);
+                        }
                     }
                     nested_column_chars.emplace_back('\0');
                     nested_column_offsets.emplace_back(nested_column_chars.size());
@@ -239,32 +298,48 @@ namespace DB
 
     static void fillColumnWithArrayBooleanData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
-        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
-        ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
+        ColumnArray & column_array = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = column_array.getOffsets();
 
-        ColumnVector<UInt8> & nested_column = assert_cast<ColumnVector<UInt8> &>(array_column.getData());
+        const bool is_column_array_nullable = column_array.getData().isNullable();
+        ColumnNullable * column_nullable = is_column_array_nullable ? static_cast<ColumnNullable *>(&column_array.getData()) : nullptr;
+
+        IColumn & array_nested_column =
+            is_column_array_nullable ? static_cast<ColumnNullable &>(column_array.getData()).getNestedColumn() :
+            column_array.getData();
+        ColumnVector<UInt8> & nested_column = assert_cast<ColumnVector<UInt8> &>(array_nested_column);
         auto & nested_column_data = nested_column.getData();
 
-        reserveArrayColumn(arrow_column, array_column, nested_column);
+        reserveArrayColumn(arrow_column, column_array, nested_column);
 
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
             arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+            const std::shared_ptr<arrow::Array> list_array = list_chunk.values();
+            auto & chunk = static_cast<arrow::BooleanArray &>(*(list_array));
+            for (size_t bool_i = 0; bool_i != static_cast<size_t>(list_array->length()); ++bool_i)
+            {
+                nested_column_data.emplace_back(chunk.Value(bool_i));
+            }
+
+            if (is_column_array_nullable && column_nullable)
+            {
+                for (size_t bool_i = 0; bool_i != static_cast<size_t>(list_array->length()); ++bool_i)
+                {
+                    if (!chunk.IsNull(bool_i))
+                    {
+                        column_nullable->getNullMapData().push_back(0);
+                    }
+                    else
+                    {
+                        column_nullable->getNullMapData().push_back(1);
+                    }
+                }
+            }
 
             for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
             {
-                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
-
-                auto & chunk = static_cast<arrow::BooleanArray &>(*(array));
-                const size_t chunk_length = chunk.length();
-
-                /// buffers[0] is a null bitmap and buffers[1] are actual values
-                std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
-
-                for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
-                    nested_column_data.emplace_back(chunk.Value(bool_i));
-
-                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
+                column_array_offsets.emplace_back(column_array_offsets.back() + list_chunk.value_offset(array_idx));
             }
         }
     }
@@ -302,7 +377,13 @@ namespace DB
         ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
         ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
 
-        ColumnVector<UInt16> & nested_column = assert_cast<ColumnVector<UInt16> &>(array_column.getData());
+        const bool is_column_array_nullable = array_column.getData().isNullable();
+        ColumnNullable * column_nullable = is_column_array_nullable ? static_cast<ColumnNullable *>(&array_column.getData()) : nullptr;
+
+        IColumn & array_nested_column =
+            is_column_array_nullable ? static_cast<ColumnNullable &>(array_column.getData()).getNestedColumn() :
+            array_column.getData();
+        ColumnVector<UInt16> & nested_column = assert_cast<ColumnVector<UInt16> &>(array_nested_column);
         auto & nested_column_data = nested_column.getData();
 
         reserveArrayColumn(arrow_column, array_column, nested_column);
@@ -310,30 +391,42 @@ namespace DB
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
             arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+            const std::shared_ptr<arrow::Array> list_array = list_chunk.values();
+            auto & chunk = static_cast<arrow::Date32Array &>(*(list_array));
+            for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            {
+                UInt32 days_num = static_cast<UInt32>(chunk.Value(value_i));
+                if (days_num > DATE_LUT_MAX_DAY_NUM)
+                {
+                    // TODO: will it rollback correctly?
+                    throw Exception{
+                        "Input value " + std::to_string(days_num) + " of a column \"" + internal_column->getName()
+                            + "\" is greater than "
+                              "max allowed Date value, which is "
+                            + std::to_string(DATE_LUT_MAX_DAY_NUM),
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+                }
+                nested_column_data.emplace_back(days_num);
+            }
+
+            if (is_column_array_nullable && column_nullable)
+            {
+                for (size_t bool_i = 0; bool_i != static_cast<size_t>(list_array->length()); ++bool_i)
+                {
+                    if (!chunk.IsNull(bool_i))
+                    {
+                        column_nullable->getNullMapData().push_back(0);
+                    }
+                    else
+                    {
+                        column_nullable->getNullMapData().push_back(1);
+                    }
+                }
+            }
 
             for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
             {
-                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
-
-                auto & chunk = static_cast<arrow::Date32Array &>(*(array));
-                const size_t chunk_length = chunk.length();
-
-                for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
-                {
-                    UInt32 days_num = static_cast<UInt32>(chunk.Value(value_i));
-                    if (days_num > DATE_LUT_MAX_DAY_NUM)
-                    {
-                        // TODO: will it rollback correctly?
-                        throw Exception{"Input value " + std::to_string(days_num) + " of a column \"" + internal_column->getName()
-                                        + "\" is greater than "
-                                          "max allowed Date value, which is "
-                                        + std::to_string(DATE_LUT_MAX_DAY_NUM),
-                                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
-                    }
-
-                    nested_column_data.emplace_back(days_num);
-                }
-                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
+                column_array_offsets.emplace_back(column_array_offsets.back() + list_chunk.value_offset(array_idx));
             }
         }
     }
@@ -360,7 +453,13 @@ namespace DB
         ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
         ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
 
-        ColumnVector<UInt32> & nested_column = typeid_cast<ColumnVector<UInt32> &>(array_column.getData());
+        const bool is_column_array_nullable = array_column.getData().isNullable();
+        ColumnNullable * column_nullable = is_column_array_nullable ? static_cast<ColumnNullable *>(&array_column.getData()) : nullptr;
+
+        IColumn & array_nested_column =
+            is_column_array_nullable ? static_cast<ColumnNullable &>(array_column.getData()).getNestedColumn() :
+            array_column.getData();
+        ColumnVector<UInt32> & nested_column = assert_cast<ColumnVector<UInt32> &>(array_nested_column);
         auto & nested_column_data = nested_column.getData();
 
         reserveArrayColumn(arrow_column, array_column, nested_column);
@@ -368,20 +467,32 @@ namespace DB
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
             arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+            const std::shared_ptr<arrow::Array> list_array = list_chunk.values();
+            auto & chunk = static_cast<arrow::Date64Array &>(*(list_array));
+            for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            {
+                auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
+                nested_column_data.emplace_back(timestamp);
+            }
+
+            if (is_column_array_nullable && column_nullable)
+            {
+                for (size_t bool_i = 0; bool_i != static_cast<size_t>(list_array->length()); ++bool_i)
+                {
+                    if (!chunk.IsNull(bool_i))
+                    {
+                        column_nullable->getNullMapData().push_back(0);
+                    }
+                    else
+                    {
+                        column_nullable->getNullMapData().push_back(1);
+                    }
+                }
+            }
 
             for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
             {
-                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
-
-                auto & chunk = static_cast<arrow::Date64Array &>(*(array));
-                const size_t chunk_length = chunk.length();
-
-                for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
-                {
-                    auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
-                    nested_column_data.emplace_back(timestamp);
-                }
-                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
+                column_array_offsets.emplace_back(column_array_offsets.back() + list_chunk.value_offset(array_idx));
             }
         }
     }
@@ -424,50 +535,68 @@ namespace DB
 
     static void fillColumnWithArrayTimestampData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
-        ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
-        ColumnArray::Offsets & array_column_offsets = array_column.getOffsets();
+        ColumnArray & column_array = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & column_array_offsets = column_array.getOffsets();
 
-        ColumnVector<UInt32> & nested_column = typeid_cast<ColumnVector<UInt32> &>(array_column.getData());
+        const bool is_column_array_nullable = column_array.getData().isNullable();
+        ColumnNullable * column_nullable = is_column_array_nullable ? static_cast<ColumnNullable *>(&column_array.getData()) : nullptr;
+
+        IColumn & array_nested_column =
+            is_column_array_nullable ? static_cast<ColumnNullable &>(column_array.getData()).getNestedColumn() :
+            column_array.getData();
+        ColumnVector<UInt32> & nested_column = assert_cast<ColumnVector<UInt32> &>(array_nested_column);
         auto & nested_column_data = nested_column.getData();
 
-        reserveArrayColumn(arrow_column, array_column, nested_column);
+        reserveArrayColumn(arrow_column, column_array, nested_column);
 
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
             arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+            const auto & type = static_cast<const ::arrow::TimestampType &>(*list_chunk.type());
+            const std::shared_ptr<arrow::Array> list_array = list_chunk.values();
+            auto & chunk = static_cast<arrow::TimestampArray &>(*(list_array));
+            UInt32 divide = 1;
+            const auto unit = type.unit();
+            switch (unit)
+            {
+                case arrow::TimeUnit::SECOND:
+                    divide = 1;
+                    break;
+                case arrow::TimeUnit::MILLI:
+                    divide = 1000;
+                    break;
+                case arrow::TimeUnit::MICRO:
+                    divide = 1000000;
+                    break;
+                case arrow::TimeUnit::NANO:
+                    divide = 1000000000;
+                    break;
+            }
+
+            for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            {
+                auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / divide); // ms! TODO: check other 's' 'ns' ...
+                nested_column_data.emplace_back(timestamp);
+            }
+
+            if (is_column_array_nullable && column_nullable)
+            {
+                for (size_t bool_i = 0; bool_i != static_cast<size_t>(list_array->length()); ++bool_i)
+                {
+                    if (!chunk.IsNull(bool_i))
+                    {
+                        column_nullable->getNullMapData().push_back(0);
+                    }
+                    else
+                    {
+                        column_nullable->getNullMapData().push_back(1);
+                    }
+                }
+            }
 
             for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
             {
-                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
-
-                auto & chunk = static_cast<arrow::TimestampArray &>(*array);
-                const auto & type = static_cast<const ::arrow::TimestampType &>(*chunk.type());
-                const size_t chunk_length = chunk.length();
-
-                UInt32 divide = 1;
-                const auto unit = type.unit();
-                switch (unit)
-                {
-                    case arrow::TimeUnit::SECOND:
-                        divide = 1;
-                        break;
-                    case arrow::TimeUnit::MILLI:
-                        divide = 1000;
-                        break;
-                    case arrow::TimeUnit::MICRO:
-                        divide = 1000000;
-                        break;
-                    case arrow::TimeUnit::NANO:
-                        divide = 1000000000;
-                        break;
-                }
-
-                for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
-                {
-                    auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / divide); // ms! TODO: check other 's' 'ns' ...
-                    nested_column_data.emplace_back(timestamp);
-                }
-                array_column_offsets.emplace_back(array_column_offsets.back() + chunk_length);
+                column_array_offsets.emplace_back(column_array_offsets.back() + list_chunk.value_offset(array_idx));
             }
         }
     }
@@ -493,7 +622,13 @@ namespace DB
         ColumnArray & array_column = assert_cast<ColumnArray &>(*internal_column);
         ColumnArray::Offsets & column_array_offsets = array_column.getOffsets();
 
-        ColumnDecimal<Decimal128> & nested_column = typeid_cast<ColumnDecimal<Decimal128> &>(array_column.getData());
+        const bool is_column_array_nullable = array_column.getData().isNullable();
+        ColumnNullable * column_nullable = is_column_array_nullable ? static_cast<ColumnNullable *>(&array_column.getData()) : nullptr;
+
+        IColumn & array_nested_column =
+            is_column_array_nullable ? static_cast<ColumnNullable &>(array_column.getData()).getNestedColumn() :
+            array_column.getData();
+        ColumnDecimal<Decimal128> & nested_column = assert_cast<ColumnDecimal<Decimal128> &>(array_nested_column);
         auto & nested_column_data = nested_column.getData();
 
         reserveArrayColumn(arrow_column, array_column, nested_column);
@@ -501,34 +636,32 @@ namespace DB
         for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
             arrow::ListArray & list_chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+            const std::shared_ptr<arrow::Array> list_array = list_chunk.values();
+            auto & chunk = static_cast<arrow::DecimalArray &>(*(list_array));
+            for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            {
+                nested_column_data.emplace_back(*reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
+            }
+
+            if (is_column_array_nullable && column_nullable)
+            {
+                for (size_t bool_i = 0; bool_i != static_cast<size_t>(list_array->length()); ++bool_i)
+                {
+                    if (!chunk.IsNull(bool_i))
+                    {
+                        column_nullable->getNullMapData().push_back(0);
+                    }
+                    else
+                    {
+                        column_nullable->getNullMapData().push_back(1);
+                    }
+                }
+            }
 
             for (int64_t array_idx = 0; array_idx != list_chunk.length(); ++array_idx)
             {
-                const std::shared_ptr<arrow::Array> array = list_chunk.value_slice(array_idx);
-                arrow::DecimalArray & chunk = static_cast<arrow::DecimalArray &>(*(array));
-                const size_t chunk_length = chunk.length();
-
-                for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
-                {
-                    nested_column_data.emplace_back(chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
-                }
-                column_array_offsets.emplace_back(column_array_offsets.back() + chunk_length);
+                column_array_offsets.emplace_back(column_array_offsets.back() + list_chunk.value_offset(array_idx));
             }
-        }
-    }
-
-/// Creates a null bytemap from arrow's null bitmap
-    static void fillByteMapFromArrowColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & bytemap)
-    {
-        PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*bytemap).getData();
-        bytemap_data.reserve(arrow_column->length());
-
-        for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->num_chunks()); ++chunk_i)
-        {
-            std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
-
-            for (size_t value_i = 0; value_i != static_cast<size_t>(chunk->length()); ++value_i)
-                bytemap_data.emplace_back(chunk->IsNull(value_i));
         }
     }
 
@@ -586,11 +719,16 @@ namespace DB
                 const auto * list_type = static_cast<arrow::ListType *>(arrow_column->type().get());
                 list_nested_type = list_type->value_type();
 
+                const auto * column_array_type = static_cast<const DataTypeArray *>(column_type.get());
+                const bool is_column_array_nullable = column_array_type->getNestedType()->isNullable();
+
                 if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
                                                                  [=](auto && elem) { return elem.first == list_nested_type->id(); });
                     internal_type_it != arrow_type_to_internal_type.end())
                 {
-                    array_nested_type = DataTypeFactory::instance().get(internal_type_it->second);
+                    DataTypePtr array_instance_type = DataTypeFactory::instance().get(internal_type_it->second);
+                    array_nested_type = is_column_array_nullable ? makeNullable(array_instance_type)
+                                                                                : array_instance_type;
                     internal_nested_type = std::make_shared<DataTypeArray>(array_nested_type);
                 }
                 else 
