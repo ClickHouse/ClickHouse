@@ -1,13 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#include "config_core.h"
-#endif
-
-#if USE_LIBPQXX
-
 #include "MaterializePostgreSQLConsumer.h"
-#include "MaterializePostgreSQLMetadata.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/PostgreSQL/Utils.h>
 
@@ -29,7 +22,6 @@ public:
             const String & remote_database_name_,
             const String & current_database_name_,
             const postgres::ConnectionInfo & connection_info_,
-            const String & metadata_path_,
             ContextPtr context_,
             const size_t max_block_size_,
             bool allow_automatic_update_,
@@ -69,9 +61,9 @@ private:
 
     /// Methods to manage Replication Slots.
 
-    bool isReplicationSlotExist(pqxx::nontransaction & tx, std::string & slot_name);
+    bool isReplicationSlotExist(pqxx::nontransaction & tx, String & slot_name, String & start_lsn);
 
-    void createReplicationSlot(pqxx::nontransaction & tx, std::string & start_lsn, std::string & snapshot_name, bool temporary = false);
+    void createReplicationSlot(pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary = false);
 
     void dropReplicationSlot(pqxx::nontransaction & tx, bool temporary = false);
 
@@ -85,15 +77,12 @@ private:
 
     void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
-    PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const std::string & table_name);
+    PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name);
 
     Poco::Logger * log;
     ContextPtr context;
 
     const String remote_database_name, current_database_name;
-
-    /// Path for replication metadata.
-    const String metadata_path;
 
     /// Connection string and address for logs.
     postgres::ConnectionInfo connection_info;
@@ -133,5 +122,3 @@ private:
 };
 
 }
-
-#endif

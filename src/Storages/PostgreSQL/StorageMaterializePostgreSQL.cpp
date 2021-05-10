@@ -63,15 +63,10 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
 
     setInMemoryMetadata(storage_metadata);
 
-    /// Path to store replication metadata (like last written version, etc).
-    auto metadata_path = DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getMetadataPath()
-                       +  "/.metadata_" + table_id_.database_name + "_" + table_id_.table_name + "_" + toString(table_id_.uuid);
-
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
             table_id_.database_name,
             connection_info,
-            metadata_path,
             getContext(),
             replication_settings->materialize_postgresql_max_block_size.value,
             /* allow_automatic_update */ false, /* is_materialize_postgresql_database */false);

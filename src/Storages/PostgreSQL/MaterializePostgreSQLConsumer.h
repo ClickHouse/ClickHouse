@@ -1,11 +1,5 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#include "config_core.h"
-#endif
-
-#if USE_LIBPQXX
-#include "MaterializePostgreSQLMetadata.h"
 #include <Core/PostgreSQL/Connection.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
@@ -15,7 +9,6 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Parsers/ASTExpressionList.h>
-#include "pqxx/pqxx" // Y_IGNORE
 
 
 namespace DB
@@ -29,15 +22,12 @@ public:
     MaterializePostgreSQLConsumer(
             ContextPtr context_,
             std::shared_ptr<postgres::Connection> connection_,
-            const std::string & replication_slot_name_,
-            const std::string & publication_name_,
-            const std::string & metadata_path,
-            const std::string & start_lsn,
+            const String & replication_slot_name_,
+            const String & publication_name_,
+            const String & start_lsn,
             const size_t max_block_size_,
             bool allow_automatic_update_,
             Storages storages_);
-
-    void readMetadata();
 
     bool consume(std::vector<std::pair<Int32, String>> & skipped_tables);
 
@@ -105,14 +95,17 @@ private:
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
 
-    MaterializePostgreSQLMetadata metadata;
     std::shared_ptr<postgres::Connection> connection;
 
     std::string current_lsn, final_lsn;
+
+    /// current_lsn converted from String to Int64 via getLSNValue().
+    UInt64 lsn_value;
+
     const size_t max_block_size;
     bool allow_automatic_update;
 
-    std::string table_to_insert;
+    String table_to_insert;
 
     /// List of tables which need to be synced after last replication stream.
     std::unordered_set<std::string> tables_to_sync;
@@ -147,7 +140,4 @@ private:
     /// i.e. we will not miss the first start_lsn position for reloaded table.
     std::unordered_map<Int32, String> skip_list;
 };
-
 }
-
-#endif
