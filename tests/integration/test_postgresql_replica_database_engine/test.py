@@ -443,16 +443,16 @@ def test_random_queries(started_cluster):
     n = [10000]
 
     query = ['DELETE FROM postgresql_replica_{} WHERE (value*value) % 3 = 0;',
-        'UPDATE postgresql_replica_{} SET value = value - 125 WHERE key > 6000;',
+        'UPDATE postgresql_replica_{} SET value = value - 125 WHERE key % 2 = 0;',
         'DELETE FROM postgresql_replica_{} WHERE key % 10 = 0;',
-        'UPDATE postgresql_replica_{} SET value = value*value WHERE key < 5000;',
+        'UPDATE postgresql_replica_{} SET value = value*value WHERE key % 2 = 1;',
         'DELETE FROM postgresql_replica_{} WHERE value % 2 = 0;',
-        'UPDATE postgresql_replica_{} SET value = value + 2000 WHERE key < 5000;',
+        'UPDATE postgresql_replica_{} SET value = value + 2000 WHERE key % 5 = 0;',
         'DELETE FROM postgresql_replica_{} WHERE value % 3 = 0;',
-        'UPDATE postgresql_replica_{} SET value = value * 2 WHERE key % 3 == 0;',
+        'UPDATE postgresql_replica_{} SET value = value * 2 WHERE key % 3 = 0;',
         'DELETE FROM postgresql_replica_{} WHERE value % 9 = 2;',
-        'UPDATE postgresql_replica_{} SET value = value + 2  WHERE key >= 5000;',
-        'DELETE FROM postgresql_replica_{} WHERE value-3 = 3;']
+        'UPDATE postgresql_replica_{} SET value = value + 2  WHERE key % 3 = 1;',
+        'DELETE FROM postgresql_replica_{} WHERE value%5 = 0;']
 
     def attack(thread_id):
         print('thread {}'.format(thread_id))
@@ -467,9 +467,16 @@ def test_random_queries(started_cluster):
 
             # allow some thread to do inserts (not to violate key constraints)
             if thread_id < 5:
-                instance.query('INSERT INTO postgres_database.postgresql_replica_{} SELECT {} +  number, number from numbers(1000)'.format(thread_id, k))
+                print("try insert table {}".format(thread_id))
+                instance.query('INSERT INTO postgres_database.postgresql_replica_{} SELECT {}*10000*({} +  number), number from numbers(1000)'.format(i, thread_id, k))
                 k += 1
                 print("insert table {} ok".format(thread_id))
+
+                if i == 5:
+                    # also change primary key value
+                    print("try update primary key {}".format(thread_id))
+                    cursor.execute("UPDATE postgresql_replica_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(thread_id, i+1, i+1))
+                    print("update primary key {} ok".format(thread_id))
 
     threads = []
     threads_num = 16
@@ -487,6 +494,7 @@ def test_random_queries(started_cluster):
     for table_id in range(NUM_TABLES):
         n[0] += 1
         instance.query('INSERT INTO postgres_database.postgresql_replica_{} SELECT {} +  number, number from numbers(5000)'.format(table_id, n[0]))
+        #cursor.execute("UPDATE postgresql_replica_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(table_id, table_id+1, table_id+1))
 
     for thread in threads:
         thread.join()

@@ -61,7 +61,7 @@ private:
 
     /// Methods to manage Replication Slots.
 
-    bool isReplicationSlotExist(pqxx::nontransaction & tx, String & slot_name, String & start_lsn);
+    bool isReplicationSlotExist(pqxx::nontransaction & tx, String & start_lsn, bool temporary = false);
 
     void createReplicationSlot(pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary = false);
 
