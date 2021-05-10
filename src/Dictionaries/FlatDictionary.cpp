@@ -297,47 +297,10 @@ void FlatDictionary::updateData()
     else
     {
         auto stream = source_ptr->loadUpdatedAll();
-        stream->readPrefix();
-
-        while (Block block = stream->read())
-        {
-            const auto & saved_id_column = *saved_block->safeGetByPosition(0).column;
-            const auto & update_id_column = *block.safeGetByPosition(0).column;
-
-            std::unordered_map<UInt64, std::vector<size_t>> update_ids;
-            for (size_t row = 0; row < update_id_column.size(); ++row)
-            {
-                const auto id = update_id_column.get64(row);
-                update_ids[id].push_back(row);
-            }
-
-            const size_t saved_rows = saved_id_column.size();
-            IColumn::Filter filter(saved_rows);
-            std::unordered_map<UInt64, std::vector<size_t>>::iterator it;
-
-            for (size_t row = 0; row < saved_id_column.size(); ++row)
-            {
-                auto id = saved_id_column.get64(row);
-                it = update_ids.find(id);
-
-                if (it != update_ids.end())
-                    filter[row] = 0;
-                else
-                    filter[row] = 1;
-            }
-
-            auto block_columns = block.mutateColumns();
-            for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
-            {
-                auto & column = saved_block->safeGetByPosition(attribute_idx).column;
-                const auto & filtered_column = column->filter(filter, -1);
-
-                block_columns[attribute_idx]->insertRangeFrom(*filtered_column.get(), 0, filtered_column->size());
-            }
-
-            saved_block->setColumns(std::move(block_columns));
-        }
-        stream->readSuffix();
+        mergeBlockWithStream<DictionaryKeyType::simple>(
+            dict_struct.getKeysSize(),
+            *saved_block,
+            stream);
     }
 
     if (saved_block)
