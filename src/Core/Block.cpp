@@ -369,6 +369,18 @@ void Block::setColumns(const Columns & columns)
 }
 
 
+void Block::setColumn(size_t position, ColumnWithTypeAndName && column)
+{
+    if (position >= data.size())
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
+                        position, toString(data.size()));
+
+    data[position].name = std::move(column.name);
+    data[position].type = std::move(column.type);
+    data[position].column = std::move(column.column);
+}
+
+
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
     Block res;

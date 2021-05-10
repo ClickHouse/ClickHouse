@@ -39,13 +39,21 @@ public:
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         Configuration configuration_,
-        BlockPtr previously_loaded_block_ = nullptr);
+        BlockPtr update_field_loaded_block_ = nullptr);
 
     std::string getTypeName() const override { return "Flat"; }
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
 
     double getHitRate() const override { return 1.0; }
 
@@ -55,7 +63,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, previously_loaded_block);
+        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, update_field_loaded_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -183,8 +191,9 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 
-    BlockPtr previously_loaded_block;
+    BlockPtr update_field_loaded_block;
 };
 
 }

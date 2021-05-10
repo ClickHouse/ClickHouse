@@ -73,9 +73,9 @@ The build requires the following components:
 
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.10 or newer
--   Ninja (recommended) or Make
--   C++ compiler: gcc 10 or clang 8 or newer
--   Linker: lld or gold (the classic GNU ld won’t work)
+-   Ninja
+-   C++ compiler: clang-11 or newer
+-   Linker: lld
 -   Python (is only used inside LLVM build and it is optional)
 
 If all the components are installed, you may build in the same way as the steps above.
@@ -83,7 +83,7 @@ If all the components are installed, you may build in the same way as the steps 
 Example for Ubuntu Eoan:
 ``` bash
 sudo apt update
-sudo apt install git cmake ninja-build g++ python
+sudo apt install git cmake ninja-build clang++ python
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -92,7 +92,7 @@ ninja
 
 Example for OpenSUSE Tumbleweed:
 ``` bash
-sudo zypper install git cmake ninja gcc-c++ python lld
+sudo zypper install git cmake ninja clang-c++ python lld
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -102,7 +102,7 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-yum --nogpg install git cmake make gcc-c++ python3
+yum --nogpg install git cmake make clang-c++ python3
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -112,11 +112,11 @@ make -j $(nproc)
 
 ## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
 
-### Install Git and Pbuilder {#install-git-and-pbuilder}
+### Install Git {#install-git}
 
 ``` bash
 $ sudo apt-get update
-$ sudo apt-get install git python pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
+$ sudo apt-get install git python debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}

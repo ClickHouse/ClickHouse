@@ -15,6 +15,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
+#include <Common/JSONBuilder.h>
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -258,6 +259,29 @@ std::string ExpressionActions::Action::toString() const
     return out.str();
 }
 
+JSONBuilder::ItemPtr ExpressionActions::Action::toTree() const
+{
+    auto map = std::make_unique<JSONBuilder::JSONMap>();
+
+    if (node)
+        node->toTree(*map);
+
+    auto args = std::make_unique<JSONBuilder::JSONArray>();
+    auto dropped_args = std::make_unique<JSONBuilder::JSONArray>();
+    for (auto arg : arguments)
+    {
+        args->add(arg.pos);
+        if (!arg.needed_later)
+            dropped_args->add(arg.pos);
+    }
+
+    map->add("Arguments", std::move(args));
+    map->add("Removed Arguments", std::move(dropped_args));
+    map->add("Result", result_position);
+
+    return map;
+}
+
 void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
 {
     if (settings.max_temporary_non_const_columns)
@@ -297,7 +321,7 @@ namespace
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
         std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows;
+        size_t num_rows = 0;
     };
 }
 
@@ -565,6 +589,50 @@ std::string ExpressionActions::dumpActions() const
     ss << "\n";
 
     return ss.str();
+}
+
+JSONBuilder::ItemPtr ExpressionActions::toTree() const
+{
+    auto inputs_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (const auto & input_column : required_columns)
+    {
+        auto map = std::make_unique<JSONBuilder::JSONMap>();
+        map->add("Name", input_column.name);
+        if (input_column.type)
+            map->add("Type", input_column.type->getName());
+
+        inputs_array->add(std::move(map));
+    }
+
+    auto outputs_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (const auto & output_column : sample_block)
+    {
+        auto map = std::make_unique<JSONBuilder::JSONMap>();
+        map->add("Name", output_column.name);
+        if (output_column.type)
+            map->add("Type", output_column.type->getName());
+
+        outputs_array->add(std::move(map));
+    }
+
+    auto actions_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & action : actions)
+        actions_array->add(action.toTree());
+
+    auto positions_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (auto pos : result_positions)
+        positions_array->add(pos);
+
+    auto map = std::make_unique<JSONBuilder::JSONMap>();
+    map->add("Inputs", std::move(inputs_array));
+    map->add("Actions", std::move(actions_array));
+    map->add("Outputs", std::move(outputs_array));
+    map->add("Positions", std::move(positions_array));
+    map->add("Project Input", actions_dag->isInputProjected());
+
+    return map;
 }
 
 bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const
