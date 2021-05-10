@@ -1546,7 +1546,7 @@ Note that the `arraySumNonNegative` is a [higher-order function](../../sql-refer
 
 ## arrayProduct {#arrayproduct}
 
-The `arrayProduct` function multiplies elements of an [array](../../sql-reference/data-types/array.md).
+Multiplies elements of an [array](../../sql-reference/data-types/array.md).
 
 **Syntax**
 
