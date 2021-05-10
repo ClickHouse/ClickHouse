@@ -47,6 +47,7 @@ xfails = {
     "reference times/:": [(Fail, "check procedure unclear")],
     # need to investigate
     "type conversion/to datetime/cast=True": [(Fail, "need to investigate")],
+    "date time funcs/today": [(Fail, "need to investigate")]
 }
 
 

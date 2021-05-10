@@ -1144,7 +1144,6 @@ def now(self):
 @Requirements(
     RQ_SRS_010_DateTime64_ExtendedRange_DatesAndTimesFunctions_today("1.0")
 )
-@Flags(SKIP)
 def today(self):
     """Check the today() conversion to DateTime64 extended range.
     """
