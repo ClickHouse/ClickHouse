@@ -106,7 +106,7 @@ bool ReadBufferAIO::nextImpl()
         ProfileInfo info;
         info.bytes_requested = requested_byte_count;
         info.bytes_read = bytes_read;
-        info.nanoseconds = watch->elapsed();
+        info.nanoseconds = watch->elapsed(); //-V1007
         profile_callback(info);
     }
 
