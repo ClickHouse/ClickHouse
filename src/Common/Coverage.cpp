@@ -114,14 +114,18 @@ Writer::Writer()
       dwarf(symbol_index->getSelf()->elf),
       // Set the initial pool size to all threads as we'll need all resources to symbolize fast.
       tasks_queue(hardware_concurrency),
-      test_index(0) {}
+      test_index(0) { }
 
-void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_array_end)
+void Writer::initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_array_end)
 {
     const size_t edges_pairs = pc_array_end - pc_array;
     edges_count = edges_pairs / 2;
 
-    resizeBuffersAndCaches();
+    edges_hit.resize(edges_count, 0);
+    edges_cache.resize(edges_count);
+
+    edges_to_addrs.resize(edges_count);
+    edge_is_func_entry.resize(edges_count);
 
     for (size_t i = 0; i < edges_pairs; i += 2)
     {
@@ -132,33 +136,53 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
         functions_count += is_function_entry;
         addrs_count += !is_function_entry;
 
+        /**
+         * If we use non-function-entry addr as is, the SymbolIndex won't be able to find the line for our address.
+         * General assembly looks like this:
+         *
+         * 0x12dbca75 <+117>: callq  0x12dd2680                ; DB::AggregateFunctionFactory::registerFunction at AggregateFunctionFactory.cpp:39
+         * 0x12dbca7a <+122>: jmp    0x12dbca7f                ; <+127> at AggregateFunctionCount.cpp << ADDRESS SHOULD POINT HERE
+         * 0x12dbca7f <+127>: movabsq $0x15b4522c, %rax         ; imm = 0x15B4522C << BUT POINTS HERE
+         * 0x12dbca89 <+137>: addq   $0x4, %rax
+         * 0x12dbca8f <+143>: movq   %rax, %rdi
+         * 0x12dbca92 <+146>: callq  0xb067180 ; ::__sanitizer_cov_trace_pc_guard(uint32_t *) at CoverageCallbacks.h:15
+         *
+         * The symbolizer (as well as lldb and gdb) thinks that instruction at 0x12dbca7f (that sets edge_index for the
+         * callback) is located at line 0.
+         * So we need a way to get the previous instruction (llvm's SanCov does it in default callbacks):
+         *  https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L769
+         * LLVM's SanCov uses internal arch information to do that:
+         *  https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L690
+         */
         const uintptr_t addr = is_function_entry
             ?  pc_array[i]
-            /**
-             * If we use this addr as is, the SymbolIndex won't be able to find the line for our address.
-             * General assembly looks like this:
-             *
-             * 0x12dbca75 <+117>: callq  0x12dd2680                ; DB::AggregateFunctionFactory::registerFunction at AggregateFunctionFactory.cpp:39
-             * 0x12dbca7a <+122>: jmp    0x12dbca7f                ; <+127> at AggregateFunctionCount.cpp << ADDRESS SHOULD POINT HERE
-             * 0x12dbca7f <+127>: movabsq $0x15b4522c, %rax         ; imm = 0x15B4522C << BUT POINTS HERE
-             * 0x12dbca89 <+137>: addq   $0x4, %rax
-             * 0x12dbca8f <+143>: movq   %rax, %rdi
-             * 0x12dbca92 <+146>: callq  0xb067180 ; ::__sanitizer_cov_trace_pc_guard(uint32_t *) at CoverageCallbacks.h:15
-             *
-             * The symbolizer (as well as lldb and gdb) thinks that instruction at 0x12dbca7f (that sets edge_index for the
-             * callback) is located at line 0.
-             * So we need a way to get the previous instruction (llvm's SanCov does it in default callbacks):
-             *  https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L769
-             * LLVM's SanCov uses internal arch information to do that:
-             *  https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L690
-             */
             :  pc_array[i] - 1;
 
         edges_to_addrs[i / 2] = reinterpret_cast<void*>(addr);
     }
 
-    /// We don't symbolize the addresses right away, wait for CH application to load instead.
-    /// If starting now, we won't be able to log to Poco or std::cout;
+    // We don't symbolize the addresses right away, wait for CH application to load instead.
+    // Starting now, we won't be able to log to Poco or std::cout;
+}
+
+void Writer::deinitRuntime()
+{
+    tasks_queue.wait();
+    tasks_queue.finalize();
+    writeCCRFooter();
+    report_file.close();
+}
+
+void Writer::onServerInitialized()
+{
+    // Before server initialization we couldn't log data to Poco.
+    base_log = &Poco::Logger::get(std::string{logger_base_name});
+
+    // Also we couldn't call fwrite in Writer() (fails with errno=9 "Bad file descriptor") because it should be called
+    // after fopen internal structs initialization, and the callback that initializes Writer gets called earlier.
+    report_file.set(renameOldReportAndGetName(), "w");
+
+    symbolizeInstrumentedData();
 }
 
 void Writer::hit(EdgeIndex edge_index)
@@ -172,6 +196,54 @@ void Writer::hit(EdgeIndex edge_index)
      * where only lines 32-36 swap the pointers, so we'll just probably count some new hits for old test.
      */
     ++edges_hit[edge_index];
+}
+
+namespace /// Symbolized data
+{
+struct AddrSym
+{
+    /**
+     * Multiple callbacks can be called for a single line, e.g. ternary operator
+     * a = foo ? bar() : baz() may produce two callbacks as it's basically an if-else block.
+     * We track _lines_ coverage, not _addresses_ coverage, so we can hash local cache items by their unique lines.
+     * However, test may register both of the callbacks, so we need to process all edge indices per line.
+     */
+    using Container = std::unordered_multimap<Line, EdgeIndex>;
+};
+
+struct FuncSym
+{
+    /**
+     * Template instantiations get mangled into different names, e.g.
+     * _ZNK2DB7DecimalIiE9convertToIlEET_v
+     * _ZNK2DB7DecimalIlE9convertToIlEET_v
+     * _ZNK2DB7DecimalInE9convertToIlEET_v
+     *
+     * We can't use predicate "all functions with same line are considered same" as it's easily
+     * contradicted -- multiple functions can be invoked in the same source line, e.g. foo(bar(baz)):
+     *
+     * However, instantiations are located in different binary parts, so it's safe to use edge_index
+     * as a hashing key (current solution is to just use a vector to avoid hash calculation).
+     *
+     * As a bonus, functions report view in HTML will show distinct counts for each instantiated template.
+     */
+    using Container = std::vector<FuncSym>;
+
+    Line line;
+    EdgeIndex index;
+    std::string_view name;
+
+    FuncSym(Line line_, EdgeIndex index_, std::string_view name_): line(line_), index(index_), name(name_) {}
+};
+
+template <bool is_func_cache>
+static inline auto& getInstrumented(auto& info)
+{
+    if constexpr (is_func_cache)
+        return info.instrumented_functions;
+    else
+        return info.instrumented_lines;
+}
 }
 
 void Writer::symbolizeInstrumentedData()
@@ -223,7 +295,7 @@ void Writer::symbolizeInstrumentedData()
     LOG_INFO(base_log, "Wrote report header");
 }
 
-void Writer::dumpAndChangeTestName(std::string old_test_name)
+void Writer::onChangedTestName(std::string old_test_name)
 {
     /// Note: this function slows down setSetting, so it should be as fast as possible.
 
@@ -282,7 +354,11 @@ void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
 
 void Writer::writeCCRHeader()
 {
+    /// Report is written directly to file as docker container checks if any contribs were instrumented.
+    /// In that case the check is failed.
+
     fmt::memory_buffer mb;
+
     constexpr size_t header_size_hint = 10 * 1025 * 1024;
     mb.reserve(header_size_hint);
 
@@ -295,8 +371,7 @@ void Writer::writeCCRHeader()
      * <sf 1 instrumented line 1>
      * <sf 1 instrumented line 2>
      * <source file 2 relative path from src/> <functions> <lines>
-     *
-     * Need of function edge index: multiple functions may be called in single line
+     * // Need of function edge index: multiple functions may be called in single line
      */
     fmt::format_to(mb, "{}\nFILES {}\n",
         clickhouse_src_dir_abs_path.string(),
@@ -324,45 +399,34 @@ void Writer::writeCCREntry(const Writer::TestData& test_data)
 {
     LOG_INFO(test_data.log, "Started writing test entry");
 
-    fmt::memory_buffer mb;
+    /// Frequent writes to file are better than a single huge write, so don't use fmt::memory_buffer here.
 
     /**
-     * TEST <test id>
-     * SOURCE <source file id>
-     * FUNCTIONS <count>
-     * <function edge index> <call count>
-     * LINES <count>
-     * <line number> <call count>
+     * TEST //Note -- test index is not written. Test name will be found in footer (TESTS section)
+     * SOURCE <source file id> <functions count> <lines count>
+     * <function 1 edge index> <call count>
+     * <function 2 edge index> <call count>
+     * <line 1 number> <call count>
+     * <line 2 number> <call count>
      */
-    fmt::format_to(mb, "TEST {}\n", test_data.test_index);
+    fmt::print(report_file.file(), "TEST\n");
 
     for (size_t i = 0; i < test_data.data.size(); ++i)
     {
-        const SourceFileData& source = test_data.data[i];
+        const auto& source = test_data.data[i];
 
         if (source.functions_hit.empty() && source.lines_hit.empty())
             continue;
 
-        fmt::format_to(mb, "SOURCE {}\n", i);
+        fmt::print(report_file.file(), "SOURCE {} {} {}\n",
+            i, source.functions_hit.size(), source.lines_hit.size());
 
-        if (!source.functions_hit.empty())
-        {
-            fmt::format_to(mb, "FUNCTIONS {}\n", source.functions_hit.size());
+        for (const auto [edge_index, call_count]: source.functions_hit)
+            fmt::print(report_file.file(), "{} {}\n", edge_index, call_count);
 
-            for (const auto [edge_index, call_count]: source.functions_hit)
-                fmt::format_to(mb, "{} {}\n", edge_index, call_count);
-        }
-
-        if (!source.lines_hit.empty())
-        {
-            fmt::format_to(mb, "LINES {}\n", source.lines_hit.size());
-
-            for (const auto [line, call_count]: source.lines_hit)
-                fmt::format_to(mb, "{} {}\n", line, call_count);
-        }
+        for (const auto [line, call_count]: source.lines_hit)
+            fmt::print(report_file.file(), "{} {}\n", line, call_count);
     }
-
-    report_file.write(mb);
 
     LOG_INFO(test_data.log, "Finished writing test entry");
 }
@@ -405,10 +469,12 @@ void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, con
             {
                 const EdgeIndex edge_index = data[i];
 
-                const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[edge_index]));
+                const Dwarf::LocationInfo loc =
+                    dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[edge_index]));
 
                 SourceRelativePath source_rel_path = std::filesystem::path(loc.file.toString())
                     .lexically_relative(clickhouse_src_dir_abs_path)
+                    .lexically_normal() // duplicated as single one removes only one foo/../sequence
                     .lexically_normal()
                     .string();
 
@@ -418,7 +484,7 @@ void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, con
 
                 if constexpr (is_func_cache)
                 {
-                    const std::string_view name = symbolize(edge_index);
+                    const std::string_view name = symbol_index->findSymbol(edges_to_addrs[edge_index])->name;
 
                     if (cache_it != cache.end())
                         cache_it->second.emplace_back(line, edge_index, name);
@@ -436,13 +502,10 @@ void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, con
         });
 }
 
-template void Writer::scheduleSymbolizationJobs<true, Writer::FuncSym>(LocalCaches<Writer::FuncSym>&, const std::vector<EdgeIndex>&);
-template void Writer::scheduleSymbolizationJobs<false, Writer::AddrSym>(LocalCaches<Writer::AddrSym>&, const std::vector<EdgeIndex>&);
-
 template<bool is_func_cache, class CacheItem>
 void Writer::mergeDataToCaches(const LocalCaches<CacheItem>& data)
 {
-    LOG_INFO(base_log, "Started merging {} data to caches", thread_name<is_func_cache>);
+    LOG_INFO(base_log, "Started merging data to caches");
 
     for (const auto& cache : data)
         for (const auto& [source_rel_path, addrs_data] : cache)
@@ -484,9 +547,11 @@ void Writer::mergeDataToCaches(const LocalCaches<CacheItem>& data)
             }
         }
 
-    LOG_INFO(base_log, "Finished merging {} data to caches", thread_name<is_func_cache>);
+    LOG_INFO(base_log, "Finished merging data to caches");
 }
 
-template void Writer::mergeDataToCaches<true, Writer::FuncSym>(const LocalCaches<Writer::FuncSym>&);
-template void Writer::mergeDataToCaches<false, Writer::AddrSym>(const LocalCaches<Writer::AddrSym>&);
+template void Writer::mergeDataToCaches<true, FuncSym>(const LocalCaches<FuncSym>&);
+template void Writer::mergeDataToCaches<false, AddrSym>(const LocalCaches<AddrSym>&);
+template void Writer::scheduleSymbolizationJobs<true, FuncSym>(LocalCaches<FuncSym>&, const std::vector<EdgeIndex>&);
+template void Writer::scheduleSymbolizationJobs<false, AddrSym>(LocalCaches<AddrSym>&, const std::vector<EdgeIndex>&);
 }

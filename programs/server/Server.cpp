@@ -1368,7 +1368,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Ready for connections.");
 
 #if WITH_COVERAGE
-        ::detail::Writer::instance().serverHasInitialized();
+        ::detail::Writer::instance().onServerInitialized();
 #endif
 
         /// Can't use SCOPE_EXIT macro here due to macro-conditional call of dumpCoverageReportIfPossible.

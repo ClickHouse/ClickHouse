@@ -399,7 +399,7 @@ def run_tests_array(all_tests_with_params):
                 else:
                     if args.testname:
                         query = "SELECT 'Running test {}/{} from pid={}';".format(suite, case, os.getpid())
-                        res, failures = run_query(query)
+                        res, failures = run_query(query, failures)
 
                         if not res:
                             break

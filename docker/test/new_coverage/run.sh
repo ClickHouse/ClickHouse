@@ -39,6 +39,24 @@ start_clickhouse () {
     done
 }
 
+wail_till_ready () {
+    # Wait until server symbolises all addresses (about 4 min)
+    echo "Symbolized functions"
+    time tail -f /var/log/clickhouse-server/clickhouse/server.log | sed '/Symbolized all functions/ q' > /dev/null
+    echo "Symbolized addresses"
+    time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null
+
+    instrumented_contribs=$(grep "contrib/" < report.ccr)
+    has_contribs=$(echo "$instrumented_contribs" | wc -l)
+
+    if ((has_contribs > 0)); then
+        echo "Warning: found instrumented files from contrib/. Please remove them explicitly via cmake"
+        echo "$instrumented_contribs"
+    fi
+
+    echo "Starting tests"
+}
+
 
 chmod 777 /
 
@@ -65,44 +83,49 @@ fi
 
 chmod 777 -R /var/lib/clickhouse
 
-# Wait until server symbolises all addresses (about 17 min)
-echo "Symbolized functions"
-time tail -f /var/log/clickhouse-server/clickhouse/server.log | sed '/Symbolized all functions/ q' > /dev/null
-echo "Symbolized addresses"
-time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null
-echo "Starting tests"
+wail_till_ready
 
-clickhouse-client --query "SET coverage_test_name='client_initial_1'"
+# clickhouse-client --query "SET coverage_tests_count=2"
+# clickhouse-client --query "SET coverage_test_name='client_initial_1'"
+# TODO Is not tracked as for now
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE test"
 
-clickhouse-client --query "SET coverage_test_name='client_initial_2'"
+# clickhouse-client --query "SET coverage_test_name='client_initial_2'"
+
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
+# clickhouse-client --query "SET coverage_test_name=''"
+# kill_clickhouse
+#
+# cp report.ccr ${OUTPUT_DIR}/client_report.ccr
+#
+# start_clickhouse
+# wail_till_ready
+
 clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --coverage \
     2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
-# no support for failed tests
+kill_clickhouse
 
+# no support for failed tests
 # TODO use baseline for incremental coverage
 # --baseline, --highlight, --diff
 
-# tmp to get reports
-cp coverage/* ${OUTPUT_DIR}
+cp report.ccr "${OUTPUT_DIR}"/report.ccr
+python3 ccr_converter.py report.ccr --genhtml-slim-report report.info
+cp report.info "${OUTPUT_DIR}"/report.info
 
+# Demangling names by c++filt here is cheaper than demangling names in binary
 time genhtml \
   --ignore-errors source \
-  --output-directory "${OUTPUT_DIR}" \
+  --output-directory "${GENHTML_REPORT_DIR}" \
   --num-spaces 4 \
   --legend \
-  --show-details \
-  # Demangling names by c++filt here is cheaper than demangling names in binary
   --demangle-cpp \
-  ../2689_tests/coverage/* | gawk '{
-      t = "tee genhtml_log.log"
-      print strftime("%H:%M:%S") " " $0 | t }'
+  report.info

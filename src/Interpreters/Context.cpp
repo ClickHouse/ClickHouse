@@ -1126,7 +1126,7 @@ void Context::setSetting(const StringRef & name, const Field & value)
     if (name_view == ::detail::Writer::coverage_test_name_setting_name)
     {
         /// We don't move this check up the stack to ensure that dumpAndChangeTestName is called under exclusive lock.
-        ::detail::Writer::instance().dumpAndChangeTestName(value.get<String>());
+        ::detail::Writer::instance().onChangedTestName(value.get<String>());
         return;
     }
 

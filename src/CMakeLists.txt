@@ -285,7 +285,6 @@ foreach (module ${all_modules})
 endforeach ()
 
 set_source_files_properties(
-    Common/Coverage.h
     Common/Coverage.cpp
     Common/CoverageCallbacks.h
     Common/ThreadPool.cpp # Otherwise tests run about x2 slower.
