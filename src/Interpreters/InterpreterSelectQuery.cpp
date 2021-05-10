@@ -331,13 +331,23 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
             else
             {
-                const StorageDistributed * storage_distributed = static_cast<const StorageDistributed *>(storage.get());
-                StoragePtr storage_replicated = DatabaseCatalog::instance().getTable(
-                    StorageID(storage_distributed->getRemoteDatabaseName(), storage_distributed->getRemoteTableName()), context);
-                if (storage_replicated)
-                    metadata_snapshot = storage_replicated->getInMemoryMetadataPtr();
+                StorageMetadataPtr metadata_distributed = storage->getInMemoryMetadataPtr();
+                /// If distributed table has redefined columns, then use the metadata of Distributed table
+                if (!metadata_distributed->getColumns().empty())
+                    metadata_snapshot = metadata_distributed;
                 else
-                    metadata_snapshot = storage->getInMemoryMetadataPtr();
+                {
+                    const StorageDistributed * storage_distributed = static_cast<const StorageDistributed *>(storage.get());
+                    const auto & remote_database = storage_distributed->getRemoteDatabaseName();
+                    const auto & remote_table = storage_distributed->getRemoteTableName();
+                    StoragePtr storage_replicated;
+                    if (!remote_table.empty())
+                        storage_replicated = DatabaseCatalog::instance().getTable(
+                            StorageID(remote_database.empty() ? context->getCurrentDatabase() : remote_database, remote_table), context);
+                    StorageMetadataPtr metadata_snapshot_snapshot;
+                    if (storage_replicated)
+                        metadata_snapshot_snapshot = storage_replicated->getInMemoryMetadataPtr();
+                }
             }
         }
     }
