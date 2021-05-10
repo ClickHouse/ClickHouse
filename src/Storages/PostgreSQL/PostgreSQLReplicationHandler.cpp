@@ -125,7 +125,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 e.addMessage("while loading table {}.{}", remote_database_name, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
-                /// Throw in case of single MaterializePostgreSQL storage, becuase initial setup is done immediately
+                /// Throw in case of single MaterializePostgreSQL storage, because initial setup is done immediately
                 /// (unlike database engine where it is done in a separate thread).
                 if (throw_on_error)
                     throw;
