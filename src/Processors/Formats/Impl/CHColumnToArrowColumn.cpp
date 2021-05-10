@@ -117,6 +117,9 @@ namespace DB
             is_column_array_nullable ? static_cast<const DataTypeNullable *>(column_array_type->getNestedType().get())->getNestedType() :
             column_array_type->getNestedType();
 
+        const PaddedPODArray<UInt8> * array_null_bytemap =
+            is_column_array_nullable ? extractNullBytemapPtr(assert_cast<const ColumnArray &>(*nested_column).getDataPtr()) : nullptr;
+
         const auto * arrow_type_it = std::find_if(internal_type_to_arrow_type.begin(), internal_type_to_arrow_type.end(),
                                                   [=](auto && elem) { return elem.first == column_array_nested_type_name; });
         if (arrow_type_it != internal_type_to_arrow_type.end())
@@ -130,10 +133,12 @@ namespace DB
             arrow::Status components_status;
 
             const auto & offsets = internal_column.getOffsets();
-            const IColumn & data = internal_column.getData();
+            ColumnPtr & data = is_column_array_nullable ?
+                               const_cast<ColumnPtr &>(static_cast<const ColumnNullable &>(internal_column.getData()).getNestedColumnPtr()) :
+                               const_cast<ColumnPtr &>(internal_column.getDataPtr());
 
-            size_t offset_start = 0;
-            size_t offset_length = 0;
+            size_t array_start = 0;
+            size_t array_length = 0;
 
             for (size_t idx = 0, size = internal_column.size(); idx < size; ++idx)
             {
@@ -146,29 +151,24 @@ namespace DB
                 {
                     components_status = builder.Append();
                     checkStatus(components_status, nested_column->getName(), format_name);
-                    offset_length = offsets[idx] - offset_start;
-                    if (offset_length > 0)
+                    array_length = offsets[idx] - array_start;
+                    auto cut_data = data->cut(array_start, array_length);
+                    if (array_null_bytemap == nullptr)
                     {
-                        auto cut_data = data.cut(offset_start, offset_length);
-                        if (null_bytemap == nullptr)
-                        {
-                            CHColumnToArrowColumn::fillArrowArray(column_name, cut_data, array_nested_type,
-                                                                  column_array_nested_type_name, arrow_array,
-                                                                  nullptr, value_builder, format_name);
-                        }
-                        else
-                        {
-                            PaddedPODArray<UInt8> * array_nested_null_bytemap = new PaddedPODArray<UInt8>();
-                            for (size_t pidx = offset_start; pidx < offset_start + offset_length; ++pidx)
-                            {
-                                array_nested_null_bytemap->push_back((*null_bytemap)[pidx]);
-                            }
-                            CHColumnToArrowColumn::fillArrowArray(column_name, cut_data, array_nested_type,
-                                                                  column_array_nested_type_name, arrow_array, array_nested_null_bytemap, value_builder, format_name);
-                            delete array_nested_null_bytemap;
-                        }
+                        CHColumnToArrowColumn::fillArrowArray(column_name, cut_data, array_nested_type,
+                                                              column_array_nested_type_name, arrow_array,
+                                                              nullptr, value_builder, format_name);
                     }
-                    offset_start = offsets[idx];
+                    else
+                    {
+                        PaddedPODArray<UInt8> array_nested_null_bytemap;
+                        array_nested_null_bytemap.insertByOffsets(*array_null_bytemap, array_start, array_start + array_length);
+
+                        CHColumnToArrowColumn::fillArrowArray(column_name, cut_data, array_nested_type,
+                                                              column_array_nested_type_name, arrow_array,
+                                                              &array_nested_null_bytemap, value_builder, format_name);
+                    }
+                    array_start = offsets[idx];
                 }
             }
         }
@@ -425,8 +425,7 @@ namespace DB
                 = is_column_nullable ? assert_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
 
             const PaddedPODArray<UInt8> * null_bytemap =
-                is_column_nullable ? extractNullBytemapPtr(column.column) :
-                is_column_array_nullable ? extractNullBytemapPtr(assert_cast<const ColumnArray &>(*nested_column).getDataPtr()) : nullptr;
+                is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
 
             arrow::MemoryPool* pool = arrow::default_memory_pool();
             std::unique_ptr<arrow::ArrayBuilder> array_builder;
