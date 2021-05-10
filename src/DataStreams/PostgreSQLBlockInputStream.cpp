@@ -210,7 +210,8 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
                 {
                     max_dimension = std::max(max_dimension, dimension);
 
-                    if (--dimension == 0)
+                    --dimension;
+                    if (dimension == 0)
                         break;
 
                     dimensions[dimension].emplace_back(Array(dimensions[dimension + 1].begin(), dimensions[dimension + 1].end()));
