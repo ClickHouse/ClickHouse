@@ -12,12 +12,7 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/castTypeToEither.h>
 
-#include <sphinxstd.h>
-#include <sphinxstemen.cpp>
-#include <sphinxstemru.cpp>
-#include <sphinxstemcz.cpp>
-#include <sphinxstemar.cpp>
-#include <functional>
+#include <libstemmer.h>
 
 
 namespace DB
@@ -39,29 +34,26 @@ struct StemImpl
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        std::function<void(unsigned char *, int)> stem,
-        std::function<void()> stem_init)
+        struct sb_stemmer * stemmer)
     {
-        /// Add 2 because some realizations of stem need 
-        res_data.resize(data.size() + 2);
+        res_data.resize(data.size());
         res_offsets.assign(offsets);
-        
-        stem_init();
 
         UInt64 data_size = 0;
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             /// Note that accessing -1th element is valid for PaddedPODArray.
             size_t original_size = offsets[i] - offsets[i - 1];
-            memcpy(res_data.data() + data_size, data.data() + offsets[i - 1], original_size);
-            
-            stem(reinterpret_cast<unsigned char *>(res_data.data() + data_size), original_size - 1);
+            const sb_symbol * result = sb_stemmer_stem(stemmer, reinterpret_cast<const unsigned char *>(data.data() + offsets[i - 1]), original_size - 1);
+            size_t new_size = sb_stemmer_length(stemmer) + 1;
 
-            UInt64 new_size = strlen(reinterpret_cast<const char *>(res_data.data() + data_size));
-            data_size += new_size + 1;
+            memcpy(res_data.data() + data_size, result, new_size);
+            
+            data_size += new_size;
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
+        sb_stemmer_delete(stemmer);
     }
 
 };
@@ -107,31 +99,20 @@ public:
             if (const ColumnConst * scale_column_num = checkAndGetColumn<ColumnConst>(langcolumn.get()))
             {
                 String language = scale_column_num->getValue<String>();
-                std::function<void(unsigned char *, int)> stem;
-                std::function<void()> stem_init;
+                struct sb_stemmer * stemmer = sb_stemmer_new(language.data(), "UTF_8");
 
-                if (language == "en") {
-                    stem = stem_en;    
-                    stem_init = stem_en_init;
-                } else if (language == "ru") {
-                    stem = stem_ru_utf8;    
-                    stem_init = stem_ru_init;
-                } else if (language == "ar") {
-                    stem = stem_ar_utf8;    
-                    stem_init = stem_ar_init;
-                } else if (language == "cz") {
-                    stem = stem_cz;    
-                    stem_init = stem_cz_init;
+                if (stemmer != nullptr)
+                {
+                    auto col_res = ColumnString::create();
+                    StemImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), stemmer);
+                    return col_res;
                 }
-                 else {
+                else 
+                {
                     throw Exception(
                     "Language " + language + " is not supported for function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 }
-
-                auto col_res = ColumnString::create();
-                StemImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), stem, stem_init);
-                return col_res;
             }
         }
 
