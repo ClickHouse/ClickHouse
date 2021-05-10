@@ -497,7 +497,8 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTFunction * function = dynamic_cast<ASTFunction *>(node.get());
+    assert(node);
+    ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     // Variant 1:
     // function_name ( * ) OVER window_name
@@ -510,7 +511,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserIdentifier window_name_parser;
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
-            function->window_name = getIdentifierName(window_name_ast);
+            function.window_name = getIdentifierName(window_name_ast);
             return true;
         }
         else
@@ -522,7 +523,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     // Variant 2:
     // function_name ( * ) OVER ( window_definition )
     ParserWindowDefinition parser_definition;
-    return parser_definition.parse(pos, function->window_definition, expected);
+    return parser_definition.parse(pos, function.window_definition, expected);
 }
 
 static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
