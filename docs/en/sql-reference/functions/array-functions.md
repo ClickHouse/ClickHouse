@@ -1556,7 +1556,7 @@ arrayProduct(arr)
 
 **Arguments**
 
--   `arr` — Numeric values [array](../../sql-reference/data-types/array.md).
+-   `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
 
 **Returned value**
 
