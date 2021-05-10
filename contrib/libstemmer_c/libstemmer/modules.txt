@@ -1,0 +1,63 @@
+# This file contains a list of stemmers to include in the distribution.
+# The format is a set of space separated lines - on each line:
+#  First item is name of stemmer.
+#  Second item is comma separated list of character sets.
+#  Third item is comma separated list of names to refer to the stemmer by.
+#
+# Lines starting with a #, or blank lines, are ignored.
+
+# List all the main algorithms for each language, in UTF-8, and also with
+# the most commonly used encoding.
+
+arabic          UTF_8                   arabic,ar,ara
+armenian        UTF_8                   armenian,hy,hye,arm
+basque          UTF_8,ISO_8859_1        basque,eu,eus,baq
+catalan         UTF_8,ISO_8859_1        catalan,ca,cat
+danish          UTF_8,ISO_8859_1        danish,da,dan
+dutch           UTF_8,ISO_8859_1        dutch,nl,dut,nld
+english         UTF_8,ISO_8859_1        english,en,eng
+finnish         UTF_8,ISO_8859_1        finnish,fi,fin
+french          UTF_8,ISO_8859_1        french,fr,fre,fra
+german          UTF_8,ISO_8859_1        german,de,ger,deu
+greek           UTF_8                   greek,el,gre,ell
+hindi           UTF_8                   hindi,hi,hin
+hungarian       UTF_8,ISO_8859_2        hungarian,hu,hun
+indonesian      UTF_8,ISO_8859_1        indonesian,id,ind
+irish           UTF_8,ISO_8859_1        irish,ga,gle
+italian         UTF_8,ISO_8859_1        italian,it,ita
+lithuanian      UTF_8                   lithuanian,lt,lit
+nepali          UTF_8                   nepali,ne,nep
+norwegian       UTF_8,ISO_8859_1        norwegian,no,nor
+portuguese      UTF_8,ISO_8859_1        portuguese,pt,por
+romanian        UTF_8,ISO_8859_2        romanian,ro,rum,ron
+russian         UTF_8,KOI8_R            russian,ru,rus
+serbian         UTF_8                   serbian,sr,srp
+spanish         UTF_8,ISO_8859_1        spanish,es,esl,spa
+swedish         UTF_8,ISO_8859_1        swedish,sv,swe
+tamil           UTF_8                   tamil,ta,tam
+turkish         UTF_8                   turkish,tr,tur
+yiddish         UTF_8                   yiddish,yi,yid
+
+# Also include the traditional porter algorithm for english.
+# The porter algorithm is included in the libstemmer distribution to assist
+# with backwards compatibility, but for new systems the english algorithm
+# should be used in preference.
+porter          UTF_8,ISO_8859_1        porter			english
+
+# Some other stemmers in the snowball project are not included in the standard
+# distribution. To compile a libstemmer with them in, add them to this list,
+# and regenerate the distribution. (You will need a full source checkout for
+# this.) They are included in the snowball website as curiosities, but are not
+# intended for general use, and use of them is is not fully supported.  These
+# algorithms are:
+#
+# german2          - This is a slight modification of the german stemmer.
+#german2          UTF_8,ISO_8859_1        german2		german
+#
+# kraaij_pohlmann  - This is a different dutch stemmer.
+#kraaij_pohlmann  UTF_8,ISO_8859_1        kraaij_pohlmann	dutch
+#
+# lovins           - This is an english stemmer, but fairly outdated, and
+#                    only really applicable to a restricted type of input text
+#                    (keywords in academic publications).
+#lovins           UTF_8,ISO_8859_1        lovins		english

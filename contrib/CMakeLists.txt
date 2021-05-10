@@ -327,4 +327,4 @@ if (USE_NURAFT)
 endif()
 
 add_subdirectory(fast_float)
-add_subdirectory(manticore)
+add_subdirectory(libstemmer_c)
