@@ -1560,7 +1560,7 @@ arrayProduct(arr)
 
 **Returned value**
 
--   A number — production of array's elements
+-   A product of array's elements.
 
 Type: [Float64](../../sql-reference/data-types/float.md).
 
