@@ -9,6 +9,9 @@ from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from helpers.test_tools import TSV
 
+from random import randrange
+import threading
+
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
         main_configs = ['configs/log_conf.xml'],
@@ -425,6 +428,79 @@ def test_table_schema_changes(started_cluster):
         cursor.execute('drop table postgresql_replica_{};'.format(i))
 
     instance.query("DROP DATABASE test_database")
+
+
+@pytest.mark.timeout(120)
+def test_random_queries(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    NUM_TABLES = 5
+
+    for i in range(NUM_TABLES):
+        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
+        instance.query('INSERT INTO postgres_database.postgresql_replica_{} SELECT number, number from numbers(10000)'.format(i))
+    n = [10000]
+
+    query = ['DELETE FROM postgresql_replica_{} WHERE (value*value) % 3 = 0;',
+        'UPDATE postgresql_replica_{} SET value = value - 125 WHERE key > 6000;',
+        'DELETE FROM postgresql_replica_{} WHERE key % 10 = 0;',
+        'UPDATE postgresql_replica_{} SET value = value*value WHERE key < 5000;',
+        'DELETE FROM postgresql_replica_{} WHERE value % 2 = 0;',
+        'UPDATE postgresql_replica_{} SET value = value + 2000 WHERE key < 5000;',
+        'DELETE FROM postgresql_replica_{} WHERE value % 3 = 0;',
+        'UPDATE postgresql_replica_{} SET value = value * 2 WHERE key % 3 == 0;',
+        'DELETE FROM postgresql_replica_{} WHERE value % 9 = 2;',
+        'UPDATE postgresql_replica_{} SET value = value + 2  WHERE key >= 5000;',
+        'DELETE FROM postgresql_replica_{} WHERE value-3 = 3;']
+
+    def attack(thread_id):
+        print('thread {}'.format(thread_id))
+        k = 10000
+        for i in range(10):
+            query_id = random.randrange(0, len(query)-1)
+            table_id = random.randrange(0, 5) # num tables
+
+            # random update / delete query
+            cursor.execute(query[query_id].format(table_id))
+            print("table {} query {} ok".format(table_id, query_id))
+
+            # allow some thread to do inserts (not to violate key constraints)
+            if thread_id < 5:
+                instance.query('INSERT INTO postgres_database.postgresql_replica_{} SELECT {} +  number, number from numbers(1000)'.format(thread_id, k))
+                k += 1
+                print("insert table {} ok".format(thread_id))
+
+    threads = []
+    threads_num = 16
+
+    for i in range(threads_num):
+        threads.append(threading.Thread(target=attack, args=(i,)))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    instance.query(
+        "CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+
+    n[0] = 50000
+    for table_id in range(NUM_TABLES):
+        n[0] += 1
+        instance.query('INSERT INTO postgres_database.postgresql_replica_{} SELECT {} +  number, number from numbers(5000)'.format(table_id, n[0]))
+
+    for thread in threads:
+        thread.join()
+
+    for i in range(NUM_TABLES):
+        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+        count = instance.query('SELECT count() FROM test_database.postgresql_replica_{}'.format(i))
+        print(count)
+
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table postgresql_replica_{};'.format(i))
+
+    instance.query("DROP DATABASE test_database")
+    assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
 if __name__ == '__main__':

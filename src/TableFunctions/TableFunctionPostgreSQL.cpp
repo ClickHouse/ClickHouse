@@ -14,7 +14,6 @@
 #include "registerTableFunctions.h"
 #include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
-#include <Storages/StoragePostgreSQL.h>
 
 
 namespace DB

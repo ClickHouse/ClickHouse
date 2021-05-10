@@ -35,6 +35,7 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     , publication_name(publication_name_)
     , connection(connection_)
     , current_lsn(start_lsn)
+    , lsn_value(getLSNValue(start_lsn))
     , max_block_size(max_block_size_)
     , allow_automatic_update(allow_automatic_update_)
     , storages(storages_)
@@ -249,6 +250,7 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
     /// Skip '\x'
     size_t pos = 2;
     char type = readInt8(replication_message, pos, size);
+    //LOG_DEBUG(log, "Message type: {}, lsn string: {}, lsn value {}", type, current_lsn, lsn_value);
 
     switch (type)
     {
@@ -480,8 +482,6 @@ void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransact
                 assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica table sync");
                 copyData(input, *block_io.out);
 
-                /// The next attempt to read data will start with actual_lsn, returned from advanceLSN. current_lsn acts as
-                /// a version for rows in RelplacingMergeTree table.
                 current_lsn = advanceLSN(tx);
                 buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
             }
@@ -605,7 +605,6 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
             slot_empty = false;
             current_lsn = (*row)[0];
             lsn_value = getLSNValue(current_lsn);
-            LOG_DEBUG(log, "Current lsn: {}, value: {}", current_lsn, lsn_value);
 
             processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
