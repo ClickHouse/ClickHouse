@@ -37,7 +37,7 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function)
     {
         if (!arguments.contains(identifier))
         {
-            std::stringstream s;
+            WriteBufferFromOwnString s;
             s << "Identifier '" << identifier << "' does not exist in arguments";
             throw Exception(s.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
         }
