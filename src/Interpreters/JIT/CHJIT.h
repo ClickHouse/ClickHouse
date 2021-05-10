@@ -32,9 +32,11 @@ class JITCompiler;
   * llvm::Module can be removed, but compiled object code cannot be removed. Memory for compiled code
   * will be release only during MCJIT instance destruction. It is too expensive to create MCJIT
   * instance for each compiled module.
+  * Also important reason is that if some error occurred during compilation steps, MCJIT can just terminate
+  * our program.
   *
   * Main reasons for custom implementation vs ORCv2.
-  * ORC is on request compiled, we does not need support for asynchronous compilation.
+  * ORC is on request compiler, we do not need support for asynchronous compilation.
   * It was possible to remove compiled code with ORCv1 but it was deprecated.
   * In ORCv2 this probably can be done only with custom layer and materialization unit.
   * But it is inconvenient, discard is only called for materialization units by JITDylib that are not yet materialized.

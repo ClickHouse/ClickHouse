@@ -54,7 +54,7 @@ public:
             handleAllErrors(std::move(materialize_error),
                 [&](const llvm::ErrorInfoBase & error_info) { error_message = error_info.message(); });
 
-            throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot materialize module {}", error_message);
+            throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot materialize module: {}", error_message);
         }
 
         llvm::SmallVector<char, 4096> object_buffer;
@@ -82,7 +82,8 @@ private:
 
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
-  * Release compiled module memory in destructor.
+  * Actual compiled code memory is stored in llvm::SectionMemoryManager member, we cannot use ZeroBase optimization here
+  * because it is required for llvm::SectionMemoryManager::MemoryMapper to live longer than llvm::SectionMemoryManager.
   */
 class JITModuleMemoryManager
 {
@@ -222,7 +223,7 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
         std::string error_message;
         handleAllErrors(object.takeError(), [&](const llvm::ErrorInfoBase & error_info) { error_message = error_info.message(); });
 
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot create object file from compiled buffer {}", error_message);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot create object file from compiled buffer: {}", error_message);
     }
 
     std::unique_ptr<JITModuleMemoryManager> module_memory_manager = std::make_unique<JITModuleMemoryManager>();
@@ -335,29 +336,22 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     mpm.run(module);
 }
 
-std::atomic<bool> initialized = false;
-
-static void initializeLLVMTarget()
-{
-    if (initialized)
-        return;
-
-    initialized = true;
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-    llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
-}
-
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 {
-    initializeLLVMTarget();
+    static std::once_flag llvm_target_initialized;
+    std::call_once(llvm_target_initialized, []()
+    {
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+        llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+    });
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
     auto triple = llvm::sys::getProcessTriple();
     const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
     if (!target)
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error {}", triple, error);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
 
     llvm::SubtargetFeatures features;
     llvm::StringMap<bool> feature_map;
