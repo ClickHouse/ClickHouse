@@ -54,14 +54,14 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 !!! info "Warning"
     ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we don’t recommend to do so.
 	
-## GRANTEES Clause{#grantees}
+## GRANTEES Clause {#grantees}
 
-Specifies users or roles which are allowed to receive [grants](../../../sql-reference/statements/grant.md) from this user on the condition this user has also all required access granted with grant option. Options of the `GRANTEES` clause:
+Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#grant-privileges) from this user on the condition this user has also all required access granted with [GRANT](../../../sql-reference/statements/grant.md) option. Options of the `GRANTEES` clause:
 
--   `user` — Specifies user which is allowed to receive grants from this user.
--   `role` — Specifies role which is allowed to receive grants from this user.
--   `ANY` — User with grant option can grant to anyone. Used by default.
--   `NONE` — User with grant option provides to nobody.
+-   `user` — Specifies user which is allowed to receive privileges from this user.
+-   `role` — Specifies role which is allowed to receive privileges from this user.
+-   `ANY` — User with the `GRANT` option can provide privileges to anyone. Used by default.
+-   `NONE` — User with the `GRANT` option provides privileges to nobody.
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`.
 
