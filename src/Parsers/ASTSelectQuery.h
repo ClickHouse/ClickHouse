@@ -45,6 +45,9 @@ public:
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
     bool limit_with_ties = false;
+    UInt64 cache_ttl = 0;
+
+    UInt64 getCacheTtl() const { return cache_ttl; }
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }

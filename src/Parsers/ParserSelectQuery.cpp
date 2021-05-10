@@ -9,6 +9,7 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -55,6 +56,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rows("ROWS");
     ParserKeyword s_first("FIRST");
     ParserKeyword s_next("NEXT");
+    ParserKeyword s_cache_keep("SQL_CACHE");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -81,6 +83,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_length;
     ASTPtr top_length;
     ASTPtr settings;
+    ASTPtr cache_ttl;
 
     /// WITH expr list
     {
@@ -94,11 +97,28 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SELECT [ALL/DISTINCT] [TOP N [WITH TIES]] expr list
+    /// SELECT [SQL_CACHE/SQL_CACHE(N)] [ALL/DISTINCT] [TOP N [WITH TIES]] expr list
     {
         bool has_all = false;
         if (!s_select.ignore(pos, expected))
             return false;
+
+        if (s_cache_keep.ignore(pos, expected))
+        {
+            ParserNumber num;
+
+            if (open_bracket.ignore(pos, expected))
+            {
+                if (!num.parse(pos, cache_ttl, expected))
+                    return false;
+                if (!close_bracket.ignore(pos, expected))
+                    return false;
+                select_query->cache_ttl = cache_ttl->as<ASTLiteral &>().value.safeGet<UInt64>();
+            }
+            else
+                select_query->cache_ttl = UINT64_MAX;
+        }
+
 
         if (s_all.ignore(pos, expected))
             has_all = true;

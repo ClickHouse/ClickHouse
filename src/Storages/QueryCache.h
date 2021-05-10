@@ -36,12 +36,14 @@ namespace ErrorCodes
 class QueryCacheValue 
 {
 public:
-    QueryCacheValue(BlocksList && blocks_, size_t bytes_size_) : blocks(std::move(blocks_)), bytes_size(bytes_size_) {}
+    QueryCacheValue(BlocksList && blocks_, size_t bytes_size_, UInt64 cache_ttl_) : 
+            blocks(std::move(blocks_)), bytes_size(bytes_size_), cache_ttl(cache_ttl_) {}
     const BlocksList& getBlocks() const { return blocks; }
     BlockInputStreamPtr getInputStream() 
     { 
         return std::make_shared<BlocksListBlockInputStream>(blocks.begin(), blocks.end()); 
     }
+    UInt64 getCacheTtl() const { return cache_ttl; }
     // UInt32 getExpiresMs() const { return expires_ms; }
     size_t getSize() const { return bytes_size; }
 
@@ -50,6 +52,7 @@ private:
     // UInt32 accessed_ms;
     // UInt32 expires_ms;
     size_t bytes_size;
+    UInt64 cache_ttl;
 };
 
 
@@ -67,20 +70,20 @@ struct QueryCacheWeightFunction
 };
 
 
-class QueryCache : public LRUCache<UInt128, QueryCacheValue, UInt128TrivialHash, QueryCacheWeightFunction>
+using QueryCacheBase = LRUCache<String, QueryCacheValue, std::hash<String>, QueryCacheWeightFunction>;
+
+
+class QueryCache : public QueryCacheBase
 {
 private:
-    using Base = LRUCache<UInt128, QueryCacheValue, UInt128TrivialHash, QueryCacheWeightFunction>;
-    // size_t max_size_in_bytes_item_;
-
 
 
 public:
     QueryCache(size_t max_size_in_bytes)
-        : Base(max_size_in_bytes) {}
+        : QueryCacheBase(max_size_in_bytes) {}
 
     /// Calculate key from serialized query AST and offset.
-    static UInt128 hash(const ASTPtr & select_query)
+    static UInt128 hash_str(const ASTPtr & select_query)
     {
         String serialized_ast = select_query->dumpTree();
         UInt128 key;
@@ -92,12 +95,18 @@ public:
         return key;
     }
 
+    static String hash_tree(const ASTPtr & select_query)
+    {
+        auto hash = select_query->getTreeHash();
+        return toString(hash.first) + '_' + toString(hash.second);
+    }
 
-    BlockInputStreamPtr getOrSet(const Key & key, BlockInputStreamPtr stream)
+
+    BlockInputStreamPtr getOrSet(const Key & key, BlockInputStreamPtr stream, UInt64 cache_ttl)
     //TODO
     {
-        auto load_func = [this, &stream]() { 
-            auto cache_value = this->streamHandler(stream);
+        auto load_func = [this, &stream, cache_ttl]() { 
+            auto cache_value = this->streamHandler(stream, cache_ttl);
             if (!cache_value)
                 throw Exception("Too large dataset", ErrorCodes::TOO_LARGE_DATASET);
             return cache_value; 
@@ -105,7 +114,7 @@ public:
         MappedPtr cache_value;
         try
         {
-            auto result = Base::getOrSet(key, load_func);
+            auto result = QueryCacheBase::getOrSet(key, load_func);
             if (result.second)
                 ProfileEvents::increment(ProfileEvents::QueryCacheHits);
             else
@@ -127,7 +136,7 @@ public:
 
     BlockInputStreamPtr get(const Key & key) 
     {
-        auto result = Base::get(key);
+        auto result = QueryCacheBase::get(key);
         if (result)
         {
             ProfileEvents::increment(ProfileEvents::QueryCacheHits);
@@ -137,14 +146,14 @@ public:
         return BlockInputStreamPtr();
     }
 
-    BlockInputStreamPtr trySet(const Key & key, BlockInputStreamPtr stream) 
+    BlockInputStreamPtr trySet(const Key & key, BlockInputStreamPtr stream, UInt64 cache_ttl) 
     {
         BlockInputStreamPtr result;
         MappedPtr mapped;
 
-        mapped = streamHandler(stream);
+        mapped = streamHandler(stream, cache_ttl);
         if (mapped)
-            Base::set(key, mapped);
+            QueryCacheBase::set(key, mapped);
         else
             ProfileEvents::increment(ProfileEvents::QueryCacheInsertFails);
         return stream;
@@ -152,7 +161,7 @@ public:
     }
 
 private: 
-    MappedPtr streamHandler(BlockInputStreamPtr & stream, size_t max_size=(1u << 20))
+    MappedPtr streamHandler(BlockInputStreamPtr & stream, UInt64 cache_ttl, size_t max_size=(1u << 20))
     {
         Block block;
         BlocksList blocks;
@@ -167,7 +176,7 @@ private:
         }
         if (cur_size <= max_size) 
         {
-            cache_value = std::make_shared<QueryCacheValue>(std::move(blocks), cur_size);
+            cache_value = std::make_shared<QueryCacheValue>(std::move(blocks), cur_size, cache_ttl);
             stream = cache_value->getInputStream();
         }
         else

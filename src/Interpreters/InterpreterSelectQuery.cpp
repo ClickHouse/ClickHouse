@@ -563,14 +563,18 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
-
-    auto query_cache = context->getQueryCache();
     BlockInputStreamPtr stream;
     QueryPipelinePtr pipeline;
-    UInt128 key;
-    if (query_cache) 
+    String key;
+
+    auto & query = getSelectQuery();
+
+    auto cache_ttl = query.getCacheTtl();
+
+    auto query_cache = context->getQueryCache();
+    if (cache_ttl && query_cache) 
     {
-        key = query_cache->hash(query_ptr);
+        key = query_cache->hash_tree(query.ptr());
         stream = query_cache->get(key);
     }
     if (!stream)
@@ -583,10 +587,10 @@ BlockIO InterpreterSelectQuery::execute()
             QueryPlanOptimizationSettings::fromContext(context),
             BuildQueryPipelineSettings::fromContext(context))));
     }
-    if (query_cache)
+    if (cache_ttl && query_cache)
     {
         stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
-        stream = query_cache->trySet(key, stream);
+        stream = query_cache->trySet(key, stream, cache_ttl);
         res.in = stream;
     } 
     else 
