@@ -8,7 +8,7 @@ toc_priority: 141
 
 Чтобы эта функция работала должным образом, исходные данные должны быть отсортированы.
 
-Если вы хотите использовать эту функцию в [материализованном представлении](../../sql-reference/statements/create/view.md#materialized), вместо нее лучше используйте функцию [deltaSumTimestamp](deltasumtimestamp.md).
+Если вы хотите использовать эту функцию в [материализованном представлении](../../../sql-reference/statements/create/view.md#materialized), вместо нее лучше используйте функцию [deltaSumTimestamp](deltasumtimestamp.md).
 
 **Синтаксис**
 
