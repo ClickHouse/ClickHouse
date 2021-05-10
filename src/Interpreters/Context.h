@@ -116,10 +116,6 @@ struct BackgroundTaskSchedulingSettings;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
-#if USE_EMBEDDED_COMPILER
-class CompiledExpressionCache;
-#endif
-
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 

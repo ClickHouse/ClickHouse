@@ -310,7 +310,7 @@ public:
     template <typename T, typename Z = void *>
     using enable_if_not_field_or_stringlike_t = std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field> && !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
 
-    Field()
+    Field() //-V730
         : which(Types::Null)
     {
     }
@@ -851,7 +851,7 @@ decltype(auto) castToNearestFieldType(T && x)
 }
 
 template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_stringlike_t<T>)
+Field::Field(T && rhs, enable_if_not_field_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));

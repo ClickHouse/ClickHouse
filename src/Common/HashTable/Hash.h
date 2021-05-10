@@ -91,49 +91,38 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 {
     if (size < 8)
     {
-        DB::UInt64 value = 0;
-        auto * value_ptr = reinterpret_cast<unsigned char *>(&value);
+        UInt64 value = 0;
 
-        typedef __attribute__((__aligned__(1))) uint16_t uint16_unaligned_t;
-        typedef __attribute__((__aligned__(1))) uint32_t uint32_unaligned_t;
-
-        /// Adopted code from FastMemcpy.h (memcpy_tiny)
         switch (size)
         {
             case 0:
                 break;
             case 1:
-                value_ptr[0] = pos[0];
+                __builtin_memcpy(&value, pos, 1);
                 break;
             case 2:
-                *reinterpret_cast<uint16_t *>(value_ptr) = *reinterpret_cast<const uint16_unaligned_t *>(pos);
+                __builtin_memcpy(&value, pos, 2);
                 break;
             case 3:
-                *reinterpret_cast<uint16_t *>(value_ptr) = *reinterpret_cast<const uint16_unaligned_t *>(pos);
-                value_ptr[2] = pos[2];
+                __builtin_memcpy(&value, pos, 3);
                 break;
             case 4:
-                *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
+                __builtin_memcpy(&value, pos, 4);
                 break;
             case 5:
-                *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
-                value_ptr[4] = pos[4];
+                __builtin_memcpy(&value, pos, 5);
                 break;
             case 6:
-                *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
-                *reinterpret_cast<uint16_unaligned_t *>(value_ptr + 4) =
-                        *reinterpret_cast<const uint16_unaligned_t *>(pos + 4);
+                __builtin_memcpy(&value, pos, 6);
                 break;
             case 7:
-                *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
-                *reinterpret_cast<uint32_unaligned_t *>(value_ptr + 3) =
-                        *reinterpret_cast<const uint32_unaligned_t *>(pos + 3);
+                __builtin_memcpy(&value, pos, 7);
                 break;
             default:
                 __builtin_unreachable();
         }
 
-        value_ptr[7] = size;
+        reinterpret_cast<unsigned char *>(&value)[7] = size;
         return intHashCRC32(value, updated_value);
     }
 

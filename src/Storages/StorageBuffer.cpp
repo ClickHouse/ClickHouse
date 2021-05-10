@@ -859,7 +859,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         buffer.data.swap(block_to_write);
 
-        if (!buffer.first_write_time)
+        if (!buffer.first_write_time) // -V547
             buffer.first_write_time = current_time;
 
         /// After a while, the next write attempt will happen.
@@ -998,7 +998,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
-        if (command.type == AlterCommand::Type::DROP_COLUMN)
+        if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
