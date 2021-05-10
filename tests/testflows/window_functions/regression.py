@@ -94,10 +94,6 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "window_functions_env")) as cluster:
         self.context.cluster = cluster
-        self.context.stress = stress
-
-        if parallel is not None:
-            self.context.parallel = parallel
 
         Feature(run=load("window_functions.tests.feature", "feature"), flags=TE)
 
