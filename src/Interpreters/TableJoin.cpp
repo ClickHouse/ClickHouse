@@ -156,9 +156,12 @@ NameSet TableJoin::requiredRightKeys() const
 {
     NameSet required;
     for (const auto & name : key_names_right)
+    {
+        auto rename = renamedRightColumnName(name);
         for (const auto & column : columns_added_by_join)
-            if (name == column.name)
+            if (rename == column.name)
                 required.insert(name);
+    }
     return required;
 }
 

@@ -1096,7 +1096,8 @@ void HashJoin::joinBlockImpl(
 
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
-            block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
+            auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
+            block.insert(correctNullability({col.column, col.type, right_col_name}, is_nullable));
         }
     }
     else if (has_required_right_keys)
@@ -1121,7 +1122,8 @@ void HashJoin::joinBlockImpl(
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
 
             ColumnPtr thin_column = filterWithBlanks(col.column, filter);
-            block.insert(correctNullability({thin_column, col.type, right_key.name}, is_nullable, null_map_filter));
+            auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
+            block.insert(correctNullability({thin_column, col.type, right_col_name}, is_nullable, null_map_filter));
 
             if constexpr (need_replication)
                 right_keys_to_replicate.push_back(block.getPositionByName(right_key.name));
