@@ -85,7 +85,7 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&](const auto & types) -> bool //-V657
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;

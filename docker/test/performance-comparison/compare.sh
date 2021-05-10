@@ -243,9 +243,12 @@ function run_tests
     profile_seconds_left=600
 
     # Run the tests.
+    total_tests=$(echo "$test_files" | wc -w)
+    current_test=0
     test_name="<none>"
     for test in $test_files
     do
+        echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
@@ -273,6 +276,7 @@ function run_tests
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
+        current_test=$((current_test + 1))
     done
 
     unset TIMEFORMAT
@@ -1015,6 +1019,7 @@ done
 wait
 
 # Create per-query flamegraphs
+touch report/query-files.txt
 IFS=$'\n'
 for version in {right,left}
 do
@@ -1205,6 +1210,12 @@ function upload_results
             /^metric/ { print old_sha, new_sha, $2, $3 }' \
         | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
 
+    # Grepping numactl results from log is too crazy, I'll just call it again.
+    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+EOF
+
     set -x
 }
 
@@ -1287,3 +1298,4 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
+

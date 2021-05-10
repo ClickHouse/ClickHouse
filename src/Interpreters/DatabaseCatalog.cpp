@@ -16,6 +16,7 @@
 #include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
 #include <common/logger_useful.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -55,7 +56,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
     String global_name;
-    if (query)
+    if (create)
     {
         original_create = create->clone();
         if (create->uuid == UUIDHelpers::Nil)
@@ -630,8 +631,10 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 {
-    auto db = tryGetDatabase(table_id.getDatabaseName());
-    return db && db->isDictionaryExist(table_id.getTableName());
+    auto storage = tryGetTable(table_id, getContext());
+    bool storage_is_dictionary = storage && storage->isDictionary();
+
+    return storage_is_dictionary;
 }
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const

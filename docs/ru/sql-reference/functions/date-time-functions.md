@@ -134,6 +134,46 @@ SELECT timezoneOf(now());
 └───────────────────┘
 ```
 
+## timeZoneOffset {#timezoneoffset}
+
+Возвращает смещение часового пояса в секундах от [UTC](https://ru.wikipedia.org/wiki/Всемирное_координированное_время). Функция учитывает [летнее время](https://ru.wikipedia.org/wiki/Летнее_время) и исторические изменения часовых поясов, которые действовали на указанную дату.
+Для вычисления смещения используется информация из [базы данных IANA](https://www.iana.org/time-zones).
+
+**Синтаксис**
+
+``` sql
+timeZoneOffset(value)
+```
+
+Псевдоним: `timezoneOffset`. 
+
+**Аргументы**
+
+-   `value` — Дата с временем. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+
+**Возвращаемое значение**
+
+-   Смещение в секундах от UTC. 
+
+Тип: [Int32](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDateTime('2021-04-21 10:20:30', 'Europe/Moscow') AS Time, toTypeName(Time) AS Type,
+       timeZoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
+```
+
+Результат:
+
+``` text
+┌────────────────Time─┬─Type──────────────────────┬─Offset_in_seconds─┬─Offset_in_hours─┐
+│ 2021-04-21 10:20:30 │ DateTime('Europe/Moscow') │             10800 │               3 │
+└─────────────────────┴───────────────────────────┴───────────────────┴─────────────────┘
+```
+
 ## toYear {#toyear}
 
 Переводит дату или дату-с-временем в число типа UInt16, содержащее номер года (AD).
