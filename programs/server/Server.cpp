@@ -13,6 +13,7 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Environment.h>
 #include <ext/scope_guard.h>
 #include <common/defines.h>
 #include <common/logger_useful.h>
@@ -385,6 +386,11 @@ void Server::initialize(Poco::Util::Application & self)
 {
     BaseDaemon::initialize(self);
     logger().information("starting up");
+
+    LOG_INFO(&logger(), "OS Name = {}, OS Version = {}, OS Architecture = {}",
+        Poco::Environment::osName(),
+        Poco::Environment::osVersion(),
+        Poco::Environment::osArchitecture());
 }
 
 std::string Server::getDefaultCorePath() const

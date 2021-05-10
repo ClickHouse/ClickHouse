@@ -39,6 +39,7 @@ SRCS(
     CollectJoinOnKeysVisitor.cpp
     ColumnAliasesVisitor.cpp
     Context.cpp
+    ConvertStringsToEnumVisitor.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
     DDLTask.cpp

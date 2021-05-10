@@ -32,6 +32,14 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
+
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
@@ -163,7 +171,8 @@ private:
     ColumnUInt8::Ptr hasKeysImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & ids,
-        const PaddedPODArray<RangeStorageType> & dates) const;
+        const PaddedPODArray<RangeStorageType> & dates,
+        size_t & keys_found) const;
 
     template <typename T>
     static void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
@@ -201,6 +210,7 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 };
 
 }

@@ -101,6 +101,9 @@ Privileges can be granted to a role by the [GRANT](../sql-reference/statements/g
 
 Row policy is a filter that defines which of the rows are available to a user or a role. Row policy contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 
+!!! note "Warning"
+    Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
+
 Management queries:
 
 -   [CREATE ROW POLICY](../sql-reference/statements/create/row-policy.md)

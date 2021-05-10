@@ -784,8 +784,10 @@ String alterTypeToString(const AlterCommand::Type type)
         return "RENAME COLUMN";
     case AlterCommand::Type::REMOVE_TTL:
         return "REMOVE TTL";
+    default:
+        throw Exception("Uninitialized ALTER command", ErrorCodes::LOGICAL_ERROR);
     }
-    __builtin_unreachable();
+
 }
 
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
