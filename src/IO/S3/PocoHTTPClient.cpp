@@ -176,8 +176,8 @@ void PocoHTTPClient::makeRequestInternal(
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
-            /** Aws::Http::URI will encode uri in appropriate way for AWS S3 server.
-              * Poco::URI does that in incompatible way which can lead to double decoding.
+            /** Aws::Http::URI will encode URL in appropriate way for AWS S3 server.
+              * Poco::URI also does that correctly but it's not compatible with AWS.
               * For example, `+` symbol will not be converted to `%2B` by Poco and would
               * be received as space symbol.
               *
