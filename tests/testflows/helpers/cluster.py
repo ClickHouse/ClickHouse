@@ -262,6 +262,7 @@ class Cluster(object):
             docker_compose_file="docker-compose.yml"):
 
         self._bash = {}
+        self._control_shell = None
         self.environ = {}
         self.clickhouse_binary_path = clickhouse_binary_path
         self.configs_dir = configs_dir
@@ -294,15 +295,39 @@ class Cluster(object):
 
         self.docker_compose += f" --ansi never --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
         self.lock = threading.Lock()
+    
+    @property
+    def control_shell(self):
+        """Must be called with self.lock.acquired.
+        """
+        if self._control_shell is None:
+            self._control_shell = Shell()
+        return self._control_shell
+
+    def node_container_id(self, node, timeout=300):
+        """Must be called with self.lock acquired.
+        """
+        container_id = None
+        time_start = time.time()
+        while True:
+            c = self.control_shell(f"{self.docker_compose} ps -q {node}")
+            container_id = c.output.strip()
+            if c.exitcode == 0 and len(container_id) > 1:
+                break
+            if time.time() - time_start > timeout:
+                raise RuntimeError(f"failed to get docker container id for the {node} service")
+        return container_id
 
     def shell(self, node, timeout=300):
         """Returns unique shell terminal to be used.
         """
         if node is None:
             return Shell()
-
+        
+        with self.lock:
+            container_id = self.node_container_id(node=node, timeout=timeout)
         shell = Shell(command=[
-                "/bin/bash", "--noediting", "-c", f"docker exec -it $({self.docker_compose} ps -q {node}) bash --noediting"
+                "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} bash --noediting"
             ], name=node)
 
         shell.timeout = timeout
@@ -331,8 +356,9 @@ class Cluster(object):
                     for name,value in self.environ.items():
                         self._bash[id](f"export {name}={value}")
                 else:
+                    container_id = self.node_container_id(node=node, timeout=timeout)
                     self._bash[id] = Shell(command=[
-                        "/bin/bash", "--noediting", "-c", f"docker exec -it $({self.docker_compose} ps -q {node}) {command}"
+                        "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} {command}"
                     ], name=node).__enter__()
 
                 self._bash[id].timeout = timeout
@@ -398,7 +424,12 @@ class Cluster(object):
                     else:
                         self._bash[id] = shell
         finally:
-            return self.command(None, f"{self.docker_compose} down --timeout 60", bash=bash, timeout=timeout)
+            cmd = self.command(None, f"{self.docker_compose} down --timeout 60", bash=bash, timeout=timeout)
+            with self.lock:
+                if self._control_shell:
+                    self._control_shell.__exit__(None, None, None)
+                    self._control_shell = None
+            return cmd
 
     def up(self, timeout=30*60):
         if self.local:
