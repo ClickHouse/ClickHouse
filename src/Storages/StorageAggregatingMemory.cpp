@@ -268,13 +268,19 @@ StorageAggregatingMemory::StorageAggregatingMemory(
         throw Exception("UNION is not supported for AggregatingMemory", ErrorCodes::INCORRECT_QUERY);
 
     // TODO check validity of aggregation query inside this func
-    auto select = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
-    ASTPtr select_ptr = select.inner_query;
+    select_query = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
+    constructor_context = context_;
+    constructor_constraints = constraints_;
+}
 
-    auto select_context = std::make_unique<ContextPtr>(context_);
+void StorageAggregatingMemory::startup()
+{
+    ASTPtr select_ptr = select_query.inner_query;
+
+    auto select_context = std::make_unique<ContextPtr>(constructor_context);
 
     /// Get info about source table.
-    JoinedTables joined_tables(context_, select_ptr->as<ASTSelectQuery &>());
+    JoinedTables joined_tables(constructor_context, select_ptr->as<ASTSelectQuery &>());
     StoragePtr source_storage = joined_tables.getLeftTableStorage();
     NamesAndTypesList source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
 
@@ -299,8 +305,8 @@ StorageAggregatingMemory::StorageAggregatingMemory(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_after_aggr));
-    storage_metadata.setConstraints(std::move(constraints_));
-    storage_metadata.setSelectQuery(std::move(select));
+    storage_metadata.setConstraints(constructor_constraints);
+    storage_metadata.setSelectQuery(select_query);
     setInMemoryMetadata(storage_metadata);
 
     StorageInMemoryMetadata src_metadata;
@@ -360,7 +366,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     /// To do this, we pass a block with zero rows to aggregate.
     if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
     {
-        AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), context_);
+        AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), constructor_context);
         os.write(src_block_header);
     }
 }

@@ -49,12 +49,18 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
+    void startup() override;
+
     // TODO implement totalRows and totalBytes using data from Aggregator (if possible)
     // std::optional<UInt64> totalRows(const Settings &) const override;
     // std::optional<UInt64> totalBytes(const Settings &) const override;
 
 private:
     mutable std::mutex mutex;
+
+    SelectQueryDescription select_query;
+    ContextPtr constructor_context;
+    ConstraintsDescription constructor_constraints;
 
     Block src_block_header;
     StorageMetadataPtr src_metadata_snapshot;
