@@ -13,6 +13,7 @@ void registerAggregateFunctionAvg(AggregateFunctionFactory &);
 void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
+void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
@@ -72,6 +73,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionAvgWeighted(factory);
         registerAggregateFunctionCount(factory);
         registerAggregateFunctionDeltaSum(factory);
+        registerAggregateFunctionDeltaSumTimestamp(factory);
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);

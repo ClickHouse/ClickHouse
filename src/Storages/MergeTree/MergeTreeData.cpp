@@ -1179,7 +1179,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         part_log_elem.event_type = PartLogElement::REMOVE_PART;
         part_log_elem.event_time = time(nullptr);
-        part_log_elem.duration_ms = 0;
+        part_log_elem.duration_ms = 0; //-V1048
 
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
@@ -1653,13 +1653,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
 
-            const auto & deps_mv = name_deps[command.column_name];
-            if (!deps_mv.empty())
+            if (!command.clear)
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                const auto & deps_mv = name_deps[command.column_name];
+                if (!deps_mv.empty())
+                {
+                    throw Exception(
+                        "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                            + toString(deps_mv),
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                }
             }
 
             dropped_columns.emplace(command.column_name);
@@ -3019,6 +3022,9 @@ Pipe MergeTreeData::alterPartition(
             }
 
             break;
+
+            default:
+                throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
         }
         for (auto & command_result : current_command_results)
             command_result.command_type = command.typeToString();

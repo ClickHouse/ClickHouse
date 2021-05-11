@@ -23,6 +23,7 @@ struct AlterCommand
 
     enum Type
     {
+        UNKNOWN,
         ADD_COLUMN,
         DROP_COLUMN,
         MODIFY_COLUMN,
@@ -55,7 +56,7 @@ struct AlterCommand
         TTL
     };
 
-    Type type;
+    Type type = UNKNOWN;
 
     String column_name;
 
