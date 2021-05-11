@@ -11,7 +11,6 @@ import json
 import csv
 
 
-MAX_RETRY = 2
 SLEEP_BETWEEN_RETRIES = 5
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
@@ -319,7 +318,7 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Cannot run with custom docker image version :(")
         return image_cmd
 
-    def run_test_group(self, repo_path, test_group, tests_in_group, num_tries):
+    def run_test_group(self, repo_path, test_group, tests_in_group):
         counters = {
             "ERROR": [],
             "PASSED": [],
@@ -340,51 +339,48 @@ class ClickhouseIntegrationTestsRunner:
         test_group_str = test_group.replace('/', '_').replace('.', '_')
         log_paths = []
 
-        for i in range(num_tries):
-            logging.info("Running test group %s for the %s retry", test_group, i)
-            clear_ip_tables_and_restart_daemons()
+        logging.info("Running test group %s", test_group)
+        clear_ip_tables_and_restart_daemons()
 
-            output_path = os.path.join(str(self.path()), "test_output_" + test_group_str + "_" + str(i) + ".log")
-            log_name = "integration_run_" + test_group_str + "_" + str(i) + ".txt"
-            log_path = os.path.join(str(self.path()), log_name)
-            log_paths.append(log_path)
-            logging.info("Will wait output inside %s", output_path)
+        output_path = os.path.join(str(self.path()), "test_output_" + test_group_str + ".log")
+        log_name = "integration_run_" + test_group_str + ".txt"
+        log_path = os.path.join(str(self.path()), log_name)
+        log_paths.append(log_path)
+        logging.info("Will wait output inside %s", output_path)
 
-            test_names = set([])
-            for test_name in tests_in_group:
-                if test_name not in counters["PASSED"]:
-                    if '[' in test_name:
-                        test_names.add(test_name[:test_name.find('[')])
-                    else:
-                        test_names.add(test_name)
-
-            test_cmd = ' '.join([test for test in sorted(test_names)])
-            cmd = "cd {}/tests/integration && ./runner {} '-ss {} -rfEp --color=no --durations=0 {}' | tee {}".format(
-                repo_path, image_cmd, test_cmd, _get_deselect_option(self.should_skip_tests()), output_path)
-
-            with open(log_path, 'w') as log:
-                logging.info("Executing cmd: %s", cmd)
-                retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
-                if retcode == 0:
-                    logging.info("Run %s group successfully", test_group)
+        test_names = set([])
+        for test_name in tests_in_group:
+            if test_name not in counters["PASSED"]:
+                if '[' in test_name:
+                    test_names.add(test_name[:test_name.find('[')])
                 else:
-                    logging.info("Some tests failed")
+                    test_names.add(test_name)
 
-            if os.path.exists(output_path):
-                lines = parse_test_results_output(output_path)
-                new_counters = get_counters(lines)
-                times_lines = parse_test_times(output_path)
-                new_tests_times = get_test_times(times_lines)
-                self._update_counters(counters, new_counters)
-                for test_name, test_time in new_tests_times.items():
-                    tests_times[test_name] = test_time
-                os.remove(output_path)
-            if len(counters["PASSED"]) + len(counters["FLAKY"]) == len(tests_in_group):
-                logging.info("All tests from group %s passed", test_group)
-                break
-            if len(counters["PASSED"]) + len(counters["FLAKY"]) >= 0 and len(counters["FAILED"]) == 0 and len(counters["ERROR"]) == 0:
-                logging.info("Seems like all tests passed but some of them are skipped or deselected. Ignoring them and finishing group.")
-                break
+        test_cmd = ' '.join([test for test in sorted(test_names)])
+        cmd = "cd {}/tests/integration && ./runner {} '-ss {} -rfEp --color=no --durations=0 {}' | tee {}".format(
+            repo_path, image_cmd, test_cmd, _get_deselect_option(self.should_skip_tests()), output_path)
+
+        with open(log_path, 'w') as log:
+            logging.info("Executing cmd: %s", cmd)
+            retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
+            if retcode == 0:
+                logging.info("Run %s group successfully", test_group)
+            else:
+                logging.info("Some tests failed")
+
+        if os.path.exists(output_path):
+            lines = parse_test_results_output(output_path)
+            new_counters = get_counters(lines)
+            times_lines = parse_test_times(output_path)
+            new_tests_times = get_test_times(times_lines)
+            self._update_counters(counters, new_counters)
+            for test_name, test_time in new_tests_times.items():
+                tests_times[test_name] = test_time
+            os.remove(output_path)
+        if len(counters["PASSED"]) + len(counters["FLAKY"]) == len(tests_in_group):
+            logging.info("All tests from group %s passed", test_group)
+        elif len(counters["PASSED"]) + len(counters["FLAKY"]) >= 0 and len(counters["FAILED"]) == 0 and len(counters["ERROR"]) == 0:
+            logging.info("Seems like all tests passed but some of them are skipped or deselected. Ignoring them and finishing group.")
         else:
             for test in tests_in_group:
                 if test not in counters["PASSED"] and test not in counters["ERROR"] and test not in counters["FAILED"]:
@@ -412,7 +408,7 @@ class ClickhouseIntegrationTestsRunner:
         for i in range(TRIES_COUNT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run, 1)
+            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run)
             logs += log_paths
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", ' '.join(counters["FAILED"]))
@@ -482,7 +478,7 @@ class ClickhouseIntegrationTestsRunner:
 
         for group, tests in items_to_run:
             logging.info("Running test group %s countaining %s tests", group, len(tests))
-            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests, MAX_RETRY)
+            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests)
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info("Tests from group %s stats, %s count %s", group, counter, len(value))
