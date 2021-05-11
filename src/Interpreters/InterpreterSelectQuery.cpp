@@ -560,7 +560,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     }
 }
 
-BlockIO InterpreterSelectQuery::execute()
+BlockIO InterpreterSelectQuery::execute_new()
 {
     BlockIO res;
     BlockInputStreamPtr stream;
@@ -595,6 +595,19 @@ BlockIO InterpreterSelectQuery::execute()
     } 
     else 
         res.pipeline = std::move(*pipeline);
+    return res;
+}
+
+BlockIO InterpreterSelectQuery::execute()
+{
+    BlockIO res;
+    QueryPlan query_plan;
+
+    buildQueryPlan(query_plan);
+
+    res.pipeline = std::move(*query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context)));
     return res;
 }
 
