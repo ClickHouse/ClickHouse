@@ -11,7 +11,7 @@
 namespace DB 
 {
 
-/** Opens files: /proc/loadav, /proc/stat, /proc/cpuinfo. Keeps it open and reads processor statistics.
+/** Opens files: /proc/loadavg, /proc/stat, /proc/cpuinfo. Keeps it open and reads processor statistics.
   * This is Linux specific.
   * See: man procfs
   */
