@@ -88,6 +88,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto & langcolumn = arguments[0].column;
