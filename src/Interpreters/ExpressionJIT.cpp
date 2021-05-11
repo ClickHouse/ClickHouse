@@ -328,12 +328,25 @@ static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Node & node, c
         NameGreaterOrEquals::name
     };
 
+    /** Comparision operator is special case for ActionDAG compilation
+      * Its result can be constant and we can understand that only during Function execute call.
+      * It can be a problem if two DAGs with compare function are analyzed, but in first DAG comparison
+      * function is compiled, in second DAG it is not compiled.
+      * There will be error because of block headers mismatch.
+      */
+
     auto it = comparison_functions.find(impl.getName());
     if (it == comparison_functions.end())
         return false;
 
     const auto * lhs_node = node.children[0];
     const auto * rhs_node = node.children[1];
+
+    while (lhs_node->type == ActionsDAG::ActionType::ALIAS)
+        lhs_node = lhs_node->children[0];
+
+    while (rhs_node->type == ActionsDAG::ActionType::ALIAS)
+        rhs_node = rhs_node->children[0];
 
     return lhs_node == rhs_node && !isTuple(lhs_node->result_type);
 }
