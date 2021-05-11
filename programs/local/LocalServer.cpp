@@ -413,7 +413,7 @@ void LocalServer::processQueries()
         progress.reset();
         progress_bar.show_progress_bar = false;
         progress_bar.written_progress_chars = 0;
-        progress_bar.written_first_block = false;;
+        progress_bar.written_first_block = false;
 
 
         ReadBufferFromString read_buf(query);
