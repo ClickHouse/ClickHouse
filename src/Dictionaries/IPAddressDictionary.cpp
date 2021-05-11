@@ -275,7 +275,9 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
     const auto rows = first_column->size();
 
     auto result = ColumnUInt8::create(rows);
-    auto& out = result->getData();
+    auto & out = result->getData();
+
+    size_t keys_found = 0;
 
     if (first_column->isNumeric())
     {
@@ -285,6 +287,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
+            keys_found += out[i];
         }
     }
     else
@@ -297,10 +300,12 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             out[i] = (found != ipNotFound());
+            keys_found += out[i];
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -680,6 +685,8 @@ void IPAddressDictionary::getItemsImpl(
 
     auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
 
+    size_t keys_found = 0;
+
     if (first_column->isNumeric())
     {
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
@@ -689,7 +696,10 @@ void IPAddressDictionary::getItemsImpl(
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
+            {
                 set_value(i, static_cast<OutputType>(vec[*found]));
+                ++keys_found;
+            }
             else
                 set_value(i, default_value_extractor[i]);
         }
@@ -704,13 +714,17 @@ void IPAddressDictionary::getItemsImpl(
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             if (found != ipNotFound())
+            {
                 set_value(i, static_cast<OutputType>(vec[*found]));
+                ++keys_found;
+            }
             else
                 set_value(i, default_value_extractor[i]);
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <typename T>

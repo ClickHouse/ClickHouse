@@ -163,8 +163,9 @@ std::string PartitionCommand::typeToString() const
         return "UNFREEZE ALL";
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
+    default:
+        throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
     }
-    __builtin_unreachable();
 }
 
 Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
