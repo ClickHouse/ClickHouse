@@ -150,7 +150,7 @@ SELECT
     dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
     toTypeName(val) AS type
 FROM system.numbers
-LIMIT 3
+LIMIT 3;
 ```
 
 ``` text
@@ -267,4 +267,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
         - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
-
