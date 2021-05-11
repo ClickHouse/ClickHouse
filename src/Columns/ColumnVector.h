@@ -12,6 +12,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
   * Floating-point numbers are compared this way that NaNs always end up at the end
@@ -90,6 +96,7 @@ struct FloatCompareHelper
 template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
 template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
 
+
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
@@ -118,7 +125,7 @@ private:
     ColumnVector(std::initializer_list<T> il) : data{il} {}
 
 public:
-    bool isNumeric() const override { return IsNumber<T>; }
+    bool isNumeric() const override { return is_arithmetic_v<T>; }
 
     size_t size() const override
     {
@@ -221,8 +228,8 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>::get(); }
-    TypeIndex getDataType() const override { return TypeId<T>::value; }
+    const char * getFamilyName() const override { return TypeName<T>; }
+    TypeIndex getDataType() const override { return TypeId<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -245,18 +252,27 @@ public:
     /// Out of range conversion is permitted.
     UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
-        return UInt64(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return UInt64(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
     }
 
     /// Out of range conversion is permitted.
     Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
     {
-        return Int64(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return Int64(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
     }
 
     bool getBool(size_t n) const override
     {
-        return bool(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return bool(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
     }
 
     void insert(const Field & x) override
@@ -370,5 +386,6 @@ extern template class ColumnVector<Int128>;
 extern template class ColumnVector<Int256>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
+extern template class ColumnVector<UUID>;
 
 }

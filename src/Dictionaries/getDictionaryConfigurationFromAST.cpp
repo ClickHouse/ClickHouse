@@ -161,6 +161,13 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
         root->appendChild(element);
     };
 
+    if (!all_attrs.count(range->min_attr_name))
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+            "MIN ({}) attribute is not defined in the dictionary attributes", range->min_attr_name);
+    if (!all_attrs.count(range->max_attr_name))
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+            "MAX ({}) attribute is not defined in the dictionary attributes", range->max_attr_name);
+
     append_element("range_min", range->min_attr_name, all_attrs.at(range->min_attr_name));
     append_element("range_max", range->max_attr_name, all_attrs.at(range->max_attr_name));
 }
