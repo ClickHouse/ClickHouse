@@ -30,7 +30,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_)
-    : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, virt_column_names_))
+    : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -40,6 +40,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , reader_settings(reader_settings_)
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
+    , partition_value_type(storage.getPartitionValueType())
 {
     header_without_virtual_columns = getPort().getHeader();
 
@@ -60,7 +61,7 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 
         if (res.hasRows())
         {
-            injectVirtualColumns(res, task.get(), virt_column_names);
+            injectVirtualColumns(res, task.get(), partition_value_type, virt_column_names);
             return res;
         }
     }
@@ -207,11 +208,18 @@ namespace
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
+        virtual void
+        insertPartitionValueColumn(size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String & name)
+            = 0;
     };
 }
 
-static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inserter,
-                                     MergeTreeReadTask * task, const Names & virtual_columns)
+static void injectVirtualColumnsImpl(
+    size_t rows,
+    VirtualColumnsInserter & inserter,
+    MergeTreeReadTask * task,
+    const DataTypePtr & partition_value_type,
+    const Names & virtual_columns)
 {
     /// add virtual columns
     /// Except _sample_factor, which is added from the outside.
@@ -263,6 +271,13 @@ static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inser
 
                 inserter.insertStringColumn(column, virtual_column_name);
             }
+            else if (virtual_column_name == "_partition_value")
+            {
+                if (rows)
+                    inserter.insertPartitionValueColumn(rows, task->data_part->partition.value, partition_value_type, virtual_column_name);
+                else
+                    inserter.insertPartitionValueColumn(rows, {}, partition_value_type, virtual_column_name);
+            }
         }
     }
 }
@@ -288,6 +303,19 @@ namespace
             block.insert({column, std::make_shared<DataTypeUUID>(), name});
         }
 
+        void insertPartitionValueColumn(
+            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String & name) final
+        {
+            ColumnPtr column;
+            if (rows)
+                column = partition_value_type->createColumnConst(rows, Tuple(partition_value.begin(), partition_value.end()))
+                             ->convertToFullColumnIfConst();
+            else
+                column = partition_value_type->createColumn();
+
+            block.insert({column, partition_value_type, name});
+        }
+
         Block & block;
     };
 
@@ -309,23 +337,38 @@ namespace
         {
             columns.push_back(column);
         }
+
+        void
+        insertPartitionValueColumn(size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String &) final
+        {
+            ColumnPtr column;
+            if (rows)
+                column = partition_value_type->createColumnConst(rows, Tuple(partition_value.begin(), partition_value.end()))
+                             ->convertToFullColumnIfConst();
+            else
+                column = partition_value_type->createColumn();
+            columns.push_back(column);
+        }
+
         Columns & columns;
     };
 }
 
-void MergeTreeBaseSelectProcessor::injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns)
+void MergeTreeBaseSelectProcessor::injectVirtualColumns(
+    Block & block, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
-    VirtualColumnsInserterIntoBlock inserter { block };
-    injectVirtualColumnsImpl(block.rows(), inserter, task, virtual_columns);
+    VirtualColumnsInserterIntoBlock inserter{block};
+    injectVirtualColumnsImpl(block.rows(), inserter, task, partition_value_type, virtual_columns);
 }
 
-void MergeTreeBaseSelectProcessor::injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns)
+void MergeTreeBaseSelectProcessor::injectVirtualColumns(
+    Chunk & chunk, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
     UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    VirtualColumnsInserterIntoColumns inserter { columns };
-    injectVirtualColumnsImpl(num_rows, inserter, task, virtual_columns);
+    VirtualColumnsInserterIntoColumns inserter{columns};
+    injectVirtualColumnsImpl(num_rows, inserter, task, partition_value_type, virtual_columns);
 
     chunk.setColumns(columns, num_rows);
 }
@@ -371,10 +414,10 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
 }
 
 Block MergeTreeBaseSelectProcessor::transformHeader(
-    Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns)
+    Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
     executePrewhereActions(block, prewhere_info);
-    injectVirtualColumns(block, nullptr, virtual_columns);
+    injectVirtualColumns(block, nullptr, partition_value_type, virtual_columns);
     return block;
 }
 
