@@ -53,7 +53,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
-        bool result = isSchemaAllowed(*connection);
+        bool result = isSchemaAllowed(connection->get());
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try

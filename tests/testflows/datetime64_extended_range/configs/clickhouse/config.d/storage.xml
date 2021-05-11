@@ -1,0 +1,20 @@
+<yandex>
+
+<storage_configuration>
+    <disks>
+        <default>
+            <keep_free_space_bytes>1024</keep_free_space_bytes>
+        </default>
+    </disks>
+    <policies>
+        <default>
+            <volumes>
+                <default>
+                    <disk>default</disk>
+                </default>
+            </volumes>
+        </default>
+    </policies>
+</storage_configuration>
+
+</yandex>
