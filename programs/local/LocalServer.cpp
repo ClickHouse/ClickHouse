@@ -265,7 +265,7 @@ try
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
-    /// A cache for mmapped files.
+    /// A cache for query cache resulting datasets.
     size_t query_cache_size = config().getUInt64("query_cache_size", 268435456);   /// The choice of default is arbitrary.
     if (query_cache_size)
         global_context->setQueryCache(query_cache_size);

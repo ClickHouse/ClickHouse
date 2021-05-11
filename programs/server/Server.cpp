@@ -884,8 +884,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
-    /// A cache for query results.
-    size_t query_cache_size = config().getUInt64("query_cache_size");
+    /// A cache for query resulting datasets.
+    size_t query_cache_size = config().getUInt64("query_cache_size", 268435456);
     if (query_cache_size > max_cache_size)
     {
         query_cache_size = max_cache_size;
