@@ -196,7 +196,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             // NOTE: prewhere is executed inside readFromParts
             if (query_info.projection->before_where)
             {
-                LOG_DEBUG(log, "projection before_where: {}", query_info.projection->before_where->dumpDAG());
+                // std::cerr << fmt::format("projection before_where: {}", query_info.projection->before_where->dumpDAG());
                 auto where_step = std::make_unique<FilterStep>(
                     plan->getCurrentDataStream(),
                     query_info.projection->before_where,
@@ -209,7 +209,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
             if (query_info.projection->before_aggregation)
             {
-                LOG_DEBUG(log, "projection before_aggregation: {}", query_info.projection->before_aggregation->dumpDAG());
+                // std::cerr << fmt::format("projection before_aggregation: {}", query_info.projection->before_aggregation->dumpDAG());
                 auto expression_before_aggregation
                     = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), query_info.projection->before_aggregation);
                 expression_before_aggregation->setStepDescription("Before GROUP BY");
