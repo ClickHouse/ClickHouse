@@ -1,13 +1,13 @@
 ---
-toc_priority: 190
+toc_priority: 195
 ---
 
-# uniq {#agg_function-uniq}
+# uniqThetaSketch {#agg_function-uniqthetasketch}
 
-Calculates the approximate number of different values of the argument.
+Calculates the approximate number of different argument values, using the [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketchFramework.html).
 
 ``` sql
-uniq(x[, ...])
+uniqThetaSketch(x[, ...])
 ```
 
 **Arguments**
@@ -24,18 +24,16 @@ Function:
 
 -   Calculates a hash for all parameters in the aggregate, then uses it in calculations.
 
--   Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
+-   Uses the [KMV](https://datasketches.apache.org/docs/Theta/InverseEstimate.html) algorithm to approximate the number of different argument values.
 
-        This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
+        4096(2^12) 64-bit sketch are used. The size of the state is about 41 KB.
 
--   Provides the result deterministically (it doesn’t depend on the query processing order).
-
-We recommend using this function in almost all scenarios.
+-   The relative error is 3.125% (95% confidence), see the [relative error table](https://datasketches.apache.org/docs/Theta/ThetaErrorTable.html) for detail.
 
 **See Also**
 
+-   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 -   [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 -   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
 -   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
--   [uniqThetaSketch](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
