@@ -762,6 +762,13 @@ public:
     /// Remove current query id after query finished.
     void removeQueryId(const String & query_id) const;
 
+    /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
+    DataTypePtr getPartitionValueType() const;
+
+    /// Construct a block consisting only of possible virtual columns for part pruning.
+    /// If one_part is true, fill in at most one part.
+    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const;
+
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
