@@ -109,7 +109,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
-        nanodbc::catalog catalog(*connection);
+        nanodbc::catalog catalog(connection->get());
         std::string catalog_name;
 
         /// In XDBC tables it is allowed to pass either database_name or schema_name in table definion, but not both of them.

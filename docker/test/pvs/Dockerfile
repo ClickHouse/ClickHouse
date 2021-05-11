@@ -41,6 +41,6 @@ CMD echo "Running PVS version $PKG_VERSION" && cd /repo_folder && pvs-studio-ana
     && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF \
     && ninja re2_st clickhouse_grpc_protos \
     && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
+    cp /repo_folder/pvs-studio.log /test_output; \
     plog-converter -a GA:1,2 -t fullhtml -o /test_output/pvs-studio-html-report pvs-studio.log; \
     plog-converter -a GA:1,2 -t tasklist -o /test_output/pvs-studio-task-report.txt pvs-studio.log
-
