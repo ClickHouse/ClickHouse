@@ -18,7 +18,7 @@ friend class DiskRemoteReservation;
 
 public:
     IDiskRemote(
-        const String & disk_name_,
+        const String & name_,
         const String & remote_fs_root_path_,
         const String & metadata_path_,
         const String & log_name_,
@@ -26,13 +26,15 @@ public:
 
     struct Metadata;
 
-    const String & getName() const override { return disk_name; }
+    const String & getName() const override { return name; }
 
     const String & getPath() const override { return metadata_path; }
 
     Metadata readMeta(const String & path) const;
 
     Metadata createMeta(const String & path) const;
+
+    Metadata readOrCreateMetaForWriting(const String & path, WriteMode mode);
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 
@@ -54,9 +56,9 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void setReadOnly(const String & path) override;
-
     void listFiles(const String & path, std::vector<String> & file_names) override;
+
+    void setReadOnly(const String & path) override;
 
     bool isDirectory(const String & path) const override;
 
@@ -81,7 +83,7 @@ public:
     ReservationPtr reserve(UInt64 bytes) override;
 
 protected:
-    const String disk_name;
+    const String name;
     const String remote_fs_root_path;
     const String metadata_path;
     Poco::Logger * log;
