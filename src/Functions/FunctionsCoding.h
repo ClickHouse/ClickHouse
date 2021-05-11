@@ -1553,7 +1553,7 @@ public:
                 int position = 0;
                 while (x)
                 {
-                    if(x & 1)
+                    if (x & 1)
                     {
                         res_values.push_back(position);
                     }
