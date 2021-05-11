@@ -103,9 +103,10 @@ IMergeTreeDataPart::Checksums checkDataPart(
     /// It also calculates checksum of projections.
     auto checksum_file = [&](const String & file_path, const String & file_name)
     {
-        if (disk->isDirectory(file_path) && !startsWith(file_name, "tmp_")) // ignore projection tmp merge dir
+        if (disk->isDirectory(file_path) && endsWith(file_name, ".proj") && !startsWith(file_name, "tmp_")) // ignore projection tmp merge dir
         {
-            auto pit = data_part->getProjectionParts().find(file_name);
+            auto projection_name = file_name.substr(0, file_name.size() - sizeof(".proj") + 1);
+            auto pit = data_part->getProjectionParts().find(projection_name);
             if (pit == data_part->getProjectionParts().end())
             {
                 if (require_checksums)
@@ -117,21 +118,33 @@ IMergeTreeDataPart::Checksums checkDataPart(
             const auto & projection = pit->second;
             IMergeTreeDataPart::Checksums projection_checksums_data;
             const auto & projection_path = file_path;
-            const NamesAndTypesList & projection_columns_list = projection->getColumns();
-            for (const auto & projection_column : projection_columns_list)
-            {
-                auto serialization = IDataType::getSerialization(projection_column, [&](const String & stream_name)
-                {
-                    return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
-                });
 
-                serialization->enumerateStreams(
-                    [&](const ISerialization::SubstreamPath & substream_path)
+            if (part_type == MergeTreeDataPartType::COMPACT)
+            {
+                auto proj_path = file_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+                auto file_buf = disk->readFile(proj_path);
+                HashingReadBuffer hashing_buf(*file_buf);
+                hashing_buf.ignoreAll();
+                projection_checksums_data.files[MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
+            }
+            else
+            {
+                const NamesAndTypesList & projection_columns_list = projection->getColumns();
+                for (const auto & projection_column : projection_columns_list)
+                {
+                    auto serialization = IDataType::getSerialization(projection_column, [&](const String & stream_name)
                     {
-                        String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
-                        checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
-                    },
-                    {});
+                        return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
+                    });
+
+                    serialization->enumerateStreams(
+                        [&](const ISerialization::SubstreamPath & substream_path)
+                        {
+                            String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
+                            checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
+                        },
+                        {});
+                }
             }
 
             IMergeTreeDataPart::Checksums projection_checksums_txt;
@@ -150,8 +163,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 auto projection_checksum_it = projection_checksums_data.files.find(projection_file_name);
 
                 /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-                if (projection_checksum_it == projection_checksums_data.files.end() && projection_file_name != "checksums.txt"
-                    && projection_file_name != "columns.txt")
+                if (projection_checksum_it == projection_checksums_data.files.end() && !files_without_checksums.count(projection_file_name))
                 {
                     auto projection_txt_checksum_it = projection_checksum_files_txt.find(file_name);
                     if (projection_txt_checksum_it == projection_checksum_files_txt.end()
@@ -171,6 +183,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
             }
             checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(
                 projection_checksums_data.getTotalSizeOnDisk(), projection_checksums_data.getTotalChecksumUInt128());
+
+            if (require_checksums || !projection_checksums_txt.files.empty())
+                projection_checksums_txt.checkEqual(projection_checksums_data, false);
         }
         else
         {
