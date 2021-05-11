@@ -19,17 +19,17 @@ for ((i=0; i<16; i++)) do
 done
 wait
 
-function create_drop_thread()
-{
-    while true; do
-        REPLICA=$(($RANDOM % 16))
-        $CLICKHOUSE_CLIENT -q "DROP TABLE src_$REPLICA;"
-        arr=("$@")
-        engine=${arr[$RANDOM % ${#arr[@]}]}
-        $CLICKHOUSE_CLIENT -q "CREATE TABLE src_$REPLICA (p UInt64, k UInt64, v UInt64) ENGINE=$engine PARTITION BY p % 10 ORDER BY k"
-        sleep 0.$RANDOM;
-    done
-}
+#function create_drop_thread()
+#{
+#    while true; do
+#        REPLICA=$(($RANDOM % 16))
+#        $CLICKHOUSE_CLIENT -q "DROP TABLE src_$REPLICA;"
+#        arr=("$@")
+#        engine=${arr[$RANDOM % ${#arr[@]}]}
+#        $CLICKHOUSE_CLIENT -q "CREATE TABLE src_$REPLICA (p UInt64, k UInt64, v UInt64) ENGINE=$engine PARTITION BY p % 10 ORDER BY k"
+#        sleep 0.$RANDOM;
+#    done
+#}
 
 function insert_thread()
 {
@@ -85,7 +85,7 @@ function optimize_thread()
     done
 }
 
-export -f create_drop_thread;
+#export -f create_drop_thread;
 export -f insert_thread;
 export -f move_partition_src_dst_thread;
 export -f replace_partition_src_src_thread;
@@ -94,7 +94,7 @@ export -f optimize_thread;
 
 TIMEOUT=100
 
-timeout $TIMEOUT bash -c "create_drop_thread ${engines[@]}" &
+#timeout $TIMEOUT bash -c "create_drop_thread ${engines[@]}" &
 timeout $TIMEOUT bash -c 'insert_thread src' &
 timeout $TIMEOUT bash -c 'insert_thread src' &
 timeout $TIMEOUT bash -c 'insert_thread dst' &
@@ -106,7 +106,7 @@ wait
 
 for ((i=0; i<16; i++)) do
     $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA dst_$i"
-    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA src_$i" 2>/dev/null  # table may not exist
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA src_$i" 2>/dev/null
 done
 echo "Replication did not hang"
 
