@@ -226,7 +226,7 @@ private:
 
     static inline size_t getFirstLevelIdx(const UUID & uuid)
     {
-        return uuid.toUnderType().low >> (64 - bits_for_first_level);
+        return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
     }
 
     struct TableMarkedAsDropped
@@ -234,7 +234,7 @@ private:
         StorageID table_id = StorageID::createEmpty();
         StoragePtr table;
         String metadata_path;
-        time_t drop_time;
+        time_t drop_time{};
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 

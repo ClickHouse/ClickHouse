@@ -419,7 +419,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             throw Exception("Got 'send_s3_metadata' cookie for in-memory part", ErrorCodes::INCORRECT_PART_TYPE);
 
         UUID part_uuid = UUIDHelpers::Nil;
-        if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+
+        /// Always true due to values of constants. But we keep this condition just in case.
+        if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID) //-V547
             readUUIDText(part_uuid, in);
 
         try
@@ -544,7 +546,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     /// We will remove directory if it's already exists. Make precautions.
-    if (tmp_prefix.empty()
+    if (tmp_prefix.empty() //-V560
         || part_name.empty()
         || std::string::npos != tmp_prefix.find_first_of("/.")
         || std::string::npos != part_name.find_first_of("/."))
