@@ -223,7 +223,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (strcmp(name.c_str(), func[0]) != 0)
+                if (strcasecmp(name.c_str(), func[0]) != 0)
                 {
                     continue;
                 }
