@@ -389,9 +389,9 @@ void LocalServer::processQueries()
     CurrentThread::QueryScope query_scope_holder(context);
 
     ///Set progress show
-    progress_bar.setNeedRenderProgress(config().getBool("progress", false));
+    progress_bar.need_render_progress = config().getBool("progress", false);
 
-    if (progress_bar.getNeedRenderProgress())
+    if (progress_bar.need_render_progress)
     {
         context->setProgressCallback([&](const Progress & value)
                                      {
@@ -412,9 +412,9 @@ void LocalServer::processQueries()
     {
         watch.restart();
         progress.reset();
-        progress_bar.setShowProgressBar(false);
-        progress_bar.setWrittenProgressChars(0);
-        progress_bar.setWrittenFirstBlock(false);
+        progress_bar.show_progress_bar = false;
+        progress_bar.written_progress_chars = 0;
+        progress_bar.written_first_block = false;;
 
 
         ReadBufferFromString read_buf(query);

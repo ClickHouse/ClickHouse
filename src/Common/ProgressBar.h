@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class ProgressBar
+struct ProgressBar
 {
 public:
 
@@ -17,24 +17,8 @@ public:
     void writeProgress(const Progress & progress, const Stopwatch & watch);
     void clearProgress();
 
-    ///Required Getters
-    bool getNeedRenderProgress() const;
-    bool getShowProgressBar() const;
-    size_t getWrittenProgressChars() const;
-    bool getWrittenFirstBlock() const;
-    bool getClearProgress() const;
-
-    ///Required Setters
-    void setNeedRenderProgress(bool needRenderProgress);
-    void setShowProgressBar(bool showProgressBar);
-    void setWrittenProgressChars(size_t writtenProgressChars);
-    void setWrittenFirstBlock(bool writtenFirstBlock);
-    void setClearProgress(bool clearProgress);
-
-private:
-    /// The server periodically sends information about how much data was read since last time.
     bool need_render_progress = false;
-    /// Render query execution progress.
+
     bool show_progress_bar = false;
 
     size_t written_progress_chars = 0;

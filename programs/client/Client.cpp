@@ -534,7 +534,7 @@ private:
 
         if (!is_interactive)
         {
-            progress_bar.setNeedRenderProgress(config().getBool("progress", false));
+            progress_bar.need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
             ignore_error = config().getBool("ignore-error", false);
         }
@@ -1541,9 +1541,9 @@ private:
         watch.restart();
         processed_rows = 0;
         progress.reset();
-        progress_bar.setShowProgressBar(false);
-        progress_bar.setWrittenProgressChars(0);
-        progress_bar.setWrittenFirstBlock(false);
+        progress_bar.show_progress_bar = false;
+        progress_bar.written_progress_chars = 0;
+        progress_bar.written_first_block = false;;
 
         {
             /// Temporarily apply query settings to context.
@@ -2143,7 +2143,7 @@ private:
                 current_format = "Vertical";
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            if (!progress_bar.getNeedRenderProgress())
+            if (!progress_bar.need_render_progress)
                 block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
             else
                 block_out_stream = context->getOutputStream(current_format, *out_buf, block);
@@ -2202,17 +2202,17 @@ private:
         if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
             return;
 
-        if (progress_bar.getNeedRenderProgress())
+        if (progress_bar.need_render_progress)
             progress_bar.clearProgress();
 
         block_out_stream->write(block);
-        progress_bar.setWrittenFirstBlock(true);
+        progress_bar.written_first_block = true;
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (progress_bar.getNeedRenderProgress())
+        if (progress_bar.need_render_progress)
             progress_bar.writeProgress(progress, watch);
     }
 
@@ -2293,7 +2293,7 @@ private:
 
         resetOutput();
 
-        if (is_interactive && !progress_bar.getWrittenFirstBlock())
+        if (is_interactive && !progress_bar.written_first_block)
         {
             progress_bar.clearProgress();
             std::cout << "Ok." << std::endl;
