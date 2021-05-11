@@ -732,7 +732,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         String projection_name;
         readStringBinary(projection_name, in);
         MergeTreeData::DataPart::Checksums projection_checksum;
-        disk->createDirectories(part_download_path + projection_name);
+        disk->createDirectories(part_download_path + projection_name + ".proj/");
         downloadBaseOrProjectionPartToDisk(
             replica_path, part_download_path + projection_name + ".proj/", sync, disk, in, projection_checksum);
         checksums.addFile(
