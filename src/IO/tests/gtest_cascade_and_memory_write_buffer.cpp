@@ -41,10 +41,9 @@ static void testCascadeBufferRedability(
         if (!wbuf)
             continue;
 
-        auto * wbuf_readable = dynamic_cast<IReadableWriteBuffer *>(wbuf.get());
-        ASSERT_FALSE(!wbuf_readable);
+        auto & wbuf_readable = dynamic_cast<IReadableWriteBuffer &>(*wbuf);
 
-        auto rbuf = wbuf_readable->tryGetReadBuffer();
+        auto rbuf = wbuf_readable.tryGetReadBuffer();
         ASSERT_FALSE(!rbuf);
 
         read_buffers.emplace_back(rbuf);
