@@ -161,7 +161,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
         case ValueType::vtUUID:
-            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
+            assert_cast<ColumnUUID &>(column).insert(parse<UUID>(value.data(), value.size()));
             break;
         case ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});

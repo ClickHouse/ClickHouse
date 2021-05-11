@@ -226,7 +226,7 @@ private:
 
     static inline size_t getFirstLevelIdx(const UUID & uuid)
     {
-        return uuid.toUnderType().low >> (64 - bits_for_first_level);
+        return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
     }
 
     struct TableMarkedAsDropped

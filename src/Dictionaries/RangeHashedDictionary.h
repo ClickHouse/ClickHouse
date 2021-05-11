@@ -113,16 +113,20 @@ private:
             UInt32,
             UInt64,
             UInt128,
+            UInt256,
             Int8,
             Int16,
             Int32,
             Int64,
+            Int128,
+            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
             Decimal256,
             Float32,
             Float64,
+            UUID,
             StringRef>
             null_values;
         std::variant<
@@ -131,16 +135,20 @@ private:
             Ptr<UInt32>,
             Ptr<UInt64>,
             Ptr<UInt128>,
+            Ptr<UInt256>,
             Ptr<Int8>,
             Ptr<Int16>,
             Ptr<Int32>,
             Ptr<Int64>,
+            Ptr<Int128>,
+            Ptr<Int256>,
             Ptr<Decimal32>,
             Ptr<Decimal64>,
             Ptr<Decimal128>,
             Ptr<Decimal256>,
             Ptr<Float32>,
             Ptr<Float64>,
+            Ptr<UUID>,
             Ptr<StringRef>>
             maps;
         std::unique_ptr<Arena> string_arena;

@@ -171,7 +171,7 @@ UInt128 CompileDAG::hash() const
     }
 
     UInt128 result;
-    hash.get128(result.low, result.high);
+    hash.get128(result);
     return result;
 }
 

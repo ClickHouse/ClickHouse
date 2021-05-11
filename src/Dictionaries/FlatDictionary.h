@@ -121,16 +121,20 @@ private:
             UInt32,
             UInt64,
             UInt128,
+            UInt256,
             Int8,
             Int16,
             Int32,
             Int64,
+            Int128,
+            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
             Decimal256,
             Float32,
             Float64,
+            UUID,
             StringRef>
             null_values;
         std::variant<
@@ -139,16 +143,20 @@ private:
             ContainerType<UInt32>,
             ContainerType<UInt64>,
             ContainerType<UInt128>,
+            ContainerType<UInt256>,
             ContainerType<Int8>,
             ContainerType<Int16>,
             ContainerType<Int32>,
             ContainerType<Int64>,
+            ContainerType<Int128>,
+            ContainerType<Int256>,
             ContainerType<Decimal32>,
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
             ContainerType<Float32>,
             ContainerType<Float64>,
+            ContainerType<UUID>,
             ContainerType<StringRef>>
             container;
 
