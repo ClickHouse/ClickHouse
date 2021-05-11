@@ -1,9 +1,9 @@
 drop table if exists tp_1;
 drop table if exists tp_2;
 
-create table tp_1 (x Int32, y Int32, projection p (select x, y order by x)) engine = ReplicatedMergeTree('/clickhouse/tables/01710_projection_fetch_tp', '1') order by y settings min_rows_for_compact_part = 2, min_rows_for_wide_part = 4;
+create table tp_1 (x Int32, y Int32, projection p (select x, y order by x)) engine = ReplicatedMergeTree('/clickhouse/tables/01710_projection_fetch_' || currentDatabase(), '1') order by y settings min_rows_for_compact_part = 2, min_rows_for_wide_part = 4;
 
-create table tp_2 (x Int32, y Int32, projection p (select x, y order by x)) engine = ReplicatedMergeTree('/clickhouse/tables/01710_projection_fetch_tp', '2') order by y settings min_rows_for_compact_part = 2, min_rows_for_wide_part = 4;
+create table tp_2 (x Int32, y Int32, projection p (select x, y order by x)) engine = ReplicatedMergeTree('/clickhouse/tables/01710_projection_fetch_' || currentDatabase(), '2') order by y settings min_rows_for_compact_part = 2, min_rows_for_wide_part = 4;
 
 insert into tp_1 select number, number from numbers(3);
 
