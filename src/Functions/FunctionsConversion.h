@@ -36,7 +36,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/AccurateComparison.h>
@@ -125,7 +124,7 @@ struct ConvertImpl
 
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t /*input_rows_count*/,
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
@@ -173,31 +172,19 @@ struct ConvertImpl
 
             const auto & vec_from = col_from->getData();
             auto & vec_to = col_to->getData();
-            size_t size = vec_from.size();
-            vec_to.resize(size);
+            vec_to.resize(input_rows_count);
 
             ColumnUInt8::MutablePtr col_null_map_to;
             ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
             {
-                col_null_map_to = ColumnUInt8::create(size, false);
+                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if constexpr ((is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>) &&
-                    (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>))
-                {
-                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                    {
-                        vec_to[i] = 0;
-                        (*vec_null_map_to)[i] = true;
-                    }
-                    else
-                        throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
-                }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
+                if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
                     throw Exception("Conversion between numeric types and UUID is not supported", ErrorCodes::NOT_IMPLEMENTED);
                 }
@@ -784,7 +771,7 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
 {
     UUID tmp;
     readUUIDText(tmp, rb);
-    x = tmp;
+    x = tmp.toUnderType();
 }
 
 
@@ -824,7 +811,7 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
     if (!tryReadUUIDText(tmp, rb))
         return false;
 
-    x = tmp;
+    x = tmp.toUnderType();
     return true;
 }
 
@@ -1454,7 +1441,7 @@ private:
     ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (arguments.empty())
-            throw Exception{"Function " + getName() + " expects at least 1 arguments",
+            throw Exception{"Function " + getName() + " expects at least 1 argument",
                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
         const IDataType * from_type = arguments[0].type.get();
@@ -1471,7 +1458,7 @@ private:
             {
                 if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64>)
                 {
-                    // account for optional timezone argument
+                    /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
                         throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DataTypeDateTime64.",
                             ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
@@ -1958,6 +1945,7 @@ struct NameToUInt8 { static constexpr auto name = "toUInt8"; };
 struct NameToUInt16 { static constexpr auto name = "toUInt16"; };
 struct NameToUInt32 { static constexpr auto name = "toUInt32"; };
 struct NameToUInt64 { static constexpr auto name = "toUInt64"; };
+struct NameToUInt128 { static constexpr auto name = "toUInt128"; };
 struct NameToUInt256 { static constexpr auto name = "toUInt256"; };
 struct NameToInt8 { static constexpr auto name = "toInt8"; };
 struct NameToInt16 { static constexpr auto name = "toInt16"; };
@@ -1973,6 +1961,7 @@ using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMono
 using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
 using FunctionToUInt32 = FunctionConvert<DataTypeUInt32, NameToUInt32, ToNumberMonotonicity<UInt32>>;
 using FunctionToUInt64 = FunctionConvert<DataTypeUInt64, NameToUInt64, ToNumberMonotonicity<UInt64>>;
+using FunctionToUInt128 = FunctionConvert<DataTypeUInt128, NameToUInt128, ToNumberMonotonicity<UInt128>>;
 using FunctionToUInt256 = FunctionConvert<DataTypeUInt256, NameToUInt256, ToNumberMonotonicity<UInt256>>;
 using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToNumberMonotonicity<Int8>>;
 using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToNumberMonotonicity<Int16>>;
@@ -2001,6 +1990,7 @@ template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
 template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
 template <> struct FunctionTo<DataTypeUInt32> { using Type = FunctionToUInt32; };
 template <> struct FunctionTo<DataTypeUInt64> { using Type = FunctionToUInt64; };
+template <> struct FunctionTo<DataTypeUInt128> { using Type = FunctionToUInt128; };
 template <> struct FunctionTo<DataTypeUInt256> { using Type = FunctionToUInt256; };
 template <> struct FunctionTo<DataTypeInt8> { using Type = FunctionToInt8; };
 template <> struct FunctionTo<DataTypeInt16> { using Type = FunctionToInt16; };
@@ -2030,6 +2020,7 @@ struct NameToUInt8OrZero { static constexpr auto name = "toUInt8OrZero"; };
 struct NameToUInt16OrZero { static constexpr auto name = "toUInt16OrZero"; };
 struct NameToUInt32OrZero { static constexpr auto name = "toUInt32OrZero"; };
 struct NameToUInt64OrZero { static constexpr auto name = "toUInt64OrZero"; };
+struct NameToUInt128OrZero { static constexpr auto name = "toUInt128OrZero"; };
 struct NameToUInt256OrZero { static constexpr auto name = "toUInt256OrZero"; };
 struct NameToInt8OrZero { static constexpr auto name = "toInt8OrZero"; };
 struct NameToInt16OrZero { static constexpr auto name = "toInt16OrZero"; };
@@ -2052,6 +2043,7 @@ using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUIn
 using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt32OrZero = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt64OrZero = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUInt128OrZero = FunctionConvertFromString<DataTypeUInt128, NameToUInt128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt256OrZero = FunctionConvertFromString<DataTypeUInt256, NameToUInt256OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt8OrZero = FunctionConvertFromString<DataTypeInt8, NameToInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt16OrZero = FunctionConvertFromString<DataTypeInt16, NameToInt16OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -2074,6 +2066,7 @@ struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
 struct NameToUInt32OrNull { static constexpr auto name = "toUInt32OrNull"; };
 struct NameToUInt64OrNull { static constexpr auto name = "toUInt64OrNull"; };
+struct NameToUInt128OrNull { static constexpr auto name = "toUInt128OrNull"; };
 struct NameToUInt256OrNull { static constexpr auto name = "toUInt256OrNull"; };
 struct NameToInt8OrNull { static constexpr auto name = "toInt8OrNull"; };
 struct NameToInt16OrNull { static constexpr auto name = "toInt16OrNull"; };
@@ -2096,6 +2089,7 @@ using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUIn
 using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt32OrNull = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt64OrNull = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUInt128OrNull = FunctionConvertFromString<DataTypeUInt128, NameToUInt128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt256OrNull = FunctionConvertFromString<DataTypeUInt256, NameToUInt256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt8OrNull = FunctionConvertFromString<DataTypeInt8, NameToInt8OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt16OrNull = FunctionConvertFromString<DataTypeInt16, NameToInt16OrNull, ConvertFromStringExceptionMode::Null>;
@@ -3043,6 +3037,7 @@ private:
                 std::is_same_v<ToDataType, DataTypeUInt16> ||
                 std::is_same_v<ToDataType, DataTypeUInt32> ||
                 std::is_same_v<ToDataType, DataTypeUInt64> ||
+                std::is_same_v<ToDataType, DataTypeUInt128> ||
                 std::is_same_v<ToDataType, DataTypeUInt256> ||
                 std::is_same_v<ToDataType, DataTypeInt8> ||
                 std::is_same_v<ToDataType, DataTypeInt16> ||
@@ -3122,43 +3117,45 @@ public:
 
     static MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
     {
-        if (const auto *const type = checkAndGetDataType<DataTypeUInt8>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeUInt8>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeUInt16>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeUInt16>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeUInt32>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeUInt32>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeUInt64>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeUInt64>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeUInt256>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeUInt128>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeInt8>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeUInt256>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeInt16>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeInt8>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeInt32>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeInt16>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeInt64>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeInt32>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeInt128>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeInt64>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeInt256>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeInt128>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeFloat32>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeInt256>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeFloat64>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeFloat32>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeDate>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeFloat64>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeDateTime>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeDate>(to_type))
             return monotonicityForType(type);
-        if (const auto *const type = checkAndGetDataType<DataTypeString>(to_type))
+        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(to_type))
+            return monotonicityForType(type);
+        if (const auto * type = checkAndGetDataType<DataTypeString>(to_type))
             return monotonicityForType(type);
         if (isEnum(from_type))
         {
-            if (const auto *const type = checkAndGetDataType<DataTypeEnum8>(to_type))
+            if (const auto * type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 return monotonicityForType(type);
-            if (const auto *const type = checkAndGetDataType<DataTypeEnum16>(to_type))
+            if (const auto * type = checkAndGetDataType<DataTypeEnum16>(to_type))
                 return monotonicityForType(type);
         }
         /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
