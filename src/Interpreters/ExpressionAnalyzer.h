@@ -47,8 +47,12 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
+    ~ExpressionAnalyzerData();
+
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
+
+    std::unique_ptr<QueryPlan> joined_plan;
 
     /// Columns after ARRAY JOIN. If there is no ARRAY JOIN, it's source_columns.
     NamesAndTypesList columns_after_array_join;
@@ -98,6 +102,8 @@ public:
         ContextPtr context_)
     :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
     {}
+
+    ~ExpressionAnalyzer();
 
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
 
@@ -293,6 +299,7 @@ public:
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
+    std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }

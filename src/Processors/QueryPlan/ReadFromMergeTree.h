@@ -87,6 +87,9 @@ public:
     void describeActions(FormatSettings & format_settings) const override;
     void describeIndexes(FormatSettings & format_settings) const override;
 
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+    void describeIndexes(JSONBuilder::JSONMap & map) const override;
+
 private:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;

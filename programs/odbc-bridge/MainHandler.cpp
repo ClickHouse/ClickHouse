@@ -18,12 +18,9 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-#include "ODBCConnectionFactory.h"
 
 #include <mutex>
 #include <memory>
-
-#include <nanodbc/nanodbc.h>
 
 
 namespace DB
@@ -133,12 +130,12 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
             auto quoting_style = IdentifierQuotingStyle::None;
 #if USE_ODBC
-            quoting_style = getQuotingStyle(*connection);
+            quoting_style = getQuotingStyle(connection->get());
 #endif
             auto & read_buf = request.getStream();
             auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, getContext(), max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
-            ODBCBlockOutputStream output_stream(*connection, db_name, table_name, *sample_block, getContext(), quoting_style);
+            ODBCBlockOutputStream output_stream(std::move(connection), db_name, table_name, *sample_block, getContext(), quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
@@ -148,7 +145,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             LOG_TRACE(log, "Query: {}", query);
 
             BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, getContext());
-            ODBCBlockInputStream inp(*connection, query, *sample_block, max_block_size);
+            ODBCBlockInputStream inp(std::move(connection), query, *sample_block, max_block_size);
             copyData(inp, *writer);
         }
     }
