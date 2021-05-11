@@ -2213,7 +2213,7 @@ private:
 
         /// Restore progress bar after data block.
         if (progress_bar.need_render_progress)
-            progress_bar.writeProgress(progress, watch);
+            progress_bar.writeProgress(progress, watch.elapsed());
     }
 
 
@@ -2248,7 +2248,7 @@ private:
         }
         if (block_out_stream)
             block_out_stream->onProgress(value);
-        progress_bar.writeProgress(progress, watch);
+        progress_bar.writeProgress(progress, watch.elapsed());
     }
 
 

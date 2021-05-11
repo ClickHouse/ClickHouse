@@ -14,7 +14,7 @@ struct ProgressBar
 public:
 
     bool updateProgress(Progress & progress, const Progress & value);
-    void writeProgress(const Progress & progress, const Stopwatch & watch);
+    void writeProgress(const Progress & progress, const size_t elapsed_ns);
     void clearProgress();
 
     bool need_render_progress = false;

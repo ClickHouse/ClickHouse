@@ -401,7 +401,7 @@ void LocalServer::processQueries()
                                               progress_bar.clearProgress();
                                               return;
                                          }
-                                         progress_bar.writeProgress(progress, watch);
+                                         progress_bar.writeProgress(progress, watch.elapsed());
                                      });
     }
 

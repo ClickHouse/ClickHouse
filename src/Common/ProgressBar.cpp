@@ -12,7 +12,7 @@ bool ProgressBar::updateProgress(Progress & progress, const Progress & value)
     return progress.incrementPiecewiseAtomically(value);
 }
 
-void ProgressBar::writeProgress(const Progress & progress, const Stopwatch & watch)
+void ProgressBar::writeProgress(const Progress & progress, const size_t elapsed_ns)
 {
     if (!need_render_progress)
         return;
@@ -52,7 +52,6 @@ void ProgressBar::writeProgress(const Progress & progress, const Stopwatch & wat
         << formatReadableQuantity(progress.read_rows) << " rows, "
         << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
-    size_t elapsed_ns = watch.elapsed();
     if (elapsed_ns)
         message << " ("
                 << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
