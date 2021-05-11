@@ -74,6 +74,7 @@ Engines in the family:
 -   [URL](../../engines/table-engines/special/url.md#table_engines-url)
 -   [View](../../engines/table-engines/special/view.md#table_engines-view)
 -   [Memory](../../engines/table-engines/special/memory.md#memory)
+-   [AggregatingMemory](../../engines/table-engines/special/aggregatingmemory.md#aggregatingmemory)
 -   [Buffer](../../engines/table-engines/special/buffer.md#buffer)
 
 ## Virtual Columns {#table_engines-virtual_columns}
