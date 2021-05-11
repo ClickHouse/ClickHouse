@@ -6,55 +6,6 @@
 
 namespace DB
 {
-bool ProgressBar::getNeedRenderProgress() const
-{
-    return need_render_progress;
-}
-
-bool ProgressBar::getShowProgressBar() const
-{
-    return show_progress_bar;
-}
-
-size_t ProgressBar::getWrittenProgressChars() const
-{
-    return written_progress_chars;
-}
-
-bool ProgressBar::getWrittenFirstBlock() const
-{
-    return written_first_block;
-}
-
-bool ProgressBar::getClearProgress() const
-{
-    return clear_progress;
-}
-
-void ProgressBar::setNeedRenderProgress(bool needRenderProgress)
-{
-    need_render_progress = needRenderProgress;
-}
-
-void ProgressBar::setShowProgressBar(bool showProgressBar)
-{
-    show_progress_bar = showProgressBar;
-}
-
-void ProgressBar::setWrittenProgressChars(size_t writtenProgressChars)
-{
-    written_progress_chars = writtenProgressChars;
-}
-
-void ProgressBar::setWrittenFirstBlock(bool writtenFirstBlock)
-{
-    written_first_block = writtenFirstBlock;
-}
-
-void ProgressBar::setClearProgress(bool clearProgress)
-{
-    clear_progress = clearProgress;
-}
 
 bool ProgressBar::updateProgress(Progress & progress, const Progress & value)
 {
