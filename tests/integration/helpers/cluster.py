@@ -61,7 +61,7 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
         raise Exception(f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}")
 
 # Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
-def get_open_port():
+def get_free_port():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("",0))
     s.listen(1)
@@ -252,34 +252,34 @@ class ClickHouseCluster:
 
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
-        self.hdfs_name_port = get_open_port()
-        self.hdfs_data_port = get_open_port()
+        self.hdfs_name_port = get_free_port()
+        self.hdfs_data_port = get_free_port()
         self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
         self.hdfs_logs_dir = os.path.join(self.hdfs_dir, "logs")
 
         # available when with_kerberized_hdfs == True
         self.hdfs_kerberized_host = "kerberizedhdfs1"
-        self.hdfs_kerberized_name_port = get_open_port()
-        self.hdfs_kerberized_data_port = get_open_port()
+        self.hdfs_kerberized_name_port = get_free_port()
+        self.hdfs_kerberized_data_port = get_free_port()
         self.hdfs_kerberized_dir = p.abspath(p.join(self.instances_dir, "kerberized_hdfs"))
         self.hdfs_kerberized_logs_dir = os.path.join(self.hdfs_kerberized_dir, "logs")
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
-        self.kafka_port = get_open_port()
+        self.kafka_port = get_free_port()
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
-        self.schema_registry_port = get_open_port()
+        self.schema_registry_port = get_free_port()
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         # available when with_kerberozed_kafka == True
         self.kerberized_kafka_host = "kerberized_kafka1"
-        self.kerberized_kafka_port = get_open_port()
+        self.kerberized_kafka_port = get_free_port()
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(self.kerberized_kafka_host)
 
         # available when with_mongo == True
         self.mongo_host = "mongo1"
-        self.mongo_port = get_open_port()
+        self.mongo_port = get_free_port()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -294,7 +294,7 @@ class ClickHouseCluster:
 
         # available when with_redis == True
         self.redis_host = "redis1"
-        self.redis_port = get_open_port()
+        self.redis_port = get_free_port()
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
