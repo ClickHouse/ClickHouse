@@ -398,7 +398,6 @@ void LocalServer::processQueries()
                                          if (!progress_bar.updateProgress(progress, value))
                                          {
                                              // Just a keep-alive update.
-                                              progress_bar.clearProgress();
                                               return;
                                          }
                                          progress_bar.writeProgress(progress, watch.elapsed());
