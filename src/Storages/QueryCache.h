@@ -90,7 +90,7 @@ public:
 
         SipHash hash;
         hash.update(serialized_ast.data(), serialized_ast.size() + 1);
-        hash.get128(key.low, key.high);
+        hash.get128(key);
 
         return key;
     }
