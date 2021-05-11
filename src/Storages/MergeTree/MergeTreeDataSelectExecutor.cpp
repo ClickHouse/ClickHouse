@@ -45,7 +45,7 @@
 
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/ProjectionPartTransform.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/StorageFromBasePartsOfProjection.h>
 #include <IO/WriteBufferFromOStream.h>
