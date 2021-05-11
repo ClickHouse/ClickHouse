@@ -71,7 +71,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
-        if (client_trace_context.trace_id)
+        if (client_trace_context.trace_id != UUID())
         {
             // Have OpenTelemetry header.
             writeBinary(uint8_t(1), out);

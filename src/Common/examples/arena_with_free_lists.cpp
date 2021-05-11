@@ -172,17 +172,17 @@ struct Dictionary
     {
         switch (attribute.type)
         {
-            case AttributeUnderlyingType::utUInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingType::utUInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingType::utUInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingType::utUInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingType::utInt8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingType::utInt16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingType::utInt32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingType::utInt64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingType::utFloat32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-            case AttributeUnderlyingType::utFloat64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-            case AttributeUnderlyingType::utString:
+            case AttributeUnderlyingType::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingType::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingType::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingType::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingType::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingType::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingType::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+            case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+            case AttributeUnderlyingType::String:
             {
                 const auto & string = value.get<String>();
                 auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
@@ -308,7 +308,7 @@ int main(int argc, char ** argv)
     constexpr size_t cache_size = 1024;
 
     Dictionary::Attribute attr;
-    attr.type = Dictionary::AttributeUnderlyingType::utString;
+    attr.type = Dictionary::AttributeUnderlyingType::String;
     std::get<Dictionary::ContainerPtrType<StringRef>>(attr.arrays).reset(new StringRef[cache_size]{});  // NOLINT
 
     while (true)

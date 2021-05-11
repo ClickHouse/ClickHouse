@@ -115,6 +115,7 @@ std::shared_ptr<Aws::S3::S3Client>
 getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context)
 {
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
+        config.getString(config_prefix + ".region", ""),
         context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects);
 
     S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
