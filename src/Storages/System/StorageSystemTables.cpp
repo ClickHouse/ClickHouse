@@ -439,10 +439,12 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
+                auto settings = context->getSettingsRef();
+                settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_rows = table->totalRows(context->getSettingsRef());
+                    auto total_rows = table->totalRows(settings);
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -452,7 +454,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_bytes = table->totalBytes(context->getSettingsRef());
+                    auto total_bytes = table->totalBytes(settings);
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
