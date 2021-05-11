@@ -19,10 +19,10 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     self.context.stress = stress
     self.context.parallel = parallel
 
-    tasks = []
-    with Pool(7) as pool:
-        for run in range(4):
-            with Module(f"{run}"):
+    for run in range(4):
+        with Module(f"{run}"):
+            tasks = []
+            with Pool(7) as pool:
                 try:
                     run_scenario(pool, tasks, Feature(test=load("example.regression", "regression")), args)
                     #run_scenario(pool, tasks, Feature(test=load("ldap.regression", "regression")), args)
