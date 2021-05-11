@@ -1,4 +1,4 @@
-uniqThetaSketch many agrs
+uniqTheta many agrs
 10	10	100	100	1000	1000
 17	10	10	100	100	610	610	766
 52	10	10	100	100	608	608	766
@@ -10,14 +10,14 @@ uniqThetaSketch many agrs
 50	10	10	100	100	608	608	765
 54	10	10	100	100	609	609	765
 56	10	10	100	100	608	608	765
-uniqThetaSketch distinct
+uniqTheta distinct
 123
 143
-uniqThetaSketch arrays
+uniqTheta arrays
 2
 3
 3
-uniqThetaSketch complex types
+uniqTheta complex types
 3
 3
 3
@@ -27,17 +27,17 @@ uniqThetaSketch complex types
 3
 3
 3
-uniqThetaSketch decimals
+uniqTheta decimals
 (0,0,0)
 (101,101,101)
-uniqThetaSketch remove injective
-SELECT uniqThetaSketch(x)
+uniqTheta remove injective
+SELECT uniqTheta(x)
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(x + y)
+SELECT uniqTheta(x + y)
 FROM 
 (
     SELECT
@@ -45,37 +45,37 @@ FROM
         number % 3 AS y
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(x)
+SELECT uniqTheta(x)
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(x)
+SELECT uniqTheta(x)
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(x)
+SELECT uniqTheta(x)
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(x)
+SELECT uniqTheta(x)
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(x)
+SELECT uniqTheta(x)
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(x + y)
+SELECT uniqTheta(x + y)
 FROM 
 (
     SELECT
@@ -83,25 +83,25 @@ FROM
         number % 3 AS y
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(-x)
+SELECT uniqTheta(-x)
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(bitNot(x))
+SELECT uniqTheta(bitNot(x))
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(bitNot(-x))
+SELECT uniqTheta(bitNot(-x))
 FROM 
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqThetaSketch(-bitNot(-x))
+SELECT uniqTheta(-bitNot(-x))
 FROM 
 (
     SELECT number % 2 AS x
