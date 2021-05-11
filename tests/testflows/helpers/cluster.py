@@ -326,9 +326,20 @@ class Cluster(object):
         
         with self.lock:
             container_id = self.node_container_id(node=node, timeout=timeout)
-        shell = Shell(command=[
-                "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} bash --noediting"
-            ], name=node)
+        
+        time_start = time.time()
+        while True:
+            try:
+                shell = Shell(command=[
+                    "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} bash --noediting"
+                ], name=node)
+                shell.timeout = 30
+                shell("echo 1")
+                break
+            except:
+                shell.__exit__(None, None, None)
+                if time.time() - time_start > timeout:
+                    raise RuntimeError(f"failed to open bash to node {node}")
 
         shell.timeout = timeout
         return shell
@@ -357,9 +368,19 @@ class Cluster(object):
                         self._bash[id](f"export {name}={value}")
                 else:
                     container_id = self.node_container_id(node=node, timeout=timeout)
-                    self._bash[id] = Shell(command=[
-                        "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} {command}"
-                    ], name=node).__enter__()
+                    time_start = time.time()
+                    while True:
+                        try:
+                            self._bash[id] = Shell(command=[
+                                "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} {command}"
+                            ], name=node).__enter__()
+                            self._bash[id].timeout = 30
+                            self._bash[id]("echo 1")
+                            break
+                        except:
+                            self._bash[id].__exit__(None, None, None)
+                            if time.time() - time_start > timeout:
+                                raise RuntimeError(f"failed to open bash to node {node}")
 
                 self._bash[id].timeout = timeout
 
