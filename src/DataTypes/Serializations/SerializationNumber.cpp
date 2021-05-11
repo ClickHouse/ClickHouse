@@ -157,7 +157,7 @@ template class SerializationNumber<UInt8>;
 template class SerializationNumber<UInt16>;
 template class SerializationNumber<UInt32>;
 template class SerializationNumber<UInt64>;
-template class SerializationNumber<UInt128>; // base for UUID
+template class SerializationNumber<UInt128>;
 template class SerializationNumber<UInt256>;
 template class SerializationNumber<Int8>;
 template class SerializationNumber<Int16>;

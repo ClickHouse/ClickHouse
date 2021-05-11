@@ -109,7 +109,7 @@ namespace DB
                     break;
                 }
                 case ValueType::vtUUID:
-                    assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
+                    assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(string_value));
                     break;
                 default:
                     throw Exception(ErrorCodes::UNKNOWN_TYPE,

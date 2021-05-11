@@ -153,16 +153,20 @@ private:
             UInt32,
             UInt64,
             UInt128,
+            UInt256,
             Int8,
             Int16,
             Int32,
             Int64,
+            Int128,
+            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
             Decimal256,
             Float32,
             Float64,
+            UUID,
             StringRef>
             null_values;
 
@@ -172,16 +176,20 @@ private:
             CollectionType<UInt32>,
             CollectionType<UInt64>,
             CollectionType<UInt128>,
+            CollectionType<UInt256>,
             CollectionType<Int8>,
             CollectionType<Int16>,
             CollectionType<Int32>,
             CollectionType<Int64>,
+            CollectionType<Int128>,
+            CollectionType<Int256>,
             CollectionType<Decimal32>,
             CollectionType<Decimal64>,
             CollectionType<Decimal128>,
             CollectionType<Decimal256>,
             CollectionType<Float32>,
             CollectionType<Float64>,
+            CollectionType<UUID>,
             CollectionType<StringRef>>
             container;
 
