@@ -92,7 +92,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
     for (size_t i = 0; i < columns.size(); ++i)
     {
         auto name_in_storage = Nested::extractTableName(columns[i]);
-        if (isObject(storage_columns.get(name_in_storage).type))
+        if (storage_columns.has(name_in_storage) && isObject(storage_columns.get(name_in_storage).type))
         {
             have_at_least_one_physical_column = true;
             continue;
