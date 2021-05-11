@@ -12,7 +12,7 @@
 
 static void setAffinity()
 {
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
+#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__sun)
     cpu_set_t mask;
     CPU_ZERO(&mask);
     CPU_SET(0, &mask);
