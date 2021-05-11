@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DISK_INDEX;
     extern const int UNKNOWN_FORMAT;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int PATH_ACCESS_DENIED;;
 }
 
 
@@ -44,13 +45,14 @@ IDiskRemote::Metadata::Metadata(
 
         UInt32 version;
         readIntText(version, buf);
-        assertChar('\n', buf);
 
         if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
             throw Exception(
                 ErrorCodes::UNKNOWN_FORMAT,
                 "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
-                disk_path + metadata_file_path, std::to_string(version), std::to_string(VERSION_READ_ONLY_FLAG));
+                disk_path + metadata_file_path, toString(version), toString(VERSION_READ_ONLY_FLAG));
+
+        assertChar('\n', buf);
 
         UInt32 remote_fs_objects_count;
         readIntText(remote_fs_objects_count, buf);
@@ -136,6 +138,28 @@ void IDiskRemote::Metadata::save(bool sync)
         buf.sync();
 }
 
+IDiskRemote::Metadata IDiskRemote::readOrCreateMetaForWriting(const String & path, WriteMode mode)
+{
+    bool exist = exists(path);
+    if (exist)
+    {
+        auto metadata = readMeta(path);
+        if (metadata.read_only)
+            throw Exception("File is read-only: " + path, ErrorCodes::PATH_ACCESS_DENIED);
+
+        if (mode == WriteMode::Rewrite)
+            removeFile(path); /// Remove for re-write.
+        else
+            return metadata;
+    }
+
+    auto metadata = createMeta(path);
+    /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
+    metadata.save();
+
+    return metadata;
+}
+
 
 IDiskRemote::Metadata IDiskRemote::readMeta(const String & path) const
 {
@@ -194,13 +218,13 @@ DiskRemoteReservation::~DiskRemoteReservation()
 
 
 IDiskRemote::IDiskRemote(
-    const String & disk_name_,
+    const String & name_,
     const String & remote_fs_root_path_,
     const String & metadata_path_,
     const String & log_name_,
     std::unique_ptr<Executor> executor_)
     : IDisk(std::move(executor_))
-    , disk_name(disk_name_)
+    , name(name_)
     , remote_fs_root_path(remote_fs_root_path_)
     , metadata_path(metadata_path_)
     , log(&Poco::Logger::get(log_name_))
@@ -351,7 +375,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
     std::lock_guard lock(reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(log, "Reserving 0 bytes on s3 disk {}", backQuote(disk_name));
+        LOG_DEBUG(log, "Reserving 0 bytes on s3 disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -361,7 +385,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
     if (unreserved_space >= bytes)
     {
         LOG_DEBUG(log, "Reserving {} on disk {}, having unreserved {}.",
-            ReadableSize(bytes), backQuote(disk_name), ReadableSize(unreserved_space));
+            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
         return true;

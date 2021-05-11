@@ -60,14 +60,12 @@ public:
     struct RestoreInformation;
 
     DiskS3(
-        String disk_name_,
+        String name_,
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
-
-    void moveFile(const String & from_path, const String & to_path) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -81,6 +79,9 @@ public:
         const String & path,
         size_t buf_size,
         WriteMode mode) override;
+
+    void moveFile(const String & from_path, const String & to_path, bool send_metadata);
+    void moveFile(const String & from_path, const String & to_path) override;
 
     void removeFile(const String & path) override { removeSharedFile(path, false); }
     void removeFileIfExists(const String & path) override;
@@ -116,8 +117,6 @@ private:
     void removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys);
     void removeAws(const AwsS3KeyKeeper & keys);
 
-    Metadata readOrCreateMetaForWriting(const String & path, WriteMode mode);
-
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
     /// Converts revision to binary string with leading zeroes (64 bit).
     static String revisionToString(UInt64 revision);
@@ -151,7 +150,6 @@ private:
     /// Forms detached path '../../detached/part_name/' from '../../part_name/'
     static String pathToDetached(const String & source_path);
 
-    const String name;
     const String bucket;
     MultiVersion<DiskS3Settings> current_settings;
 

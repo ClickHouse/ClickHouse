@@ -41,7 +41,6 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
-    extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_DELETE_DIRECTORY;
     extern const int LOGICAL_ERROR;
 }
@@ -309,13 +308,13 @@ private:
 
 
 DiskS3::DiskS3(
-    String disk_name_,
+    String name_,
     String bucket_,
     String s3_root_path_,
     String metadata_path_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
-    : IDiskRemote(disk_name_, s3_root_path_, metadata_path_, "DiskS3", std::make_unique<AsyncExecutor>(settings_->thread_pool_size_))
+    : IDiskRemote(name_, s3_root_path_, metadata_path_, "DiskS3", std::make_unique<AsyncExecutor>(settings_->thread_pool_size))
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
@@ -573,7 +572,7 @@ void DiskS3::startup()
     if (!settings->send_metadata)
         return;
 
-    LOG_INFO(log, "Starting up disk {}", disk_name);
+    LOG_INFO(log, "Starting up disk {}", name);
 
     restore();
 
@@ -582,7 +581,7 @@ void DiskS3::startup()
 
     findLastRevision();
 
-    LOG_INFO(log, "Disk {} started up", disk_name);
+    LOG_INFO(log, "Disk {} started up", name);
 }
 
 void DiskS3::findLastRevision()
@@ -604,7 +603,7 @@ void DiskS3::findLastRevision()
             revision += "0";
     }
     revision_counter = static_cast<UInt64>(std::bitset<64>(revision).to_ullong());
-    LOG_INFO(log, "Found last revision number {} for disk {}", revision_counter, disk_name);
+    LOG_INFO(log, "Found last revision number {} for disk {}", revision_counter, name);
 }
 
 int DiskS3::readSchemaVersion(const String & source_bucket, const String & source_path)
@@ -716,7 +715,7 @@ void DiskS3::migrateToRestorableSchema()
 {
     try
     {
-        LOG_INFO(log, "Start migration to restorable schema for disk {}", disk_name);
+        LOG_INFO(log, "Start migration to restorable schema for disk {}", name);
 
         Futures results;
 
@@ -733,7 +732,7 @@ void DiskS3::migrateToRestorableSchema()
     }
     catch (const Exception &)
     {
-        tryLogCurrentException(log, fmt::format("Failed to migrate to restorable schema for disk {}", disk_name));
+        tryLogCurrentException(log, fmt::format("Failed to migrate to restorable schema for disk {}", name));
 
         throw;
     }
@@ -909,7 +908,7 @@ void DiskS3::restore()
         }
 
         LOG_INFO(log, "Starting to restore disk {}. Revision: {}, Source bucket: {}, Source path: {}",
-                 disk_name, information.revision, information.source_bucket, information.source_path);
+                 name, information.revision, information.source_bucket, information.source_path);
 
         if (readSchemaVersion(information.source_bucket, information.source_path) < RESTORABLE_SCHEMA_VERSION)
             throw Exception("Source bucket doesn't have restorable schema.", ErrorCodes::BAD_ARGUMENTS);
@@ -929,11 +928,11 @@ void DiskS3::restore()
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
-        LOG_INFO(log, "Restore disk {} finished", disk_name);
+        LOG_INFO(log, "Restore disk {} finished", name);
     }
     catch (const Exception &)
     {
-        tryLogCurrentException(log, fmt::format("Failed to restore disk {}", disk_name));
+        tryLogCurrentException(log, fmt::format("Failed to restore disk {}", name));
 
         throw;
     }
@@ -941,7 +940,7 @@ void DiskS3::restore()
 
 void DiskS3::restoreFiles(const RestoreInformation & restore_information)
 {
-    LOG_INFO(log, "Starting restore files for disk {}", disk_name);
+    LOG_INFO(log, "Starting restore files for disk {}", name);
 
     std::vector<std::future<void>> results;
     auto restore_files = [this, &restore_information, &results](auto list_result)
@@ -984,7 +983,7 @@ void DiskS3::restoreFiles(const RestoreInformation & restore_information)
     for (auto & result : results)
         result.get();
 
-    LOG_INFO(log, "Files are restored for disk {}", disk_name);
+    LOG_INFO(log, "Files are restored for disk {}", name);
 }
 
 void DiskS3::processRestoreFiles(const String & source_bucket, const String & source_path, Strings keys)
@@ -1024,7 +1023,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
 {
     auto settings = current_settings.get();
 
-    LOG_INFO(log, "Starting restore file operations for disk {}", disk_name);
+    LOG_INFO(log, "Starting restore file operations for disk {}", name);
 
     /// Enable recording file operations if we restore to different bucket / path.
     bool send_metadata = bucket != restore_information.source_bucket || remote_fs_root_path != restore_information.source_path;
@@ -1126,7 +1125,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
         }
     }
 
-    LOG_INFO(log, "File operations restored for disk {}", disk_name);
+    LOG_INFO(log, "File operations restored for disk {}", name);
 }
 
 std::tuple<UInt64, String> DiskS3::extractRevisionAndOperationFromKey(const String & key)
