@@ -3,7 +3,6 @@
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
@@ -228,7 +227,7 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
 {
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeBlockOutputStream>(
-        *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context->getSettingsRef().optimize_on_insert);
+        *this, metadata_snapshot, settings.max_partitions_per_insert_block, settings.optimize_on_insert);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const

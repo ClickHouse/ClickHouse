@@ -51,8 +51,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
-
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>

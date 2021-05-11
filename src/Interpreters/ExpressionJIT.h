@@ -7,6 +7,7 @@
 #if USE_EMBEDDED_COMPILER
 #    include <Functions/IFunctionImpl.h>
 #    include <Common/LRUCache.h>
+#    include <Common/HashTable/Hash.h>
 
 
 namespace DB

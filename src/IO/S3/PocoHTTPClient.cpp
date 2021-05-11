@@ -205,11 +205,11 @@ void PocoHTTPClient::makeRequestInternal(
               * although it is in path part, not in query string.
               * e.g. this is not correct:
               * - abc%20def.txt
-              * 
+              *
               * Poco will keep plus character as is (which is correct) while AWS servers will treat it as whitespace, which is not what is intended.
               * To overcome this limitation, we encode URL with "Aws::Http::URI" and then pass already prepared URL to Poco.
               */
-            
+
             Aws::Http::URI aws_target_uri(uri);
             poco_request.setURI(aws_target_uri.GetPath() + aws_target_uri.GetQueryString());
 

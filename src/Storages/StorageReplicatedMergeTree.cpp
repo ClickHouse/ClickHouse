@@ -1,6 +1,5 @@
 #include <Core/Defines.h>
 
-#include <Common/FieldVisitors.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>
@@ -4327,7 +4326,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
         deduplicate,
-        local_context->getSettingsRef().optimize_on_insert);
+        query_settings.optimize_on_insert);
 }
 
 
