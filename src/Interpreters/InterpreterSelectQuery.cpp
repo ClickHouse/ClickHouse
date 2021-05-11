@@ -47,6 +47,7 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergeSortingStep.h>
@@ -1117,14 +1118,37 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             if (expressions.hasJoin())
             {
-                QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
-                    query_plan.getCurrentDataStream(),
-                    expressions.join,
-                    expressions.join_has_delayed_stream,
-                    settings.max_block_size);
+                if (expressions.join->isFilled())
+                {
+                    QueryPlanStepPtr filled_join_step = std::make_unique<FilledJoinStep>(
+                        query_plan.getCurrentDataStream(),
+                        expressions.join,
+                        settings.max_block_size);
 
-                join_step->setStepDescription("JOIN");
-                query_plan.addStep(std::move(join_step));
+                    filled_join_step->setStepDescription("JOIN");
+                    query_plan.addStep(std::move(filled_join_step));
+                }
+                else
+                {
+                    auto joined_plan = query_analyzer->getJoinedPlan();
+
+                    if (!joined_plan)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
+
+                    QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
+                        query_plan.getCurrentDataStream(),
+                        joined_plan->getCurrentDataStream(),
+                        expressions.join,
+                        settings.max_block_size);
+
+                    join_step->setStepDescription("JOIN");
+                    std::vector<QueryPlanPtr> plans;
+                    plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
+                    plans.emplace_back(std::move(joined_plan));
+
+                    query_plan = QueryPlan();
+                    query_plan.unitePlans(std::move(join_step), {std::move(plans)});
+                }
             }
 
             if (expressions.hasWhere())

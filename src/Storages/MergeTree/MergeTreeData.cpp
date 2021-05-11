@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -685,6 +686,62 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 }
 
 
+DataTypePtr MergeTreeData::getPartitionValueType() const
+{
+    DataTypePtr partition_value_type;
+    auto partition_types = getInMemoryMetadataPtr()->partition_key.sample_block.getDataTypes();
+    if (partition_types.empty())
+        partition_value_type = std::make_shared<DataTypeUInt8>();
+    else
+        partition_value_type = std::make_shared<DataTypeTuple>(std::move(partition_types));
+    return partition_value_type;
+}
+
+
+Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const
+{
+    DataTypePtr partition_value_type = getPartitionValueType();
+    bool has_partition_value = typeid_cast<const DataTypeTuple *>(partition_value_type.get());
+    Block block{
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid"),
+        ColumnWithTypeAndName(partition_value_type->createColumn(), partition_value_type, "_partition_value")};
+
+    MutableColumns columns = block.mutateColumns();
+
+    auto & part_column = columns[0];
+    auto & partition_id_column = columns[1];
+    auto & part_uuid_column = columns[2];
+    auto & partition_value_column = columns[3];
+
+    for (const auto & part : parts)
+    {
+        part_column->insert(part->name);
+        partition_id_column->insert(part->info.partition_id);
+        part_uuid_column->insert(part->uuid);
+        Tuple tuple(part->partition.value.begin(), part->partition.value.end());
+        if (has_partition_value)
+            partition_value_column->insert(tuple);
+
+        if (one_part)
+        {
+            part_column = ColumnConst::create(std::move(part_column), 1);
+            partition_id_column = ColumnConst::create(std::move(partition_id_column), 1);
+            part_uuid_column = ColumnConst::create(std::move(part_uuid_column), 1);
+            if (has_partition_value)
+                partition_value_column = ColumnConst::create(std::move(partition_value_column), 1);
+            break;
+        }
+    }
+
+    block.setColumns(std::move(columns));
+    if (!has_partition_value)
+        block.erase("_partition_value");
+    return block;
+}
+
+
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     const SelectQueryInfo & query_info, ContextPtr local_context, const DataPartsVector & parts) const
 {
@@ -692,7 +749,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
         return 0u;
     auto metadata_snapshot = getInMemoryMetadataPtr();
     ASTPtr expression_ast;
-    Block virtual_columns_block = MergeTreeDataSelectExecutor::getBlockWithVirtualPartColumns(parts, true /* one_part */);
+    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
     // Generate valid expressions for filtering
     bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
@@ -704,7 +761,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     std::unordered_set<String> part_values;
     if (valid && expression_ast)
     {
-        virtual_columns_block = MergeTreeDataSelectExecutor::getBlockWithVirtualPartColumns(parts, false /* one_part */);
+        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */);
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, local_context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
@@ -1179,7 +1236,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         part_log_elem.event_type = PartLogElement::REMOVE_PART;
         part_log_elem.event_time = time(nullptr);
-        part_log_elem.duration_ms = 0;
+        part_log_elem.duration_ms = 0; //-V1048
 
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
@@ -1653,13 +1710,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
 
-            const auto & deps_mv = name_deps[command.column_name];
-            if (!deps_mv.empty())
+            if (!command.clear)
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                const auto & deps_mv = name_deps[command.column_name];
+                if (!deps_mv.empty())
+                {
+                    throw Exception(
+                        "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                            + toString(deps_mv),
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                }
             }
 
             dropped_columns.emplace(command.column_name);
@@ -3019,6 +3079,9 @@ Pipe MergeTreeData::alterPartition(
             }
 
             break;
+
+            default:
+                throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
         }
         for (auto & command_result : current_command_results)
             command_result.command_type = command.typeToString();
@@ -4262,6 +4325,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
     };
 }
