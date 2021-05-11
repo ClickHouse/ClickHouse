@@ -450,6 +450,12 @@ struct ContextSharedPart
             /// TODO: Get rid of this.
 
             delete_system_logs = std::move(system_logs);
+
+            #if USE_EMBEDDED_COMPILER
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
+            #endif
+
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
             models_repository_guard.reset();
@@ -1222,13 +1228,13 @@ void Context::setCurrentQueryId(const String & query_id)
             UInt64 a;
             UInt64 b;
         } words;
-        __uint128_t uuid;
+        UUID uuid{};
     } random;
 
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != 0)
+    if (client_info.client_trace_context.trace_id != UUID())
     {
         // Use the OpenTelemetry trace context we received from the client, and
         // create a new span for the query.

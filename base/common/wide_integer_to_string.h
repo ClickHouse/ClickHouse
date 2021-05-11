@@ -1,8 +1,11 @@
 #pragma once
 
 #include <string>
+#include <ostream>
+#include <fmt/format.h>
 
 #include "wide_integer.h"
+
 
 namespace wide
 {
@@ -33,3 +36,34 @@ inline std::string to_string(const integer<Bits, Signed> & n)
 }
 
 }
+
+
+template <size_t Bits, typename Signed>
+std::ostream & operator<<(std::ostream & out, const wide::integer<Bits, Signed> & value)
+{
+    return out << to_string(value);
+}
+
+
+/// See https://fmt.dev/latest/api.html#formatting-user-defined-types
+template <size_t Bits, typename Signed>
+struct fmt::formatter<wide::integer<Bits, Signed>>
+{
+    constexpr auto parse(format_parse_context & ctx)
+    {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const wide::integer<Bits, Signed> & value, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{}", to_string(value));
+    }
+};
