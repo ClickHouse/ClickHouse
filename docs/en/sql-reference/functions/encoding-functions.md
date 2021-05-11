@@ -172,3 +172,6 @@ Accepts an integer. Returns a string containing the list of powers of two that t
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
 
+## bitpositionToArray(num) {#bitpositiontoarraynum}
+
+Accepts an integer. Returns an array of UInt64 numbers containing the list of positions of bit that equals 1. Numbers in the array are in ascending order.
