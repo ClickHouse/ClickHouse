@@ -1854,6 +1854,7 @@ class ClickHouseInstance:
 
         instance_config_dir = p.abspath(p.join(self.path, 'configs'))
         os.makedirs(instance_config_dir)
+        os.chmod(instance_config_dir, stat.S_IRWXO)
 
         logging.debug("Copy common default production configuration from {}".format(self.base_config_dir))
         shutil.copyfile(p.join(self.base_config_dir, 'config.xml'), p.join(instance_config_dir, 'config.xml'))
@@ -1872,6 +1873,7 @@ class ClickHouseInstance:
         os.mkdir(users_d_dir)
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
+
 
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
