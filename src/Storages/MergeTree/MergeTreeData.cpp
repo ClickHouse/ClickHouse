@@ -732,8 +732,9 @@ Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPar
     auto & part_uuid_column = columns[2];
     auto & partition_value_column = columns[3];
 
-    for (const auto & part : parts)
+    for (const auto & part_or_projection : parts)
     {
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         part_column->insert(part->name);
         partition_id_column->insert(part->info.partition_id);
         part_uuid_column->insert(part->uuid);
