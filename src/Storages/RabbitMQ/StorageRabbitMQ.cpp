@@ -192,7 +192,7 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 std::shared_ptr<Context> StorageRabbitMQ::addSettings(ContextPtr local_context) const
 {
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("input_format_skip_unknown_fields", true);
+    modified_context->setSetting("input_format_skip_unknown_fields", Field{true});
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
 
@@ -402,7 +402,7 @@ void StorageRabbitMQ::bindExchange()
         }
     }
 
-    while (!binding_created)
+    while (!binding_created) //-V776
     {
         event_handler->iterateLoop();
     }
@@ -463,7 +463,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id)
     const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
     setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
 
-    while (!binding_created)
+    while (!binding_created) //-V776
     {
         event_handler->iterateLoop();
     }

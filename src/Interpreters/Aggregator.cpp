@@ -325,7 +325,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             /// into a fixed 16- or 32-byte blob.
             if (std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes <= 16)
                 return AggregatedDataVariants::Type::nullable_keys128;
-            if (std::tuple_size<KeysNullMap<DummyUInt256>>::value + keys_bytes <= 32)
+            if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
@@ -837,7 +837,12 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     data_variants.init(data_variants.type);
     data_variants.aggregates_pools = Arenas(1, std::make_shared<Arena>());
     data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
-    data_variants.without_key = nullptr;
+    if (params.overflow_row || data_variants.type == AggregatedDataVariants::Type::without_key)
+    {
+        AggregateDataPtr place = data_variants.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        createAggregateStates(place);
+        data_variants.without_key = place;
+    }
 
     block_out.flush();
     compressed_buf.next();
@@ -858,9 +863,9 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
 
     LOG_DEBUG(log,
-        "Written part in {} sec., {} rows, {} uncompressed, {} compressed,"
-        " {} uncompressed bytes per row, {} compressed bytes per row, compression rate: {}"
-        " ({} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
+        "Written part in {:.3f} sec., {} rows, {} uncompressed, {} compressed,"
+        " {:.3f} uncompressed bytes per row, {:.3f} compressed bytes per row, compression rate: {:.3f}"
+        " ({:.3f} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
         elapsed_seconds,
         rows,
         ReadableSize(uncompressed_bytes),
@@ -1297,6 +1302,9 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
         {
             AggregatedDataWithoutKey & data = data_variants.without_key;
 
+            if (!data)
+                throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
+
             if (!final_)
             {
                 for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1493,7 +1501,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_DEBUG(log,
-        "Converted aggregated data to blocks. {} rows, {} in {} sec. ({} rows/sec., {}/sec.)",
+        "Converted aggregated data to blocks. {} rows, {} in {} sec. ({:.3f} rows/sec., {}/sec.)",
         rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
         ReadableSize(bytes / elapsed_seconds));
@@ -2097,7 +2105,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_DEBUG(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_DEBUG(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({:.3f} rows/sec., {}/sec.)",
         rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
         ReadableSize(bytes / elapsed_seconds));
