@@ -430,7 +430,7 @@ Keys for syslog:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 -   format – Message format. Possible values: `bsd` and `syslog.`
 
-## send_crash_reports {#server_configuration_parameters-logger}
+## send_crash_reports {#server_configuration_parameters-send_crash_reports}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
 Enabling it, especially in pre-production environments, is highly appreciated.

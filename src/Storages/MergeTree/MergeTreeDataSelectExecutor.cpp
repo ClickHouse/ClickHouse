@@ -5,7 +5,6 @@
 
 #include <Poco/File.h>
 
-#include <Common/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
@@ -37,8 +36,10 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/VirtualColumnUtils.h>
+
 
 namespace ProfileEvents
 {
@@ -62,6 +63,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
@@ -69,38 +71,6 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     : data(data_), log(&Poco::Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
 }
-
-Block MergeTreeDataSelectExecutor::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part)
-{
-    Block block(std::initializer_list<ColumnWithTypeAndName>{
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
-        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid")});
-
-    MutableColumns columns = block.mutateColumns();
-
-    auto & part_column = columns[0];
-    auto & partition_id_column = columns[1];
-    auto & part_uuid_column = columns[2];
-
-    for (const auto & part : parts)
-    {
-        part_column->insert(part->name);
-        partition_id_column->insert(part->info.partition_id);
-        part_uuid_column->insert(part->uuid);
-        if (one_part)
-        {
-            part_column = ColumnConst::create(std::move(part_column), 1);
-            partition_id_column = ColumnConst::create(std::move(partition_id_column), 1);
-            part_uuid_column = ColumnConst::create(std::move(part_uuid_column), 1);
-            break;
-        }
-    }
-
-    block.setColumns(std::move(columns));
-    return block;
-}
-
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const MergeTreeData::DataPartsVector & parts,
@@ -206,6 +176,18 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         {
             virt_column_names.push_back(name);
         }
+        else if (name == "_partition_value")
+        {
+            if (!typeid_cast<const DataTypeTuple *>(data.getPartitionValueType().get()))
+            {
+                throw Exception(
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "Missing column `_partition_value` because there is no partition column in table {}",
+                    data.getStorageID().getTableName());
+            }
+
+            virt_column_names.push_back(name);
+        }
         else if (name == "_sample_factor")
         {
             sample_factor_column_queried = true;
@@ -225,7 +207,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     std::unordered_set<String> part_values;
     ASTPtr expression_ast;
-    auto virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
+    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, context, virtual_columns_block, expression_ast);
@@ -233,7 +215,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     // If there is still something left, fill the virtual block and do the filtering.
     if (expression_ast)
     {
-        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */);
+        virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
