@@ -5,7 +5,6 @@
 
 #include <Poco/File.h>
 
-#include <Common/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
@@ -39,6 +38,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/VirtualColumnUtils.h>
+
 
 namespace ProfileEvents
 {

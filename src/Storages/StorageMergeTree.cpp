@@ -3,7 +3,6 @@
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
@@ -976,7 +975,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
+std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
 {
     if (shutdown_called)
         return {};
