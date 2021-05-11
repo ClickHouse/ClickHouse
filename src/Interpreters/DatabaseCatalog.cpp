@@ -16,6 +16,7 @@
 #include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
 #include <common/logger_useful.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -55,7 +56,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
     String global_name;
-    if (query)
+    if (create)
     {
         original_create = create->clone();
         if (create->uuid == UUIDHelpers::Nil)
