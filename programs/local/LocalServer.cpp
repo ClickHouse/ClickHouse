@@ -399,10 +399,9 @@ void LocalServer::processQueries()
                                          {
                                              // Just a keep-alive update.
                                               progress_bar.clearProgress();
-                                              return true;
+                                              return;
                                          }
                                          progress_bar.writeProgress(progress, watch);
-                                         return true;
                                      });
     }
 
