@@ -1583,13 +1583,13 @@ Result:
 Query:
 
 ``` sql
-SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(a);
+SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(res);
 ```
 
 Return value type is always [Float64](../../sql-reference/data-types/float.md). Result:
 
 ``` text
-┌─res───┬─toTypeName(a)─┐
-│ 6     │ Float64       │
-└───────┴───────────────┘
+┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
+│ 6   │ Float64                                                                                  │
+└─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
