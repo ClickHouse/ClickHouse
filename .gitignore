@@ -27,6 +27,7 @@
 /docs/zh/single.md
 /docs/ja/single.md
 /docs/fa/single.md
+/docs/en/development/cmake-in-clickhouse.md
 
 # callgrind files
 callgrind.out.*

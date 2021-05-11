@@ -3,7 +3,6 @@
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
@@ -228,7 +227,7 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
 {
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeBlockOutputStream>(
-        *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context->getSettingsRef().optimize_on_insert);
+        *this, metadata_snapshot, settings.max_partitions_per_insert_block, settings.optimize_on_insert);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -723,9 +722,10 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
             select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
                 future_part, disk_space, can_merge, partition_id, final, metadata_snapshot, out_disable_reason, optimize_skip_merged_partitions);
+            auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
+            auto timeout = std::chrono::milliseconds(timeout_ms);
 
             /// If final - we will wait for currently processing merges to finish and continue.
-            /// TODO Respect query settings for timeout
             if (final
                 && select_decision != SelectPartsDecision::SELECTED
                 && !currently_merging_mutating_parts.empty()
@@ -735,10 +735,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
                 LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
                     currently_merging_mutating_parts.size());
 
-                if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
-                    lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+                if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
                 {
-                    *out_disable_reason = "Timeout while waiting for already running merges before running OPTIMIZE with FINAL";
+                    *out_disable_reason = fmt::format("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL", timeout_ms);
                     break;
                 }
             }
@@ -976,7 +975,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob()
+std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
 {
     if (shutdown_called)
         return {};

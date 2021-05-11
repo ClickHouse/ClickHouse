@@ -37,7 +37,7 @@
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
-#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
+#include <Storages/PostgreSQL/PoolWithFailover.h>
 #endif
 
 namespace DB
@@ -158,7 +158,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
             MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
-            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password);
+            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
 
 
             auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
