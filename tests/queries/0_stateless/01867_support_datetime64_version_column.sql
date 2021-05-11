@@ -9,7 +9,7 @@ insert into replacing values (2,'1970-01-01 08:25:46.300800004','b1');
 insert into replacing values (3,'1970-01-01 08:25:46.300800005','c1');
 insert into replacing values (2,'1970-01-01 08:25:46.300800005','a1');
 
-OPTIMIZE TABLE replacing;
+OPTIMIZE TABLE replacing FINAL;
 
 select * from replacing;
 
