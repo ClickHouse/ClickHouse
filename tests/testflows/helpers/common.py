@@ -96,7 +96,13 @@ def run_scenario(pool, tasks, scenario, kwargs=None):
     if kwargs is None:
         kwargs = {}
 
+    _top = top()
+    def _scenario_wrapper(**kwargs):
+        if _top.terminating:
+            return
+        return scenario(**kwargs)
+
     if current().context.parallel:
-        start(pool, tasks, scenario, kwargs)
+        start(pool, tasks, _scenario_wrapper, kwargs)
     else:
         scenario(**kwargs)
