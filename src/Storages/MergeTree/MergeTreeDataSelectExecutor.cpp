@@ -264,8 +264,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         {
             const auto & header_before_aggregation = pipe.getHeader();
 
-            std::cerr << "============ header before aggregation" << std::endl;
-            std::cerr << header_before_aggregation.dumpStructure() << std::endl;
+            // std::cerr << "============ header before aggregation" << std::endl;
+            // std::cerr << header_before_aggregation.dumpStructure() << std::endl;
 
             ColumnNumbers keys;
             for (const auto & key : query_info.projection->aggregation_keys)
@@ -322,8 +322,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
             });
 
-            std::cerr << "============ header after aggregation" << std::endl;
-            std::cerr << pipe.getHeader().dumpStructure() << std::endl;
+            // std::cerr << "============ header after aggregation" << std::endl;
+            // std::cerr << pipe.getHeader().dumpStructure() << std::endl;
         };
 
         if (!projection_pipe.empty())
