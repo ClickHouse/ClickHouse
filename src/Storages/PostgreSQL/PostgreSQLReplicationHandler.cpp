@@ -22,6 +22,7 @@ namespace ErrorCodes
 }
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
+    const String & replication_identifier,
     const String & remote_database_name_,
     const String & current_database_name_,
     const postgres::ConnectionInfo & connection_info_,
@@ -41,8 +42,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , tables_list(tables_list_)
     , connection(std::make_shared<postgres::Connection>(connection_info_))
 {
-    replication_slot = fmt::format("{}_ch_replication_slot", current_database_name);
-    publication_name = fmt::format("{}_ch_publication", current_database_name);
+    replication_slot = fmt::format("{}_ch_replication_slot", replication_identifier);
+    publication_name = fmt::format("{}_ch_publication", replication_identifier);
 
     startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
     consumer_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
@@ -402,11 +403,20 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     pqxx::nontransaction tx(connection->getRef());
     dropPublication(tx);
     String last_committed_lsn;
-    if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
-        dropReplicationSlot(tx, /* temporary */false);
-    if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
-        dropReplicationSlot(tx, /* temporary */true);
-    tx.commit();
+    try
+    {
+        if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
+            dropReplicationSlot(tx, /* temporary */false);
+        if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
+            dropReplicationSlot(tx, /* temporary */true);
+        tx.commit();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while dropping replication slot: {}", replication_slot);
+        LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually.", replication_slot);
+        throw;
+    }
 }
 
 

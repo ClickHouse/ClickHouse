@@ -77,8 +77,9 @@ def test_initial_load_from_snapshot(started_cluster):
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
@@ -100,8 +101,9 @@ def test_no_connection_at_startup(started_cluster):
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
@@ -132,8 +134,9 @@ def test_detach_attach_is_ok(started_cluster):
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
@@ -167,8 +170,9 @@ def test_replicating_insert_queries(started_cluster):
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(10)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
@@ -208,8 +212,9 @@ def test_replicating_delete_queries(started_cluster):
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
@@ -246,8 +251,9 @@ def test_replicating_update_queries(started_cluster):
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number + 10 from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
@@ -276,8 +282,9 @@ def test_resume_from_written_version(started_cluster):
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number + 10 from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
@@ -318,12 +325,9 @@ def test_many_replication_messages(started_cluster):
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(100000)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (
-            key UInt64, value UInt64,
-            _sign Int8 MATERIALIZED 1,
-            _version UInt64 MATERIALIZED 1,
-            PRIMARY KEY(key))
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, PRIMARY KEY(key))
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             SETTINGS materialize_postgresql_max_block_size = 50000;
@@ -376,8 +380,9 @@ def test_connection_loss(started_cluster):
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
@@ -412,8 +417,9 @@ def test_clickhouse_restart(started_cluster):
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key; ''')
@@ -439,32 +445,59 @@ def test_rename_table(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
-    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
     instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key; ''')
 
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(25)")
+
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
-    while int(result) != 50:
+    while int(result) != 25:
         time.sleep(0.5)
         result = instance.query('SELECT count() FROM test.postgresql_replica;')
 
     instance.query('RENAME TABLE test.postgresql_replica TO test.postgresql_replica_renamed')
+    assert(int(instance.query('SELECT count() FROM test.postgresql_replica_renamed;')) == 25)
+
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(25, 25)")
 
     result = instance.query('SELECT count() FROM test.postgresql_replica_renamed;')
     while int(result) != 50:
         time.sleep(0.5)
         result = instance.query('SELECT count() FROM test.postgresql_replica_renamed;')
 
-    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50, 50)")
+    result = instance.query('SELECT * FROM test.postgresql_replica_renamed ORDER BY key;')
+    postgresql_replica_check_result(result, True)
+    cursor.execute('DROP TABLE postgresql_replica;')
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica_renamed')
 
-    result = instance.query('SELECT count() FROM test.postgresql_replica_renamed;')
-    while int(result) != 100:
+
+def test_virtual_columns(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+
+    instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
+    instance.query('''
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
+            ENGINE = MaterializePostgreSQL(
+            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key; ''')
+
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(10)")
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while int(result) != 10:
         time.sleep(0.5)
-        result = instance.query('SELECT count() FROM test.postgresql_replica_renamed;')
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
+    # just check that it works, no check with `expected` becuase _version is taken as LSN, which will be different each time.
+    result = instance.query('SELECT key, value, _sign, _version FROM test.postgresql_replica;')
+    print(result)
+    cursor.execute('DROP TABLE postgresql_replica;')
 
 
 if __name__ == '__main__':
