@@ -329,6 +329,8 @@
       -->
     <mmap_cache_size>1000</mmap_cache_size>
 
+    <!-- Cache size for compiled expressions.-->
+    <compiled_expression_cache_size>1073741824</compiled_expression_cache_size>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
