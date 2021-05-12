@@ -200,8 +200,6 @@ BlockIO InterpreterInsertQuery::execute()
 
             if (is_trivial_insert_select)
             {
-                fmt::print(stderr, "is trivial insert select\n");
-
                 /** When doing trivial INSERT INTO ... SELECT ... FROM table,
                   * don't need to process SELECT with more than max_insert_threads
                   * and it's reasonable to set block size for SELECT to the desired block size for INSERT
