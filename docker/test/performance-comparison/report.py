@@ -552,11 +552,11 @@ if args.report == 'main':
         error_tests += unstable_partial_queries
         status = 'failure'
 
-    if unstable_queries:
-        message_array.append(str(unstable_queries) + ' unstable')
-
+    # Don't show mildly unstable queries, only the very unstable ones we
+    # treat as errors.
     if very_unstable_queries:
         status = 'failure'
+        message_array.append(str(unstable_queries) + ' unstable')
 
     error_tests += slow_average_tests
     if error_tests:
