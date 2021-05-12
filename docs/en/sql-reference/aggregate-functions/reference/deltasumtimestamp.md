@@ -4,7 +4,7 @@ toc_priority: 141
 
 # deltaSumTimestamp {#agg_functions-deltasum}
 
-Adds the difference between consecutive rows. If the difference is negative, it is ignored. Uses `timestamp` to order values.
+Adds the difference between consecutive rows. If the difference is negative, it is ignored.
 
 This function is primarily for [materialized views](../../../sql-reference/statements/create/view.md#materialized) that are ordered by some time bucket-aligned timestamp, for example, a `toStartOfMinute` bucket. Because the rows in such a materialized view will all have the same timestamp, it is impossible for them to be merged in the "right" order. This function keeps track of the `timestamp` of the values it's seen, so it's possible to order the states correctly during merging.
 
