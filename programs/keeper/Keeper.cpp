@@ -1,5 +1,7 @@
 #include "Keeper.h"
 
+#include <sys/stat.h>
+#include <pwd.h>
 #include <Common/ClickHouseRevision.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Common/DNSResolver.h>
@@ -15,6 +17,7 @@
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <filesystem>
 #include <IO/UseSSL.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -29,6 +32,11 @@
 
 #if USE_NURAFT
 #   include <Server/KeeperTCPHandlerFactory.h>
+#endif
+
+#if defined(OS_LINUX)
+#    include <unistd.h>
+#    include <sys/syscall.h>
 #endif
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
@@ -54,14 +62,9 @@ namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int INVALID_CONFIG_PARAMETER;
-    extern const int SYSTEM_ERROR;
-    extern const int FAILED_TO_GETPWUID;
-    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
-    extern const int CORRUPTED_DATA;
+    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
+    extern const int FAILED_TO_GETPWUID;
 }
 
 namespace
@@ -133,6 +136,26 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
 #else
     _exit(0);
 #endif
+}
+
+std::string getUserName(uid_t user_id)
+{
+    /// Try to convert user id into user name.
+    auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
+    if (buffer_size <= 0)
+        buffer_size = 1024;
+    std::string buffer;
+    buffer.reserve(buffer_size);
+
+    struct passwd passwd_entry;
+    struct passwd * result = nullptr;
+    const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
+
+    if (error)
+        throwFromErrno("Failed to find user name for " + toString(user_id), ErrorCodes::FAILED_TO_GETPWUID, error);
+    else if (result)
+        return result->pw_name;
+    return toString(user_id);
 }
 
 }
@@ -270,6 +293,39 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
+
+
+    std::string path;
+
+    if (config().has("keeper_server.storage_path"))
+        path = config().getString("keeper_server.storage_path");
+    else if (config().has("keeper_server.log_storage_path"))
+        path = config().getString("keeper_server.log_storage_path");
+    else if (config().has("keeper_server.snapshot_storage_path"))
+        path = config().getString("keeper_server.snapshot_storage_path");
+    else
+        path = std::filesystem::path{DBMS_DEFAULT_PATH} / "coordination/logs";
+
+
+    /// Check that the process user id matches the owner of the data.
+    const auto effective_user_id = geteuid();
+    struct stat statbuf;
+    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    {
+        const auto effective_user = getUserName(effective_user_id);
+        const auto data_owner = getUserName(statbuf.st_uid);
+        std::string message = "Effective user of the process (" + effective_user +
+            ") does not match the owner of the data (" + data_owner + ").";
+        if (effective_user_id == 0)
+        {
+            message += " Run under 'sudo -u " + data_owner + "'.";
+            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+        }
+        else
+        {
+            LOG_WARNING(log, message);
+        }
+    }
 
     const Settings & settings = global_context->getSettingsRef();
 

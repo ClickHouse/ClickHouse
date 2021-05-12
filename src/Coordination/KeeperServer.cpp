@@ -14,6 +14,7 @@
 #include <chrono>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <string>
+#include <filesystem>
 #include <Poco/Util/Application.h>
 
 namespace DB
@@ -59,6 +60,18 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
 }
 #endif
 
+std::string getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    /// the most specialized path
+    if (config.has("keeper_server.snapshot_storage_path"))
+        return config.getString("keeper_server.snapshot_storage_path");
+
+    if (config.has("keeper_server.storage_path"))
+        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "snapshots";
+
+    return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots";
+}
+
 }
 
 KeeperServer::KeeperServer(
@@ -71,7 +84,7 @@ KeeperServer::KeeperServer(
     , coordination_settings(coordination_settings_)
     , state_machine(nuraft::cs_new<KeeperStateMachine>(
                         responses_queue_, snapshots_queue_,
-                        config.getString("keeper_server.snapshot_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/snapshots"),
+                        getSnapshotsPathFromConfig(config),
                         coordination_settings))
     , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
