@@ -73,9 +73,10 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     # Explicitly use LLD with Clang by default.
     # Don't force linker for cross-compilation.
     if is_clang and not is_cross_compile:
-        cmake_flags.append("-DLINKER_NAME=lld")
+        cmake_flags.append("-DLINKER_NAME=ld.lld")
 
     if is_cross_darwin:
+        result.append("IS_CROSS_DARWIN=1")
         cc = compiler[:-len(DARWIN_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar")
         cmake_flags.append("-DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/x86_64-apple-darwin-install_name_tool")
@@ -83,9 +84,11 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake")
     elif is_cross_arm:
+        result.append("IS_CROSS_ARM=1")
         cc = compiler[:-len(ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
     elif is_cross_freebsd:
+        result.append("IS_CROSS_FREEBSD=1")
         cc = compiler[:-len(FREEBSD_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake")
     else:
