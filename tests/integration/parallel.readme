@@ -1,0 +1,6 @@
+# Parallel tests are currently generated manually. All tests except those in parallel.txt will be run sequentially.
+# Current list is generated with following commands
+# 1. Generate all tests list as in CI run
+./runner ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' > all_tests.txt
+# 2. Filter known tests that can be run in parallel
+cat all_tests.txt | grep 'dict\|storage\|postgres\|mysql' | awk '{$1=$1;print}' | jq -R -n '[inputs] | .' > parallel.json

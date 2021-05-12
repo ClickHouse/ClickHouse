@@ -149,25 +149,25 @@ def test_put(started_cluster, maybe_auth, positive, compression):
     "space",
     "plus"
 ])
-def test_get_file_with_special(cluster, special):
+def test_get_file_with_special(started_cluster, special):
     symbol = {"space": " ", "plus": "+"}[special]
     urlsafe_symbol = {"space": "%20", "plus": "%2B"}[special]
     auth = "'minio','minio123',"
-    bucket = cluster.minio_restricted_bucket
-    instance = cluster.instances["dummy"]
+    bucket = started_cluster.minio_restricted_bucket
+    instance = started_cluster.instances["dummy"]
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = [[12549, 2463, 19893], [64021, 38652, 66703], [81611, 39650, 83516], [11079, 59507, 61546], [51764, 69952, 6876], [41165, 90293, 29095], [40167, 78432, 48309], [81629, 81327, 11855], [55852, 21643, 98507], [6738, 54643, 41155]]
     values_csv = ('\n'.join((','.join(map(str, row)) for row in values)) + '\n').encode()
     filename = f"get_file_with_{special}_{symbol}two.csv"
-    put_s3_file_content(cluster, bucket, filename, values_csv)
+    put_s3_file_content(started_cluster, bucket, filename, values_csv)
 
-    get_query = f"SELECT * FROM s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/get_file_with_{special}_{urlsafe_symbol}two.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
+    get_query = f"SELECT * FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/get_file_with_{special}_{urlsafe_symbol}two.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
     assert [list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()] == values
 
-    get_query = f"SELECT * FROM s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/get_file_with_{special}*.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
+    get_query = f"SELECT * FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/get_file_with_{special}*.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
     assert [list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()] == values
 
-    get_query = f"SELECT * FROM s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/get_file_with_{special}_{urlsafe_symbol}*.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
+    get_query = f"SELECT * FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/get_file_with_{special}_{urlsafe_symbol}*.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
     assert [list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()] == values
 
 
@@ -176,12 +176,12 @@ def test_get_file_with_special(cluster, special):
     "plus",
     "plus2"
 ])
-def test_get_path_with_special(cluster, special):
+def test_get_path_with_special(started_cluster, special):
     symbol = {"space": "%20", "plus": "%2B", "plus2": "%2B"}[special]
     safe_symbol = {"space": "%20", "plus": "+", "plus2": "%2B"}[special]
     auth = "'minio','minio123',"
     table_format = "column1 String"
-    instance = cluster.instances["dummy"]
+    instance = started_cluster.instances["dummy"]
     get_query = f"SELECT * FROM s3('http://resolver:8082/get-my-path/{safe_symbol}.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
     assert run_query(instance, get_query).splitlines() == [f"/{symbol}.csv"]
 
@@ -442,13 +442,14 @@ def run_s3_mocks(started_cluster):
     for mock_filename, container, port in mocks:
         for attempt in range(10):
             ping_response = started_cluster.exec_in_container(started_cluster.get_container_id(container),
-                                                      ["curl", "-s", f"http://{container}:{port}/"], nothrow=True)
+                                                      ["curl", "-s", f"http://localhost:{port}/"], nothrow=True)
             if ping_response != 'OK':
                 if attempt == 9:
                     assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
                 else:
                     time.sleep(1)
             else:
+                logging.debug(f"mock {mock_filename} ({port}) answered {ping_response} on attempt {attempt}")
                 break
 
     logging.info("S3 mocks started")
