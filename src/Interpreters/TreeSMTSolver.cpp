@@ -240,14 +240,26 @@ std::optional<z3::expr> TreeSMTSolver::transformToLogicExpressionImpl(const ASTP
             case Field::Types::Which::Float64:
             {
                 z3::expr variable = context->real_const(("LITERAL_" + lit->value.dump() + "_" + std::to_string(random())).c_str());
-                constraints.push_back(variable < context->real_val(std::to_string(lit->value.get<double>() + EPS).c_str()));
-                constraints.push_back(variable > context->real_val(std::to_string(lit->value.get<double>() - EPS).c_str()));
+                if (std::isnan(lit->value.get<double>()))
+                {
+                    constraints.push_back(context->real_val(0) / context->real_val(0));
+                }
+                else if (std::isinf(lit->value.get<double>()))
+                {
+                    if (lit->value.get<double>() > 0)
+                        constraints.push_back(context->real_val(1) / context->real_val(0));
+                    else
+                        constraints.push_back(context->real_val(-1) / context->real_val(0));
+                }
+                else
+                {
+                    constraints.push_back(variable < context->real_val(std::to_string(lit->value.get<double>() + EPS).c_str()));
+                    constraints.push_back(variable > context->real_val(std::to_string(lit->value.get<double>() - EPS).c_str()));
+                }
                 return variable;
             }
             default:
                 return std::nullopt;
-                //return getOrCreateColumn(
-                //    "LITERAL_" + std::to_string(ast->getTreeHash().first) + "_" + std::to_string(ast->getTreeHash().second));
         }
     }
     else if (const auto * func = ast->as<ASTFunction>(); func)

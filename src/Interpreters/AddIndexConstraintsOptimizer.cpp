@@ -151,6 +151,78 @@ namespace
 
         return result;
     }
+
+    CNFQuery::OrGroup createIndexHintGroupSMT(
+        const CNFQuery::OrGroup & group,
+        const StorageInMemoryMetadata & metadata_snapshot,
+        const Names & primary_key)
+    {
+        CNFQuery::OrGroup result;
+        for (const auto & atom : group)
+        {
+            if (atom.ast->as<ASTFunction>() && atom.ast->as<ASTFunction>()->name == "indexHint")
+                return {};
+            Poco::Logger::get("INDEX_HINT_CREATE").information("CHECK");
+            // TODO : push/pop
+            TreeSMTSolver solver(TreeSMTSolver::STRICTNESS::FULL, metadata_snapshot.getColumns().getAll());
+            for (const auto & constraint : metadata_snapshot.getConstraints().getConstraints())
+                solver.addConstraint(constraint->as<ASTConstraintDeclaration>()->expr->clone());
+
+            CNFQuery::AtomicFormula atomic_formula{atom.negative, atom.ast};
+            pushNotIn(atomic_formula);
+            solver.addConstraint(atomic_formula.ast);
+
+            ASTPtr atomic_ast = nullptr;
+            for (const auto & key : primary_key)
+            {
+                ASTPtr minimum = solver.minimize(std::make_shared<ASTIdentifier>(key));
+
+                if (minimum)
+                {
+                    if (atomic_ast)
+                    {
+                        atomic_ast = makeASTFunction("and",
+                                                     atomic_ast,
+                                                     makeASTFunction("greaterOrEquals",
+                                                                     std::make_shared<ASTIdentifier>(key),
+                                                                     minimum));
+                    }
+                    else
+                    {
+                        atomic_ast = makeASTFunction("greaterOrEquals",
+                                                     std::make_shared<ASTIdentifier>(key),
+                                                     minimum);
+                    }
+                }
+
+                ASTPtr maximum = solver.maximize(std::make_shared<ASTIdentifier>(key));
+                if (maximum)
+                {
+                    if (atomic_ast)
+                    {
+                        atomic_ast = makeASTFunction("and",
+                                                     atomic_ast,
+                                                     makeASTFunction("lessOrEquals",
+                                                                     std::make_shared<ASTIdentifier>(key),
+                                                                     maximum));
+                    }
+                    else
+                    {
+                        atomic_ast = makeASTFunction("lessOrEquals",
+                                                     std::make_shared<ASTIdentifier>(key),
+                                                     maximum);
+                    }
+                }
+            }
+
+            if (atomic_ast)
+                result.insert(CNFQuery::AtomicFormula{false, atomic_ast});
+            else
+                return {};
+        }
+
+        return result;
+    }
 }
 
 AddIndexConstraintsOptimizer::AddIndexConstraintsOptimizer(
@@ -196,32 +268,20 @@ void AddIndexConstraintsOptimizer::perform(CNFQuery & cnf_query)
         if (!query)
             return;
         Poco::Logger::get("QUERY").information(query->dumpTree());
-        TreeSMTSolver solver(TreeSMTSolver::STRICTNESS::FULL, metadata_snapshot->getColumns().getAll());
-        for (const auto & constraint : metadata_snapshot->getConstraints().getConstraints())
-            solver.addConstraint(constraint->as<ASTConstraintDeclaration>()->expr->clone());
-        solver.addConstraint(query);
-        for (const auto & key : primary_key)
+
+        CNFQuery::AndGroup and_group;
+        cnf_query.iterateGroups([this, &and_group, &primary_key](const auto & or_group)
+                                {
+                                    CNFQuery::OrGroup add_group = createIndexHintGroupSMT(or_group, *metadata_snapshot, primary_key);
+
+                                    if (!add_group.empty())
+                                        and_group.emplace(std::move(add_group));
+                                });
+        if (!and_group.empty())
         {
-            ASTPtr minimum = solver.minimize(std::make_shared<ASTIdentifier>(key));
-            if (minimum)
-                cnf_query.appendGroup(
-                    CNFQuery::AndGroup{
-                        CNFQuery::OrGroup{
-                            CNFQuery::AtomicFormula{false,
-                                                    makeASTFunction("indexHint",
-                                                                    makeASTFunction("greaterOrEquals",
-                                                                        std::make_shared<ASTIdentifier>(key),
-                                                                        minimum))}}});
-            ASTPtr maximum = solver.maximize(std::make_shared<ASTIdentifier>(key));
-            if (maximum)
-                cnf_query.appendGroup(
-                    CNFQuery::AndGroup{
-                        CNFQuery::OrGroup{
-                            CNFQuery::AtomicFormula{false,
-                                                    makeASTFunction("indexHint",
-                                                                makeASTFunction("lessOrEquals",
-                                                                        std::make_shared<ASTIdentifier>(key),
-                                                                        maximum))}}});
+            CNFQuery::OrGroup new_or_group;
+            new_or_group.insert(CNFQuery::AtomicFormula{false, makeASTFunction("indexHint", TreeCNFConverter::fromCNF(CNFQuery(std::move(and_group))))});
+            cnf_query.appendGroup(CNFQuery::AndGroup{new_or_group});
         }
     }
 }
