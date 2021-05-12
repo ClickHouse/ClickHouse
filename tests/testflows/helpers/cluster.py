@@ -297,11 +297,24 @@ class Cluster(object):
         self.lock = threading.Lock()
     
     @property
-    def control_shell(self):
+    def control_shell(self, timeout=300):
         """Must be called with self.lock.acquired.
         """
-        if self._control_shell is None:
-            self._control_shell = Shell()
+        if self._control_shell is not None:
+            return self._control_shell
+
+        time_start = time.time()
+        while True:
+            try:
+                shell = Shell()
+                shell.timeout = 30
+                shell("echo 1")
+                break
+            except:
+                shell.__exit__(None, None, None)
+                if time.time() - time_start > timeout:
+                    raise RuntimeError(f"failed to open control shell")
+        self._control_shell = shell
         return self._control_shell
 
     def node_container_id(self, node, timeout=300):
@@ -321,18 +334,21 @@ class Cluster(object):
     def shell(self, node, timeout=300):
         """Returns unique shell terminal to be used.
         """
-        if node is None:
-            return Shell()
-        
-        with self.lock:
-            container_id = self.node_container_id(node=node, timeout=timeout)
+        container_id = None
+
+        if node is not None:
+            with self.lock:
+                container_id = self.node_container_id(node=node, timeout=timeout)
         
         time_start = time.time()
         while True:
             try:
-                shell = Shell(command=[
-                    "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} bash --noediting"
-                ], name=node)
+                if node is None:
+                    shell = Shell()
+                else:
+                    shell = Shell(command=[
+                        "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} bash --noediting"
+                    ], name=node)
                 shell.timeout = 30
                 shell("echo 1")
                 break
@@ -362,25 +378,29 @@ class Cluster(object):
 
         with self.lock:
             if self._bash.get(id) is None:
-                if node is None:
-                    self._bash[id] = Shell().__enter__()
-                    for name,value in self.environ.items():
-                        self._bash[id](f"export {name}={value}")
-                else:
+                if node is not None:
                     container_id = self.node_container_id(node=node, timeout=timeout)
-                    time_start = time.time()
-                    while True:
-                        try:
+
+                time_start = time.time()
+                while True:
+                    try:
+                        if node is None:
+                            self._bash[id] = Shell()
+                        else:
                             self._bash[id] = Shell(command=[
                                 "/bin/bash", "--noediting", "-c", f"docker exec -it {container_id} {command}"
                             ], name=node).__enter__()
-                            self._bash[id].timeout = 30
-                            self._bash[id]("echo 1")
-                            break
-                        except:
-                            self._bash[id].__exit__(None, None, None)
-                            if time.time() - time_start > timeout:
-                                raise RuntimeError(f"failed to open bash to node {node}")
+                        self._bash[id].timeout = 30
+                        self._bash[id]("echo 1")
+                        break
+                    except:
+                        self._bash[id].__exit__(None, None, None)
+                        if time.time() - time_start > timeout:
+                            raise RuntimeError(f"failed to open bash to node {node}")
+
+                if node is None:
+                    for name,value in self.environ.items():
+                        self._bash[id](f"export {name}={value}")
 
                 self._bash[id].timeout = timeout
 
