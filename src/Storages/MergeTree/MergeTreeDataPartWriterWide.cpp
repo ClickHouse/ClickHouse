@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/escapeForFileName.h>
 
 namespace DB
 {
@@ -393,8 +394,9 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type.getName());
 
     auto disk = data_part->volume->getDisk();
-    String mrk_path = fullPath(disk, part_path + name + marks_file_extension);
-    String bin_path = fullPath(disk, part_path + name + DATA_FILE_EXTENSION);
+    String escaped_name = escapeForFileName(name);
+    String mrk_path = fullPath(disk, part_path + escaped_name + marks_file_extension);
+    String bin_path = fullPath(disk, part_path + escaped_name + DATA_FILE_EXTENSION);
     DB::ReadBufferFromFile mrk_in(mrk_path);
     DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0, nullptr);
     bool must_be_last = false;

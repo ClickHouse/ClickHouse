@@ -65,15 +65,15 @@ CREATE TABLE table_map_with_key_integer (d DATE, m Map(Int128, String))
 ENGINE = MergeTree() ORDER BY d;
 
 
-INSERT INTO table_map_with_key_integer SELECT '2020-01-01', map(-1, 'a', 0, 'b', toInt128(1234567898765432123456789), 'c', toInt128(-1234567898765432123456789), 'd');
+INSERT INTO table_map_with_key_integer SELECT '2020-01-01', map(-1, 'a', 0, 'b', toInt128('1234567898765432123456789'), 'c', toInt128('-1234567898765432123456789'), 'd');
 
 SELECT 'Map(Int128, String)';
 
 SELECT m FROM table_map_with_key_integer;
-SELECT m[toInt128(-1)], m[toInt128(0)], m[toInt128(1234567898765432123456789)], m[toInt128(-1234567898765432123456789)] FROM table_map_with_key_integer;
+SELECT m[toInt128(-1)], m[toInt128(0)], m[toInt128('1234567898765432123456789')], m[toInt128('-1234567898765432123456789')] FROM table_map_with_key_integer;
 SELECT m[toInt128(number - 2)] FROM table_map_with_key_integer ARRAY JOIN [0, 1, 2, 3] AS number;
 
-SELECT m[-1], m[0], m[toInt128(1234567898765432123456789)], m[toInt128(-1234567898765432123456789)] FROM table_map_with_key_integer;
+SELECT m[-1], m[0], m[toInt128('1234567898765432123456789')], m[toInt128('-1234567898765432123456789')] FROM table_map_with_key_integer;
 SELECT m[toUInt64(0)], m[toInt64(0)], m[toUInt8(0)], m[toUInt16(0)] FROM table_map_with_key_integer;
 
 DROP TABLE IF EXISTS table_map_with_key_integer;

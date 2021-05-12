@@ -5,7 +5,6 @@
 #include <Functions/CustomWeekTransforms.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/TransformDateTime64.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 
 

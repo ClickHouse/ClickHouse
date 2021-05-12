@@ -19,7 +19,7 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
 
-#if !__clang__
+#if !defined(__clang__)
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
@@ -118,7 +118,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 
     SelectQueryInfo query_info;
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
-        context, QueryProcessingStage::Complete, query_info);
+        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
     QueryPipeline pipeline;
     pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
