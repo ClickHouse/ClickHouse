@@ -25,6 +25,24 @@ namespace ErrorCodes
 
 static const UInt64 max_block_size = 8192;
 
+namespace
+{
+    ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct, String & schema, String & table, const String & where)
+    {
+        if (schema.empty())
+        {
+            if (auto pos = table.find('.'); pos != std::string::npos)
+            {
+                schema = table.substr(0, pos);
+                table = table.substr(pos + 1);
+            }
+        }
+        /// Do not need db because it is already in a connection string.
+        return {dict_struct, "", schema, table, where, IdentifierQuotingStyle::DoubleQuotes};
+    }
+}
+
+
 PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const DictionaryStructure & dict_struct_,
     postgres::PoolWithFailoverPtr pool_,
@@ -36,9 +54,10 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , pool(std::move(pool_))
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(config_.getString(fmt::format("{}.db", config_prefix), ""))
+    , schema(config_.getString(fmt::format("{}.schema", config_prefix), ""))
     , table(config_.getString(fmt::format("{}.table", config_prefix), ""))
     , where(config_.getString(fmt::format("{}.where", config_prefix), ""))
-    , query_builder(dict_struct, "", "", table, where, IdentifierQuotingStyle::DoubleQuotes)
+    , query_builder(makeExternalQueryBuilder(dict_struct, schema, table, where))
     , load_all_query(query_builder.composeLoadAllQuery())
     , invalidate_query(config_.getString(fmt::format("{}.invalidate_query", config_prefix), ""))
     , update_field(config_.getString(fmt::format("{}.update_field", config_prefix), ""))
