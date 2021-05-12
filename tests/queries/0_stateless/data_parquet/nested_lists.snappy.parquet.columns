@@ -1,1 +1,1 @@
-`a` Nullable(String), `b` Nullable(Int32)
+`a` Array(Array(Array(Nullable(String)))), `b` Nullable(Int32)
