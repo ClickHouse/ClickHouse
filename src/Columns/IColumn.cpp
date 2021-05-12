@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
 #include <Core/Field.h>
 
 
@@ -38,6 +39,11 @@ bool isColumnNullable(const IColumn & column)
 bool isColumnConst(const IColumn & column)
 {
     return checkColumn<ColumnConst>(column);
+}
+
+bool isColumnArray(const IColumn & column)
+{
+    return checkColumn<ColumnArray>(column);
 }
 
 }

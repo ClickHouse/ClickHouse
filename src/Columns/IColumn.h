@@ -533,4 +533,6 @@ bool isColumnConst(const IColumn & column);
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
 
+bool isColumnArray(const IColumn & column);
+
 }
