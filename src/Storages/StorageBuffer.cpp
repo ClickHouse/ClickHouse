@@ -178,7 +178,11 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr &,
+    SelectQueryInfo & query_info) const
 {
     if (destination_id)
     {
@@ -187,7 +191,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(ContextPtr loc
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(local_context, to_stage, query_info);
+        return destination->getQueryProcessingStage(local_context, to_stage, destination->getInMemoryMetadataPtr(), query_info);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -859,7 +863,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         buffer.data.swap(block_to_write);
 
-        if (!buffer.first_write_time)
+        if (!buffer.first_write_time) // -V547
             buffer.first_write_time = current_time;
 
         /// After a while, the next write attempt will happen.
@@ -998,7 +1002,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
-        if (command.type == AlterCommand::Type::DROP_COLUMN)
+        if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
