@@ -2,13 +2,13 @@
 toc_priority: 141
 ---
 
-# deltaSumTimestamp {#agg_functions-deltasum}
+# deltaSumTimestamp {#agg_functions-deltasumtimestamp}
 
 Прибавляет разницу между последовательными строками. Если разница отрицательна — она будет проигнорирована. 
 
 Эта функция предназначена в первую очередь для [материализованных представлений](../../../sql-reference/statements/create/view.md#materialized), упорядоченных по некоторому временному бакету согласно timestamp, например, по бакету `toStartOfMinute`. Строки в таком материализованном представлении будут иметь одинаковый timestamp. Невозможно, чтобы они были объединены в "правом" порядке. Эта функция отслеживает `timestamp` значений, которые она видит. Поэтому можно правильно упорядочить состояния во время слияния.
 
-Чтобы вычислить разницу между упорядоченными последовательными строками, вы можете использовать функцию [deltaSum](./deltasum.md) вместо функции `deltaSumTimestamp`.
+Чтобы вычислить разницу между упорядоченными последовательными строками, вы можете использовать функцию [deltaSum](../../../sql-reference/aggregate-functions/reference/deltasum.md#agg_functions-deltasum) вместо функции `deltaSumTimestamp`.
 
 **Синтаксис**
 
@@ -18,7 +18,7 @@ deltaSumTimestamp(value, timestamp)
 
 **Аргументы**
 
--   `value` — входные значения, должны быть типа [Integer](../../data-types/int-uint.md), или [Float](../../data-types/float.md), или [Date](../../data-types/date.md), или [DateTime](../../data-types/datetime.md).
+-   `value` — входные значения, должны быть типа [Integer](../../data-types/int-uint.md) или [Float](../../data-types/float.md) или [Date](../../data-types/date.md) или [DateTime](../../data-types/datetime.md).
 -   `timestamp` — параметр для упорядочивания значений, должен быть типа [Integer](../../data-types/int-uint.md) или [Float](../../data-types/float.md) или [Date](../../data-types/date.md) или [DateTime](../../data-types/datetime.md).
 
 **Возвращаемое значение**
