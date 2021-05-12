@@ -7,7 +7,7 @@
 namespace DB
 {
 
-bool ProgressBar::updateProgress(Progress & progress, const Progress & value)
+static bool ProgressBar::updateProgress(Progress & progress, const Progress & value)
 {
     return progress.incrementPiecewiseAtomically(value);
 }
