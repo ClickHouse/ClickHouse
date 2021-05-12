@@ -89,8 +89,8 @@ if __name__ == "__main__":
     check_args_and_update_paths(args)
 
     net = ""
-    if not args.disable_net_host:
-        net = "--net=host"
+    # if not args.disable_net_host:
+    #     net = "--net=host"
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time
