@@ -459,10 +459,12 @@ StorageDistributed::StorageDistributed(
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
-    ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     ClusterPtr cluster = getCluster();
     query_info.cluster = cluster;
@@ -723,7 +725,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
 
             throw Exception("Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
-        if (command.type == AlterCommand::DROP_COLUMN)
+        if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
