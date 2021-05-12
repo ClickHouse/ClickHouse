@@ -299,7 +299,9 @@ void DiskLocal::createFile(const String & path)
 
 void DiskLocal::setReadOnly(const String & path)
 {
-    Poco::File(fs::path(disk_path) / path).setReadOnly(true);
+    fs::permissions(fs::path(disk_path) / path,
+                    fs::perms::owner_read | fs::perms::group_read | fs::perms::others_read,
+                    fs::perm_options::replace);
 }
 
 bool inline isSameDiskType(const IDisk & one, const IDisk & another)
