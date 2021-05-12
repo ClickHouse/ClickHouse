@@ -1,6 +1,6 @@
 ## ClickHouse compressor
 
-Simple program for data compression and decompression.
+Simple program for data compression and decompression in ClickHouse way.
 
 ### Examples
 
