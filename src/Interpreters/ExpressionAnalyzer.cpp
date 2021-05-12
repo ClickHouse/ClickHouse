@@ -1638,7 +1638,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
 
     if (hasWhere())
     {
-        auto where_column_name = query.where()->getColumnName();
+        where_column_name = query.where()->getColumnName();
         remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
     }
 }

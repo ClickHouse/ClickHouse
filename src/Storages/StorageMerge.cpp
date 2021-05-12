@@ -179,8 +179,11 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, Cont
 }
 
 
-QueryProcessingStage::Enum
-StorageMerge::getQueryProcessingStage(ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr &,
+    SelectQueryInfo & query_info) const
 {
     /// In case of JOIN the first stage (which includes JOIN)
     /// should be done on the initiator always.
@@ -204,7 +207,9 @@ StorageMerge::getQueryProcessingStage(ContextPtr local_context, QueryProcessingS
         if (table && table.get() != this)
         {
             ++selected_table_size;
-            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(local_context, to_stage, query_info));
+            stage_in_source_tables = std::max(
+                stage_in_source_tables,
+                table->getQueryProcessingStage(local_context, to_stage, table->getInMemoryMetadataPtr(), query_info));
         }
 
         iterator->next();
@@ -352,7 +357,8 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
-    auto storage_stage = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, modified_query_info);
+    auto storage_stage
+        = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, metadata_snapshot, modified_query_info);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
