@@ -25,7 +25,7 @@ deltaSumTimestamp(value, timestamp)
 
 -   Accumulated differences between consecutive values, ordered by the `timestamp` parameter.
 
-Type: [Integer](../../data-types/int-uint.md) type or [Float](../../data-types/float.md) type or a [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
+Type: [Integer](../../data-types/int-uint.md) or [Float](../../data-types/float.md) or [Date](../../data-types/date.md) or [DateTime](../../data-types/datetime.md).
 
 **Example**
 
