@@ -19,6 +19,7 @@ class PostgreSQLReplicationHandler
 {
 public:
     PostgreSQLReplicationHandler(
+            const String & replication_identifier,
             const String & remote_database_name_,
             const String & current_database_name_,
             const postgres::ConnectionInfo & connection_info_,

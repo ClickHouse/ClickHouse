@@ -63,7 +63,9 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
 
     setInMemoryMetadata(storage_metadata);
 
+    String replication_identifier = remote_database_name + "_" + remote_table_name_;
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
+            replication_identifier,
             remote_database_name,
             table_id_.database_name,
             connection_info,
@@ -351,11 +353,7 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
                     "No columns returned for table {}.{}", table_id.database_name, table_id.table_name);
         }
 
-        StorageInMemoryMetadata storage_metadata;
-
         ordinary_columns_and_types = *table_structure->columns;
-        storage_metadata.setColumns(ColumnsDescription(ordinary_columns_and_types));
-        setInMemoryMetadata(storage_metadata);
 
         if (!table_structure->primary_key_columns && !table_structure->replica_identity_columns)
         {
@@ -405,6 +403,17 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
         storage->set(storage->order_by, order_by_expression);
 
     create_table_query->set(create_table_query->storage, storage);
+
+    /// Add columns _sign and _version, so that they can be accessed from nested ReplacingMergeTree table if needed.
+    /// TODO: add test for case of database engine, test same case after table reload.
+    ordinary_columns_and_types.push_back({"_sign", std::make_shared<DataTypeInt8>()});
+    ordinary_columns_and_types.push_back({"_version", std::make_shared<DataTypeUInt64>()});
+
+    StorageInMemoryMetadata metadata;
+    metadata.setColumns(ColumnsDescription(ordinary_columns_and_types));
+    metadata.setConstraints(metadata_snapshot->getConstraints());
+
+    setInMemoryMetadata(metadata);
 
     return create_table_query;
 }
