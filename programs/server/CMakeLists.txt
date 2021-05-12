@@ -38,7 +38,7 @@ if (OS_LINUX)
     # 1. Allow to run the binary without download of any other files.
     # 2. Allow to implement "sudo clickhouse install" tool.
 
-    foreach(RESOURCE_FILE config.xml users.xml embedded.xml play.html)
+    foreach(RESOURCE_FILE config.xml users.xml embedded.xml play.html keeper_embedded.xml)
         set(RESOURCE_OBJ ${RESOURCE_FILE}.o)
         set(RESOURCE_OBJS ${RESOURCE_OBJS} ${RESOURCE_OBJ})
 
