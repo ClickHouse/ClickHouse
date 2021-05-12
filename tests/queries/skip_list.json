@@ -717,6 +717,7 @@
         "01785_dictionary_element_count",
         "01802_test_postgresql_protocol_with_row_policy", /// Creates database and users
         "01804_dictionary_decimal256_type",
-        "01850_dist_INSERT_preserve_error" // uses cluster with different static databases shard_0/shard_1
+        "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
+        "01710_projection_fetch"
     ]
 }
