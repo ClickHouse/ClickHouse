@@ -149,9 +149,8 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
         if (!table_checked && !checkPostgresTable(table_name))
             return StoragePtr{};
 
-        auto use_nulls = local_context->getSettingsRef().external_databases_use_nulls;
         auto connection_holder = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), doubleQuoteString(table_name), use_nulls).columns;
+        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), doubleQuoteString(table_name)).columns;
 
         if (!columns)
             return StoragePtr{};

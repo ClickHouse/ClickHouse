@@ -135,7 +135,7 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
                         std::get<0>(row),                           /// column name
                         convertPostgreSQLDataType(
                             std::get<1>(row),                       /// data type
-                            use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false
+                            use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false == nullable
                             std::get<3>(row))));                    /// number of dimensions if data type is array
             }
         }
@@ -213,18 +213,21 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 }
 
 
-PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        pqxx::connection & connection, const String & postgres_table_name, bool use_nulls)
+PostgreSQLTableStructure fetchPostgreSQLTableStructure(pqxx::connection & connection, const String & postgres_table_name, bool use_nulls)
 {
-    postgres::Transaction<pqxx::ReadTransaction> tx(connection);
-    return fetchPostgreSQLTableStructure(tx.getRef(), postgres_table_name, use_nulls, false, false);
+    pqxx::ReadTransaction tx(connection);
+    auto result = fetchPostgreSQLTableStructure(tx, postgres_table_name, use_nulls, false, false);
+    tx.commit();
+    return result;
 }
 
 
 std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
 {
-    postgres::Transaction<pqxx::ReadTransaction> tx(connection);
-    return fetchPostgreSQLTablesList(tx.getRef());
+    pqxx::ReadTransaction tx(connection);
+    auto result = fetchPostgreSQLTablesList(tx);
+    tx.commit();
+    return result;
 }
 
 
