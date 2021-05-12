@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <sys/time.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
@@ -26,15 +27,51 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         auto matches = masker->wipeSensitiveData(message_text);
         if (matches > 0)
         {
-            logSplit({msg, message_text}); // we will continue with the copy of original message with text modified
+            tryLogSplit({msg, message_text}); // we will continue with the copy of original message with text modified
             return;
         }
 
     }
 
-    logSplit(msg);
+    tryLogSplit(msg);
 }
 
+
+void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
+{
+    try
+    {
+        logSplit(msg);
+    }
+    catch (...)
+    {
+        /// It is better to catch the errors here in order to avoid
+        /// breaking some functionality because of unexpected "File not
+        /// found" (or similar) error.
+        ///
+        /// For example StorageDistributedDirectoryMonitor will mark batch
+        /// as broken, some MergeTree code can also be affected.
+        ///
+        /// Also note, that we cannot log the exception here, since this
+        /// will lead to recursion, using regular tryLogCurrentException().
+        /// but let's log it into the stderr at least.
+        std::string message = "Cannot add message to the log:\n";
+        message += msg.getText();
+        message += "\n";
+        message += getCurrentExceptionMessage(true);
+
+        try
+        {
+            WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
+            writeBinary(message, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            /// Nothing can be done. Ignore the exception.
+        }
+    }
+}
 
 void OwnSplitChannel::logSplit(const Poco::Message & msg)
 {
