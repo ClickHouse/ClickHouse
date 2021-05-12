@@ -274,9 +274,11 @@ namespace DB
         // TODO: check if a column is const?
         if (!is_nullable && !isColumnArray(internal_column) && arrow_column->null_count())
         {
-            throw Exception{
-                "Can not insert NULL data into non-nullable column \"" + column_name + "\"",
-                ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+            throw Exception
+                {
+                    "Can not insert NULL data into non-nullable column \"" + column_name + "\"",
+                    ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+                };
         }
 
         switch (arrow_column->type()->id())
@@ -373,10 +375,11 @@ namespace DB
         {
             return DataTypeFactory::instance().get(internal_type_it->second);
         }
-        throw Exception{
-            "The type \"" + arrow_type->name() + "\" of an input column \"" + column_name + "\" is not supported for conversion from a "
-                + format_name + " data format",
-            ErrorCodes::CANNOT_CONVERT_TYPE};
+        throw Exception
+            {
+                "The type \"" + arrow_type->name() + "\" of an input column \"" + column_name + "\" is not supported for conversion from a " + format_name + " data format",
+                ErrorCodes::CANNOT_CONVERT_TYPE
+            };
     }
 
     void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table,
