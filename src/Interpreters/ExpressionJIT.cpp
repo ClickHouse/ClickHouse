@@ -316,7 +316,7 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
 }
 
-static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Noomparision de & node, const IFunctionBase & impl)
+static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Node & node, const IFunctionBase & impl)
 {
     static std::unordered_set<std::string_view> comparison_functions
     {
