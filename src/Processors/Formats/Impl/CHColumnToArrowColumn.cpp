@@ -218,7 +218,7 @@ namespace DB
             const ColumnNullable * column_nullable = checkAndGetColumn<ColumnNullable>(column.get());
             ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
             DataTypePtr nested_type = typeid_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
-            ColumnPtr null_column = column_nullable->getNullMapColumnPtr();
+            const ColumnPtr & null_column = column_nullable->getNullMapColumnPtr();
             const PaddedPODArray<UInt8> & bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
             fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end);
         }
@@ -269,9 +269,11 @@ namespace DB
     #undef DISPATCH
         else
         {
-            throw Exception{"Internal type \"" + column_type_name + "\" of a column \"" + column_name + "\""
-                                                                                                               " is not supported for conversion into a " + format_name + " data format",
-                            ErrorCodes::UNKNOWN_TYPE};
+            throw Exception
+                {
+                    "Internal type \"" + column_type_name + "\" of a column \"" + column_name + "\" is not supported for conversion into a " + format_name + " data format",
+                    ErrorCodes::UNKNOWN_TYPE
+                };
         }
     }
 
@@ -349,12 +351,10 @@ namespace DB
         {
             return arrow_type_it->second;
         }
-        throw Exception{
-            "The type \"" + type_name + "\" of a column \"" + column_name
-                + "\""
-                  " is not supported for conversion into a "
-                + format_name + " data format",
-            ErrorCodes::UNKNOWN_TYPE};
+
+        throw Exception{"The type \"" + column_name + "\" of a column \"" + column_name + "\""
+                             " is not supported for conversion into a " + format_name + " data format",
+                             ErrorCodes::UNKNOWN_TYPE};
     }
 
     void CHColumnToArrowColumn::chChunkToArrowTable(
