@@ -55,6 +55,9 @@ int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_GIT_IMPORT
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_KEEPER
+int mainEntryClickHouseKeeper(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -111,6 +114,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_GIT_IMPORT
     {"git-import", mainEntryClickHouseGitImport},
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER
+    {"keeper", mainEntryClickHouseKeeper},
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
