@@ -656,6 +656,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_databases = info.databases;
                     elem.query_tables = info.tables;
                     elem.query_columns = info.columns;
+                    elem.query_projections = info.projections;
                 }
 
                 interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
