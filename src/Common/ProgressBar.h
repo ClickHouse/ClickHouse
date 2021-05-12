@@ -13,7 +13,7 @@ struct ProgressBar
 {
 public:
 
-    bool updateProgress(Progress & progress, const Progress & value);
+    static bool updateProgress(Progress & progress, const Progress & value);
     void writeProgress(const Progress & progress, const size_t elapsed_ns);
     void clearProgress();
 
