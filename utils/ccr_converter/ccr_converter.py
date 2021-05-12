@@ -1,5 +1,7 @@
 import sys
 from typing import TextIO
+from time import time
+from collections import Counter
 import argparse
 
 abs_path_to_src = ""
@@ -8,8 +10,39 @@ tests = []
 tests_names = []
 
 # Generate a .info file with accumulated report. Does not preserve per-test data.
-def convert_to_slim_genhtml_report():
-    pass
+def convert_to_slim_genhtml_report(file_name: str):
+    elapsed = time()
+    data = {}
+
+    with open(file_name, "w") as f:
+        f.write("TN:global_report\n")
+
+        for test in tests:
+            for source_id, (funcs_hit_f, lines_hit_f) in test.items():
+                if source_id not in data:
+                    data[source_id] = funcs_hit_f, lines_hit_f
+                else:
+                    funcs_hit, lines_hit = data[source_id]
+                    funcs_hit.update(funcs_hit_f)
+                    lines_hit.update(lines_hit_f)
+
+        for i, (rel_path, funcs_instrumented, lines_instrumented) in enumerate(files):
+            f.write("SF:{}\n".format(abs_path_to_src + rel_path))
+
+            funcs_hit, lines_hit = data[i] if i in data else (Counter(), Counter())
+
+            f.write("FNF:{}\nFNH:{}\n".format(len(funcs_instrumented), len(funcs_hit)))
+            f.write("LF:{}\nLH:{}\n".format(len(lines_instrumented), len(lines_hit)))
+
+            for edge_index, (func_name, func_line) in funcs_instrumented.items():
+                f.write("FNDA:{0},{1}\nFN:{2},{1}\n".format(funcs_hit[edge_index], func_name, func_line))
+
+            for line in lines_instrumented:
+                f.write("DA:{},{}\n".format(line, lines_hit[line]))
+
+            f.write("end_of_record\n")
+
+    print("Wrote the report, took {}s.".format(int(time() - elapsed)))
 
 def read_report(f: TextIO):
     global abs_path_to_src
@@ -17,7 +50,9 @@ def read_report(f: TextIO):
     global tests
     global tests_names
 
-    abs_path_to_src = f.readline()
+    abs_path_to_src = f.readline().strip()
+
+    elapsed = time()
 
     for i in range(int(f.readline().split()[1])): # files
         rel_path, funcs_count, lines_count = f.readline().split()
@@ -37,39 +72,26 @@ def read_report(f: TextIO):
     while True:
         token = f.readline()
 
-        print(token)
-
-        if token != "TEST" and not token.startswith("SOURCE"):
-            if len(tests_sources) > 0:
-                tests.append(tests_sources)
-
-            break
-
-        if token == "TEST":
+        if token == "TEST\n":
             if len(tests_sources) > 0:
                 tests.append(tests_sources)
                 tests_sources = {}
-
             token = f.readline()
+        elif not token.startswith("SOURCE"):
+            if len(tests_sources) > 0:
+                tests.append(tests_sources)
+            break
 
-        source_id, funcs_count, lines_count, = map(int, token.split()[1:])
+        source_id, funcs_count, lines_count = map(int, token.split()[1:])
 
-        funcs_hit = {}
-        lines_hit = {}
-
-        for i in range(funcs_count):
-            edge_index, call_count = map(int, f.readline().split())
-            funcs_hit[edge_index] = call_count
-
-        for i in range(lines_count):
-            line, call_count = map(int, f.readline().split())
-            lines_hit[line] = call_count
-
-        tests_sources[source_id] = funcs_hit, lines_hit
+        tests_sources[source_id] = \
+            Counter(dict([map(int, next(f).split()) for _ in range(funcs_count)])), \
+            Counter(dict([map(int, next(f).split()) for _ in range(lines_count)]))
 
     tests_names = f.readlines()
 
-    print("Read the report. {} tests, {} source files".format(len(tests), len(files)))
+    print("Read the report, took {}s. {} tests, {} source files".format(
+        int(time() - elapsed), len(tests), len(files)))
 
 def main():
     parser = argparse.ArgumentParser(prog='CCR converter')
