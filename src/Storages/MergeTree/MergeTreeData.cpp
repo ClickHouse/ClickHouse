@@ -4041,7 +4041,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
             // std::cerr << fmt::format("before_aggregation = \n{}", candidate.before_aggregation->dumpDAG()) << std::endl;
             // std::cerr << fmt::format("aggregate_required_columns = \n{}", fmt::join(required_columns, ", ")) << std::endl;
-            if (required_columns.empty())
+            if (required_columns.empty() && !keys.empty())
                 continue;
 
             if (analysis_result.optimize_aggregation_in_order)

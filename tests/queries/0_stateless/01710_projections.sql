@@ -39,3 +39,10 @@ select toStartOfMinute(datetime) dt_m, domain, sum(retry_count) / sum(duration),
 select toStartOfHour(toStartOfMinute(datetime)) dt_h, uniqHLL12(x_id), uniqHLL12(y_id) from projection_test group by dt_h order by dt_h;
 
 drop table if exists projection_test;
+
+drop table if exists projection_without_key;
+create table projection_without_key (key UInt32, PROJECTION x (SELECT max(key))) engine MergeTree order by key;
+insert into projection_without_key select number from numbers(1000);
+set force_optimize_projection = 1, allow_experimental_projection_optimization = 1;
+select max(key) from projection_without_key;
+drop table projection_without_key;
