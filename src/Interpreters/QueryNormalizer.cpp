@@ -248,6 +248,8 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());
+    if (data.ignore_alias && !ast->tryGetAlias().empty())
+        ast->setAlias("");
     finished_asts[initial_ast] = ast;
 
     /// @note can not place it in CheckASTDepth dtor cause of exception.

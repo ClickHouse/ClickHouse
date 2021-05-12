@@ -965,6 +965,9 @@ void StorageReplicatedMergeTree::setTableStructure(
         if (metadata_diff.constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
 
+        if (metadata_diff.projections_changed)
+            new_metadata.projections = ProjectionsDescription::parse(metadata_diff.new_projections, new_columns, getContext());
+
         if (metadata_diff.ttl_table_changed)
         {
             if (!metadata_diff.new_ttl_table.empty())
@@ -1680,8 +1683,16 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, metadata_snapshot, *merge_entry,
-            table_lock, entry.create_time, getContext(), reserved_space, entry.deduplicate, entry.deduplicate_by_columns);
+            future_merged_part,
+            metadata_snapshot,
+            *merge_entry,
+            table_lock,
+            entry.create_time,
+            getContext(),
+            reserved_space,
+            entry.deduplicate,
+            entry.deduplicate_by_columns,
+            merging_params);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 
@@ -4221,7 +4232,7 @@ void StorageReplicatedMergeTree::read(
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
-    QueryProcessingStage::Enum /*processed_stage*/,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
@@ -4233,12 +4244,13 @@ void StorageReplicatedMergeTree::read(
     if (local_context->getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
-        if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, &max_added_blocks))
+        if (auto plan = reader.read(
+                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, &max_added_blocks))
             query_plan = std::move(*plan);
         return;
     }
 
-    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams))
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
         query_plan = std::move(*plan);
 }
 
@@ -4331,7 +4343,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
         deduplicate,
-        query_settings.optimize_on_insert);
+        local_context);
 }
 
 
@@ -4949,7 +4961,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false,
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, query_context,
         /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
