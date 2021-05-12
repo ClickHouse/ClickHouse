@@ -17,7 +17,8 @@ public:
     void writeProgress(const Progress & progress, const size_t elapsed_ns);
     void clearProgress();
 
-    bool need_render_progress = false;
+    /// For interactive mode always show progress bar, for non-interactive mode it is accessed from config().
+    bool need_render_progress = true;
 
     bool show_progress_bar = false;
 
