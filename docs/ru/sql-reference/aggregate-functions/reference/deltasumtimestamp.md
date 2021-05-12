@@ -25,7 +25,7 @@ deltaSumTimestamp(value, timestamp)
 
 -   Накопленная разница между последовательными значениями, упорядоченными по параметру `timestamp`.
 
-Тип: [Integer](../../data-types/int-uint.md), или [Float](../../data-types/float.md), или [Date](../../data-types/date.md), или [DateTime](../../data-types/datetime.md).
+Тип: [Integer](../../data-types/int-uint.md) или [Float](../../data-types/float.md) или [Date](../../data-types/date.md) или [DateTime](../../data-types/datetime.md).
 
 **Пример**
 
