@@ -451,6 +451,10 @@ public:
       */
     virtual void shutdown() {}
 
+    /// Called before shutdown() to flush data to underlying storage
+    /// (for Buffer)
+    virtual void flush() {}
+
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
     virtual ActionLock getActionLock(StorageActionBlockType /* action_type */)
