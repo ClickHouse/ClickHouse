@@ -782,7 +782,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         addUUIDMapping(table_id.uuid);
-        drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
+        fs::file_time_type fs_time = fs::last_write_time(dropped_metadata_path);
+        drop_time = fs::file_time_type::clock::to_time_t(fs_time);
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);

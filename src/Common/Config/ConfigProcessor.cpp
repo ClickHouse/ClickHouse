@@ -642,9 +642,9 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             }
 
             preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
-            auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
-            if (!preprocessed_path_parent.toString().empty())
-                Poco::File(preprocessed_path_parent).createDirectories();
+            auto preprocessed_path_parent = fs::path(preprocessed_path).parent_path();
+            if (!preprocessed_path_parent.string().empty())
+                fs::create_directories(preprocessed_path_parent);
         }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
         LOG_DEBUG(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
