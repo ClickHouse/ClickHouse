@@ -1,5 +1,6 @@
 #include "Keeper.h"
 
+#include <Common/ClickHouseRevision.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -122,16 +123,6 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
     return socket_address;
 }
 
-std::string getCanonicalPath(std::string && path)
-{
-    Poco::trimInPlace(path);
-    if (path.empty())
-        throw Exception("path configuration parameter is empty", ErrorCodes::INVALID_CONFIG_PARAMETER);
-    if (path.back() != '/')
-        path += '/';
-    return std::move(path);
-}
-
 [[noreturn]] void forceShutdown()
 {
 #if defined(THREAD_SANITIZER) && defined(OS_LINUX)
@@ -145,7 +136,6 @@ std::string getCanonicalPath(std::string && path)
 }
 
 }
-
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
 {
@@ -218,10 +208,9 @@ int Keeper::run()
     }
     if (config().hasOption("version"))
     {
-        std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+        std::cout << DBMS_NAME << " keeper version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
-
 
     return Application::run(); // NOLINT
 }
@@ -237,9 +226,9 @@ void Keeper::initialize(Poco::Util::Application & self)
         Poco::Environment::osArchitecture());
 }
 
-std::string Keeper::getDefaultCorePath() const
+std::string Keeper::getDefaultConfigFileName() const
 {
-    return getCanonicalPath(config().getString("path", KEEPER_DEFAULT_PATH)) + "cores";
+    return "keeper_config.xml";
 }
 
 void Keeper::defineOptions(Poco::Util::OptionSet & options)
@@ -266,11 +255,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     MainThreadStatus::getInstance();
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
+    LOG_WARNING(log, "Keeper was built in debug mode. It will work slowly.");
 #endif
 
 #if defined(SANITIZER)
-    LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
+    LOG_WARNING(log, "Keeper was built with sanitizer. It will work slowly.");
 #endif
 
     auto shared_context = Context::createShared();
@@ -278,6 +267,10 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
+
+    if (!config().has("keeper_server"))
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
+
     const Settings & settings = global_context->getSettingsRef();
 
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 500));
@@ -290,9 +283,10 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
-    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
+    /// Don't want to use DNS cache
+    DNSResolver::instance().setDisableCacheFlag();
 
-    Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
+    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -306,54 +300,51 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
-    if (config().has("keeper_server"))
-    {
 #if USE_NURAFT
-        /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperStorageDispatcher();
-        for (const auto & listen_host : listen_hosts)
+    /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
+    global_context->initializeKeeperStorageDispatcher();
+    for (const auto & listen_host : listen_hosts)
+    {
+        /// TCP Keeper
+        const char * port_name = "keeper_server.tcp_port";
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
         {
-            /// TCP Keeper
-            const char * port_name = "keeper_server.tcp_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<Poco::Net::TCPServer>(
-                        new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            socket.setReceiveTimeout(settings.receive_timeout);
+            socket.setSendTimeout(settings.send_timeout);
+            servers->emplace_back(
+                port_name,
+                std::make_unique<Poco::Net::TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
-            });
+            LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+        });
 
-            const char * secure_port_name = "keeper_server.tcp_port_secure";
-            createServer(listen_host, secure_port_name, listen_try, [&](UInt16 port)
-            {
+        const char * secure_port_name = "keeper_server.tcp_port_secure";
+        createServer(listen_host, secure_port_name, listen_try, [&](UInt16 port)
+        {
 #if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
-                servers->emplace_back(
-                    secure_port_name,
-                    std::make_unique<Poco::Net::TCPServer>(
-                        new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
-                LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
+            Poco::Net::SecureServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+            socket.setReceiveTimeout(settings.receive_timeout);
+            socket.setSendTimeout(settings.send_timeout);
+            servers->emplace_back(
+                secure_port_name,
+                std::make_unique<Poco::Net::TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
+            LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
 #else
-                UNUSED(port);
-                throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                    ErrorCodes::SUPPORT_IS_DISABLED};
+            UNUSED(port);
+            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
-            });
-        }
+        });
+    }
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse keeper built without NuRaft library. Cannot use coordination.");
 #endif
 
-    }
     for (auto & server : *servers)
         server.start();
 
@@ -417,5 +408,15 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     return Application::EXIT_OK;
 }
+
+
+void Keeper::logRevision() const
+{
+    Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", " + build_id_info
+        + ", PID " + std::to_string(getpid()));
+}
+
 
 }

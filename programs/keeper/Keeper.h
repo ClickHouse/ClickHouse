@@ -42,6 +42,8 @@ public:
     void defineOptions(Poco::Util::OptionSet & _options) override;
 
 protected:
+    void logRevision() const override;
+
     int run() override;
 
     void initialize(Application & self) override;
@@ -50,7 +52,7 @@ protected:
 
     int main(const std::vector<std::string> & args) override;
 
-    std::string getDefaultCorePath() const override;
+    std::string getDefaultConfigFileName() const override;
 
 private:
     ContextPtr global_context;
