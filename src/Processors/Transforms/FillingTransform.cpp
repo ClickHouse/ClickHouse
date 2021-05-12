@@ -51,9 +51,9 @@ FillingTransform::FillingTransform(
         else if (which.isDateTime64())
         {
             max_type = Field::Types::Decimal64;
-            const auto & dateType = static_cast<const DataTypeDateTime64 &>(*type);
-            size_t precision = dateType.getPrecision();
-            size_t scale = dateType.getScale();
+            const auto & date_type = static_cast<const DataTypeDateTime64 &>(*type);
+            size_t precision = date_type.getPrecision();
+            size_t scale = date_type.getScale();
             to_type = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
         }
         else if (which.isFloat())
