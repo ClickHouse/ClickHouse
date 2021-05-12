@@ -983,6 +983,8 @@ public:
     /// Merge partially aggregated blocks separated to buckets into one data structure.
     void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads);
 
+    bool mergeBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys);
+
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
     /// (either all blocks are from overflow data or none blocks are).

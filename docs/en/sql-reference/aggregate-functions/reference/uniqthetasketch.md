@@ -2,12 +2,12 @@
 toc_priority: 195
 ---
 
-# uniqThetaSketch {#agg_function-uniqthetasketch}
+# uniqTheta {#agg_function-uniqthetasketch}
 
 Calculates the approximate number of different argument values, using the [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketchFramework.html).
 
 ``` sql
-uniqThetaSketch(x[, ...])
+uniqTheta(x[, ...])
 ```
 
 **Arguments**
