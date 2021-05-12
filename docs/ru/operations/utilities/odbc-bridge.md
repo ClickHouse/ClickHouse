@@ -33,6 +33,6 @@ $ curl -d "query=SELECT PageID, ImpID, AdType FROM Keys ORDER BY PageID, ImpID" 
 \`AdType\` String
 "  "http://localhost:9018/" > result.txt
 
-$ cat result.txt
+$ cat result.txt # Result in RowBinary format
 12246623837185725195925621517
 ```

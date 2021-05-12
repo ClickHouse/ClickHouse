@@ -16,7 +16,7 @@ toc_title: clickhouse-format
 - `--multiquery` or `-n` — поддерживает несколько запросов в одной строке.
 - `--obfuscate` — обфускирует вместо форматирования.
 - `--seed <строка>` — задает строку, которая определяет результат обфускации.
-- `--backslash` — добавляет обратный слеш в конце каждой строки отформатированного запроса. Удобно использовать, если вы скопировали многострочный запрос из интернета или другого источника и хотите выполнить его из командной строки.
+- `--backslash` — добавляет обратный слеш в конце каждой строки отформатированного запроса. Удобно использовать если многострочный запрос скопирован из интернета или другого источника и его нужно выполнить из командной строки.
 
 ## Примеры {#examples} 
 
@@ -54,7 +54,7 @@ UNION ALL
 ;
 ```
 
-3. Обфуксация:
+3. Обфускация:
 
 ```bash
 $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
@@ -66,7 +66,7 @@ $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWE
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
    
-Другая строка для обфускации:
+Тот же запрос с другой инициализацией обфускатора:
 
 ```bash
 $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
