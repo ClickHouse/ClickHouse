@@ -232,6 +232,7 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
+    friend class MergeTreeProjectionBlockOutputStream;
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
 
