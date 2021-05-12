@@ -135,6 +135,8 @@ private:
     ContextPtr connection_context;
     ContextPtr query_context;
 
+    size_t unknown_packet_in_send_data = 0;
+
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
@@ -172,7 +174,7 @@ private:
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
-    bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
+    bool readDataNext(size_t poll_interval, time_t receive_timeout);
     void readData(const Settings & connection_settings);
     void receiveClusterNameAndSalt();
     std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);

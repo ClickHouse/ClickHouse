@@ -29,9 +29,11 @@ public:
     {
     }
 
-    bool canBePruned(const DataPartPtr & part);
+    bool canBePruned(const DataPart & part);
 
     bool isUseless() const { return useless; }
+
+    const KeyCondition & getKeyCondition() const { return partition_condition; }
 };
 
 }

@@ -115,7 +115,7 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, const Settings & settings);
+    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings);
 };
 
 }

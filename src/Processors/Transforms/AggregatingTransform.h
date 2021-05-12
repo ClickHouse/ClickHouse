@@ -32,6 +32,7 @@ struct AggregatingTransformParams
     Aggregator::Params params;
     Aggregator aggregator;
     bool final;
+    bool only_merge = false;
 
     AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
         : params(params_), aggregator(params), final(final_) {}

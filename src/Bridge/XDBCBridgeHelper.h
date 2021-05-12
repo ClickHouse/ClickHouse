@@ -37,7 +37,7 @@ class IXDBCBridgeHelper : public IBridgeHelper
 public:
     explicit IXDBCBridgeHelper(ContextPtr context_) : IBridgeHelper(context_) {}
 
-    virtual std::vector<std::pair<std::string, std::string>> getURLParams(const std::string & cols, UInt64 max_block_size) const = 0;
+    virtual std::vector<std::pair<std::string, std::string>> getURLParams(UInt64 max_block_size) const = 0;
 
     virtual Poco::URI getColumnsInfoURI() const = 0;
 
@@ -62,19 +62,18 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
 
     XDBCBridgeHelper(
-            ContextPtr global_context_,
-            const Poco::Timespan & http_timeout_,
-            const std::string & connection_string_)
-    : IXDBCBridgeHelper(global_context_)
+        ContextPtr context_,
+        Poco::Timespan http_timeout_,
+        const std::string & connection_string_)
+    : IXDBCBridgeHelper(context_->getGlobalContext())
     , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
     , connection_string(connection_string_)
     , http_timeout(http_timeout_)
-    , config(global_context_->getConfigRef())
+    , config(context_->getGlobalContext()->getConfigRef())
 {
     bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
     bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
 }
-
 
 protected:
     auto getConnectionString() const { return connection_string; }
@@ -90,7 +89,7 @@ protected:
 
     String configPrefix() const override { return BridgeHelperMixin::configPrefix(); }
 
-    const Poco::Timespan & getHTTPTimeout() const override { return http_timeout; }
+    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
     const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
@@ -118,7 +117,7 @@ private:
 
     Poco::Logger * log;
     std::string connection_string;
-    const Poco::Timespan & http_timeout;
+    Poco::Timespan http_timeout;
     std::string bridge_host;
     size_t bridge_port;
 
@@ -138,12 +137,11 @@ protected:
         return uri;
     }
 
-    URLParams getURLParams(const std::string & cols, UInt64 max_block_size) const override
+    URLParams getURLParams(UInt64 max_block_size) const override
     {
         std::vector<std::pair<std::string, std::string>> result;
 
         result.emplace_back("connection_string", connection_string); /// already validated
-        result.emplace_back("columns", cols);
         result.emplace_back("max_block_size", std::to_string(max_block_size));
 
         return result;

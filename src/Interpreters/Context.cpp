@@ -373,7 +373,7 @@ struct ContextSharedPart
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
-    std::optional<SystemLogs> system_logs;                  /// Used to log queries and operations on parts
+    std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
@@ -442,24 +442,38 @@ struct ContextSharedPart
 
         DatabaseCatalog::shutdown();
 
-        /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
-        /// TODO: Get rid of this.
+        std::unique_ptr<SystemLogs> delete_system_logs;
+        {
+            auto lock = std::lock_guard(mutex);
 
-        system_logs.reset();
-        embedded_dictionaries.reset();
-        external_dictionaries_loader.reset();
-        models_repository_guard.reset();
-        external_models_loader.reset();
-        buffer_flush_schedule_pool.reset();
-        schedule_pool.reset();
-        distributed_schedule_pool.reset();
-        message_broker_schedule_pool.reset();
-        ddl_worker.reset();
+            /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
+            /// TODO: Get rid of this.
 
-        /// Stop trace collector if any
-        trace_collector.reset();
-        /// Stop zookeeper connection
-        zookeeper.reset();
+            delete_system_logs = std::move(system_logs);
+
+            #if USE_EMBEDDED_COMPILER
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
+            #endif
+
+            embedded_dictionaries.reset();
+            external_dictionaries_loader.reset();
+            models_repository_guard.reset();
+            external_models_loader.reset();
+            buffer_flush_schedule_pool.reset();
+            schedule_pool.reset();
+            distributed_schedule_pool.reset();
+            message_broker_schedule_pool.reset();
+            ddl_worker.reset();
+
+            /// Stop trace collector if any
+            trace_collector.reset();
+            /// Stop zookeeper connection
+            zookeeper.reset();
+        }
+
+        /// Can be removed w/o context lock
+        delete_system_logs.reset();
     }
 
     bool hasTraceCollector() const
@@ -978,7 +992,8 @@ bool Context::hasScalar(const String & name) const
 }
 
 
-void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
+void Context::addQueryAccessInfo(
+    const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names, const String & projection_name)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
@@ -986,6 +1001,8 @@ void Context::addQueryAccessInfo(const String & quoted_database_name, const Stri
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
+    if (!projection_name.empty())
+        query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
 }
 
 
@@ -1214,13 +1231,13 @@ void Context::setCurrentQueryId(const String & query_id)
             UInt64 a;
             UInt64 b;
         } words;
-        __uint128_t uuid;
+        UUID uuid{};
     } random;
 
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != 0)
+    if (client_info.client_trace_context.trace_id != UUID())
     {
         // Use the OpenTelemetry trace context we received from the client, and
         // create a new span for the query.
@@ -1910,7 +1927,7 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-    shared->system_logs.emplace(getGlobalContext(), getConfigRef());
+    shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
 }
 
 void Context::initializeTraceCollector()
