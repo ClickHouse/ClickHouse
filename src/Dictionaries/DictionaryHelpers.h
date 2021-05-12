@@ -243,13 +243,19 @@ public:
         {
             return ColumnType::create();
         }
-        if constexpr (IsDecimalNumber<DictionaryAttributeType>)
+        else if constexpr (std::is_same_v<DictionaryAttributeType, UUID>)
+        {
+            return ColumnType::create(size);
+        }
+        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
         {
             auto scale = getDecimalScale(*dictionary_attribute.nested_type);
             return ColumnType::create(size, scale);
         }
-        else if constexpr (IsNumber<DictionaryAttributeType>)
+        else if constexpr (is_arithmetic_v<DictionaryAttributeType>)
+        {
             return ColumnType::create(size);
+        }
         else
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
     }
@@ -563,7 +569,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
-            TypeName<T>::get());
+            TypeName<T>);
     }
 
     if (is_const_column)

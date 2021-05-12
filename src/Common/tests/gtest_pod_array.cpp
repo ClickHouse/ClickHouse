@@ -459,18 +459,6 @@ TEST(Common, PODArrayInsertFromItself)
     }
 }
 
-TEST(Common, PODPushBackRawMany)
-{
-    PODArray<char> chars;
-    chars.push_back_raw_many(5, "first");
-    EXPECT_EQ(std::string("first"), std::string(chars.data(), chars.size()));
-    EXPECT_EQ(5, chars.size());
-    EXPECT_LE(chars.capacity() - chars.size(), 10);
-    chars.push_back_raw_many(10, "0123456789");
-    EXPECT_EQ(15, chars.size());
-    EXPECT_EQ(std::string("first0123456789"), std::string(chars.data(), chars.size()));
-}
-
 TEST(Common, PODNoOverallocation)
 {
     /// Check that PaddedPODArray allocates for smaller number of elements than the power of two due to padding.
