@@ -540,10 +540,12 @@ String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
     String table_metadata_path = getObjectMetadataPath(object_name);
-    Poco::File meta_file(table_metadata_path);
 
-    if (meta_file.exists())
-        return meta_file.getLastModified().epochTime();
+    if (fs::exists(table_metadata_path))
+    {
+        fs::file_time_type fs_time = fs::last_write_time(table_metadata_path);
+        return fs::file_time_type::clock::to_time_t(fs_time);
+    }
     else
         return static_cast<time_t>(0);
 }
