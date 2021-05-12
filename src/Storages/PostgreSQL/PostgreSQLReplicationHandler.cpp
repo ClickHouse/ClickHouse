@@ -91,12 +91,13 @@ void PostgreSQLReplicationHandler::shutdown()
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     {
-        postgres::Transaction<pqxx::work> tx(connection->getRef());
-        createPublicationIfNeeded(tx.getRef());
+        pqxx::work tx(connection->getRef());
+        createPublicationIfNeeded(tx);
+        tx.commit();
     }
 
     postgres::Connection replication_connection(connection_info, /* replication */true);
-    postgres::Transaction<pqxx::nontransaction> tx(replication_connection.getRef());
+    pqxx::nontransaction tx(replication_connection.getRef());
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
     std::unordered_map<String, StoragePtr> nested_storages;
@@ -112,7 +113,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
     auto initial_sync = [&]()
     {
-        createReplicationSlot(tx.getRef(), start_lsn, snapshot_name);
+        createReplicationSlot(tx, start_lsn, snapshot_name);
 
         for (const auto & [table_name, storage] : materialized_storages)
         {
@@ -136,7 +137,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// There is one replication slot for each replication handler. In case of MaterializePostgreSQL database engine,
     /// there is one replication slot per database. Its lifetime must be equal to the lifetime of replication handler.
     /// Recreation of a replication slot imposes reloading of all tables.
-    if (!isReplicationSlotExist(tx.getRef(), start_lsn, /* temporary */false))
+    if (!isReplicationSlotExist(tx, start_lsn, /* temporary */false))
     {
         initial_sync();
     }
@@ -145,7 +146,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// TODO: tests
     else if (new_publication_created)
     {
-        dropReplicationSlot(tx.getRef());
+        dropReplicationSlot(tx);
         initial_sync();
     }
     /// Synchronization and initial load already took place - do not create any new tables, just fetch StoragePtr's
@@ -186,6 +187,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
         }
     }
+
+    tx.commit();
 
     /// Pass current connection to consumer. It is not std::moved implicitly, but a shared_ptr is passed.
     /// Consumer and replication handler are always executed one after another (not concurrently) and share the same connection.
@@ -396,34 +399,41 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
-    postgres::Transaction<pqxx::nontransaction> tx(connection->getRef());
-    dropPublication(tx.getRef());
+    pqxx::nontransaction tx(connection->getRef());
+    dropPublication(tx);
     String last_committed_lsn;
-    if (isReplicationSlotExist(tx.getRef(), last_committed_lsn, /* temporary */false))
-        dropReplicationSlot(tx.getRef(), /* temporary */false);
-    if (isReplicationSlotExist(tx.getRef(), last_committed_lsn, /* temporary */true))
-        dropReplicationSlot(tx.getRef(), /* temporary */true);
+    if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
+        dropReplicationSlot(tx, /* temporary */false);
+    if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
+        dropReplicationSlot(tx, /* temporary */true);
+    tx.commit();
 }
 
 
 /// Used by MaterializePostgreSQL database engine.
 NameSet PostgreSQLReplicationHandler::fetchRequiredTables(pqxx::connection & connection_)
 {
-    postgres::Transaction<pqxx::work> tx(connection_);
-    bool publication_exists = isPublicationExist(tx.getRef());
+    pqxx::work tx(connection_);
+    bool publication_exists = isPublicationExist(tx);
+    NameSet result_tables;
 
     if (tables_list.empty() && !publication_exists)
     {
         /// Fetch all tables list from database. Publication does not exist yet, which means
         /// that no replication took place. Publication will be created in
         /// startSynchronization method.
-        return fetchPostgreSQLTablesList(tx.getRef());
+        result_tables = fetchPostgreSQLTablesList(tx);
+    }
+    else
+    {
+        if (!publication_exists)
+            createPublicationIfNeeded(tx, /* create_without_check = */ true);
+
+        result_tables = fetchTablesFromPublication(tx);
     }
 
-    if (!publication_exists)
-        createPublicationIfNeeded(tx.getRef(), /* create_without_check = */ true);
-
-    return fetchTablesFromPublication(tx.getRef());
+    tx.commit();
+    return result_tables;
 }
 
 
@@ -445,8 +455,7 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     if (!is_materialize_postgresql_database)
         return nullptr;
 
-    auto use_nulls = context->getSettingsRef().external_databases_use_nulls;
-    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true, true));
+    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
 }
 
 
@@ -457,12 +466,12 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
     /// and all data from scratch. Then execute REPLACE query.
     /// This is only allowed for MaterializePostgreSQL database engine.
     postgres::Connection replication_connection(connection_info, /* replication */true);
-    postgres::Transaction<pqxx::nontransaction> tx(replication_connection.getRef());
+    pqxx::nontransaction tx(replication_connection.getRef());
 
     String snapshot_name, start_lsn;
-    if (isReplicationSlotExist(tx.getRef(), start_lsn, /* temporary */true))
-        dropReplicationSlot(tx.getRef(), /* temporary */true);
-    createReplicationSlot(tx.getRef(), start_lsn, snapshot_name, /* temporary */true);
+    if (isReplicationSlotExist(tx, start_lsn, /* temporary */true))
+        dropReplicationSlot(tx, /* temporary */true);
+    createReplicationSlot(tx, start_lsn, snapshot_name, /* temporary */true);
 
     for (const auto & [relation_id, table_name] : relation_data)
     {
@@ -519,7 +528,8 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
         }
     }
 
-    dropReplicationSlot(tx.getRef(), /* temporary */true);
+    dropReplicationSlot(tx, /* temporary */true);
+    tx.commit();
 }
 
 }
