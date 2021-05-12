@@ -18,7 +18,7 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
     self.context.stress = stress
     self.context.parallel = parallel
-    # comment 2 to re-trigger CI/CD pipeline
+    # comment 3 to re-trigger CI/CD pipeline
     for run in range(4):
         with Module(f"{run}"):
             tasks = []
