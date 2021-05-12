@@ -44,21 +44,29 @@ public:
 
     struct Data
     {
-        NamesAndTypesList aggregation_keys;
+        Aggregator::Params params;
+        MutableColumns raw_key_columns;
+        Block header;
 
-        std::map<String, Field> values;
         bool failed;
 
-        Data(NamesAndTypesList aggregation_keys_)
-            : aggregation_keys(aggregation_keys_),
+        Data(Aggregator::Params params_)
+            : params(params_),
+              raw_key_columns(params.keys_size),
+              header(params.getHeader(true)),
               failed(false)
         {
+            for (size_t i = 0; i < params.keys_size; ++i)
+            {
+                raw_key_columns[i] = header.safeGetByPosition(i).type->createColumn();
+                raw_key_columns[i]->reserve(1);
+            }
         }
 
         bool hasAllKeys()
         {
-            for (auto & key : aggregation_keys)
-                if (!values.count(key.name))
+            for (const auto & column : raw_key_columns)
+                if (column->empty())
                     return false;
 
             return true;
@@ -112,29 +120,40 @@ public:
             return;
         }
 
-        // TODO data.aggregation_keys can differ in names of aggregation keys
-        std::optional<NameAndTypePair> key_column = data.aggregation_keys.tryGetByName(ident->name());
-        if (!key_column.has_value())
+        // TODO data.aggregation_keys can differ in names of aggregation keys (i.e. AS aliases)
+        int key_position = -1;
+        for (size_t i = 0; i < data.params.keys_size; ++i)
         {
-            /// This condition is irrelevant.
-            return;
+            if (data.header.getByPosition(i).name == ident->name())
+            {
+                key_position = i;
+                break;
+            }
         }
+
+        /// This identifier is not a key.
+        if (key_position == -1)
+            return;
 
         /// function->name == "equals"
         if (const auto * literal = value->as<ASTLiteral>())
         {
-            auto converted_field = convertFieldToType(literal->value, *(key_column->type));
-            if (!converted_field.isNull())
-                data.values[ident->name()] = converted_field;
+            auto column_type = data.header.getByPosition(key_position).type;
+
+            auto converted_field = convertFieldToType(literal->value, *column_type);
+            if (!converted_field.isNull() && data.raw_key_columns[key_position]->empty())
+            {
+                data.raw_key_columns[key_position]->insert(converted_field);
+            }
         }
     }
 };
 
 using AggregationKeyVisitor = AggregationKeyMatcher::Visitor;
 
-std::optional<AggregationKeyVisitor::Data> getFilterKeys(const NamesAndTypesList & aggregation_keys, const SelectQueryInfo & query_info)
+std::optional<AggregationKeyVisitor::Data> getFilterKeys(const Aggregator::Params & params, const SelectQueryInfo & query_info)
 {
-    if (aggregation_keys.empty())
+    if (params.keys.empty())
         return {};
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
@@ -142,7 +161,7 @@ std::optional<AggregationKeyVisitor::Data> getFilterKeys(const NamesAndTypesList
     if (!where)
         return {};
 
-    AggregationKeyVisitor::Data data(aggregation_keys);
+    AggregationKeyVisitor::Data data(params);
     AggregationKeyVisitor(data).visit(where);
 
     if (data.failed || !data.hasAllKeys())
@@ -402,10 +421,14 @@ Pipe StorageAggregatingMemory::read(
 
     ProcessorPtr source;
 
-    auto filter_key = getFilterKeys(query_analyzer->aggregationKeys(), query_info);
+    auto filter_key = getFilterKeys(aggregator_transform->params, query_info);
     if (filter_key.has_value())
     {
-        Block block = aggregator_transform->aggregator.mergeAndFillBlockForSingleKey(prepared_data_ptr, filter_key->values);
+        ColumnRawPtrs key_columns(filter_key->raw_key_columns.size());
+        for (size_t i = 0; i < key_columns.size(); ++i)
+            key_columns[i] = filter_key->raw_key_columns[i].get();
+
+        Block block = aggregator_transform->aggregator.readBlockByFilterKeys(prepared_data_ptr, key_columns);
 
         Chunk chunk(block.getColumns(), block.rows());
         source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));

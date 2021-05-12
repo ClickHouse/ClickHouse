@@ -1299,70 +1299,64 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
 }
 
 template <typename Method, typename Table>
-void Aggregator::convertToBlockImplSingleKey(
+void Aggregator::convertToBlockImplByFilterKeys(
     Method &,
     Table & data,
-    MutableColumns & key_columns,
-    AggregateColumnsData &,
+    MutableColumns & mutable_keys,
     MutableColumns & final_aggregate_columns,
     Arena * arena,
-    const std::map<String, Field> & query) const
+    const ColumnRawPtrs & filter_keys) const
 {
     if (data.empty())
         return;
 
-    if (key_columns.size() != params.keys_size)
+    if (mutable_keys.size() != params.keys_size)
         throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
 
-    ColumnRawPtrs raw_key_columns(params.keys_size);
-    for (size_t i = 0; i < params.keys_size; ++i)
+    std::vector<IColumn *> key_columns;
+    key_columns.reserve(mutable_keys.size());
+    for (auto & column : mutable_keys)
+        key_columns.push_back(column.get());
+
+    typename Method::State state(filter_keys, key_sizes, aggregation_state_cache);
+
+    Arena temp_arena;
+    for (size_t row = 0; row < filter_keys[0]->size(); ++row)
     {
-        String column_name = params.src_header.getByPosition(params.keys[i]).name;
+        auto result = state.findKey(data, row, temp_arena);
+        if (!result.isFound())
+            continue;
 
-        auto column = key_columns[i].get();
-        column->insert(query.at(column_name));
-        raw_key_columns[i] = column;
+        for (size_t key = 0; key < key_columns.size(); ++key)
+            key_columns[key]->insertFrom(*filter_keys[key], row);
+
+        insertAggregatesIntoColumns(result.getMapped(), final_aggregate_columns, arena);
     }
-
-    typename Method::State state(raw_key_columns, key_sizes, aggregation_state_cache);
-
-    Arena temp_pool;
-    auto result = state.findKey(data, 0, temp_pool);
-
-    if (!result.isFound())
-    {
-        for (auto & column : key_columns)
-            column->popBack(1);
-        return;
-    }
-
-    auto mapped = result.getMapped();
-    insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
 }
 
 template <typename Method>
-Block Aggregator::convertOneBucketToBlockSingleKey(
+Block Aggregator::convertOneBucketToBlockByFilterKeys(
     AggregatedDataVariants & data_variants,
     Method & method,
     Arena * arena,
     size_t bucket,
-    const std::map<String, Field> & key) const
+    const ColumnRawPtrs & filter_keys) const
 {
     return prepareBlockAndFill(data_variants, true, method.data.impls[bucket].size(),
-        [bucket, &method, arena, key, this] (
+        [bucket, &method, arena, filter_keys, this] (
             MutableColumns & key_columns,
-            AggregateColumnsData & aggregate_columns,
+            AggregateColumnsData &,
             MutableColumns & final_aggregate_columns,
             bool)
         {
-            convertToBlockImplSingleKey(method, method.data.impls[bucket],
-                key_columns, aggregate_columns, final_aggregate_columns, arena, key);
+            convertToBlockImplByFilterKeys(method, method.data.impls[bucket],
+                key_columns, final_aggregate_columns, arena, filter_keys);
         });
 }
 
-Block Aggregator::mergeAndFillBlockForSingleKey(
+Block Aggregator::readBlockByFilterKeys(
     ManyAggregatedDataVariantsPtr data,
-    const std::map<String, Field> & key) const
+    const ColumnRawPtrs & filter_keys) const
 {
     AggregatedDataVariantsPtr & first = data->at(0);
 
@@ -1374,6 +1368,7 @@ Block Aggregator::mergeAndFillBlockForSingleKey(
         auto & merged_data = *(*data)[0];
         auto method = merged_data.type;
 
+        // TODO find bucket by key, to eliminate iteration?
         for (size_t bucket = 0; bucket < 256; ++bucket)
         {
             if (false) {} // NOLINT
@@ -1381,12 +1376,13 @@ Block Aggregator::mergeAndFillBlockForSingleKey(
             else if (method == AggregatedDataVariants::Type::NAME) \
             { \
                 mergeBucketImpl<decltype(merged_data.NAME)::element_type>(*data, bucket, &arena); \
-                block = convertOneBucketToBlockSingleKey(merged_data, *merged_data.NAME, &arena, bucket, key); \
+                block = convertOneBucketToBlockByFilterKeys(merged_data, *merged_data.NAME, &arena, bucket, filter_keys); \
             }
 
             APPLY_FOR_VARIANTS_TWO_LEVEL(M)
         #undef M
 
+            // TODO this works only for single key, fix
             if (block.rows())
                 return block;
         }
@@ -1408,16 +1404,16 @@ Block Aggregator::mergeAndFillBlockForSingleKey(
 
     size_t rows = data_variants.sizeWithoutOverflowRow();
 
-    auto filler = [&data_variants, this, key](
+    auto filler = [&data_variants, this, filter_keys](
         MutableColumns & key_columns,
-        AggregateColumnsData & aggregate_columns,
+        AggregateColumnsData &,
         MutableColumns & final_aggregate_columns,
         bool)
     {
     #define M(NAME) \
         else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-            convertToBlockImplSingleKey(*data_variants.NAME, data_variants.NAME->data, \
-                key_columns, aggregate_columns, final_aggregate_columns, data_variants.aggregates_pool, key);
+            convertToBlockImplByFilterKeys(*data_variants.NAME, data_variants.NAME->data, \
+                key_columns, final_aggregate_columns, data_variants.aggregates_pool, filter_keys);
 
         if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)

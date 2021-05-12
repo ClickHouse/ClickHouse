@@ -1232,26 +1232,25 @@ private:
         ThreadPool * thread_pool) const;
 
     template <typename Method, typename Table>
-    void convertToBlockImplSingleKey(
+    void convertToBlockImplByFilterKeys(
         Method & method,
         Table & data,
         MutableColumns & key_columns,
-        AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
         Arena * arena,
-        const std::map<String, Field> & key) const;
+        const ColumnRawPtrs & filter_keys) const;
 
     template <typename Method>
-    Block convertOneBucketToBlockSingleKey(
+    Block convertOneBucketToBlockByFilterKeys(
         AggregatedDataVariants & data_variants,
         Method & method,
         Arena * arena,
         size_t bucket,
-        const std::map<String, Field> & key) const;
+        const ColumnRawPtrs & filter_keys) const;
 
-    Block mergeAndFillBlockForSingleKey(
+    Block readBlockByFilterKeys(
         ManyAggregatedDataVariantsPtr data,
-        const std::map<String, Field> & key) const;
+        const ColumnRawPtrs & filter_keys) const;
 
     template <bool no_more_keys, typename Method, typename Table>
     void mergeStreamsImplCase(
