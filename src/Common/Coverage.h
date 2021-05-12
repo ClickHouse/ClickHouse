@@ -132,7 +132,8 @@ static constexpr std::string_view report_name = "report.ccr";
 
 inline std::string renameOldReportAndGetName()
 {
-    auto src_path = std::filesystem::current_path() / "../../";
+    // TODO creates a report in same folder as binary
+    const auto src_path = std::filesystem::current_path();
     auto report_pathname = (src_path / report_name).lexically_normal();
 
     if (std::filesystem::exists(report_pathname))

@@ -40,11 +40,17 @@ start_clickhouse () {
 }
 
 wail_till_ready () {
-    # Wait until server symbolises all addresses (about 4 min)
+    echo "Waiting for server to symbolize all addresses"
+
+    func_time=$(time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all functions/ q' > /dev/null)
+
     echo "Symbolized functions"
-    time tail -f /var/log/clickhouse-server/clickhouse/server.log | sed '/Symbolized all functions/ q' > /dev/null
+    echo $func_time
+
+    addr_time=$(time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null)
+
     echo "Symbolized addresses"
-    time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null
+    echo $addr_time
 
     instrumented_contribs=$(grep "contrib/" < report.ccr)
     has_contribs=$(echo "$instrumented_contribs" | wc -l)
@@ -117,6 +123,7 @@ kill_clickhouse
 # TODO use baseline for incremental coverage
 # --baseline, --highlight, --diff
 
+cp /usr/bin/report.ccr report.ccr
 cp report.ccr "${OUTPUT_DIR}"/report.ccr
 python3 ccr_converter.py report.ccr --genhtml-slim-report report.info
 cp report.info "${OUTPUT_DIR}"/report.info

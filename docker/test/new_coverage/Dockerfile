@@ -8,12 +8,17 @@ RUN apt-get update -y \
             c++filt
 
 COPY s3downloader /s3downloader
+
+# Should be copied beforehand from /utils/ccr_converter
+COPY ccr_converter.py /ccr_converter.py
 COPY run.sh /run.sh
 
 ENV DATASETS="hits visits"
-ENV COVERAGE_DIR=/coverage_reports
 ENV SOURCE_DIR=/build
+
 ENV OUTPUT_DIR=/output
+ENV GENHTML_REPORT_DIR=/output/report
+
 ENV IGNORE='.*contrib.*'
 
 CMD ["/bin/bash", "/run.sh"]

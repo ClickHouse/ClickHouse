@@ -75,7 +75,7 @@
 #include <Server/HTTP/HTTPServer.h>
 
 #if WITH_COVERAGE
-#   include <Common/CoverageCallbacks.h>
+#   include <Common/Coverage.h>
 #endif
 
 #if !defined(ARCADIA_BUILD)

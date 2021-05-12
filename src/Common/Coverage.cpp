@@ -109,9 +109,13 @@ void TaskQueue::finalize()
 Writer::Writer()
     : hardware_concurrency(std::thread::hardware_concurrency()),
       base_log(nullptr),
-      clickhouse_src_dir_abs_path((std::filesystem::current_path() / "../../src/").lexically_normal()),
+      // TODO works only in docker
+      clickhouse_src_dir_abs_path("/build/src"),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
+      functions_count(0),
+      addrs_count(0),
+      edges_count(0),
       // Set the initial pool size to all threads as we'll need all resources to symbolize fast.
       tasks_queue(hardware_concurrency),
       test_index(0) { }
@@ -461,12 +465,19 @@ void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, con
             const size_t step = data.size() / hardware_concurrency;
             const size_t start_index = thread_index * step;
             const size_t end_index = std::min(start_index + step, data.size() - 1);
+            const size_t count = end_index - start_index;
+
+            const Poco::Logger * log = &Poco::Logger::get(
+                std::string{logger_base_name} + "." + std::to_string(thread_index));
 
             LocalCache<CacheItem>& cache = local_caches[thread_index];
             cache.reserve(total_source_files_hint / hardware_concurrency);
 
             for (size_t i = start_index; i < end_index; ++i)
             {
+                if (i % 2048 == 0)
+                    LOG_INFO(log, "{}/{}", i - start_index, count);
+
                 const EdgeIndex edge_index = data[i];
 
                 const Dwarf::LocationInfo loc =

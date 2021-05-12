@@ -11,6 +11,9 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#if WITH_COVERAGE
+#include <Common/CoverageCallbacks.h>
+#endif
 
 namespace DB
 {
