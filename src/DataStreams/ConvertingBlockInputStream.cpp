@@ -75,11 +75,11 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
             if (!isColumnConst(*src_elem.column))
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is non constant in source stream but must be constant in result",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                    ErrorCodes::LOGICAL_ERROR);
             else if (assert_cast<const ColumnConst &>(*src_elem.column).getField() != assert_cast<const ColumnConst &>(*res_elem.column).getField())
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is constant but values of constants are different in source and result",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                    ErrorCodes::LOGICAL_ERROR);
         }
 
         /// Check conversion by dry run CAST function.

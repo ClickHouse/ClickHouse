@@ -906,12 +906,12 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                 else if (res_const->getField() != src_const->getField())
                     throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                                    ErrorCodes::LOGICAL_ERROR);
             }
             else
                 throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
                                 "it is non constant in source stream but must be constant in result",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                                ErrorCodes::LOGICAL_ERROR);
         }
 
         /// Add CAST function to convert into result type if needed.
@@ -948,7 +948,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                     throw Exception("Cannot convert column " + backQuote(res_elem.name) +
                                     " to "+ backQuote(dst_node->result_name) +
                                     " because other column have same name",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                                    ErrorCodes::LOGICAL_ERROR);
                 if (new_names)
                     new_names->emplace(res_elem.name, dst_node->result_name);
 
