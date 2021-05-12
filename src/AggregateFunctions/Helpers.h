@@ -114,6 +114,17 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
     return nullptr;
 }
 
+template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
+static IAggregateFunction * createWithNativeUnsignedIntegerType(const IDataType & argument_type, TArgs &&... args)
+{
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::UInt8) return new AggregateFunctionTemplate<UInt8, Data<UInt8>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UInt16) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data<UInt64>>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
 template <template <typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithNumericBasedType(const IDataType & argument_type, TArgs && ... args)
 {

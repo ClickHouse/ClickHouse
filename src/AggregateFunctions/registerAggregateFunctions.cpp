@@ -62,6 +62,7 @@ void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFact
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
+void registerAggregateFunctionRangeSum(AggregateFunctionFactory &);
 
 void registerAggregateFunctions()
 {
@@ -111,6 +112,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionStudentTTest(factory);
 
         registerWindowFunctions(factory);
+
+        registerAggregateFunctionRangeSum(factory);
     }
 
     {
