@@ -244,7 +244,7 @@ function run_tests
 
     # Run the tests.
     test_name="<none>"
-    for test in $test_files
+    for test in right/performance/uniq.xml
     do
         # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
@@ -264,8 +264,7 @@ function run_tests
         # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
         { \
             time "$script_dir/perf.py" --host localhost localhost --port $LEFT_SERVER_PORT $RIGHT_SERVER_PORT \
-                --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
-                --profile-seconds "$profile_seconds" \
+                --runs 100 --queries 23 29 \
                 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
         } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
             || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
