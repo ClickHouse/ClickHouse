@@ -273,8 +273,16 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     constructor_constraints = constraints_;
 }
 
-void StorageAggregatingMemory::startup()
+void StorageAggregatingMemory::lazy_initialize()
 {
+    if (is_initialized)
+        return;
+
+    std::lock_guard lock(mutex);
+
+    if (is_initialized)
+        return;
+
     ASTPtr select_ptr = select_query.inner_query;
 
     auto select_context = std::make_unique<ContextPtr>(constructor_context);
@@ -369,6 +377,8 @@ void StorageAggregatingMemory::startup()
         AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), constructor_context);
         os.write(src_block_header);
     }
+
+    is_initialized = true;
 }
 
 
@@ -381,6 +391,7 @@ Pipe StorageAggregatingMemory::read(
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
+    lazy_initialize();
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     // TODO allow parallel read (num_streams)
@@ -416,6 +427,7 @@ Pipe StorageAggregatingMemory::read(
 
 BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
+    lazy_initialize();
     auto out = std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot, context);
     return out;
 }

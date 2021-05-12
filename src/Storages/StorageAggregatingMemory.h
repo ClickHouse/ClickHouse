@@ -29,6 +29,8 @@ friend struct ext::shared_ptr_helper<StorageAggregatingMemory>;
 public:
     String getName() const override { return "AggregatingMemory"; }
 
+    void lazy_initialize();
+
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
@@ -49,14 +51,13 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    void startup() override;
-
     // TODO implement totalRows and totalBytes using data from Aggregator (if possible)
     // std::optional<UInt64> totalRows(const Settings &) const override;
     // std::optional<UInt64> totalBytes(const Settings &) const override;
 
 private:
     mutable std::mutex mutex;
+    std::atomic<bool> is_initialized{false};
 
     SelectQueryDescription select_query;
     ContextPtr constructor_context;
