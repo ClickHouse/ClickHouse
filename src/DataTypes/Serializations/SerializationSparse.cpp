@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ namespace DB
 namespace
 {
 
-static constexpr auto END_OF_GRANULE_FLAG = 1ULL << 63;
+static constexpr auto END_OF_GRANULE_FLAG = 1ULL << 62;
 
 struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkState
 {
@@ -34,13 +35,13 @@ void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size
     for (size_t i = 0; i < size; ++i)
     {
         size_t group_size = offsets[i] - start;
-        writeIntBinary(group_size, ostr);
+        writeVarUInt(group_size, ostr);
         start += group_size + 1;
     }
 
     size_t group_size = start < end ? end - start : 0;
     group_size |= END_OF_GRANULE_FLAG;
-    writeIntBinary(group_size, ostr);
+    writeVarUInt(group_size, ostr);
 }
 
 size_t deserializeOffsets(IColumn::Offsets & offsets,
@@ -70,7 +71,7 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     size_t group_size;
     while (!istr.eof())
     {
-        readIntBinary(group_size, istr);
+        readVarUInt(group_size, istr);
 
         bool end_of_granule = group_size & END_OF_GRANULE_FLAG;
         group_size &= ~END_OF_GRANULE_FLAG;
