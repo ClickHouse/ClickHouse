@@ -6,6 +6,7 @@
 #include <mysqlxx/Pool.h>
 
 #include <Core/MultiEnum.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/MySQL/ConnectionMySQLSettings.h>
@@ -108,7 +109,7 @@ private:
 
     void fetchTablesIntoLocalCache(ContextPtr context) const;
 
-    std::map<String, UInt64> fetchTablesWithModificationTime() const;
+    std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;
 
     std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr context) const;
 

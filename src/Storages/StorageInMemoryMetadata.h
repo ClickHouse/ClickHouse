@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
@@ -25,6 +26,9 @@ struct StorageInMemoryMetadata
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
+    /// Table projections. Currently supported for MergeTree only.
+    ProjectionsDescription projections;
+    mutable const ProjectionDescription * selected_projection{};
     /// PARTITION BY expression. Currently supported for MergeTree only.
     KeyDescription partition_key;
     /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
@@ -61,6 +65,9 @@ struct StorageInMemoryMetadata
     /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
 
+    /// Sets projections
+    void setProjections(ProjectionsDescription projections_);
+
     /// Set partition key for storage (methods below, are just wrappers for this struct).
     void setPartitionKey(const KeyDescription & partition_key_);
     /// Set sorting key for storage (methods below, are just wrappers for this struct).
@@ -94,6 +101,10 @@ struct StorageInMemoryMetadata
 
     /// Return table constraints
     const ConstraintsDescription & getConstraints() const;
+
+    const ProjectionsDescription & getProjections() const;
+    /// Has at least one projection
+    bool hasProjections() const;
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }

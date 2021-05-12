@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Databases/DatabaseWithDictionaries.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Common/ThreadPool.h>
 
 
@@ -11,7 +11,7 @@ namespace DB
   * It stores tables list in filesystem using list of .sql files,
   *  that contain declaration of table represented by SQL ATTACH TABLE query.
   */
-class DatabaseOrdinary : public DatabaseWithDictionaries
+class DatabaseOrdinary : public DatabaseOnDisk
 {
 public:
     DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context);
