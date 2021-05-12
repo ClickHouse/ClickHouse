@@ -19,7 +19,7 @@ deltaSumTimestamp(value, timestamp)
 **Аргументы**
 
 -   `value` — входные значения, должны быть типа [Integer](../../data-types/int-uint.md) или [Float](../../data-types/float.md) или [Date](../../data-types/date.md) или [DateTime](../../data-types/datetime.md).
--   `timestamp` — параметр для упорядочивания значений, должен быть типа [Integer](../../data-types/int-uint.md) или [Float](../../data-types/float.md) или [Date](../../data-types/date.md) или [DateTime](../../data-types/datetime.md).
+-   `timestamp` — параметр для упорядочивания значений, должен быть типа [Integer](../../data-types/int-uint.md), или [Float](../../data-types/float.md), или [Date](../../data-types/date.md) или [DateTime](../../data-types/datetime.md).
 
 **Возвращаемое значение**
 
