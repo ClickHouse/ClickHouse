@@ -43,14 +43,7 @@ toc_title: Cloud
 
 ## SberCloud {#sbercloud}
 
-[SberCloud.Advanced Cloud Platform](https://sbercloud.ru/en/advanced):
-
--   provides more than 50 high tech services;
--   allows you to quickly create and effectively manage IT infrastructure, applications and Internet services;
--   radically minimizes the resources required for corporate IT systems;
--   significantly reduces the time to market of your products.
-
-SberCloud.Advanced provides [MapReduce Service (MRS)](https://docs.sbercloud.ru/mrs/ug/topics/ug__clickhouse.html), a reliable, secure, and easy-to-use enterprise-level platform for storing, processing, and analyzing big data. MRS allows you to quickly create and manage ClickHouse clusters.
+[SberCloud.Advanced](https://sbercloud.ru/en/advanced) provides [MapReduce Service (MRS)](https://docs.sbercloud.ru/mrs/ug/topics/ug__clickhouse.html), a reliable, secure, and easy-to-use enterprise-level platform for storing, processing, and analyzing big data. MRS allows you to quickly create and manage ClickHouse clusters.
 
 -   A ClickHouse instance consists of three ZooKeeper nodes and multiple ClickHouse nodes. The Dedicated Replica mode is used to ensure high reliability of dual data copies.
 -   MRS provides smooth and elastic scaling capabilities to quickly meet service growth requirements in scenarios where the cluster storage capacity or CPU computing resources are not enough. When you expand the capacity of ClickHouse nodes in a cluster, MRS provides a one-click data balancing tool and gives you the initiative to balance data. You can determine the data balancing mode and time based on service characteristics to ensure service availability, implementing smooth scaling.
