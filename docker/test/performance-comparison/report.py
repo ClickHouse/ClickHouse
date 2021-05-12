@@ -555,9 +555,8 @@ if args.report == 'main':
     if unstable_queries:
         message_array.append(str(unstable_queries) + ' unstable')
 
-#    Disabled before fix.
-#    if very_unstable_queries:
-#        status = 'failure'
+    if very_unstable_queries:
+        status = 'failure'
 
     error_tests += slow_average_tests
     if error_tests:
