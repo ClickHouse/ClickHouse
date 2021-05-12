@@ -316,7 +316,7 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
 }
 
-static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Node & node, const IFunctionBase & impl)
+static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Noomparision de & node, const IFunctionBase & impl)
 {
     static std::unordered_set<std::string_view> comparison_functions
     {
@@ -328,7 +328,7 @@ static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Node & node, c
         NameGreaterOrEquals::name
     };
 
-    /** Comparision operator is special case for ActionDAG compilation
+    /** Comparison operator is special case for ActionDAG compilation
       * Its result can be constant and we can understand that only during Function execute call.
       * It can be a problem if two DAGs with compare function are analyzed, but in first DAG comparison
       * function is compiled, in second DAG it is not compiled.
