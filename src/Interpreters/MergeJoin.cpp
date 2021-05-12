@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/sortBlock.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
 namespace
 {
 
-template <bool has_left_nulls, bool has_right_nulls>
+template <bool has_left_nulls, bool has_right_nulls, bool has_diff_lowcard>
 int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
 {
     static constexpr int null_direction_hint = 1;
@@ -70,6 +71,14 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
             if (right_column.isNullAt(rhs_pos))
                 return -null_direction_hint;
             return left_column.compareAt(lhs_pos, rhs_pos, right_nullable->getNestedColumn(), null_direction_hint);
+        }
+    }
+
+    if constexpr (has_diff_lowcard)
+    {
+        if (left_column.lowCardinality() != right_column.lowCardinality())
+        {
+            return ColumnLowCardinality::compareAtGeneric(lhs_pos, rhs_pos, left_column, right_column, null_direction_hint);
         }
     }
 
@@ -192,27 +201,30 @@ public:
     bool atEnd() const { return impl.getRow() >= impl.rows; }
     void nextN(size_t num) { impl.getPosRef() += num; }
 
-    void setCompareNullability(const MergeJoinCursor & rhs)
+    void setCompareProperties(const MergeJoinCursor & rhs)
     {
-        has_left_nullable = false;
-        has_right_nullable = false;
+        has_left_nullable = has_right_nullable = has_diff_lowcard = false;
 
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
             has_left_nullable = has_left_nullable || isColumnNullable(*impl.sort_columns[i]);
             has_right_nullable = has_right_nullable || isColumnNullable(*rhs.impl.sort_columns[i]);
+            has_diff_lowcard = has_diff_lowcard || impl.sort_columns[i]->lowCardinality() != rhs.impl.sort_columns[i]->lowCardinality();
         }
     }
 
     Range getNextEqualRange(MergeJoinCursor & rhs)
     {
         if (has_left_nullable && has_right_nullable)
-            return getNextEqualRangeImpl<true, true>(rhs);
+            return getNextEqualRangeImpl<true, true, true>(rhs);
         else if (has_left_nullable)
-            return getNextEqualRangeImpl<true, false>(rhs);
+            return getNextEqualRangeImpl<true, false, true>(rhs);
         else if (has_right_nullable)
-            return getNextEqualRangeImpl<false, true>(rhs);
-        return getNextEqualRangeImpl<false, false>(rhs);
+            return getNextEqualRangeImpl<false, true, true>(rhs);
+        else if (has_diff_lowcard)
+            return getNextEqualRangeImpl<false, false, true>(rhs);
+
+        return getNextEqualRangeImpl<false, false, false>(rhs);
     }
 
     int intersect(const Block & min_max, const Names & key_names)
@@ -230,10 +242,10 @@ public:
             const auto & right_column = *min_max.getByName(key_names[i]).column; /// cannot get by position cause of possible duplicates
 
             if (!first_vs_max)
-                first_vs_max = nullableCompareAt<true, true>(left_column, right_column, position(), 1);
+                first_vs_max = nullableCompareAt<true, true, true>(left_column, right_column, position(), 1);
 
             if (!last_vs_min)
-                last_vs_min = nullableCompareAt<true, true>(left_column, right_column, last_position, 0);
+                last_vs_min = nullableCompareAt<true, true, true>(left_column, right_column, last_position, 0);
         }
 
         if (first_vs_max > 0)
@@ -247,13 +259,14 @@ private:
     SortCursorImpl impl;
     bool has_left_nullable = false;
     bool has_right_nullable = false;
+    bool has_diff_lowcard = false;
 
-    template <bool left_nulls, bool right_nulls>
+    template <bool left_nulls, bool right_nulls, bool diff_lowcard>
     Range getNextEqualRangeImpl(MergeJoinCursor & rhs)
     {
         while (!atEnd() && !rhs.atEnd())
         {
-            int cmp = compareAtCursor<left_nulls, right_nulls>(rhs);
+            int cmp = compareAtCursor<left_nulls, right_nulls, diff_lowcard>(rhs);
             if (cmp < 0)
                 impl.next();
             else if (cmp > 0)
@@ -265,7 +278,7 @@ private:
         return Range{impl.getRow(), rhs.impl.getRow(), 0, 0};
     }
 
-    template <bool left_nulls, bool right_nulls>
+    template <bool left_nulls, bool right_nulls, bool diff_lowcard>
     int ALWAYS_INLINE compareAtCursor(const MergeJoinCursor & rhs) const
     {
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
@@ -273,7 +286,7 @@ private:
             const auto * left_column = impl.sort_columns[i];
             const auto * right_column = rhs.impl.sort_columns[i];
 
-            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.getRow(), rhs.impl.getRow());
+            int res = nullableCompareAt<left_nulls, right_nulls, diff_lowcard>(*left_column, *right_column, impl.getRow(), rhs.impl.getRow());
             if (res)
                 return res;
         }
@@ -465,8 +478,6 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     }
 
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, right_columns_to_add);
-    JoinCommon::removeLowCardinalityInplace(right_table_keys);
-    JoinCommon::removeLowCardinalityInplace(right_sample_block, table_join->keyNamesRight());
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
@@ -593,7 +604,6 @@ bool MergeJoin::saveRightBlock(Block && block)
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
     Block block = materializeBlock(src_block);
-    JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesRight());
     return block;
 }
 
@@ -611,7 +621,6 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     {
         JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
         materializeBlockInplace(block);
-        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
 
         sortBlock(block, left_sort_description);
 
@@ -760,7 +769,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
-    left_cursor.setCompareNullability(right_cursor);
+    left_cursor.setCompareProperties(right_cursor);
 
     /// Set right cursor position in first continuation right block
     if constexpr (is_all)
@@ -821,7 +830,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
-    left_cursor.setCompareNullability(right_cursor);
+    left_cursor.setCompareProperties(right_cursor);
 
     /// Set right cursor position in first continuation right block
     right_cursor.nextN(right_block_info.skip);
@@ -863,7 +872,7 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
-    left_cursor.setCompareNullability(right_cursor);
+    left_cursor.setCompareProperties(right_cursor);
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {

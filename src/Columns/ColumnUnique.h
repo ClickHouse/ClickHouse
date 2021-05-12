@@ -407,8 +407,9 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
         }
     }
 
-    const auto & column_unique = static_cast<const IColumnUnique &>(rhs);
-    return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
+    if (const auto * column_unique = typeid_cast<const IColumnUnique *>(&rhs))
+        return getNestedColumn()->compareAt(n, m, *column_unique->getNestedColumn(), nan_direction_hint);
+    return getNestedColumn()->compareAt(n, m, rhs, nan_direction_hint);
 }
 
 template <typename ColumnType>

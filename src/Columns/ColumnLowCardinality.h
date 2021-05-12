@@ -122,6 +122,9 @@ public:
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
+    /// Like compareAt, but allows one of columns to be non-low cardinality of the same type
+    static int compareAtGeneric(size_t n, size_t m, const IColumn & lhs, const IColumn & rhs, int nan_direction_hint);
+
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
