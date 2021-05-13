@@ -174,4 +174,48 @@ Accepts an integer. Returns an array of UInt64 numbers containing the list of po
 
 ## bitpositionToArray(num) {#bitpositiontoarraynum}
 
-Accepts an integer. Returns an array of UInt64 numbers containing the list of positions of bit that equals 1. Numbers in the array are in ascending order.
+Accepts an integer, argument will be convert to unsigned integer. Returns an array of UInt64 numbers containing the list of positions of bit that equals 1. Numbers in the array are in ascending order.
+
+**Syntax**
+
+```sql
+bitpositionToArray(arg)
+```
+
+**Arguments**
+
+-   `arg` — A value can be convert to unsigned integer .Types:  [Int/UInt](../../sql-reference/data-types/int-uint.md)
+
+**Returned value**
+
+An array of UInt64 numbers containing the list of positions of bit that equals 1. Numbers in the array are in ascending order.
+
+**Example**
+
+Query:
+
+``` sql
+select bitpositionToArray(toInt8(1)) as bitposition;
+```
+
+Result:
+
+``` text
+┌─bitposition─┐
+│ [0]         │
+└─────────────┘
+```
+
+Query:
+
+``` sql
+select bitpositionToArray(toInt8(-1)) as bitposition;
+```
+
+Result:
+
+``` text
+┌─bitposition───────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
+```
