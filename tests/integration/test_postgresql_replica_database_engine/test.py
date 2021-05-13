@@ -555,7 +555,40 @@ def test_single_transaction(started_cluster):
     assert(int(result) == 0)
 
     conn.commit()
-    check_tables_are_synchronized('postgresql_replica_{}'.format(0));
+    check_tables_are_synchronized('postgresql_replica_0');
+    instance.query("DROP DATABASE test_database")
+
+
+def test_virtual_columns(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica_0');
+
+    instance.query(
+        """CREATE DATABASE test_database
+           ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
+           SETTINGS materialize_postgresql_allow_automatic_update = 1; """)
+    assert_nested_table_is_created('postgresql_replica_0')
+    instance.query("INSERT INTO postgres_database.postgresql_replica_0 SELECT number, number from numbers(10)")
+    check_tables_are_synchronized('postgresql_replica_0');
+
+    # just check that it works, no check with `expected` becuase _version is taken as LSN, which will be different each time.
+    result = instance.query('SELECT key, value, _sign, _version FROM test_database.postgresql_replica_0;')
+    print(result)
+
+    cursor.execute("ALTER TABLE postgresql_replica_0 ADD COLUMN value2 integer")
+    instance.query("INSERT INTO postgres_database.postgresql_replica_0 SELECT number, number, number from numbers(10, 10)")
+    check_tables_are_synchronized('postgresql_replica_0');
+
+    result = instance.query('SELECT key, value, value2,  _sign, _version FROM test_database.postgresql_replica_0;')
+    print(result)
+
+    instance.query("INSERT INTO postgres_database.postgresql_replica_0 SELECT number, number, number from numbers(20, 10)")
+    check_tables_are_synchronized('postgresql_replica_0');
+
+    result = instance.query('SELECT key, value, value2,  _sign, _version FROM test_database.postgresql_replica_0;')
+    print(result)
+
     instance.query("DROP DATABASE test_database")
 
 

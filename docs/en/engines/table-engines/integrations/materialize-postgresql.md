@@ -8,7 +8,7 @@ toc_title: MateriaziePostgreSQL
 ## Creating a Table {#creating-a-table}
 
 ``` sql
-CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
 ```
@@ -25,12 +25,17 @@ PRIMARY KEY key;
 
 ## Virtual columns {#creating-a-table}
 
-- `_version`
+- `_version` (`UInt64`)
 
-- `_sign`
+- `_sign` (`Int8`)
+
+These columns do not need to be added, when table is created. They are always accessible in `SELECT` query.
+`_version` column equals `LSN` position in `WAL`, so it might be used to check how up-to-date replication is.
 
 ``` sql
-CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
+
+SELECT key, value, _version FROM test.postgresql_replica;
 ```
