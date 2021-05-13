@@ -272,7 +272,7 @@ namespace DB
         }
 
         // TODO: check if a column is const?
-        if (!is_nullable && !isColumnArray(internal_column) && arrow_column->null_count())
+        if (!is_nullable && !checkColumn<ColumnArray>(internal_column) && arrow_column->null_count())
         {
             throw Exception
                 {

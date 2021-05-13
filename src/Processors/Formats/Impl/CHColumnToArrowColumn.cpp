@@ -18,7 +18,6 @@
 #include <arrow/util/decimal.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-#include <common/logger_useful.h>
 
 namespace DB
 {
