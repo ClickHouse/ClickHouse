@@ -1081,7 +1081,7 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 **Аргументы**
 
 -   `time_string` — строка, содержащая дату или дату со временем, которые нужно преобразовать. [String](../../sql-reference/data-types/string.md).
--   `precision` — `3` для миллисекунд, `6` для микросекунд. По умолчанию `3`. Необязательный. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `precision` — требуемая точность: `3` — для миллисекунд, `6` — для микросекунд. По умолчанию — `3`. Необязательный. [UInt8](../../sql-reference/data-types/int-uint.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Разбирает значение `time_string` в зависимости от часового пояса. Необязательный. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
