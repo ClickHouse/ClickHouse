@@ -54,12 +54,13 @@ private:
     PostgreSQLConnectionPtr connection;
     Poco::Logger * log;
 
-    const std::string db;
-    const std::string table;
-    const std::string where;
+    const String db;
+    String schema;
+    String table;
+    const String where;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    std::string invalidate_query;
+    String invalidate_query;
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const std::string update_field;
     mutable std::string invalidate_query_response;
