@@ -405,7 +405,6 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
     create_table_query->set(create_table_query->storage, storage);
 
     /// Add columns _sign and _version, so that they can be accessed from nested ReplacingMergeTree table if needed.
-    /// TODO: add test for case of database engine, test same case after table reload.
     ordinary_columns_and_types.push_back({"_sign", std::make_shared<DataTypeInt8>()});
     ordinary_columns_and_types.push_back({"_version", std::make_shared<DataTypeUInt64>()});
 

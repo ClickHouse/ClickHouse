@@ -51,7 +51,10 @@ private:
     {
         ExternalResultDescription description;
         MutableColumns columns;
+
+        /// Needed to pass to insert query columns list in syncTables().
         std::shared_ptr<ASTExpressionList> columnsAST;
+
         /// Needed for insertPostgreSQLValue() method to parse array
         std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
 

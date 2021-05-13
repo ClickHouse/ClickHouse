@@ -51,6 +51,9 @@ void MaterializePostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage
 {
     const auto storage_metadata = storage->getInMemoryMetadataPtr();
     const Block sample_block = storage_metadata->getSampleBlock();
+
+    /// Need to clear type, because in description.init() the types are appended (emplace_back)
+    description.types.clear();
     description.init(sample_block);
 
     columns = description.sample_block.cloneEmptyColumns();
@@ -560,7 +563,7 @@ void MaterializePostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const 
     if (allow_automatic_update)
         LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
     else
-        LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name);
+        LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
 }
 
 

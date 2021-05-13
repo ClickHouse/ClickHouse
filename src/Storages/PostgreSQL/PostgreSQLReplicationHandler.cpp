@@ -523,7 +523,16 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
                 materialized_storage->setNestedStorageID(nested_table_id);
                 nested_storage = materialized_storage->prepare();
-                LOG_TRACE(log, "Updated table {}.{} ({})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
+
+                auto nested_storage_metadata = nested_storage->getInMemoryMetadataPtr();
+                auto nested_sample_block = nested_storage_metadata->getSampleBlock();
+                LOG_TRACE(log, "Updated table {}.{} ({}). New structure: {}",
+                          nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid), nested_sample_block.dumpStructure());
+
+                auto materialized_storage_metadata = nested_storage->getInMemoryMetadataPtr();
+                auto materialized_sample_block = materialized_storage_metadata->getSampleBlock();
+
+                assertBlocksHaveEqualStructure(nested_sample_block, materialized_sample_block, "while reloading table in the background");
 
                 /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
                 consumer->updateNested(table_name, nested_storage, relation_id, start_lsn);
