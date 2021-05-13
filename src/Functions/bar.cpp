@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/UnicodeBar.h>
-#include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -29,7 +28,7 @@ class FunctionBar : public IFunction
 {
 public:
     static constexpr auto name = "bar";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBar>();
     }

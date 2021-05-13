@@ -69,7 +69,7 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
-        settings.low_cardinality_max_dictionary_size = 0;
+        settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
         auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
@@ -241,7 +241,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const Block & index_sample_block_,
     size_t max_rows_,
     const SelectQueryInfo & query,
-    const Context & context)
+    ContextPtr context)
     : index_name(index_name_)
     , max_rows(max_rows_)
     , index_sample_block(index_sample_block_)
@@ -299,6 +299,10 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
     auto column
         = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+
+    if (column->onlyNull())
+        return false;
+
     const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
 
     const NullMap * null_map = nullptr;
@@ -388,7 +392,7 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
 
         func->name = "__bitSwapLastTwo";
     }
-    else if (func->name == "and")
+    else if (func->name == "and" || func->name == "indexHint")
     {
         auto last_arg = args.back();
         args.pop_back();
@@ -444,7 +448,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
         const ASTs & args = func->arguments->children;
 
-        if (func->name == "and")
+        if (func->name == "and" || func->name == "indexHint")
             return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
         else if (func->name == "or")
             return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
@@ -474,7 +478,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const SelectQueryInfo & query, const Context & context) const
+    const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
 };

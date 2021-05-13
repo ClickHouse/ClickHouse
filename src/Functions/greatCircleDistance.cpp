@@ -187,8 +187,8 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
-        float k_lat;
-        float k_lon;
+        float k_lat{};
+        float k_lon{};
 
         if constexpr (method == Method::SPHERE_DEGREES)
         {
@@ -287,7 +287,7 @@ template <Method method>
 class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
 {
 public:
-    explicit FunctionGeoDistance(const Context & context) : selector(context)
+    explicit FunctionGeoDistance(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGeoDistance<method>>();
@@ -307,7 +307,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionGeoDistance<method>>(context);
     }

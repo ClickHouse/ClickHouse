@@ -32,21 +32,22 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto col_res = ColumnVector<UInt128>::create();
-        typename ColumnVector<UInt128>::Container & vec_to = col_res->getData();
+        auto col_res = ColumnVector<UUID>::create();
+        typename ColumnVector<UUID>::Container & vec_to = col_res->getData();
 
         size_t size = input_rows_count;
         vec_to.resize(size);
 
         /// RandImpl is target-dependent and is not the same in different TargetSpecific namespaces.
-        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UInt128));
+        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
 
-        for (UInt128 & uuid: vec_to)
+        for (UUID & uuid : vec_to)
         {
-            /** https://tools.ietf.org/html/rfc4122#section-4.4
-             */
-            uuid.low = (uuid.low & 0xffffffffffff0fffull) | 0x0000000000004000ull;
-            uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
+            /// https://tools.ietf.org/html/rfc4122#section-4.4
+
+            UInt128 & impl = uuid.toUnderType();
+            impl.items[0] = (impl.items[0] & 0xffffffffffff0fffull) | 0x0000000000004000ull;
+            impl.items[1] = (impl.items[1] & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
 
         return col_res;
@@ -59,7 +60,7 @@ public:
 class FunctionGenerateUUIDv4 : public TargetSpecific::Default::FunctionGenerateUUIDv4
 {
 public:
-    explicit FunctionGenerateUUIDv4(const Context & context) : selector(context)
+    explicit FunctionGenerateUUIDv4(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
@@ -75,7 +76,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionGenerateUUIDv4>(context);
     }

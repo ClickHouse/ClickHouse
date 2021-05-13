@@ -8,6 +8,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 #include <Interpreters/Context.h>
+#include <IO/CompressionMethod.h>
 
 namespace Poco
 {
@@ -26,7 +27,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block_,
-        const Context & context_,
+        ContextPtr context_,
         bool check_config);
 
     HTTPDictionarySource(const HTTPDictionarySource & other);
@@ -53,6 +54,9 @@ public:
 private:
     void getUpdateFieldAndDate(Poco::URI & uri);
 
+    // wrap buffer using encoding from made request
+    BlockInputStreamPtr createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
+
     Poco::Logger * log;
 
     LocalDateTime getLastModification() const;
@@ -65,8 +69,9 @@ private:
     std::string update_field;
     const std::string format;
     Block sample_block;
-    Context context;
+    ContextPtr context;
     ConnectionTimeouts timeouts;
 };
 
 }
+
