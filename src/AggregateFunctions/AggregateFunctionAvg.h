@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include "Core/DecimalFunctions.h"
+#include <Core/DecimalFunctions.h>
 
 
 namespace DB
@@ -96,7 +96,9 @@ public:
         UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
         : Base(argument_types_, {}), num_scale(num_scale_), denom_scale(denom_scale_) {}
 
-    DataTypePtr getReturnType() const final { return std::make_shared<DataTypeNumber<Float64>>(); }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {

@@ -47,7 +47,7 @@ class FunctionReinterpret : public IFunction
 public:
     static constexpr auto name = "reinterpret";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpret>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpret>(); }
 
     String getName() const override { return name; }
 
@@ -349,7 +349,7 @@ class FunctionReinterpretAs : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAs>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpretAs>(); }
 
     String getName() const override { return name; }
 
@@ -409,6 +409,7 @@ struct NameReinterpretAsUInt8       { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsUInt16      { static constexpr auto name = "reinterpretAsUInt16"; };
 struct NameReinterpretAsUInt32      { static constexpr auto name = "reinterpretAsUInt32"; };
 struct NameReinterpretAsUInt64      { static constexpr auto name = "reinterpretAsUInt64"; };
+struct NameReinterpretAsUInt128     { static constexpr auto name = "reinterpretAsUInt128"; };
 struct NameReinterpretAsUInt256     { static constexpr auto name = "reinterpretAsUInt256"; };
 struct NameReinterpretAsInt8        { static constexpr auto name = "reinterpretAsInt8"; };
 struct NameReinterpretAsInt16       { static constexpr auto name = "reinterpretAsInt16"; };
@@ -428,6 +429,7 @@ using FunctionReinterpretAsUInt8 = FunctionReinterpretAs<DataTypeUInt8, NameRein
 using FunctionReinterpretAsUInt16 = FunctionReinterpretAs<DataTypeUInt16, NameReinterpretAsUInt16>;
 using FunctionReinterpretAsUInt32 = FunctionReinterpretAs<DataTypeUInt32, NameReinterpretAsUInt32>;
 using FunctionReinterpretAsUInt64 = FunctionReinterpretAs<DataTypeUInt64, NameReinterpretAsUInt64>;
+using FunctionReinterpretAsUInt128 = FunctionReinterpretAs<DataTypeUInt128, NameReinterpretAsUInt128>;
 using FunctionReinterpretAsUInt256 = FunctionReinterpretAs<DataTypeUInt256, NameReinterpretAsUInt256>;
 using FunctionReinterpretAsInt8 = FunctionReinterpretAs<DataTypeInt8, NameReinterpretAsInt8>;
 using FunctionReinterpretAsInt16 = FunctionReinterpretAs<DataTypeInt16, NameReinterpretAsInt16>;
@@ -453,6 +455,7 @@ void registerFunctionsReinterpretAs(FunctionFactory & factory)
     factory.registerFunction<FunctionReinterpretAsUInt16>();
     factory.registerFunction<FunctionReinterpretAsUInt32>();
     factory.registerFunction<FunctionReinterpretAsUInt64>();
+    factory.registerFunction<FunctionReinterpretAsUInt128>();
     factory.registerFunction<FunctionReinterpretAsUInt256>();
     factory.registerFunction<FunctionReinterpretAsInt8>();
     factory.registerFunction<FunctionReinterpretAsInt16>();

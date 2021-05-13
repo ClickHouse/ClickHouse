@@ -160,7 +160,7 @@ struct IndexesSerializationType
             return std::make_shared<DataTypeUInt16>();
         if (type == TUInt32)
             return std::make_shared<DataTypeUInt32>();
-        if (type == TUInt64)
+        if (type == TUInt64) //-V547
             return std::make_shared<DataTypeUInt64>();
 
         throw Exception("Can't create DataType from IndexesSerializationType.", ErrorCodes::LOGICAL_ERROR);
@@ -466,7 +466,7 @@ namespace
         else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapIndexWithAdditionalKeys(*data_uint64, dict_size);
         else
-            throw Exception("Indexes column for mapIndexWithAdditionalKeys must be UInt, got" + column.getName(),
+            throw Exception("Indexes column for mapIndexWithAdditionalKeys must be UInt, got " + column.getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
 }

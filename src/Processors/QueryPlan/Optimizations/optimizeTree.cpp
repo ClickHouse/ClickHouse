@@ -16,11 +16,14 @@ namespace QueryPlanOptimizations
 
 void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    if (!settings.optimize_plan)
+        return;
+
     const auto & optimizations = getOptimizations();
 
     struct Frame
     {
-        QueryPlan::Node * node;
+        QueryPlan::Node * node = nullptr;
 
         /// If not zero, traverse only depth_limit layers of tree (if no other optimizations happen).
         /// Otherwise, traverse all children.
@@ -63,6 +66,9 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
         /// Apply all optimizations.
         for (const auto & optimization : optimizations)
         {
+            if (!(settings.*(optimization.is_enabled)))
+                continue;
+
             /// Just in case, skip optimization if it is not initialized.
             if (!optimization.apply)
                 continue;

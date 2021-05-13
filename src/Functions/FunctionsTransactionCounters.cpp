@@ -14,9 +14,9 @@ class FunctionTransactionID : public IFunction
 public:
     static constexpr auto name = "transactionID";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionTransactionID>(context.getCurrentTransaction());
+        return std::make_shared<FunctionTransactionID>(context->getCurrentTransaction());
     }
 
     explicit FunctionTransactionID(MergeTreeTransactionPtr && txn_) : txn(txn_)

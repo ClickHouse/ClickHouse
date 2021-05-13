@@ -39,7 +39,7 @@ class FunctionPointInEllipses : public IFunction
 {
 public:
     static constexpr auto name = "pointInEllipses";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPointInEllipses>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPointInEllipses>(); }
 
 private:
 

@@ -64,8 +64,7 @@ public:
         size_t operator()(const DictionaryKey & key) const
         {
             SipHash hash;
-            hash.update(key.hash.low);
-            hash.update(key.hash.high);
+            hash.update(key.hash);
             hash.update(key.size);
             return hash.get64();
         }
@@ -137,7 +136,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
-            if (!result_null_map_column)
+            if (!result_null_map_column) //-V1051
             {
                 result_null_map_column = null_map_column;
             }
@@ -149,8 +148,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
                 const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
-                    if (src_null_map[i])
-                        result_null_map[i] = 1;
+                    result_null_map[i] |= src_null_map[i];
 
                 result_null_map_column = std::move(mutable_result_null_map_column);
             }
@@ -179,10 +177,8 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
 
     for (const auto & elem : args)
     {
-        if (!res.has_nullable)
-            res.has_nullable = elem.type->isNullable();
-        if (!res.has_null_constant)
-            res.has_null_constant = elem.type->onlyNull();
+        res.has_nullable |= elem.type->isNullable();
+        res.has_null_constant |= elem.type->onlyNull();
     }
 
     return res;
@@ -477,7 +473,7 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationF
     }
     if (null_presence.has_nullable)
     {
-        Block nested_columns = createBlockWithNestedColumns(arguments);
+        auto nested_columns = Block(createBlockWithNestedColumns(arguments));
         auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
         return makeNullable(return_type);
     }
@@ -519,43 +515,49 @@ bool IFunction::isCompilable(const DataTypes & arguments) const
     return isCompilableImpl(arguments);
 }
 
-llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, ValuePlaceholders values) const
+llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, Values values) const
 {
-    if (useDefaultImplementationForNulls())
+    auto denulled_arguments = removeNullables(arguments);
+    if (useDefaultImplementationForNulls() && denulled_arguments)
     {
-        if (auto denulled = removeNullables(arguments))
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        std::vector<llvm::Value*> unwrapped_values;
+        std::vector<llvm::Value*> is_null_values;
+
+        unwrapped_values.reserve(arguments.size());
+        is_null_values.reserve(arguments.size());
+
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            /// FIXME: when only one column is nullable, this can actually be slower than the non-jitted version
-            ///        because this involves copying the null map while `wrapInNullable` reuses it.
-            auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-            auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-            auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-            auto * zero = llvm::Constant::getNullValue(toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
-            for (size_t i = 0; i < arguments.size(); i++)
+            auto * value = values[i];
+
+            WhichDataType data_type(arguments[i]);
+            if (data_type.isNullable())
             {
-                if (!arguments[i]->isNullable())
-                    continue;
-                /// Would be nice to evaluate all this lazily, but that'd change semantics: if only unevaluated
-                /// arguments happen to contain NULLs, the return value would not be NULL, though it should be.
-                auto * value = values[i]();
-                auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-                b.CreateCondBr(b.CreateExtractValue(value, {1}), fail, ok);
-                b.SetInsertPoint(ok);
-                values[i] = [value = b.CreateExtractValue(value, {0})]() { return value; };
+                unwrapped_values.emplace_back(b.CreateExtractValue(value, {0}));
+                is_null_values.emplace_back(b.CreateExtractValue(value, {1}));
             }
-            auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
-            auto * result_columns = b.GetInsertBlock();
-            b.CreateBr(join);
-            b.SetInsertPoint(fail);
-            auto * null = b.CreateInsertValue(zero, b.getTrue(), {1});
-            b.CreateBr(join);
-            b.SetInsertPoint(join);
-            auto * phi = b.CreatePHI(result->getType(), 2);
-            phi->addIncoming(result, result_columns);
-            phi->addIncoming(null, fail);
-            return phi;
+            else
+            {
+                unwrapped_values.emplace_back(value);
+            }
         }
+
+        auto * result = compileImpl(builder, *denulled_arguments, unwrapped_values);
+
+        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments)));
+        auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
+
+        auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
+        auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+
+        for (auto * is_null_value : is_null_values)
+            nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+
+        return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
     }
+
     return compileImpl(builder, arguments, std::move(values));
 }
 

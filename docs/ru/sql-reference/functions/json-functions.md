@@ -16,51 +16,65 @@ toc_title: JSON
 
 ## visitParamHas(params, name) {#visitparamhasparams-name}
 
-Проверить наличие поля с именем name.
+Проверяет наличие поля с именем `name`.
+
+Алиас: `simpleJSONHas`.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
-Распарсить UInt64 из значения поля с именем name. Если поле строковое - попытаться распарсить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то вернуть 0.
+Пытается выделить число типа UInt64 из значения поля с именем `name`. Если поле строковое, пытается выделить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то возвращает 0.
+
+Алиас: `simpleJSONExtractUInt`.
 
 ## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
 
 Аналогично для Int64.
 
+Алиас: `simpleJSONExtractInt`.
+
 ## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
 
 Аналогично для Float64.
 
+Алиас: `simpleJSONExtractFloat`.
+
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
-Распарсить значение true/false. Результат - UInt8.
+Пытается выделить значение true/false. Результат — UInt8.
+
+Алиас: `simpleJSONExtractBool`.
 
 ## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
 
-Вернуть значение поля, включая разделители.
+Возвращает значение поля, включая разделители.
+
+Алиас: `simpleJSONExtractRaw`.
 
 Примеры:
 
 ``` sql
-visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
-visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
+visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"';
+visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 ```
 
 ## visitParamExtractString(params, name) {#visitparamextractstringparams-name}
 
-Распарсить строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
+Разбирает строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
+
+Алиас: `simpleJSONExtractString`.
 
 Примеры:
 
 ``` sql
-visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
-visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
-visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
-visitParamExtractString('{"abc":"hello}', 'abc') = ''
+visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0';
+visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺';
+visitParamExtractString('{"abc":"\\u263"}', 'abc') = '';
+visitParamExtractString('{"abc":"hello}', 'abc') = '';
 ```
 
-На данный момент, не поддерживаются записанные в формате `\uXXXX\uYYYY` кодовые точки не из basic multilingual plane (они переводятся не в UTF-8, а в CESU-8).
+На данный момент не поддерживаются записанные в формате `\uXXXX\uYYYY` кодовые точки не из basic multilingual plane (они переводятся не в UTF-8, а в CESU-8).
 
-Следующие функции используют [simdjson](https://github.com/lemire/simdjson) который разработан под более сложные требования для разбора JSON. Упомянутое выше предположение 2 по-прежнему применимо.
+Следующие функции используют [simdjson](https://github.com/lemire/simdjson), который разработан под более сложные требования для разбора JSON. Упомянутое выше допущение 2 по-прежнему применимо.
 
 ## isValidJSON(json) {#isvalidjsonjson}
 
@@ -292,4 +306,3 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello"
 │ [('d','"hello"'),('f','"world"')]                                                                     │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
