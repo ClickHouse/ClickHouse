@@ -8,7 +8,6 @@
 
 #include <deque>
 
-
 namespace DB
 {
 
@@ -111,9 +110,7 @@ public:
     Status prepare() override;
     void work() override;
 
-    /*
-     * Implementation details.
-     */
+private:
     void advancePartitionEnd();
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
@@ -324,7 +321,10 @@ public:
     int (* compare_values_with_offset) (
         const IColumn * compared_column, size_t compared_row,
         const IColumn * reference_column, size_t reference_row,
-        const Field & offset,
+        // We can make it a Field later if we need the Decimals. Now we only
+        // have ints and datetime, and the underlying Field type for them is
+        // uint64_t anyway.
+        uint64_t offset,
         bool offset_is_preceding);
 };
 

@@ -100,11 +100,6 @@ Default value: `1073741824` (1 GB).
     <size_limit>1073741824</size_limit>
 </core_dump> 
 ```
-## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
-
-Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
-
-Default value: `480` (8 minute).
 
 ## default_database {#default-database}
 
@@ -128,25 +123,6 @@ Settings profiles are located in the file specified in the parameter `user_confi
 
 ``` xml
 <default_profile>default</default_profile>
-```
-
-## default_replica_path {#default_replica_path}
-
-The path to the table in ZooKeeper.
-
-**Example**
-
-``` xml
-<default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
-```
-## default_replica_name {#default_replica_name}
-
- The replica name in ZooKeeper.
-
-**Example**
-
-``` xml
-<default_replica_name>{replica}</default_replica_name>
 ```
 
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
@@ -345,8 +321,7 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 The username and password used to authenticate during [replication](../../engines/table-engines/mergetree-family/replication.md) with the Replicated\* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
 By default, the authentication is not used.
 
-!!! note "Note"
-    These credentials are common for replication through `HTTP` and `HTTPS`.
+**Note:** These credentials are common for replication through `HTTP` and `HTTPS`.
 
 This section contains the following parameters:
 
@@ -430,7 +405,7 @@ Keys for syslog:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 -   format – Message format. Possible values: `bsd` and `syslog.`
 
-## send_crash_reports {#server_configuration_parameters-send_crash_reports}
+## send_crash_reports {#server_configuration_parameters-logger}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
 Enabling it, especially in pre-production environments, is highly appreciated.
@@ -527,15 +502,7 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
-
-!!! info "Note"
-	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-
-Possible values:
-
--   Positive integer.
--   0 — Disabled.
+The maximum number of simultaneously processed requests.
 
 **Example**
 
@@ -562,21 +529,6 @@ Default value: `0` that means no limit.
 **See Also**
 
 -   [max_concurrent_queries](#max-concurrent-queries)
-
-## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
-
-The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting.
-
-Possible values:
-
--   Positive integer.
--   0 — Disabled.
-
-**Example**
-
-``` xml
-<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
-```
 
 ## max_connections {#max-connections}
 

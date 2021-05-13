@@ -60,8 +60,8 @@ struct ArrayCumSumNonNegativeImpl
             for (; pos < offset; ++pos)
             {
                 accumulated += src_values[pos];
-                if (accumulated < Dst{})
-                    accumulated = {};
+                if (accumulated < 0)
+                    accumulated = 0;
                 res_values[pos] = accumulated;
             }
         }

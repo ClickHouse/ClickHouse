@@ -15,13 +15,11 @@
 
 #include <Columns/FilterDescription.h>
 
-namespace Poco
-{
-class Logger;
-}
+namespace Poco { class Logger; }
 
 namespace DB
 {
+
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
@@ -48,28 +46,28 @@ public:
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const Context & context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const Context & context_,
         const BlockInputStreamPtr & input_,
         const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
             const ASTPtr & query_ptr_,
-            ContextPtr context_,
+            const Context & context_,
             Pipe input_pipe_,
             const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const Context & context_,
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
@@ -87,37 +85,24 @@ public:
 
     virtual void ignoreWithTotals() override;
 
-    ASTPtr getQuery() const { return query_ptr; }
-
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
-    const SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
-
-    const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
-
-    const Names & getRequiredColumns() const { return required_columns; }
-
-    bool hasAggregation() const { return query_analyzer->hasAggregation(); }
-
-    static void addEmptySourceToQueryPlan(
-        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_);
+    static void addEmptySourceToQueryPlan(QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
     Names getRequiredColumns() { return required_columns; }
 
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const Context & context_,
         const BlockInputStreamPtr & input_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {},
-        const StorageMetadataPtr & metadata_snapshot_ = nullptr);
+        const StorageMetadataPtr & metadata_snapshot_= nullptr);
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
-
-    void addPrewhereAliasActions();
 
     Block getSampleBlockImpl();
 
@@ -127,8 +112,7 @@ private:
 
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
-    void executeAggregation(
-        QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
+    void executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression);
@@ -147,8 +131,7 @@ private:
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void
-    executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
+    void executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
     String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
 
@@ -185,15 +168,12 @@ private:
     /// Structure of query source (table, subquery, etc).
     Block source_header;
 
-    /// Actions to calculate ALIAS if required.
-    ActionsDAGPtr alias_actions;
-
     /// The subquery interpreter, if the subquery
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
-    StorageID table_id = StorageID::createEmpty(); /// Will be initialized if storage is not nullptr
+    StorageID table_id = StorageID::createEmpty();  /// Will be initialized if storage is not nullptr
     TableLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.

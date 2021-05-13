@@ -1,5 +1,8 @@
 #include <Storages/IStorage.h>
 
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/dense_hash_set>
+
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -84,7 +87,7 @@ Pipe IStorage::read(
     const Names & /*column_names*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
@@ -97,7 +100,7 @@ void IStorage::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
@@ -105,9 +108,8 @@ void IStorage::read(
     auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     if (pipe.empty())
     {
-        auto header = (query_info.projection ? query_info.projection->desc->metadata : metadata_snapshot)
-                          ->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
+        auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
     else
     {
@@ -117,12 +119,12 @@ void IStorage::read(
 }
 
 Pipe IStorage::alterPartition(
-    const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, ContextPtr /* context */)
+    const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, const Context & /* context */)
 {
     throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IStorage::alter(const AlterCommands & params, ContextPtr context, TableLockHolder &)
+void IStorage::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -132,7 +134,7 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, TableLock
 }
 
 
-void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
+void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Context & /* context */) const
 {
     for (const auto & command : commands)
     {
@@ -180,7 +182,7 @@ Names IStorage::getAllRegisteredNames() const
     return result;
 }
 
-NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
+NameDependencies IStorage::getDependentViewsByColumn(const Context & context) const
 {
     NameDependencies name_deps;
     auto dependencies = DatabaseCatalog::instance().getDependencies(storage_id);

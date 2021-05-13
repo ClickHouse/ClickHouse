@@ -144,9 +144,9 @@ class ReplaceLiteralsVisitor
 {
 public:
     LiteralsInfo replaced_literals;
-    ContextPtr context;
+    const Context & context;
 
-    explicit ReplaceLiteralsVisitor(ContextPtr context_) : context(context_) { }
+    explicit ReplaceLiteralsVisitor(const Context & context_) : context(context_) { }
 
     void visit(ASTPtr & ast, bool force_nullable)
     {
@@ -293,7 +293,7 @@ private:
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
 ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, ContextPtr context)
+                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, const Context & context)
 {
     null_as_default = null_as_default_;
 
@@ -305,7 +305,6 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     /// Make sequence of tokens and determine IDataType by Field::Types:Which for each literal.
     token_after_literal_idx.reserve(replaced_literals.size());
     special_parser.resize(replaced_literals.size());
-    serializations.resize(replaced_literals.size());
 
     TokenIterator prev_end = expression_begin;
     for (size_t i = 0; i < replaced_literals.size(); ++i)
@@ -326,8 +325,6 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
         literals.insert({nullptr, info.type, info.dummy_column_name});
 
         prev_end = info.literal->end.value();
-
-        serializations[i] = info.type->getDefaultSerialization();
     }
 
     while (prev_end < expression_end)
@@ -363,7 +360,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     hash_state.update(salt);
 
     IAST::Hash res128;
-    hash_state.get128(res128);
+    hash_state.get128(res128.first, res128.second);
     size_t res = 0;
     boost::hash_combine(res, res128.first);
     boost::hash_combine(res, res128.second);
@@ -377,7 +374,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
                                                            TokenIterator expression_begin,
                                                            TokenIterator expression_end,
                                                            const ASTPtr & expression_,
-                                                           ContextPtr context,
+                                                           const Context & context,
                                                            bool * found_in_cache,
                                                            const String & salt)
 {
@@ -385,7 +382,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context);
     visitor.visit(expression, result_column_type->isNullable() || null_as_default);
-    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(expression);
 
     size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
@@ -461,7 +458,7 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
                 return false;
         }
         else
-            structure->serializations[cur_column]->deserializeTextQuoted(*columns[cur_column], istr, format_settings);
+            type->deserializeAsTextQuoted(*columns[cur_column], istr, format_settings);
 
         ++cur_column;
     }
@@ -493,12 +490,14 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
+        ParserMapOfLiterals parser_map;
 
         Tokens tokens_number(istr.position(), istr.buffer().end());
         IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
-        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))
+        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected)
+            && !parser_map.parse(iterator, ast, expected))
             return false;
 
         istr.position() = const_cast<char *>(iterator->begin);

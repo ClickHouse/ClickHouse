@@ -85,8 +85,8 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>; }
-    TypeIndex getDataType() const override { return TypeId<T>; }
+    const char * getFamilyName() const override { return TypeName<T>::get(); }
+    TypeIndex getDataType() const override { return TypeId<T>::value; }
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
@@ -107,7 +107,7 @@ public:
     {
         data.resize_fill(data.size() + length);
     }
-    void insert(const Field & x) override { data.push_back(DB::get<T>(x)); }
+    void insert(const Field & x) override { data.push_back(DB::get<NearestFieldType<T>>(x)); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     void popBack(size_t n) override
@@ -129,7 +129,6 @@ public:
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;

@@ -1,0 +1,5 @@
+#!/bin/sh
+
+# Try stop parallel build after timeout
+
+killall make gcc gcc-8 g++-8 gcc-9 g++-9 clang clang-6.0 clang++-6.0 clang-7 clang++-7 ||:

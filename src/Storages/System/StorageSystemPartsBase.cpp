@@ -47,26 +47,23 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const St
 }
 
 MergeTreeData::DataPartsVector
-StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts) const
+StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
-    if (require_projection_parts && data->getInMemoryMetadataPtr()->projections.empty())
-        return {};
-
     using State = MergeTreeData::DataPartState;
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVector({State::Committed, State::Outdated}, &state, require_projection_parts);
+            return data->getDataPartsVector({State::Committed, State::Outdated}, &state);
 
-        return data->getAllDataPartsVector(&state, require_projection_parts);
+        return data->getAllDataPartsVector(&state);
     }
 
-    return data->getDataPartsVector({State::Committed}, &state, require_projection_parts);
+    return data->getDataPartsVector({State::Committed}, &state);
 }
 
-StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
-    : query_id(context->getCurrentQueryId()), settings(context->getSettings())
+StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context)
+    : query_id(context.getCurrentQueryId()), settings(context.getSettings())
 {
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -77,7 +74,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
-    const auto access = context->getAccess();
+    const auto access = context.getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     {
@@ -87,7 +84,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            /// Check if database can contain MergeTree tables,
+            /// Checck if database can contain MergeTree tables,
             /// if not it's unnecessary to load all tables of database just to filter all of them.
             if (database.second->canContainMergeTreeTables())
                 database_column_mut->insert(database.first);
@@ -237,7 +234,7 @@ Pipe StorageSystemPartsBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)

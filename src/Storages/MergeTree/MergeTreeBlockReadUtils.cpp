@@ -87,9 +87,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
     bool have_at_least_one_physical_column = false;
 
     const auto & storage_columns = metadata_snapshot->getColumns();
-    MergeTreeData::AlterConversions alter_conversions;
-    if (!part->isProjectionPart())
-        alter_conversions = storage.getAlterConversionsForPart(part);
+    auto alter_conversions = storage.getAlterConversionsForPart(part);
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// We are going to fetch only physical columns

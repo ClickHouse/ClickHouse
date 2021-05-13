@@ -11,7 +11,7 @@
 #include <Core/Block.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
-#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <Storages/StoragePostgreSQL.h>
 #include <pqxx/pqxx>
 
 
@@ -24,9 +24,9 @@ class PostgreSQLDictionarySource final : public IDictionarySource
 public:
     PostgreSQLDictionarySource(
         const DictionaryStructure & dict_struct_,
-        postgres::PoolWithFailoverPtr pool_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix,
+        PostgreSQLConnectionPtr connection_,
         const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
@@ -46,13 +46,12 @@ public:
     std::string toString() const override;
 
 private:
-    String getUpdateFieldAndDate();
-    String doInvalidateQuery(const std::string & request) const;
-    BlockInputStreamPtr loadBase(const String & query);
+    std::string getUpdateFieldAndDate();
+    std::string doInvalidateQuery(const std::string & request) const;
 
     const DictionaryStructure dict_struct;
     Block sample_block;
-    postgres::PoolWithFailoverPtr pool;
+    PostgreSQLConnectionPtr connection;
     Poco::Logger * log;
 
     const String db;

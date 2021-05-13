@@ -20,9 +20,8 @@ public:
 
     String getName() const override { return "MergingFinal"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
 private:

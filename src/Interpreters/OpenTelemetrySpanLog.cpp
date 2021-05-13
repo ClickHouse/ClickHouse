@@ -8,9 +8,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 
-#include <Common/hex.h>
-
-
 namespace DB
 {
 
@@ -46,13 +43,13 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(trace_id);
+    columns[i++]->insert(UInt128(Int128(trace_id)));
     columns[i++]->insert(span_id);
     columns[i++]->insert(parent_span_id);
     columns[i++]->insert(operation_name);
     columns[i++]->insert(start_time_us);
     columns[i++]->insert(finish_time_us);
-    columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000).toUnderType());
+    columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000));
     columns[i++]->insert(attribute_names);
     // The user might add some ints values, and we will have Int Field, and the
     // insert will fail because the column requires Strings. Convert the fields
@@ -82,8 +79,10 @@ OpenTelemetrySpanHolder::OpenTelemetrySpanHolder(const std::string & _operation_
     auto & thread = CurrentThread::get();
 
     trace_id = thread.thread_trace_context.trace_id;
-    if (trace_id == UUID())
+    if (!trace_id)
+    {
         return;
+    }
 
     parent_span_id = thread.thread_trace_context.span_id;
     span_id = thread_local_rng();
@@ -99,8 +98,10 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 {
     try
     {
-        if (trace_id == UUID())
+        if (!trace_id)
+        {
             return;
+        }
 
         // First of all, return old value of current span.
         auto & thread = CurrentThread::get();
@@ -115,7 +116,7 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
             return;
         }
 
-        auto context = thread_group->query_context.lock();
+        auto * context = thread_group->query_context;
         if (!context)
         {
             // Both global and query contexts can be null when executing a
@@ -144,31 +145,18 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
 }
 
 
-template <typename T>
-static T readHex(const char * data)
-{
-    T x{};
-
-    const char * end = data + sizeof(T) * 2;
-    while (data < end)
-    {
-        x *= 16;
-        x += unhex(*data);
-        ++data;
-    }
-
-    return x;
-}
-
-
 bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
     std::string & error)
 {
     trace_id = 0;
 
+    uint8_t version = -1;
+    uint64_t trace_id_high = 0;
+    uint64_t trace_id_low = 0;
+
     // Version 00, which is the only one we can parse, is fixed width. Use this
     // fact for an additional sanity check.
-    const int expected_length = strlen("xx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxx-xx");
+    const int expected_length = 2 + 1 + 32 + 1 + 16 + 1 + 2;
     if (traceparent.length() != expected_length)
     {
         error = fmt::format("unexpected length {}, expected {}",
@@ -176,10 +164,30 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
         return false;
     }
 
-    const char * data = traceparent.data();
+    // clang-tidy doesn't like sscanf:
+    //   error: 'sscanf' used to convert a string to an unsigned integer value,
+    //   but function will not report conversion errors; consider using 'strtoul'
+    //   instead [cert-err34-c,-warnings-as-errors]
+    // There is no other ready solution, and hand-rolling a more complicated
+    // parser for an HTTP header in C++ sounds like RCE.
+    // NOLINTNEXTLINE(cert-err34-c)
+    int result = sscanf(&traceparent[0],
+        "%2" SCNx8 "-%16" SCNx64 "%16" SCNx64 "-%16" SCNx64 "-%2" SCNx8,
+        &version, &trace_id_high, &trace_id_low, &span_id, &trace_flags);
 
-    uint8_t version = readHex<uint8_t>(data);
-    data += 2;
+    if (result == EOF)
+    {
+        error = "EOF";
+        return false;
+    }
+
+    // We read uint128 as two uint64, so 5 parts and not 4.
+    if (result != 5)
+    {
+        error = fmt::format("could only read {} parts instead of the expected 5",
+            result);
+        return false;
+    }
 
     if (version != 0)
     {
@@ -187,35 +195,8 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
         return false;
     }
 
-    if (*data != '-')
-    {
-        error = fmt::format("Malformed traceparant header: {}", traceparent);
-        return false;
-    }
-
-    ++data;
-    UInt128 trace_id_128 = readHex<UInt128>(data);
-    trace_id = trace_id_128;
-    data += 32;
-
-    if (*data != '-')
-    {
-        error = fmt::format("Malformed traceparant header: {}", traceparent);
-        return false;
-    }
-
-    ++data;
-    span_id = readHex<UInt64>(data);
-    data += 16;
-
-    if (*data != '-')
-    {
-        error = fmt::format("Malformed traceparant header: {}", traceparent);
-        return false;
-    }
-
-    ++data;
-    trace_flags = readHex<UInt8>(data);
+    trace_id = static_cast<__uint128_t>(trace_id_high) << 64
+        | trace_id_low;
     return true;
 }
 
@@ -224,7 +205,7 @@ std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
 {
     // This span is a parent for its children, so we specify this span_id as a
     // parent id.
-    return fmt::format("00-{:032x}-{:016x}-{:02x}", __uint128_t(trace_id.toUnderType()),
+    return fmt::format("00-{:032x}-{:016x}-{:02x}", trace_id,
         span_id,
         // This cast is needed because fmt is being weird and complaining that
         // "mixing character types is not allowed".

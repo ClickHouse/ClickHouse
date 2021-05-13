@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <ext/range.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
