@@ -25,9 +25,9 @@ class FunctionDateTrunc : public IFunction
 public:
     static constexpr auto name = "date_trunc";
 
-    explicit FunctionDateTrunc(const Context & context_) : context(context_) {}
+    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionDateTrunc>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
 
     String getName() const override { return name; }
 
@@ -146,7 +146,7 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 };
 

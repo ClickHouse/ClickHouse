@@ -44,9 +44,9 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
 
         /// If time zone is attached to an argument of type DateTime.
         if (const auto * type = checkAndGetDataType<DataTypeDateTime>(arguments[datetime_arg_num].type.get()))
-            return type->getTimeZone().getTimeZone();
+            return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
         if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(arguments[datetime_arg_num].type.get()))
-            return type->getTimeZone().getTimeZone();
+            return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
 
         return {};
     }

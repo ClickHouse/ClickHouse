@@ -1,25 +1,24 @@
 #include <Interpreters/JoinedTables.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/getTableExpressions.h>
-#include <Interpreters/InJoinSubqueriesPreprocessor.h>
+
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-
-#include <Storages/IStorage.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/StorageValues.h>
-#include <Storages/StorageJoin.h>
-#include <Storages/StorageDictionary.h>
-
+#include <Interpreters/InJoinSubqueriesPreprocessor.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageDictionary.h>
+#include <Storages/StorageJoin.h>
+#include <Storages/StorageValues.h>
 
 namespace DB
 {
@@ -129,7 +128,7 @@ using RenameQualifiedIdentifiersVisitor = InDepthNodeVisitor<RenameQualifiedIden
 
 }
 
-JoinedTables::JoinedTables(Context && context_, const ASTSelectQuery & select_query)
+JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query)
     : context(context_)
     , table_expressions(getTableExpressions(select_query))
     , left_table_expression(extractTableExpression(select_query, 0))
@@ -159,26 +158,26 @@ StoragePtr JoinedTables::getLeftTableStorage()
         return {};
 
     if (isLeftTableFunction())
-        return context.getQueryContext().executeTableFunction(left_table_expression);
+        return context->getQueryContext()->executeTableFunction(left_table_expression);
 
     StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)
     {
-        table_id = context.resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));
+        table_id = context->resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));
     }
     else /// If the table is not specified - use the table `system.one`.
     {
         table_id = StorageID("system", "one");
     }
 
-    if (auto view_source = context.getViewSource())
+    if (auto view_source = context->getViewSource())
     {
         const auto & storage_values = static_cast<const StorageValues &>(*view_source);
         auto tmp_table_id = storage_values.getStorageID();
         if (tmp_table_id.database_name == table_id.database_name && tmp_table_id.table_name == table_id.table_name)
         {
             /// Read from view source.
-            return context.getViewSource();
+            return context->getViewSource();
         }
     }
 
@@ -192,7 +191,7 @@ bool JoinedTables::resolveTables()
     if (tables_with_columns.size() != table_expressions.size())
         throw Exception("Unexpected tables count", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
         for (size_t i = 0; i < tables_with_columns.size(); ++i)
@@ -234,7 +233,7 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
 
     String database;
     if (!renamed_tables.empty())
-        database = context.getCurrentDatabase();
+        database = context->getCurrentDatabase();
 
     for (auto & [subquery, ast_tables] : renamed_tables)
     {
@@ -254,8 +253,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (tables_with_columns.size() < 2)
         return {};
 
-    auto settings = context.getSettingsRef();
-    auto table_join = std::make_shared<TableJoin>(settings, context.getTemporaryVolume());
+    auto settings = context->getSettingsRef();
+    auto table_join = std::make_shared<TableJoin>(settings, context->getTemporaryVolume());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query.join();
     const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
@@ -263,7 +262,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        auto joined_table_id = context.resolveStorageID(table_to_join.database_and_table_name);
+        auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (table)
         {

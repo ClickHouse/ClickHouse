@@ -18,6 +18,7 @@ PEERDIR(
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
+    contrib/libs/cxxsupp/libcxxabi-parts
     contrib/restricted/dragonbox
 )
 
@@ -47,6 +48,7 @@ SRCS(
     FileChecker.cpp
     IPv6ToBinary.cpp
     IntervalKind.cpp
+    JSONBuilder.cpp
     Macros.cpp
     MemoryStatisticsOS.cpp
     MemoryTracker.cpp
@@ -56,6 +58,7 @@ SRCS(
     PipeFDs.cpp
     ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
+    ProgressBar.cpp
     QueryProfiler.cpp
     RWLock.cpp
     RemoteHostFilter.cpp

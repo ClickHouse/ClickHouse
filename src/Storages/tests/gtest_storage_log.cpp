@@ -19,7 +19,7 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
 
-#if !__clang__
+#if !defined(__clang__)
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
@@ -70,7 +70,7 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
+std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -108,7 +108,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, const DB::Context & context)
+std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -118,7 +118,7 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
 
     SelectQueryInfo query_info;
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
-        context, QueryProcessingStage::Complete, query_info);
+        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
     QueryPipeline pipeline;
     pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));

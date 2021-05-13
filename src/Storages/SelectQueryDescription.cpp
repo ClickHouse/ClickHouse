@@ -44,11 +44,11 @@ SelectQueryDescription & SelectQueryDescription::SelectQueryDescription::operato
 namespace
 {
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, const Context & context, bool add_default_db = true)
+StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPtr context, bool add_default_db = true)
 {
     if (add_default_db)
     {
-        AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase(), false, nullptr);
+        AddDefaultDatabaseVisitor visitor(context->getCurrentDatabase(), false, nullptr);
         visitor.visit(query);
     }
 
@@ -114,7 +114,7 @@ static bool isSingleSelect(const ASTPtr & select, ASTPtr & res)
         return isSingleSelect(new_inner_query, res);
 }
 
-SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, const Context & context)
+SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, ContextPtr context)
 {
     ASTPtr new_inner_query;
 

@@ -1,12 +1,13 @@
 #pragma once
-#include <cstddef>
+
 #include <Interpreters/ExpressionActionsSettings.h>
+
+#include <cstddef>
 
 namespace DB
 {
 
 struct Settings;
-class Context;
 
 struct BuildQueryPipelineSettings
 {
@@ -15,7 +16,7 @@ struct BuildQueryPipelineSettings
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
 
     static BuildQueryPipelineSettings fromSettings(const Settings & from);
-    static BuildQueryPipelineSettings fromContext(const Context & from);
+    static BuildQueryPipelineSettings fromContext(ContextPtr from);
 };
 
 }

@@ -5,7 +5,7 @@ toc_title: EXPLAIN
 
 # EXPLAIN Statement {#explain}
 
-Show the execution plan of a statement.
+Shows the execution plan of a statement.
 
 Syntax:
 
@@ -47,9 +47,9 @@ Union
 
 ### EXPLAIN AST {#explain-ast}
 
-Dump query AST.
+Dump query AST. Supports all types of queries, not only `SELECT`.
 
-Example:
+Examples:
 
 ```sql
 EXPLAIN AST SELECT 1;
@@ -63,9 +63,25 @@ SelectWithUnionQuery (children 1)
     Literal UInt64_1
 ```
 
+```sql
+EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
+```
+
+```sql
+  explain
+  AlterQuery  t1 (children 1)
+   ExpressionList (children 1)
+    AlterCommand 27 (children 1)
+     Function equals (children 1)
+      ExpressionList (children 2)
+       Identifier date
+       Function today (children 1)
+        ExpressionList
+```
+
 ### EXPLAIN SYNTAX {#explain-syntax}
 
-Return query after syntax optimizations.
+Returns query after syntax optimizations.
 
 Example:
 
@@ -88,15 +104,16 @@ FROM
 ) AS `--.s`
 CROSS JOIN system.numbers AS c
 ```
+
 ### EXPLAIN PLAN {#explain-plan}
 
 Dump query plan steps.
 
 Settings:
 
--  `header` — Print output header for step. Default: 0.
--  `description` — Print step description. Default: 1.
--  `actions` — Print detailed information about step actions. Default: 0.
+-  `header` — Prints output header for step. Default: 0.
+-  `description` — Prints step description. Default: 1.
+-  `actions` — Prints detailed information about step actions. Default: 0.
 
 Example:
 
@@ -115,15 +132,16 @@ Union
 ```
 
 !!! note "Note"
-  Step and query cost estimation is not supported.
+    Step and query cost estimation is not supported.
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
 
--   `header` — Print header for each output port. Default: 0.
--   `graph` — Use DOT graph description language. Default: 0.
--   `compact` — Print graph in compact mode if graph is enabled. Default: 1.
+-   `header` — Prints header for each output port. Default: 0.
+-   `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
+-   `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
+-   `indexes` — Shows used indexes, the number of filtered parts, and granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
 Example:
 
