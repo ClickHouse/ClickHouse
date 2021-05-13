@@ -328,6 +328,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.database = database_name;
                 query_for_table.no_delay = query.no_delay;
 
+                /// Flush should not be done if shouldBeEmptyOnDetach() == false,
+                /// since in this case getTablesIterator() may do some additional work,
+                /// see DatabaseMaterializeMySQL<>::getTablesIterator()
+                for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+                {
+                    iterator->table()->flush();
+                }
+
                 for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
                 {
                     DatabasePtr db;
