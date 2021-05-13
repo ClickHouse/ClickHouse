@@ -13,6 +13,7 @@
         "01193_metadata_loading",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01474_executable_dictionary", /// informational stderr from sanitizer at start
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
@@ -28,6 +29,7 @@
         "01103_check_cpu_instructions_at_startup",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01193_metadata_loading",
         "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
@@ -39,6 +41,7 @@
         "00900_orc_load",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01193_metadata_loading"
     ],
     "memory-sanitizer": [
@@ -51,6 +54,7 @@
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
+        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01193_metadata_loading",
         "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
