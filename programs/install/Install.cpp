@@ -125,6 +125,560 @@ static bool filesEqual(std::string path1, std::string path2)
 }
 
 
+void installBinaries(po::variables_map & options)
+{
+    /// We need to copy binary to the binary directory.
+    /// The binary is currently run. We need to obtain its path from procfs (on Linux).
+
+#if defined(OS_DARWIN)
+    uint32_t path_length = 0;
+    _NSGetExecutablePath(nullptr, &path_length);
+    if (path_length <= 1)
+        Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+
+    std::string path(path_length, std::string::value_type());
+    auto res = _NSGetExecutablePath(&path[0], &path_length);
+    if (res != 0)
+        Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+
+    fs::path binary_self_path(path);
+#else
+    fs::path binary_self_path = "/proc/self/exe";
+#endif
+
+    if (!fs::exists(binary_self_path))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary from {}, file doesn't exist",
+                        binary_self_path.string());
+
+    fs::path binary_self_canonical_path = fs::canonical(binary_self_path);
+
+    /// Copy binary to the destination directory.
+
+    /// TODO An option to link instead of copy - useful for developers.
+
+    fs::path prefix = fs::path(options["prefix"].as<std::string>());
+    fs::path bin_dir = prefix / fs::path(options["binary-path"].as<std::string>());
+
+    fs::path main_bin_path = bin_dir / "clickhouse";
+    fs::path main_bin_tmp_path = bin_dir / "clickhouse.new";
+    fs::path main_bin_old_path = bin_dir / "clickhouse.old";
+
+    size_t binary_size = fs::file_size(binary_self_path);
+
+    bool old_binary_exists = fs::exists(main_bin_path);
+    bool already_installed = false;
+
+    /// Check if the binary is the same file (already installed).
+    if (old_binary_exists && binary_self_canonical_path == fs::canonical(main_bin_path))
+    {
+        already_installed = true;
+        fmt::print("ClickHouse binary is already located at {}\n", main_bin_path.string());
+    }
+    /// Check if binary has the same content.
+    else if (old_binary_exists && binary_size == fs::file_size(main_bin_path))
+    {
+        fmt::print("Found already existing ClickHouse binary at {} having the same size. Will check its contents.\n",
+            main_bin_path.string());
+
+        if (filesEqual(binary_self_path.string(), main_bin_path.string()))
+        {
+            already_installed = true;
+            fmt::print("ClickHouse binary is already located at {} and it has the same content as {}\n",
+                main_bin_path.string(), binary_self_canonical_path.string());
+        }
+    }
+
+    if (already_installed)
+    {
+        if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+            throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
+    }
+    else
+    {
+        size_t available_space = fs::space(bin_dir).available;
+        if (available_space < binary_size)
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
+                bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
+
+        fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
+
+        try
+        {
+            ReadBufferFromFile in(binary_self_path.string());
+            WriteBufferFromFile out(main_bin_tmp_path.string());
+            copyData(in, out);
+            out.sync();
+
+            if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
+
+            out.finalize();
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
+                std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
+            throw;
+        }
+
+        if (old_binary_exists)
+        {
+            fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
+                    main_bin_path.string(), main_bin_old_path.string());
+
+            /// There is file exchange operation in Linux but it's not portable.
+            fs::rename(main_bin_path, main_bin_old_path);
+        }
+
+        fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
+        fs::rename(main_bin_tmp_path, main_bin_path);
+    }
+
+    /// Create symlinks.
+
+    std::initializer_list<const char *> tools
+    {
+        "clickhouse-server",
+        "clickhouse-client",
+        "clickhouse-local",
+        "clickhouse-benchmark",
+        "clickhouse-copier",
+        "clickhouse-obfuscator",
+        "clickhouse-git-import",
+        "clickhouse-compressor",
+        "clickhouse-format",
+        "clickhouse-extract-from-config",
+        "clickhouse-keeper",
+    };
+
+    for (const auto & tool : tools)
+    {
+        bool need_to_create = true;
+        fs::path symlink_path = bin_dir / tool;
+
+        if (fs::exists(symlink_path))
+        {
+            bool is_symlink = fs::is_symlink(symlink_path);
+            fs::path points_to;
+            if (is_symlink)
+                points_to = fs::absolute(fs::read_symlink(symlink_path));
+
+            if (is_symlink && points_to == main_bin_path)
+            {
+                need_to_create = false;
+            }
+            else
+            {
+                if (!is_symlink)
+                {
+                    fs::path rename_path = symlink_path.replace_extension(".old");
+                    fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
+                               symlink_path.string(), rename_path.string());
+                    fs::rename(symlink_path, rename_path);
+                }
+                else if (points_to != main_bin_path)
+                {
+                    fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
+                               symlink_path.string(), points_to.string(), main_bin_path.string());
+                    fs::remove(symlink_path);
+                }
+            }
+        }
+
+        if (need_to_create)
+        {
+            fmt::print("Creating symlink {} to {}.\n", symlink_path.string(), main_bin_path.string());
+            fs::create_symlink(main_bin_path, symlink_path);
+        }
+    }
+    /** Set capabilities for the binary.
+      *
+      * 1. Check that "setcap" tool exists.
+      * 2. Check that an arbitrary program with installed capabilities can run.
+      * 3. Set the capabilities.
+      *
+      * The second is important for Docker and systemd-nspawn.
+      * When the container has no capabilities,
+      * but the executable file inside the container has capabilities,
+      *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
+      */
+
+#if defined(__linux__)
+    fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
+    std::string command = fmt::format("command -v setcap >/dev/null"
+        " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
+        " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
+        " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
+            " This is optional. Taskstats accounting will be disabled."
+            " To enable taskstats accounting you may add the required capability later manually.\"",
+        "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
+    executeScript(command);
+#endif
+}
+
+/// Creation of clickhouse user and group.
+void createUsers(po::variables_map & options)
+{
+    std::string user = options["user"].as<std::string>();
+    std::string group = options["group"].as<std::string>();
+
+    if (!group.empty())
+    {
+        {
+            fmt::print("Creating clickhouse group if it does not exist.\n");
+            std::string command = fmt::format("groupadd -r {}", group);
+            fmt::print(" {}\n", command);
+            executeScript(command);
+        }
+    }
+    else
+        fmt::print("Will not create clickhouse group");
+
+    if (!user.empty())
+    {
+        fmt::print("Creating clickhouse user if it does not exist.\n");
+        std::string command = group.empty()
+            ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user)
+            : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group, user);
+        fmt::print(" {}\n", command);
+        executeScript(command);
+
+        if (group.empty())
+            group = user;
+
+        /// Setting ulimits.
+        try
+        {
+            fs::path ulimits_dir = "/etc/security/limits.d";
+            fs::path ulimits_file = ulimits_dir / fmt::format("{}.conf", user);
+            fmt::print("Will set ulimits for {} user in {}.\n", user, ulimits_file.string());
+            std::string ulimits_content = fmt::format(
+                "{0}\tsoft\tnofile\t262144\n"
+                "{0}\thard\tnofile\t262144\n", user);
+
+            fs::create_directories(ulimits_dir);
+
+            WriteBufferFromFile out(ulimits_file.string());
+            out.write(ulimits_content.data(), ulimits_content.size());
+            out.sync();
+            out.finalize();
+        }
+        catch (...)
+        {
+            std::cerr << "Cannot set ulimits: " << getCurrentExceptionMessage(false) << "\n";
+        }
+
+        /// TODO Set ulimits on Mac OS X
+    }
+    else
+        fmt::print("Will not create clickhouse user.\n");
+}
+
+/// Creating configuration files and directories.
+bool setupConfigsAndDirectories(po::variables_map & options)
+{
+    fs::path prefix = fs::path(options["prefix"].as<std::string>());
+
+    fs::path config_dir = prefix / options["config-path"].as<std::string>();
+
+    if (!fs::exists(config_dir))
+    {
+        fmt::print("Creating config directory {}.\n", config_dir.string());
+        fs::create_directories(config_dir);
+    }
+
+    fs::path main_config_file = config_dir / "config.xml";
+    fs::path users_config_file = config_dir / "users.xml";
+    fs::path config_d = config_dir / "config.d";
+    fs::path users_d = config_dir / "users.d";
+
+    std::string log_path = prefix / options["log-path"].as<std::string>();
+    std::string data_path = prefix / options["data-path"].as<std::string>();
+    std::string pid_path = prefix / options["pid-path"].as<std::string>();
+
+    bool has_password_for_default_user = false;
+
+    if (!fs::exists(config_d))
+    {
+        fmt::print("Creating config directory {} that is used for tweaks of main server configuration.\n", config_d.string());
+        fs::create_directory(config_d);
+    }
+
+    if (!fs::exists(users_d))
+    {
+        fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", users_d.string());
+        fs::create_directory(users_d);
+    }
+
+    if (!fs::exists(main_config_file))
+    {
+        std::string_view main_config_content = getResource("config.xml");
+        if (main_config_content.empty())
+        {
+            fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
+        }
+        else
+        {
+            WriteBufferFromFile out(main_config_file.string());
+            out.write(main_config_content.data(), main_config_content.size());
+            out.sync();
+            out.finalize();
+        }
+    }
+    else
+    {
+        fmt::print("Config file {} already exists, will keep it and extract path info from it.\n", main_config_file.string());
+
+        ConfigProcessor processor(main_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+        ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+
+        if (configuration->has("path"))
+        {
+            data_path = configuration->getString("path");
+            fmt::print("{} has {} as data path.\n", main_config_file.string(), data_path);
+        }
+
+        if (configuration->has("logger.log"))
+        {
+            log_path = fs::path(configuration->getString("logger.log")).remove_filename();
+            fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path);
+        }
+    }
+
+
+    if (!fs::exists(users_config_file))
+    {
+        std::string_view users_config_content = getResource("users.xml");
+        if (users_config_content.empty())
+        {
+            fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
+        }
+        else
+        {
+            WriteBufferFromFile out(users_config_file.string());
+            out.write(users_config_content.data(), users_config_content.size());
+            out.sync();
+            out.finalize();
+        }
+    }
+    else
+    {
+        fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
+
+        /// Check if password for default user already specified.
+        ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+        ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+
+        if (!configuration->getString("users.default.password", "").empty()
+            || !configuration->getString("users.default.password_sha256_hex", "").empty()
+            || !configuration->getString("users.default.password_double_sha1_hex", "").empty())
+        {
+            has_password_for_default_user = true;
+        }
+    }
+    std::string user = options["user"].as<std::string>();
+    std::string group = options["group"].as<std::string>();
+
+    /// Chmod and chown configs
+    {
+        std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, config_dir.string());
+        fmt::print(" {}\n", command);
+        executeScript(command);
+    }
+
+    /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
+    fs::permissions(config_dir, fs::perms::owner_all, fs::perm_options::replace);
+
+    /// Subdirectories, so "execute" is needed.
+    if (fs::exists(config_d))
+        fs::permissions(config_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+    if (fs::exists(users_d))
+        fs::permissions(users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+
+    /// Readonly.
+    if (fs::exists(main_config_file))
+        fs::permissions(main_config_file, fs::perms::owner_read, fs::perm_options::replace);
+    if (fs::exists(users_config_file))
+        fs::permissions(users_config_file, fs::perms::owner_read, fs::perm_options::replace);
+
+    /// Create directories for data and log.
+
+    if (fs::exists(log_path))
+    {
+        fmt::print("Log directory {} already exists.\n", log_path);
+    }
+    else
+    {
+        fmt::print("Creating log directory {}.\n", log_path);
+        fs::create_directories(log_path);
+    }
+
+    if (fs::exists(data_path))
+    {
+        fmt::print("Data directory {} already exists.\n", data_path);
+    }
+    else
+    {
+        fmt::print("Creating data directory {}.\n", data_path);
+        fs::create_directories(data_path);
+    }
+
+    if (fs::exists(pid_path))
+    {
+        fmt::print("Pid directory {} already exists.\n", pid_path);
+    }
+    else
+    {
+        fmt::print("Creating pid directory {}.\n", pid_path);
+        fs::create_directories(pid_path);
+    }
+
+    /// Chmod and chown data and log directories
+    {
+        std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, log_path);
+        fmt::print(" {}\n", command);
+        executeScript(command);
+    }
+
+    {
+        std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, pid_path);
+        fmt::print(" {}\n", command);
+        executeScript(command);
+    }
+
+    {
+        /// Not recursive, because there can be a huge number of files and it will be slow.
+        std::string command = fmt::format("chown {}:{} '{}'", user, group, data_path);
+        fmt::print(" {}\n", command);
+        executeScript(command);
+    }
+
+    /// All users are allowed to read pid file (for clickhouse status command).
+    fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+
+    /// Other users in clickhouse group are allowed to read and even delete logs.
+    fs::permissions(log_path, fs::perms::owner_all | fs::perms::group_all, fs::perm_options::replace);
+
+    /// Data directory is not accessible to anyone except clickhouse.
+    fs::permissions(data_path, fs::perms::owner_all, fs::perm_options::replace);
+
+    return has_password_for_default_user;
+}
+
+void createPasswordAndFinish(po::variables_map & options, bool has_password_for_default_user)
+{
+    /// Set up password for default user.
+
+    bool stdin_is_a_tty = isatty(STDIN_FILENO);
+    bool stdout_is_a_tty = isatty(STDOUT_FILENO);
+
+    /// dpkg or apt installers can ask for non-interactive work explicitly.
+
+    const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
+    bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
+
+    bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
+
+    /// We can ask password even if stdin is closed/redirected but /dev/tty is available.
+    bool can_ask_password = !noninteractive && stdout_is_a_tty;
+
+    fs::path config_dir = fs::path{options["prefix"].as<std::string>()} / options["config-path"].as<std::string>();
+    fs::path users_config_file = config_dir / "users.xml";
+    fs::path users_d = config_dir / "users.d";
+    fs::path config_d = config_dir / "config.d";
+
+    if (has_password_for_default_user)
+    {
+        fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
+                   users_config_file.string(), users_d.string());
+    }
+    else if (!can_ask_password)
+    {
+        fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+                   users_config_file.string(), users_d.string());
+    }
+    else
+    {
+        /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
+        /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
+
+        char buf[1000] = {};
+        std::string password;
+        if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
+            password = result;
+
+        if (!password.empty())
+        {
+            std::string password_file = users_d / "default-password.xml";
+            WriteBufferFromFile out(password_file);
+#if USE_SSL
+           std::vector<uint8_t> hash;
+           hash.resize(32);
+           encodeSHA256(password, hash.data());
+           std::string hash_hex;
+           hash_hex.resize(64);
+           for (size_t i = 0; i < 32; ++i)
+               writeHexByteLowercase(hash[i], &hash_hex[2 * i]);
+           out << "<yandex>\n"
+               "    <users>\n"
+               "        <default>\n"
+               "            <password remove='1' />\n"
+               "            <password_sha256_hex>" << hash_hex << "</password_sha256_hex>\n"
+               "        </default>\n"
+               "    </users>\n"
+               "</yandex>\n";
+           out.sync();
+           out.finalize();
+           fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
+#else
+            out << "<yandex>\n"
+                "    <users>\n"
+                "        <default>\n"
+                "            <password><![CDATA[" << password << "]]></password>\n"
+                "        </default>\n"
+                "    </users>\n"
+                "</yandex>\n";
+            out.sync();
+            out.finalize();
+            fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
+#endif
+            has_password_for_default_user = true;
+        }
+        else
+            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+                       users_config_file.string(), users_d.string());
+    }
+
+
+    /// If password was set, ask for open for connections.
+    if (is_interactive && has_password_for_default_user)
+    {
+        if (ask("Allow server to accept connections from the network (default is localhost only), [y/N]: "))
+        {
+            std::string listen_file = config_d / "listen.xml";
+            WriteBufferFromFile out(listen_file);
+            out << "<yandex>\n"
+                "    <listen_host>::</listen_host>\n"
+                "</yandex>\n";
+            out.sync();
+            out.finalize();
+            fmt::print("The choice is saved in file {}.\n", listen_file);
+        }
+    }
+
+    std::string maybe_password;
+    if (has_password_for_default_user)
+        maybe_password = " --password";
+
+    fmt::print(
+        "\nClickHouse has been successfully installed.\n"
+        "\nStart clickhouse-server with:\n"
+        " sudo clickhouse start\n"
+        "\nStart clickhouse-client with:\n"
+        " clickhouse-client{}\n\n",
+        maybe_password);
+}
+
 int mainEntryClickHouseInstall(int argc, char ** argv)
 {
     po::options_description desc;
@@ -155,537 +709,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
     try
     {
-        /// We need to copy binary to the binary directory.
-        /// The binary is currently run. We need to obtain its path from procfs (on Linux).
-
-#if defined(OS_DARWIN)
-        uint32_t path_length = 0;
-        _NSGetExecutablePath(nullptr, &path_length);
-        if (path_length <= 1)
-            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
-
-        std::string path(path_length, std::string::value_type());
-        auto res = _NSGetExecutablePath(&path[0], &path_length);
-        if (res != 0)
-            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
-
-        fs::path binary_self_path(path);
-#else
-        fs::path binary_self_path = "/proc/self/exe";
-#endif
-
-        if (!fs::exists(binary_self_path))
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary from {}, file doesn't exist",
-                            binary_self_path.string());
-
-        fs::path binary_self_canonical_path = fs::canonical(binary_self_path);
-
-        /// Copy binary to the destination directory.
-
-        /// TODO An option to link instead of copy - useful for developers.
-
-        fs::path prefix = fs::path(options["prefix"].as<std::string>());
-        fs::path bin_dir = prefix / fs::path(options["binary-path"].as<std::string>());
-
-        fs::path main_bin_path = bin_dir / "clickhouse";
-        fs::path main_bin_tmp_path = bin_dir / "clickhouse.new";
-        fs::path main_bin_old_path = bin_dir / "clickhouse.old";
-
-        size_t binary_size = fs::file_size(binary_self_path);
-
-        bool old_binary_exists = fs::exists(main_bin_path);
-        bool already_installed = false;
-
-        /// Check if the binary is the same file (already installed).
-        if (old_binary_exists && binary_self_canonical_path == fs::canonical(main_bin_path))
-        {
-            already_installed = true;
-            fmt::print("ClickHouse binary is already located at {}\n", main_bin_path.string());
-        }
-        /// Check if binary has the same content.
-        else if (old_binary_exists && binary_size == fs::file_size(main_bin_path))
-        {
-            fmt::print("Found already existing ClickHouse binary at {} having the same size. Will check its contents.\n",
-                main_bin_path.string());
-
-            if (filesEqual(binary_self_path.string(), main_bin_path.string()))
-            {
-                already_installed = true;
-                fmt::print("ClickHouse binary is already located at {} and it has the same content as {}\n",
-                    main_bin_path.string(), binary_self_canonical_path.string());
-            }
-        }
-
-        if (already_installed)
-        {
-            if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
-        }
-        else
-        {
-            size_t available_space = fs::space(bin_dir).available;
-            if (available_space < binary_size)
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
-                    bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
-
-            fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
-
-            try
-            {
-                ReadBufferFromFile in(binary_self_path.string());
-                WriteBufferFromFile out(main_bin_tmp_path.string());
-                copyData(in, out);
-                out.sync();
-
-                if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                    throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
-
-                out.finalize();
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                    std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
-                throw;
-            }
-
-            if (old_binary_exists)
-            {
-                fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
-                        main_bin_path.string(), main_bin_old_path.string());
-
-                /// There is file exchange operation in Linux but it's not portable.
-                fs::rename(main_bin_path, main_bin_old_path);
-            }
-
-            fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
-            fs::rename(main_bin_tmp_path, main_bin_path);
-        }
-
-        /// Create symlinks.
-
-        std::initializer_list<const char *> tools
-        {
-            "clickhouse-server",
-            "clickhouse-client",
-            "clickhouse-local",
-            "clickhouse-benchmark",
-            "clickhouse-copier",
-            "clickhouse-obfuscator",
-            "clickhouse-git-import",
-            "clickhouse-compressor",
-            "clickhouse-format",
-            "clickhouse-extract-from-config"
-        };
-
-        for (const auto & tool : tools)
-        {
-            bool need_to_create = true;
-            fs::path symlink_path = bin_dir / tool;
-
-            if (fs::exists(symlink_path))
-            {
-                bool is_symlink = fs::is_symlink(symlink_path);
-                fs::path points_to;
-                if (is_symlink)
-                    points_to = fs::absolute(fs::read_symlink(symlink_path));
-
-                if (is_symlink && points_to == main_bin_path)
-                {
-                    need_to_create = false;
-                }
-                else
-                {
-                    if (!is_symlink)
-                    {
-                        fs::path rename_path = symlink_path.replace_extension(".old");
-                        fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
-                                   symlink_path.string(), rename_path.string());
-                        fs::rename(symlink_path, rename_path);
-                    }
-                    else if (points_to != main_bin_path)
-                    {
-                        fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
-                                   symlink_path.string(), points_to.string(), main_bin_path.string());
-                        fs::remove(symlink_path);
-                    }
-                }
-            }
-
-            if (need_to_create)
-            {
-                fmt::print("Creating symlink {} to {}.\n", symlink_path.string(), main_bin_path.string());
-                fs::create_symlink(main_bin_path, symlink_path);
-            }
-        }
-
-        /// Creation of clickhouse user and group.
-
-        std::string user = options["user"].as<std::string>();
-        std::string group = options["group"].as<std::string>();
-
-        if (!group.empty())
-        {
-            {
-                fmt::print("Creating clickhouse group if it does not exist.\n");
-                std::string command = fmt::format("groupadd -r {}", group);
-                fmt::print(" {}\n", command);
-                executeScript(command);
-            }
-        }
-        else
-            fmt::print("Will not create clickhouse group");
-
-        if (!user.empty())
-        {
-            fmt::print("Creating clickhouse user if it does not exist.\n");
-            std::string command = group.empty()
-                ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user)
-                : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group, user);
-            fmt::print(" {}\n", command);
-            executeScript(command);
-
-            if (group.empty())
-                group = user;
-
-            /// Setting ulimits.
-            try
-            {
-                fs::path ulimits_dir = "/etc/security/limits.d";
-                fs::path ulimits_file = ulimits_dir / fmt::format("{}.conf", user);
-                fmt::print("Will set ulimits for {} user in {}.\n", user, ulimits_file.string());
-                std::string ulimits_content = fmt::format(
-                    "{0}\tsoft\tnofile\t262144\n"
-                    "{0}\thard\tnofile\t262144\n", user);
-
-                fs::create_directories(ulimits_dir);
-
-                WriteBufferFromFile out(ulimits_file.string());
-                out.write(ulimits_content.data(), ulimits_content.size());
-                out.sync();
-                out.finalize();
-            }
-            catch (...)
-            {
-                std::cerr << "Cannot set ulimits: " << getCurrentExceptionMessage(false) << "\n";
-            }
-
-            /// TODO Set ulimits on Mac OS X
-        }
-        else
-            fmt::print("Will not create clickhouse user.\n");
-
-        /// Creating configuration files and directories.
-
-        fs::path config_dir = prefix / options["config-path"].as<std::string>();
-
-        if (!fs::exists(config_dir))
-        {
-            fmt::print("Creating config directory {}.\n", config_dir.string());
-            fs::create_directories(config_dir);
-        }
-
-        fs::path main_config_file = config_dir / "config.xml";
-        fs::path users_config_file = config_dir / "users.xml";
-        fs::path config_d = config_dir / "config.d";
-        fs::path users_d = config_dir / "users.d";
-
-        std::string log_path = prefix / options["log-path"].as<std::string>();
-        std::string data_path = prefix / options["data-path"].as<std::string>();
-        std::string pid_path = prefix / options["pid-path"].as<std::string>();
-
-        bool has_password_for_default_user = false;
-
-        if (!fs::exists(config_d))
-        {
-            fmt::print("Creating config directory {} that is used for tweaks of main server configuration.\n", config_d.string());
-            fs::create_directory(config_d);
-        }
-
-        if (!fs::exists(users_d))
-        {
-            fmt::print("Creating config directory {} that is used for tweaks of users configuration.\n", users_d.string());
-            fs::create_directory(users_d);
-        }
-
-        if (!fs::exists(main_config_file))
-        {
-            std::string_view main_config_content = getResource("config.xml");
-            if (main_config_content.empty())
-            {
-                fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
-            }
-            else
-            {
-                WriteBufferFromFile out(main_config_file.string());
-                out.write(main_config_content.data(), main_config_content.size());
-                out.sync();
-                out.finalize();
-            }
-        }
-        else
-        {
-            fmt::print("Config file {} already exists, will keep it and extract path info from it.\n", main_config_file.string());
-
-            ConfigProcessor processor(main_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-            ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
-
-            if (configuration->has("path"))
-            {
-                data_path = configuration->getString("path");
-                fmt::print("{} has {} as data path.\n", main_config_file.string(), data_path);
-            }
-
-            if (configuration->has("logger.log"))
-            {
-                log_path = fs::path(configuration->getString("logger.log")).remove_filename();
-                fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path);
-            }
-        }
-
-
-        if (!fs::exists(users_config_file))
-        {
-            std::string_view users_config_content = getResource("users.xml");
-            if (users_config_content.empty())
-            {
-                fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
-            }
-            else
-            {
-                WriteBufferFromFile out(users_config_file.string());
-                out.write(users_config_content.data(), users_config_content.size());
-                out.sync();
-                out.finalize();
-            }
-        }
-        else
-        {
-            fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
-
-            /// Check if password for default user already specified.
-            ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-            ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
-
-            if (!configuration->getString("users.default.password", "").empty()
-                || !configuration->getString("users.default.password_sha256_hex", "").empty()
-                || !configuration->getString("users.default.password_double_sha1_hex", "").empty())
-            {
-                has_password_for_default_user = true;
-            }
-        }
-
-        /// Chmod and chown configs
-        {
-            std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, config_dir.string());
-            fmt::print(" {}\n", command);
-            executeScript(command);
-        }
-
-        /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
-        fs::permissions(config_dir, fs::perms::owner_all, fs::perm_options::replace);
-
-        /// Subdirectories, so "execute" is needed.
-        if (fs::exists(config_d))
-            fs::permissions(config_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
-        if (fs::exists(users_d))
-            fs::permissions(users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
-
-        /// Readonly.
-        if (fs::exists(main_config_file))
-            fs::permissions(main_config_file, fs::perms::owner_read, fs::perm_options::replace);
-        if (fs::exists(users_config_file))
-            fs::permissions(users_config_file, fs::perms::owner_read, fs::perm_options::replace);
-
-        /// Create directories for data and log.
-
-        if (fs::exists(log_path))
-        {
-            fmt::print("Log directory {} already exists.\n", log_path);
-        }
-        else
-        {
-            fmt::print("Creating log directory {}.\n", log_path);
-            fs::create_directories(log_path);
-        }
-
-        if (fs::exists(data_path))
-        {
-            fmt::print("Data directory {} already exists.\n", data_path);
-        }
-        else
-        {
-            fmt::print("Creating data directory {}.\n", data_path);
-            fs::create_directories(data_path);
-        }
-
-        if (fs::exists(pid_path))
-        {
-            fmt::print("Pid directory {} already exists.\n", pid_path);
-        }
-        else
-        {
-            fmt::print("Creating pid directory {}.\n", pid_path);
-            fs::create_directories(pid_path);
-        }
-
-        /// Chmod and chown data and log directories
-        {
-            std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, log_path);
-            fmt::print(" {}\n", command);
-            executeScript(command);
-        }
-
-        {
-            std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, pid_path);
-            fmt::print(" {}\n", command);
-            executeScript(command);
-        }
-
-        {
-            /// Not recursive, because there can be a huge number of files and it will be slow.
-            std::string command = fmt::format("chown {}:{} '{}'", user, group, data_path);
-            fmt::print(" {}\n", command);
-            executeScript(command);
-        }
-
-        /// All users are allowed to read pid file (for clickhouse status command).
-        fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
-
-        /// Other users in clickhouse group are allowed to read and even delete logs.
-        fs::permissions(log_path, fs::perms::owner_all | fs::perms::group_all, fs::perm_options::replace);
-
-        /// Data directory is not accessible to anyone except clickhouse.
-        fs::permissions(data_path, fs::perms::owner_all, fs::perm_options::replace);
-
-        /// Set up password for default user.
-
-        bool stdin_is_a_tty = isatty(STDIN_FILENO);
-        bool stdout_is_a_tty = isatty(STDOUT_FILENO);
-
-        /// dpkg or apt installers can ask for non-interactive work explicitly.
-
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
-        bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
-
-        bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
-
-        /// We can ask password even if stdin is closed/redirected but /dev/tty is available.
-        bool can_ask_password = !noninteractive && stdout_is_a_tty;
-
-        if (has_password_for_default_user)
-        {
-            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
-                       users_config_file.string(), users_d.string());
-        }
-        else if (!can_ask_password)
-        {
-            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
-                       users_config_file.string(), users_d.string());
-        }
-        else
-        {
-            /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
-            /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
-
-            char buf[1000] = {};
-            std::string password;
-            if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
-                password = result;
-
-            if (!password.empty())
-            {
-                std::string password_file = users_d / "default-password.xml";
-                WriteBufferFromFile out(password_file);
-#if USE_SSL
-                std::vector<uint8_t> hash;
-                hash.resize(32);
-                encodeSHA256(password, hash.data());
-                std::string hash_hex;
-                hash_hex.resize(64);
-                for (size_t i = 0; i < 32; ++i)
-                    writeHexByteLowercase(hash[i], &hash_hex[2 * i]);
-                out << "<yandex>\n"
-                    "    <users>\n"
-                    "        <default>\n"
-                    "            <password remove='1' />\n"
-                    "            <password_sha256_hex>" << hash_hex << "</password_sha256_hex>\n"
-                    "        </default>\n"
-                    "    </users>\n"
-                    "</yandex>\n";
-                out.sync();
-                out.finalize();
-                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
-#else
-                out << "<yandex>\n"
-                    "    <users>\n"
-                    "        <default>\n"
-                    "            <password><![CDATA[" << password << "]]></password>\n"
-                    "        </default>\n"
-                    "    </users>\n"
-                    "</yandex>\n";
-                out.sync();
-                out.finalize();
-                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
-#endif
-                has_password_for_default_user = true;
-            }
-            else
-                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
-                           users_config_file.string(), users_d.string());
-        }
-
-        /** Set capabilities for the binary.
-          *
-          * 1. Check that "setcap" tool exists.
-          * 2. Check that an arbitrary program with installed capabilities can run.
-          * 3. Set the capabilities.
-          *
-          * The second is important for Docker and systemd-nspawn.
-          * When the container has no capabilities,
-          * but the executable file inside the container has capabilities,
-          *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
-          */
-
-#if defined(__linux__)
-        fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
-        std::string command = fmt::format("command -v setcap >/dev/null"
-            " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
-            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
-            " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
-                " This is optional. Taskstats accounting will be disabled."
-                " To enable taskstats accounting you may add the required capability later manually.\"",
-            "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
-        executeScript(command);
-#endif
-
-        /// If password was set, ask for open for connections.
-        if (is_interactive && has_password_for_default_user)
-        {
-            if (ask("Allow server to accept connections from the network (default is localhost only), [y/N]: "))
-            {
-                std::string listen_file = config_d / "listen.xml";
-                WriteBufferFromFile out(listen_file);
-                out << "<yandex>\n"
-                    "    <listen_host>::</listen_host>\n"
-                    "</yandex>\n";
-                out.sync();
-                out.finalize();
-                fmt::print("The choice is saved in file {}.\n", listen_file);
-            }
-        }
-
-        std::string maybe_password;
-        if (has_password_for_default_user)
-            maybe_password = " --password";
-
-        fmt::print(
-            "\nClickHouse has been successfully installed.\n"
-            "\nStart clickhouse-server with:\n"
-            " sudo clickhouse start\n"
-            "\nStart clickhouse-client with:\n"
-            " clickhouse-client{}\n\n",
-            maybe_password);
+        installBinaries(options);
+        createUsers(options);
+        bool has_password_for_default_user = setupConfigsAndDirectories(options);
+        createPasswordAndFinish(options, has_password_for_default_user);
     }
     catch (const fs::filesystem_error &)
     {
