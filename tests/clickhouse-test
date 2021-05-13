@@ -32,6 +32,8 @@ from contextlib import closing
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
+    "DB::Exception: Connection loss",
+    "Coordination::Exception: Session expired",
     "Coordination::Exception: Connection loss",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",

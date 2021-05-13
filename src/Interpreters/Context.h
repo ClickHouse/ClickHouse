@@ -116,10 +116,6 @@ struct BackgroundTaskSchedulingSettings;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
-#if USE_EMBEDDED_COMPILER
-class CompiledExpressionCache;
-#endif
-
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
@@ -210,6 +206,7 @@ private:
             databases = rhs.databases;
             tables = rhs.tables;
             columns = rhs.columns;
+            projections = rhs.projections;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -225,6 +222,7 @@ private:
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
+            std::swap(projections, rhs.projections);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -232,6 +230,7 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
+        std::set<std::string> projections;
     };
 
     QueryAccessInfo query_access_info;
@@ -438,7 +437,11 @@ public:
     bool hasScalar(const String & name) const;
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
-    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
+    void addQueryAccessInfo(
+        const String & quoted_database_name,
+        const String & full_quoted_table_name,
+        const Names & column_names,
+        const String & projection_name = {});
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories

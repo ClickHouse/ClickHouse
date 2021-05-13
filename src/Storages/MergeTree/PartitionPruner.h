@@ -29,7 +29,7 @@ public:
     {
     }
 
-    bool canBePruned(const DataPartPtr & part);
+    bool canBePruned(const DataPart & part);
 
     bool isUseless() const { return useless; }
 

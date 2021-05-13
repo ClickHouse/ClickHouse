@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint16_t dimensions)
+static DataTypePtr convertPostgreSQLDataType(String & type, bool is_nullable, uint16_t dimensions)
 {
     DataTypePtr res;
 
@@ -67,11 +67,11 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
                 res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>)
+            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
                 res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>)
+            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
                 res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal256>)
+            else if (precision <= DecimalUtils::max_precision<Decimal256>) //-V547
                 res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
@@ -96,7 +96,7 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
 
 
 std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
-    postgres::ConnectionHolderPtr connection, const String & postgres_table_name, bool use_nulls)
+    postgres::ConnectionHolderPtr connection_holder, const String & postgres_table_name, bool use_nulls)
 {
     auto columns = NamesAndTypesList();
 
@@ -115,7 +115,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
            "AND NOT attisdropped AND attnum > 0", postgres_table_name);
     try
     {
-        pqxx::read_transaction tx(connection->conn());
+        pqxx::read_transaction tx(connection_holder->get());
         pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
 
         std::tuple<std::string, std::string, std::string, uint16_t> row;
@@ -135,7 +135,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
     {
         throw Exception(fmt::format(
                     "PostgreSQL table {}.{} does not exist",
-                    connection->conn().dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
+                    connection_holder->get().dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
     }
     catch (Exception & e)
     {
