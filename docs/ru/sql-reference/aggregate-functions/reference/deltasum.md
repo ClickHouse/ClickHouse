@@ -9,7 +9,7 @@ toc_priority: 141
 Чтобы эта функция работала должным образом, исходные данные должны быть отсортированы.
 
 !!! info "Примечание"
-    В [материализованном представлении](../../../sql-reference/statements/create/view.md#materialized) вместо этой функции рекомендуется использовать [deltaSumTimestamp](../../../sql-reference/aggregate-functions/reference/deltasumtimestamp.md#agg_functions-deltasumtimestamp).
+    Чтобы эта функция работала должным образом, исходные данные должны быть отсортированы. В [материализованном представлении](../../../sql-reference/statements/create/view.md#materialized) вместо нее рекомендуется использовать [deltaSumTimestamp](../../../sql-reference/aggregate-functions/reference/deltasumtimestamp.md#agg_functions-deltasumtimestamp).
 
 **Синтаксис**
 
