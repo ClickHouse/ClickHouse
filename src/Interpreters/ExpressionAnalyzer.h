@@ -58,6 +58,7 @@ struct ExpressionAnalyzerData
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
+    TwoDimensionNamesAndTypesList aggregation_keys_list;
     AggregateDescriptions aggregate_descriptions;
 
     bool has_global_subqueries = false;
@@ -85,6 +86,8 @@ private:
             size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
         {}
     };
+
+    Poco::Logger * poco_log = &Poco::Logger::get("ExpressionAnalyzer");
 
 public:
     /// Ctor for non-select queries. Generally its usage is:
@@ -258,6 +261,7 @@ public:
     bool hasTableJoin() const { return syntax->ast_join; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
+    const TwoDimensionNamesAndTypesList & aggregationKeysList() const { return aggregation_keys_list; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }

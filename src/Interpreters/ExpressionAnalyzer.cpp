@@ -154,7 +154,6 @@ void ExpressionAnalyzer::analyzeAggregation()
     auto * select_query = query->as<ASTSelectQuery>();
 
     auto temp_actions = std::make_shared<ActionsDAG>(sourceColumns());
-
     if (select_query)
     {
         NamesAndTypesList array_join_columns;
@@ -217,10 +216,18 @@ void ExpressionAnalyzer::analyzeAggregation()
         {
             if (select_query->groupBy())
             {
+                if (select_query->group_by_with_grouping_sets)
+                {
+                    LOG_DEBUG(poco_log, "analyzeAggregation: detect group by with grouping sets");
+                    /// TODO
+                }
                 NameSet unique_keys;
                 ASTs & group_asts = select_query->groupBy()->children;
                 for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
                 {
+                    std::ostringstream os;
+                    group_asts[i]->dumpTree(os);
+                    LOG_DEBUG(poco_log, "Dump tree: " + os.str());
                     ssize_t size = group_asts.size();
                     getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
@@ -254,6 +261,10 @@ void ExpressionAnalyzer::analyzeAggregation()
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.count(key.name))
                     {
+                        if (select_query->group_by_with_grouping_sets)
+                        {
+                            aggregation_keys_list.push_back({key});
+                        }
                         unique_keys.insert(key.name);
                         aggregation_keys.push_back(key);
 

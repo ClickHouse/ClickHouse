@@ -29,6 +29,8 @@ private:
 
     UInt64 mask = 0;
 
+    Poco::Logger * log = &Poco::Logger::get("GroupingSetsTransform");
+
     Chunk merge(Chunks && chunks, bool final);
 };
 
