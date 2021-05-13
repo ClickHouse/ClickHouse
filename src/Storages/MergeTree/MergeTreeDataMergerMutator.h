@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeType.h>
+#include <Storages/MergeTree/MergeExecutor.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 
 
@@ -296,6 +297,8 @@ private:
 private:
     MergeTreeData & data;
     const size_t background_pool_size;
+
+    ConcurrentMergeExecutor merge_executor{2};
 
     Poco::Logger * log;
 

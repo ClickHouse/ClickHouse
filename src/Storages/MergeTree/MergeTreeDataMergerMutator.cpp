@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <DataStreams/TTLBlockInputStream.h>
@@ -933,17 +934,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
     }
 
-    const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream to{
+    auto to = std::make_shared<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
         merging_columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
+        MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices()),
         compression_codec,
-        blocks_are_granules_size};
-
-    merged_stream->readPrefix();
-    to.writePrefix();
+        blocks_are_granules_size);
 
     size_t rows_written = 0;
     const size_t initial_reservation = space_reservation ? space_reservation->getSize() : 0;
@@ -951,12 +948,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     auto is_cancelled = [&]() { return merges_blocker.isCancelled()
         || (need_remove_expired_values && ttl_merges_blocker.isCancelled()); };
 
-    Block block;
-    while (!is_cancelled() && (block = merged_stream->read()))
+    auto update_for_block = [&] (const Block & block) 
     {
         rows_written += block.rows();
-
-        to.write(block);
 
         merge_entry->rows_written = merged_stream->getProfileInfo().rows;
         merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
@@ -972,10 +966,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             space_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
         }
-    }
+    };
 
-    merged_stream->readSuffix();
-    merged_stream.reset();
+    auto task = std::make_shared<MergeTask>(merged_stream, to, is_cancelled, update_for_block);
+    merge_executor.schedule(task);
+    task->wait();
 
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
@@ -1052,11 +1047,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 /// as key part of vertical merge
                 std::vector<MergeTreeIndexPtr>{},
                 &written_offset_columns,
-                to.getIndexGranularity());
+                to->getIndexGranularity());
 
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
+            Block block;
             while (!merges_blocker.isCancelled() && (block = column_gathered_stream.read()))
             {
                 column_elems_written += block.rows();
@@ -1153,9 +1149,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        to.writeSuffixAndFinalizePart(new_data_part, need_sync);
+        to->writeSuffixAndFinalizePart(new_data_part, need_sync);
     else
-        to.writeSuffixAndFinalizePart(new_data_part, need_sync, &storage_columns, &checksums_gathered_columns);
+        to->writeSuffixAndFinalizePart(new_data_part, need_sync, &storage_columns, &checksums_gathered_columns);
 
     return new_data_part;
 }
