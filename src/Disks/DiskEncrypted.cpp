@@ -79,7 +79,9 @@ void registerDiskEncrypted(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextConstPtr context) -> DiskPtr {
+                      ContextConstPtr /*context*/,
+		      const DisksMap & map) -> DiskPtr {
+
         String wrapped_disk_name = config.getString(config_prefix + ".disk", "");
         if (wrapped_disk_name.empty())
             throw Exception("The wrapped disk name can not be empty. An encrypted disk is a wrapper over another disk. "
@@ -89,9 +91,8 @@ void registerDiskEncrypted(DiskFactory & factory)
         if (key.empty())
             throw Exception("Encrypted disk key can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
-        const auto& disks = context->getDisksMap();
-        const auto& wrapped_disk = disks.find(wrapped_disk_name);
-        if (wrapped_disk == disks.end())
+        auto wrapped_disk = map.find(wrapped_disk_name);
+        if (wrapped_disk == map.end())
             throw Exception("The wrapped disk must have been announced earlier. No disk with name " + wrapped_disk_name + ". Disk " + name,
                             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 

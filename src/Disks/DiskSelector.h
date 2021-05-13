@@ -12,7 +12,6 @@ namespace DB
 
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
-using DisksMap = std::map<String, DiskPtr>;
 
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
