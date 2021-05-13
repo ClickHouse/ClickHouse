@@ -2137,7 +2137,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     DataPartsVector parts_to_remove;
     {
         auto data_parts_lock = lockParts();
-        parts_to_remove = removePartsInRangeFromWorkingSet(drop_range_info, true, true, data_parts_lock);
+        parts_to_remove = removePartsInRangeFromWorkingSet(drop_range_info, true, data_parts_lock);
     }
 
     if (entry.detach)
@@ -2250,7 +2250,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
         if (parts_to_add.empty() && replace)
         {
-            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
             String parts_to_remove_str;
             for (const auto & part : parts_to_remove)
             {
@@ -2493,7 +2493,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             transaction.commit(&data_parts_lock);
             if (replace)
             {
-                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
                 String parts_to_remove_str;
                 for (const auto & part : parts_to_remove)
                 {
@@ -4774,7 +4774,8 @@ static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version,
     return part_info.getPartName();
 }
 
-bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info, bool for_replace_range)
+bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info,
+                                                                        std::optional<EphemeralLockInZooKeeper> & delimiting_block_lock, bool for_replace_range)
 {
     /// Even if there is no data in the partition, you still need to mark the range for deletion.
     /// - Because before executing DETACH, tasks for downloading parts to this partition can be executed.
@@ -4791,10 +4792,21 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 
     {
         auto zookeeper = getZooKeeper();
-        auto block_number_lock = allocateBlockNumber(partition_id, zookeeper);
-        right = block_number_lock->getNumber();
-        block_number_lock->unlock();
+        delimiting_block_lock = allocateBlockNumber(partition_id, zookeeper);
+        right = delimiting_block_lock->getNumber();
         mutation_version = queue.getCurrentMutationVersion(partition_id, right);
+    }
+
+    if (for_replace_range)
+    {
+        /// NOTE Undo max block number decrement for REPLACE_RANGE, because there are invariants:
+        /// - drop range for REPLACE PARTITION must contain at least 2 blocks (1 skipped block and at least 1 real block)
+        /// - drop range for MOVE PARTITION/ATTACH PARTITION FROM always contains 1 block
+
+        /// REPLACE/MOVE PARTITION uses different max level for unknown (probably historical) reason.
+        auto max_level = std::numeric_limits<decltype(part_info.level)>::max();
+        part_info = MergeTreePartInfo(partition_id, left, right, max_level, mutation_version);
+        return right != 0;
     }
 
     /// Empty partition.
@@ -4803,20 +4815,8 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 
     --right;
 
-    decltype(part_info.level) max_level = MergeTreePartInfo::MAX_LEVEL;
-    if (for_replace_range)
-    {
-        /// REPLACE/MOVE PARTITION uses different max level for unknown (probably historical) reason.
-        max_level = std::numeric_limits<decltype(part_info.level)>::max();
-
-        /// NOTE Undo max block number decrement for REPLACE_RANGE, because there are invariants:
-        /// - drop range for REPLACE PARTITION must contain at least 2 blocks (1 skipped block and at least 1 real block)
-        /// - drop range for MOVE PARTITION/ATTACH PARTITION FROM always contains 1 block
-        ++right;
-    }
-
     /// Artificial high level is chosen, to make this part "covering" all parts inside.
-    part_info = MergeTreePartInfo(partition_id, left, right, max_level, mutation_version);
+    part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
     return true;
 }
 
@@ -6117,7 +6117,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     /// So, such case has special meaning, if drop_range contains only one block it means that nothing to drop.
     /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
     MergeTreePartInfo drop_range;
-    bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, true);
+    std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+    bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
     if (replace && partition_was_empty)
     {
         /// Nothing to drop, will just attach new parts
@@ -6128,7 +6129,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     if (!replace)
     {
         /// It's ATTACH PARTITION FROM, not REPLACE PARTITION. We have to reset drop range
-        drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(drop_range.partition_id);
+        drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
     }
 
     assert(drop_range.getBlocksCount() > 0);
@@ -6138,17 +6139,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
     if (replace)
     {
-        /// We have to prohibit merges in drop_range, since new merge log entry appeared after this REPLACE FROM entry
-        ///  could produce new merged part instead in place of just deleted parts.
-        /// It is better to prohibit them on leader replica (like DROP PARTITION makes),
-        ///  but it is inconvenient for a user since he could actually use source table from this replica.
-        /// Therefore prohibit merges on the initializer server now and on the remaining servers when log entry will be executed.
-        /// It does not provides strong guarantees, but is suitable for intended use case (assume merges are quite rare).
-
-        {
-            std::lock_guard merge_selecting_lock(merge_selecting_mutex);
-            queue.disableMergesInBlockRange(drop_range_fake_part_name);
-        }
+        /// Optional step
+        std::lock_guard merge_selecting_lock(merge_selecting_mutex);
+        queue.disableMergesInBlockRangeOnLocalReplica(drop_range_fake_part_name);
     }
 
     for (const auto & src_part : src_all_parts)
@@ -6242,6 +6235,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+        delimiting_block_lock->getUnlockOps(ops);
 
         Transaction transaction(*this);
         {
@@ -6252,13 +6246,14 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         }
 
         op_results = zookeeper->multi(ops);
+        delimiting_block_lock->assumeUnlocked();
 
         {
             auto data_parts_lock = lockParts();
 
             transaction.commit(&data_parts_lock);
             if (replace)
-                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
         }
 
         PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
@@ -6329,13 +6324,15 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     /// A range for log entry to remove parts from the source table (myself).
 
     MergeTreePartInfo drop_range;
-    bool partition_was_not_empty = getFakePartCoveringAllPartsInPartition(partition_id, drop_range, true);
+    std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+    bool partition_was_not_empty = getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
     if (partition_was_not_empty)
     {
+        /// Optional step
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
-        queue.disableMergesInBlockRange(drop_range_fake_part_name);
+        queue.disableMergesInBlockRangeOnLocalReplica(drop_range_fake_part_name);
     }
 
     /// Clone parts into destination table.
@@ -6379,7 +6376,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     ReplicatedMergeTreeLogEntryData entry;
     {
-        MergeTreePartInfo drop_range_dest = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(drop_range.partition_id);
+        MergeTreePartInfo drop_range_dest = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
 
         entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
         entry.source_replica = dest_table_storage->replica_name;
@@ -6438,7 +6435,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
             op_results = zookeeper->multi(ops);
 
-            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, lock);
+            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, lock);
             transaction.commit(&lock);
         }
 
@@ -6467,13 +6464,15 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         dest_table_storage->waitForAllReplicasToProcessLogEntry(entry);
     }
 
-    Coordination::Requests ops_dest;
+    Coordination::Requests ops_src;
 
-    ops_dest.emplace_back(zkutil::makeCreateRequest(
+    ops_src.emplace_back(zkutil::makeCreateRequest(
         zookeeper_path + "/log/log-", entry_delete.toString(), zkutil::CreateMode::PersistentSequential));
-    ops_dest.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version
+    ops_src.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version
+    delimiting_block_lock->getUnlockOps(ops_src);
 
-    op_results = zookeeper->multi(ops_dest);
+    op_results = zookeeper->multi(ops_src);
+    delimiting_block_lock->assumeUnlocked();
 
     log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.front()).path_created;
     entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
@@ -6706,7 +6705,9 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
     zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, ContextPtr query_context, bool detach)
 {
     MergeTreePartInfo drop_range_info;
-    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
+    /// It prevent other replicas from assigning merges which intersect locked block number.
+    std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info, delimiting_block_lock))
     {
         LOG_INFO(log, "Will not drop partition {}, it is empty.", partition_id);
         return false;
@@ -6714,13 +6715,11 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
 
     clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
 
-    /** Forbid to choose the parts to be deleted for merging.
-      * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
-      */
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
     {
+        /// Optional step
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
-        queue.disableMergesInBlockRange(drop_range_fake_part_name);
+        queue.disableMergesInBlockRangeOnLocalReplica(drop_range_fake_part_name);
     }
 
     LOG_DEBUG(log, "Disabled merges covered by range {}", drop_range_fake_part_name);
@@ -6735,9 +6734,11 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version.
+    delimiting_block_lock->getUnlockOps(ops);
     if (auto txn = query_context->getZooKeeperMetadataTransaction())
         txn->moveOpsTo(ops);
     Coordination::Responses responses = zookeeper.multi(ops);
+    delimiting_block_lock->assumeUnlocked();
 
     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
