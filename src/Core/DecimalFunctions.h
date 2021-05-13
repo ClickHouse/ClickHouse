@@ -276,9 +276,7 @@ template <typename To, typename DecimalType>
 To convertTo(const DecimalType & decimal, size_t scale)
 {
     To result;
-
     convertToImpl<To, DecimalType, void>(decimal, scale, result);
-
     return result;
 }
 
