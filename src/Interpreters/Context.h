@@ -181,8 +181,9 @@ private:
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
-    FileProgress file_progress;  /// Progress data to track processing of file based buffer(s).
-    bool render_progress = false;
+
+    using FileProgressCallback = std::function<void(const FileProgress & progress)>;
+    FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
     QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
@@ -588,11 +589,8 @@ public:
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
     ProgressCallback getProgressCallback() const;
 
-    void setRenderProgress() { render_progress = true; }
-    bool needRenderProgress() const { return render_progress; }
-
-    const FileProgress & getFileProgress() { return file_progress; }
-    void setFileTotalBytesToProcess(size_t num_bytes) { file_progress.total_bytes_to_process = num_bytes; }
+    void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
+    FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.

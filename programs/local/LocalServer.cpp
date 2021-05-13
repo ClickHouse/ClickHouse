@@ -389,34 +389,29 @@ void LocalServer::processQueries()
     CurrentThread::QueryScope query_scope_holder(context);
 
     ///Set progress show
-    progress_bar.need_render_progress = config().getBool("progress", false);
+    need_render_progress = config().getBool("progress", false);
 
-    if (progress_bar.need_render_progress)
+    if (need_render_progress)
     {
         context->setProgressCallback([&](const Progress & value)
-                                     {
-                                         if (!progress_bar.updateProgress(progress, value))
-                                         {
-                                             // Just a keep-alive update.
-                                              return;
-                                         }
-                                         progress_bar.writeProgress(progress, watch.elapsed());
-                                     });
+        {
+            /// Write progress only if progress was updated
+            if (progress_indication.updateProgress(value))
+                progress_indication.writeProgress();
+        });
     }
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-    if (config().hasOption("progress"))
-        context->setRenderProgress();
+
+    if (need_render_progress)
+        progress_indication.setFileProgressCallback(context);
+
     std::exception_ptr exception;
 
     for (const auto & query : queries)
     {
-        watch.restart();
-        progress.reset();
-        progress_bar.show_progress_bar = false;
-        progress_bar.written_progress_chars = 0;
-        progress_bar.written_first_block = false;
-
+        written_first_block = false;
+        progress_indication.resetProgress();
 
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
@@ -566,7 +561,6 @@ void LocalServer::init(int argc, char ** argv)
         ("output-format", po::value<std::string>(), "default output format")
 
         ("stacktrace", "print stack traces of exceptions")
-        ("progress", "show progress for File table engine")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
