@@ -399,7 +399,7 @@ SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0
 
 Проверяет, попадает ли IP адрес в интервал, заданный в нотации [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing).
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 isIPAddressInRange(address, prefix)
