@@ -295,7 +295,6 @@ public:
         if (!col->getValue<String>().empty())
             re = Regexps::get<false, false>(col->getValue<String>());
 
-        matches.resize(1);
     }
 
     /// Returns the position of the argument that is the column of strings
