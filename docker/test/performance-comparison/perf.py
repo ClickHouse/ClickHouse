@@ -356,10 +356,11 @@ for query_index in queries_to_run:
         # For very short queries we have a special mode where we run them for at
         # least some time. The recommended lower bound of run time for "normal"
         # queries is about 0.1 s, and we run them about 10 times, giving the
-        # time per query per server of about one second. Use this value as a
-        # reference for "short" queries.
+        # time per query per server of about one second. Run "short" queries
+        # for longer time, because they have a high percentage of overhead and
+        # might give less stable results.
         if is_short[query_index]:
-            if server_seconds >= 2 * len(this_query_connections):
+            if server_seconds >= 8 * len(this_query_connections):
                 break
             # Also limit the number of runs, so that we don't go crazy processing
             # the results -- 'eqmed.sql' is really suboptimal.
