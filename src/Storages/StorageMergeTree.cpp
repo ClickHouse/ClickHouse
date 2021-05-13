@@ -868,8 +868,6 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     if (storage_settings.get()->assign_part_uuids)
         future_part->uuid = UUIDHelpers::generateV4();
 
-    auto commands = MutationCommands::create();
-
     CurrentlyMergingPartsTaggerPtr tagger;
 
     if (current_mutations_by_version.empty())
@@ -885,6 +883,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         return {};
     }
 
+    bool are_some_mutations_for_some_parts_skipped = false;
     auto mutations_end_it = current_mutations_by_version.end();
     for (const auto & part : getDataPartsVector())
     {
@@ -905,6 +904,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                 part->name);
             continue;
         }
+
+        auto commands = MutationCommands::create();
 
         size_t current_ast_elements = 0;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
@@ -978,7 +979,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                 /// Shall not create a new part, but will do that later if mutation with higher version appear.
                 auto block_range = std::make_pair(part->info.min_block, part->info.max_block);
                 updated_version_by_block_range[block_range] = current_mutations_by_version.rbegin()->first;
-                commands.clear();
+                are_some_mutations_for_some_parts_skipped = true;
                 continue;
             }
 
@@ -993,6 +994,13 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
         }
+    }
+
+    if (are_some_mutations_for_some_parts_skipped)
+    {
+        currently_processing_in_background_mutex.unlock();
+        std::lock_guard<std::mutex> mutation_wait_mutex_lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
     }
 
     return {};
