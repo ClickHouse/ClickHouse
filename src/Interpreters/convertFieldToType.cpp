@@ -201,7 +201,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
-        /// TODO Conversion from integers to DateTime64
+        if (which_type.isDateTime64()
+            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDateOrDateTime()))
+        {
+            const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
+            const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(src.reinterpret<Int64>(), 0, scale);
+            return Field(DecimalField<DateTime64>(decimal_value, scale));
+        }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
     {
