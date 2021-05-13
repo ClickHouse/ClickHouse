@@ -375,7 +375,7 @@ SHOW ACCESS
 SHOW CLUSTER '<name>'
 SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
 ```
-### Примеры 
+### Примеры {#show-cluster-examples}
 
 Запрос:
 

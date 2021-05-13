@@ -368,7 +368,7 @@ Returns a list of clusters. All available clusters are listed in the [system.clu
 SHOW CLUSTER '<name>'
 SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
 ```
-### Examples 
+### Examples {#show-cluster-examples}
 
 Query:
 
