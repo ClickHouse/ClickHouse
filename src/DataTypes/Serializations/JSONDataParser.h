@@ -47,8 +47,6 @@ class JSONDataParser
 {
 public:
     using Element = typename ParserImpl::Element;
-    using Path = std::vector<std::string_view>;
-    using Paths = std::vector<Path>;
 
     void readJSON(String & s, ReadBuffer & buf)
     {
