@@ -93,7 +93,7 @@
 	url = https://github.com/ClickHouse-Extras/libunwind.git
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
-	url = https://github.com/ClickHouse-Extras/simdjson.git
+	url = https://github.com/simdjson/simdjson.git
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
 	url = https://github.com/ClickHouse-Extras/rapidjson
@@ -133,7 +133,7 @@
 	url = https://github.com/unicode-org/icu.git
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
-	url = https://github.com/google/flatbuffers.git
+	url = https://github.com/ClickHouse-Extras/flatbuffers.git
 [submodule "contrib/libc-headers"]
 	path = contrib/libc-headers
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
@@ -221,3 +221,9 @@
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse-Extras/NuRaft.git
+[submodule "contrib/nanodbc"]
+	path = contrib/nanodbc
+	url = https://github.com/ClickHouse-Extras/nanodbc.git
+[submodule "contrib/datasketches-cpp"]
+	path = contrib/datasketches-cpp
+	url = https://github.com/ClickHouse-Extras/datasketches-cpp.git

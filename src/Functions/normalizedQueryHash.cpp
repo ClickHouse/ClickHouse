@@ -51,7 +51,7 @@ class FunctionNormalizedQueryHash : public IFunction
 {
 public:
     static constexpr auto name = keep_names ? "normalizedQueryHashKeepNames" : "normalizedQueryHash";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionNormalizedQueryHash>();
     }

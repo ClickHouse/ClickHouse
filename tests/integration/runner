@@ -33,10 +33,15 @@ def check_args_and_update_paths(args):
     if not os.path.isabs(args.binary):
         args.binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.binary))
 
-    if not args.bridge_binary:
-        args.bridge_binary = os.path.join(os.path.dirname(args.binary), 'clickhouse-odbc-bridge')
-    elif not os.path.isabs(args.bridge_binary):
-        args.bridge_binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.bridge_binary))
+    if not args.odbc_bridge_binary:
+        args.odbc_bridge_binary = os.path.join(os.path.dirname(args.binary), 'clickhouse-odbc-bridge')
+    elif not os.path.isabs(args.odbc_bridge_binary):
+        args.odbc_bridge_binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.odbc_bridge_binary))
+
+    if not args.library_bridge_binary:
+        args.library_bridge_binary = os.path.join(os.path.dirname(args.binary), 'clickhouse-library-bridge')
+    elif not os.path.isabs(args.library_bridge_binary):
+        args.library_bridge_binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.library_bridge_binary))
 
     if args.base_configs_dir:
         if not os.path.isabs(args.base_configs_dir):
@@ -59,9 +64,9 @@ def check_args_and_update_paths(args):
         args.src_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, SRC_DIR_IN_REPO))
         logging.info("src dir is not set. Will use {}".format(args.src_dir))
 
-    logging.info("base_configs_dir: {},  binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
+    logging.info("base_configs_dir: {}, binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
 
-    for path in [args.binary, args.bridge_binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
+    for path in [args.binary, args.odbc_bridge_binary, args.library_bridge_binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exist".format(path))
 
@@ -82,7 +87,8 @@ signal.signal(signal.SIGINT, docker_kill_handler_handler)
 # To run integration tests following artfacts should be sufficient:
 #   - clickhouse binaries (env CLICKHOUSE_TESTS_SERVER_BIN_PATH or --binary arg)
 #   - clickhouse default configs(config.xml, users.xml) from same version as binary (env CLICKHOUSE_TESTS_BASE_CONFIG_DIR or --base-configs-dir arg)
-#   - odbc bridge binary (env CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH or --bridge-binary arg)
+#   - odbc bridge binary (env CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH or --odbc-bridge-binary arg)
+#   - library bridge binary (env CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH or --library-bridge-binary)
 #   - tests/integration directory with all test cases and configs (env CLICKHOUSE_TESTS_INTEGRATION_PATH or --cases-dir)
 #
 # 1) --clickhouse-root is only used to determine other paths on default places
@@ -98,9 +104,14 @@ if __name__ == "__main__":
         help="Path to clickhouse binary. For example /usr/bin/clickhouse")
 
     parser.add_argument(
-        "--bridge-binary",
+        "--odbc-bridge-binary",
         default=os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH", ""),
         help="Path to clickhouse-odbc-bridge binary. Defaults to clickhouse-odbc-bridge in the same dir as clickhouse.")
+
+    parser.add_argument(
+        "--library-bridge-binary",
+        default=os.environ.get("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH", ""),
+        help="Path to clickhouse-library-bridge binary. Defaults to clickhouse-library-bridge in the same dir as clickhouse.")
 
     parser.add_argument(
         "--base-configs-dir",
@@ -185,14 +196,17 @@ if __name__ == "__main__":
     if sys.stdout.isatty() and sys.stdin.isatty():
         tty = "-it"
 
-    cmd = "docker run {net} {tty} --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
+    cmd = "docker run {net} {tty} --rm --name {name} --privileged \
+        --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
+        --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
         --volume={name}_volume:/var/lib/docker {env_tags} -e PYTEST_OPTS='{opts}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
-        bridge_bin=args.bridge_binary,
+        odbc_bridge_bin=args.odbc_bridge_binary,
+        library_bridge_bin=args.library_bridge_binary,
         base_cfg=args.base_configs_dir,
         cases_dir=args.cases_dir,
         src_dir=args.src_dir,

@@ -16,7 +16,7 @@
 
 namespace DB
 {
-class RangeHashedDictionary final : public IDictionaryBase
+class RangeHashedDictionary final : public IDictionary
 {
 public:
     RangeHashedDictionary(
@@ -31,6 +31,14 @@ public:
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
 
     double getHitRate() const override { return 1.0; }
 
@@ -105,15 +113,20 @@ private:
             UInt32,
             UInt64,
             UInt128,
+            UInt256,
             Int8,
             Int16,
             Int32,
             Int64,
+            Int128,
+            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
+            Decimal256,
             Float32,
             Float64,
+            UUID,
             StringRef>
             null_values;
         std::variant<
@@ -122,15 +135,20 @@ private:
             Ptr<UInt32>,
             Ptr<UInt64>,
             Ptr<UInt128>,
+            Ptr<UInt256>,
             Ptr<Int8>,
             Ptr<Int16>,
             Ptr<Int32>,
             Ptr<Int64>,
+            Ptr<Int128>,
+            Ptr<Int256>,
             Ptr<Decimal32>,
             Ptr<Decimal64>,
             Ptr<Decimal128>,
+            Ptr<Decimal256>,
             Ptr<Float32>,
             Ptr<Float64>,
+            Ptr<UUID>,
             Ptr<StringRef>>
             maps;
         std::unique_ptr<Arena> string_arena;
@@ -160,25 +178,26 @@ private:
     template <typename AttributeType>
     ColumnUInt8::Ptr hasKeysImpl(
         const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<RangeStorageType> & dates) const;
+        const PaddedPODArray<UInt64> & ids,
+        const PaddedPODArray<RangeStorageType> & dates,
+        size_t & keys_found) const;
 
     template <typename T>
-    static void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);
+    static void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
 
-    static void setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value);
+    static void setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
     template <typename RangeType>
-    void getIdsAndDates(PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
+    void getIdsAndDates(PaddedPODArray<UInt64> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename T, typename RangeType>
     void getIdsAndDates(
         const Attribute & attribute,
-        PaddedPODArray<Key> & ids,
+        PaddedPODArray<UInt64> & ids,
         PaddedPODArray<RangeType> & start_dates,
         PaddedPODArray<RangeType> & end_dates) const;
 
@@ -199,6 +218,7 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 };
 
 }

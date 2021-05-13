@@ -44,12 +44,11 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     for (const auto & range : all_mark_ranges)
         total_marks_count += range.end - range.begin;
 
-    size_t total_rows = data_part->index_granularity.getTotalRows();
+    size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
-        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {}, up to {} rows starting from {}",
+        LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
-            data_part->index_granularity.getRowsCountInRanges(all_mark_ranges),
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
     addTotalRowsApprox(total_rows);
@@ -63,9 +62,9 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     column_name_set = NameSet{column_names.begin(), column_names.end()};
 
     if (use_uncompressed_cache)
-        owned_uncompressed_cache = storage.global_context.getUncompressedCache();
+        owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
 
-    owned_mark_cache = storage.global_context.getMarkCache();
+    owned_mark_cache = storage.getContext()->getMarkCache();
 
     reader = data_part->getReader(task_columns.columns, metadata_snapshot,
         all_mark_ranges, owned_uncompressed_cache.get(),

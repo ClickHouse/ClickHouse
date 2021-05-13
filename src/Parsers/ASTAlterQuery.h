@@ -46,6 +46,10 @@ public:
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
 
+        ADD_PROJECTION,
+        DROP_PROJECTION,
+        MATERIALIZE_PROJECTION,
+
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
         ATTACH_PARTITION,
@@ -54,6 +58,8 @@ public:
         FETCH_PARTITION,
         FREEZE_PARTITION,
         FREEZE_ALL,
+        UNFREEZE_PARTITION,
+        UNFREEZE_ALL,
 
         DELETE,
         UPDATE,
@@ -104,6 +110,17 @@ public:
     */
     ASTPtr constraint;
 
+    /** The ADD PROJECTION query stores the ProjectionDeclaration there.
+     */
+    ASTPtr projection_decl;
+
+    /** The ADD PROJECTION query stores the name of the projection following AFTER.
+     *  The DROP PROJECTION query stores the name for deletion.
+     *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
+     *  The CLEAR PROJECTION query stores the name of the projection to clear.
+     */
+    ASTPtr projection;
+
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
@@ -139,6 +156,8 @@ public:
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
 
+    bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
+
     bool if_not_exists = false; /// option for ADD_COLUMN
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
@@ -153,7 +172,9 @@ public:
      */
     String from;
 
-    /** For FREEZE PARTITION - place local backup to directory with specified name.
+    /**
+     * For FREEZE PARTITION - place local backup to directory with specified name.
+     * For UNFREEZE - delete local backup at directory with specified name.
      */
     String with_name;
 

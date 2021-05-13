@@ -270,11 +270,11 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class FunctionJSON : public IFunction
+class FunctionJSON : public IFunction, WithContext
 {
 public:
-    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionJSON>(context_); }
-    FunctionJSON(const Context & context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionJSON>(context_); }
+    FunctionJSON(ContextPtr context_) : WithContext(context_) {}
 
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }
@@ -291,7 +291,7 @@ public:
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
-        if (context.getSettingsRef().allow_simdjson)
+        if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
 
@@ -301,9 +301,6 @@ public:
         return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
     }
-
-private:
-    const Context & context;
 };
 
 
@@ -613,8 +610,8 @@ struct JSONExtractTree
     class Node
     {
     public:
-        Node() {}
-        virtual ~Node() {}
+        Node() = default;
+        virtual ~Node() = default;
         virtual bool insertResultToColumn(IColumn &, const Element &) = 0;
     };
 

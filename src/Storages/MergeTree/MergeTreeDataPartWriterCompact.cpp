@@ -39,9 +39,9 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
+    IDataType::StreamCallbackWithType callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
     {
-        String stream_name = IDataType::getFileNameForStream(column, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
         if (compressed_streams.count(stream_name))
@@ -50,7 +50,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         CompressionCodecPtr compression_codec;
 
         /// If we can use special codec than just get it
-        if (IDataType::isSpecialCompressionAllowed(substream_path))
+        if (ISerialization::isSpecialCompressionAllowed(substream_path))
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
@@ -63,8 +63,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    IDataType::SubstreamPath stream_path;
-    column.type->enumerateStreams(callback, stream_path);
+    column.type->enumerateStreams(serializations[column.name], callback);
 }
 
 namespace
@@ -106,20 +105,21 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
 /// Write single granule of one column (rows between 2 marks)
 void writeColumnSingleGranule(
     const ColumnWithTypeAndName & column,
-    IDataType::OutputStreamGetter stream_getter,
+    const SerializationPtr & serialization,
+    ISerialization::OutputStreamGetter stream_getter,
     size_t from_row,
     size_t number_of_rows)
 {
-    IDataType::SerializeBinaryBulkStatePtr state;
-    IDataType::SerializeBinaryBulkSettings serialize_settings;
+    ISerialization::SerializeBinaryBulkStatePtr state;
+    ISerialization::SerializeBinaryBulkSettings serialize_settings;
 
     serialize_settings.getter = stream_getter;
-    serialize_settings.position_independent_encoding = true;
-    serialize_settings.low_cardinality_max_dictionary_size = 0;
+    serialize_settings.position_independent_encoding = true; //-V1048
+    serialize_settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
-    column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
-    column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
-    column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
+    serialization->serializeBinaryBulkStatePrefix(serialize_settings, state);
+    serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
+    serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
 }
 
 }
@@ -181,9 +181,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             /// So we flush each stream (using next()) before using new one, because otherwise we will override
             /// data in result file.
             CompressedStreamPtr prev_stream;
-            auto stream_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
+            auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = IDataType::getFileNameForStream(*name_and_type, substream_path);
+                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
 
                 auto & result_stream = compressed_streams[stream_name];
                 /// Write one compressed block per column in granule for more optimal reading.
@@ -203,7 +203,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start_row, granule.rows_to_write);
+            writeColumnSingleGranule(
+                block.getByName(name_and_type->name), serializations[name_and_type->name],
+                stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next(); //-V522

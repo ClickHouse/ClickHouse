@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.2">
     <query>
         WITH
             bitXor(number, 0x4CF2D2BAAE6DA887) AS x0,
