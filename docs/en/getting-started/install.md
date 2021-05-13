@@ -104,7 +104,7 @@ For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse buil
 
 After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
 
-Run `sudo ./clickhouse install` if you want to install clickhouse system-wide (also with needed condiguration files, configuring users etc.). After that run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it. 
+Run `sudo ./clickhouse install` if you want to install clickhouse system-wide (also with needed configuration files, configuring users etc.). After that run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it. 
 
 These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
 
