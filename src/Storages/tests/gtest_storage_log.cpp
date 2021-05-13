@@ -53,7 +53,7 @@ public:
 
     void TearDown() override
     {
-        table->shutdown();
+        table->flushAndShutdown();
         destroyDisk<T>(disk);
     }
 

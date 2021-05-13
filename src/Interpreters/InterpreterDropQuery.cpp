@@ -171,7 +171,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
             else
                 table->checkTableCanBeDetached();
 
-            table->shutdown();
+            table->flushAndShutdown();
             TableExclusiveLockHolder table_lock;
 
             if (database->getUUID() == UUIDHelpers::Nil)
@@ -215,7 +215,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
             else
                 table->checkTableCanBeDropped();
 
-            table->shutdown();
+            table->flushAndShutdown();
 
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)
@@ -253,7 +253,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             else if (kind == ASTDropQuery::Kind::Drop)
             {
                 context_handle->removeExternalTable(table_name);
-                table->shutdown();
+                table->flushAndShutdown();
                 auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
                 /// Delete table data
                 table->drop();

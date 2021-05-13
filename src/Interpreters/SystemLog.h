@@ -153,7 +153,7 @@ public:
     {
         stopFlushThread();
         if (table)
-            table->shutdown();
+            table->flushAndShutdown();
     }
 
     String getName() override

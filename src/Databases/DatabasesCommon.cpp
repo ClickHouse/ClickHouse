@@ -133,7 +133,7 @@ void DatabaseWithOwnTablesBase::shutdown()
     for (const auto & kv : tables_snapshot)
     {
         auto table_id = kv.second->getStorageID();
-        kv.second->shutdown();
+        kv.second->flushAndShutdown();
         if (table_id.hasUUID())
         {
             assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);

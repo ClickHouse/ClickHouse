@@ -444,6 +444,21 @@ public:
       */
     virtual void startup() {}
 
+    /**
+      * If the storage requires some complicated work on destroying,
+      * then you have two virtual methods:
+      * - flush()
+      * - shutdown()
+      *
+      * @see shutdown()
+      * @see flush()
+      */
+    void flushAndShutdown()
+    {
+        flush();
+        shutdown();
+    }
+
     /** If the table have to do some complicated work when destroying an object - do it in advance.
       * For example, if the table contains any threads for background work - ask them to complete and wait for completion.
       * By default, does nothing.
