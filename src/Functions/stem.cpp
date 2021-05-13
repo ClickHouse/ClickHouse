@@ -1,16 +1,8 @@
-#include <Functions/FunctionStringToString.h>
-#include <Functions/FunctionFactory.h>
-//#include <Poco/Unicode.h>
-
-
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
-#include <Functions/castTypeToEither.h>
 
 #include <libstemmer.h>
 
@@ -28,14 +20,22 @@ namespace
 
 struct StemImpl
 {
-    
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        struct sb_stemmer * stemmer)
+        const String & language)
     {
+        struct sb_stemmer * stemmer = sb_stemmer_new(language.data(), "UTF_8");
+        
+        if (stemmer == nullptr)
+        {
+            throw Exception(
+            "Language " + language + " is not supported for function stem",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
         res_data.resize(data.size());
         res_offsets.assign(offsets);
 
@@ -55,18 +55,11 @@ struct StemImpl
         res_data.resize(data_size);
         sb_stemmer_delete(stemmer);
     }
-
 };
 
 
 class FunctionStem : public IFunction
 {
-    template <typename F>
-    static bool castType(const IDataType * type, F && f)
-    {
-        return castTypeToEither<DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>(type, std::forward<F>(f));
-    }
-
 public:
     static constexpr auto name = "stem";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStem>(); }
@@ -96,31 +89,21 @@ public:
         const auto & strcolumn = arguments[1].column;
         ColumnPtr res;
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(strcolumn.get())) 
-        {
-            if (const ColumnConst * scale_column_num = checkAndGetColumn<ColumnConst>(langcolumn.get()))
-            {
-                String language = scale_column_num->getValue<String>();
-                struct sb_stemmer * stemmer = sb_stemmer_new(language.data(), "UTF_8");
+        const ColumnConst * lang_col = checkAndGetColumn<ColumnConst>(langcolumn.get());
+        const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
-                if (stemmer != nullptr)
-                {
-                    auto col_res = ColumnString::create();
-                    StemImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), stemmer);
-                    return col_res;
-                }
-                else 
-                {
-                    throw Exception(
-                    "Language " + language + " is not supported for function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                }
-            }
-        }
+        if (!lang_col) 
+            throw Exception(
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+        if (!words_col)
+            throw Exception(
+                "Illegal column " + arguments[1].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        throw Exception(
-            "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+        String language = lang_col->getValue<String>();
+
+        auto col_res = ColumnString::create();
+        StemImpl::vector(words_col->getChars(), words_col->getOffsets(), col_res->getChars(), col_res->getOffsets(), language);
+        return col_res;
     }
 };
 
