@@ -165,17 +165,17 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     {
         bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
-        auto console_loglevel_string = config.getString("logger.console_loglevel", log_level_string);
-        auto console_loglevel = Poco::Logger::parseLevel(console_loglevel_string);
-        if (console_loglevel > max_log_level)
+        auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
+        auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
+        if (console_log_level > max_log_level)
         {
-            max_log_level = console_loglevel;
+            max_log_level = console_log_level;
         }
 
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
-        logger.warning("Logging " + console_loglevel_string + " to console");
-        log->setLevel(console_loglevel);
+        logger.warning("Logging " + console_log_level_string + " to console");
+        log->setLevel(console_log_level);
         split->addChannel(log);
     }
 
