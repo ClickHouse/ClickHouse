@@ -17,6 +17,7 @@ Retrieves a value from an external dictionary.
 ``` sql
 dictGet('dict_name', 'attr_name', id_expr)
 dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
+dictGetOrNull('dict_name', 'attr_name', id_expr)
 ```
 
 **Arguments**
@@ -34,6 +35,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
         - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
         - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
+        - `dictGetOrNull` returns `NULL` in case key was not found in dictionary.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
 
@@ -99,23 +101,6 @@ LIMIT 3
 **See Also**
 
 -   [External Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)
-
-## dictGetOrNull  {#dictgetornull }
-
-Retrieves a value from an external dictionary. It works like `dictGet`, but return `NULL` in case key was not found in dictionary. 
-
-``` sql
-dictGetOrNull('dict_name', 'attr_name', id_expr)
-```
-
-**Arguments**
-
-
-
-**Returned value**
-
-
-Type: 
 
 ## dictHas {#dicthas}
 
