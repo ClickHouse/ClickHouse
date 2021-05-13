@@ -30,7 +30,7 @@ void setupKeeperConfigsAndDirectories(po::variables_map & options)
         fs::create_directories(config_dir);
     }
 
-    fs::path main_config_file = config_dir / "keeper-config.xml";
+    fs::path main_config_file = config_dir / "keeper_config.xml";
     fs::path config_d = config_dir / "config.d";
 
     std::string log_path = prefix / options["log-path"].as<std::string>();
@@ -45,7 +45,7 @@ void setupKeeperConfigsAndDirectories(po::variables_map & options)
 
     if (!fs::exists(main_config_file))
     {
-        std::string_view main_config_content = getResource("keeper-config.xml");
+        std::string_view main_config_content = getResource("keeper_config.xml");
         if (main_config_content.empty())
         {
             fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -250,7 +250,7 @@ int mainEntryClickHouseKeeperStart(int argc, char ** argv)
         std::string user = options["user"].as<std::string>();
 
         fs::path executable = fs::path(options["binary-path"].as<std::string>()) / "clickhouse-keeper";
-        fs::path config = fs::path(options["config-path"].as<std::string>()) / "keeper-config.xml";
+        fs::path config = fs::path(options["config-path"].as<std::string>()) / "keeper_config.xml";
         fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-keeper.pid";
 
         return start(user, executable, config, pid_file);
@@ -359,7 +359,7 @@ int mainEntryClickHouseKeeperRestart(int argc, char ** argv)
         std::string user = options["user"].as<std::string>();
 
         fs::path executable = fs::path(options["binary-path"].as<std::string>()) / "clickhouse-keeper";
-        fs::path config = fs::path(options["config-path"].as<std::string>()) / "keeper-config.xml";
+        fs::path config = fs::path(options["config-path"].as<std::string>()) / "keeper_config.xml";
         fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-keeper.pid";
 
         if (int res = stop(pid_file, options["force"].as<bool>(), "clickhouse-keeper"))
