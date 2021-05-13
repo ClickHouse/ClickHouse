@@ -10,21 +10,21 @@ toc_title: External Dictionaries
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-## dictGet {#dictget}
+## dictGet, dictGetOrDefault {#dictget}
 
-Retrieves a value from an external dictionary.
+Retrieves values from an external dictionary. 
 
 ``` sql
-dictGet('dict_name', 'attr_name', id_expr)
-dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
+dictGet('dict_name', attr_names, id_expr)
+dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
 ```
 
 **Arguments**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+-   `attr_names` — Name of the column of the dictionary, [String literal](../../sql-reference/syntax.md#syntax-string-literal), or tuple of column names, [Tuple](../../sql-reference/data-types/tuple.md)([String literal](../../sql-reference/syntax.md#syntax-string-literal)).
 -   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
--   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
+-   `default_value_expr` — Values returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
 
 **Returned value**
 
@@ -37,7 +37,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
 
-**Example**
+**Example for single attribute**
 
 Create a text file `ext-dict-text.csv` containing the following:
 
@@ -94,6 +94,71 @@ LIMIT 3
 │   2 │ UInt32 │
 │  20 │ UInt32 │
 └─────┴────────┘
+```
+
+**Example for multiple attributes**
+
+Create a text file `ext-dict-mult.csv` containing the following:
+
+``` text
+1,1,'1'
+2,2,'2'
+3,3,'3'
+```
+
+The first column is `id`, the second is `c1`, the third is `c2`.
+
+Configure the external dictionary:
+
+``` xml
+<yandex>
+    <dictionary>
+        <name>ext-dict-mult</name>
+        <source>
+            <file>
+                <path>/path-to/ext-dict-mult.csv</path>
+                <format>CSV</format>
+            </file>
+        </source>
+        <layout>
+            <flat />
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>c1</name>
+                <type>UInt32</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>c2</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>            
+        </structure>
+        <lifetime>0</lifetime>
+    </dictionary>
+</yandex>
+```
+
+Perform the query:
+
+``` sql
+SELECT
+    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
+    toTypeName(val) AS type
+FROM system.numbers
+LIMIT 3;
+```
+
+``` text
+┌─val─────┬─type──────────────────┐
+│ (1,'1') │ Tuple(UInt8, String)  │
+│ (2,'2') │ Tuple(UInt8, String)  │
+│ (3,'3') │ Tuple(UInt8, String)  │
+└─────────┴───────────────────────┘
 ```
 
 **See Also**
@@ -202,4 +267,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
         - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
-
