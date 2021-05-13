@@ -301,7 +301,7 @@ inline String fullPath(const DiskPtr & disk, const String & path)
 /// Return parent path for the specified path.
 inline String parentPath(const String & path)
 {
-    return Poco::Path(path).parent().toString();
+    return fs::path(path).parent_path() / "";
 }
 
 /// Return file name for the specified path.

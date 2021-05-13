@@ -623,11 +623,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 if (!loaded_config.configuration->has("path"))
                 {
                     // Will use current directory
-                    auto parent_path = Poco::Path(loaded_config.config_path).makeParent();
-                    preprocessed_dir = parent_path.toString();
-                    Poco::Path poco_new_path(new_path);
-                    poco_new_path.setBaseName(poco_new_path.getBaseName() + PREPROCESSED_SUFFIX);
-                    new_path = poco_new_path.toString();
+                    fs::path parent_path = fs::path(loaded_config.config_path).parent_path();
+                    preprocessed_dir = parent_path.string();
+                    fs::path fs_new_path(new_path);
+                    fs_new_path = fs_new_path.parent_path() / (fs_new_path.stem().string() + PREPROCESSED_SUFFIX + fs_new_path.extension().string());
+                    new_path = fs_new_path.string();
                 }
                 else
                 {
