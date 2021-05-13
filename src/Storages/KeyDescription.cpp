@@ -113,7 +113,7 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
-        result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
+        result.sample_block = result.expression->getSampleBlock();
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
