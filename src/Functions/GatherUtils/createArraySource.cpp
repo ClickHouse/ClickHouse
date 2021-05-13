@@ -58,7 +58,7 @@ struct ArraySourceCreator<>
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows)
 {
-    using Creator = typename ApplyTypeListForClass<ArraySourceCreator, TypeListNumbersAndUInt128>::Type;
+    using Creator = typename ApplyTypeListForClass<ArraySourceCreator, TypeListNumbersAndUUID>::Type;
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&col.getData()))
     {
         auto column = ColumnArray::create(column_nullable->getNestedColumnPtr(), col.getOffsetsPtr());
