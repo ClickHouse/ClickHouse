@@ -47,7 +47,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_->getActionsDAG(), final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)

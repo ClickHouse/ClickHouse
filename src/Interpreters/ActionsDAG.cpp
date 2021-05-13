@@ -450,16 +450,16 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            bool all_args_are_const = true;
+            // bool all_args_are_const = true;
 
-            for (size_t i = 0; i < arguments.size(); ++i)
-                if (typeid_cast<const ColumnConst *>(arguments[i].column.get()) == nullptr)
-                    all_args_are_const = false;
+            // for (const auto & argument : arguments)
+            //     if (typeid_cast<const ColumnConst *>(argument.column.get()) == nullptr)
+            //         all_args_are_const = false;
 
             res_column.column = node->function->execute(arguments, res_column.type, 0, true);
 
-            if (!all_args_are_const)
-                res_column.column = res_column.column->convertToFullColumnIfConst();
+            // if (!all_args_are_const)
+            //     res_column.column = res_column.column->convertToFullColumnIfConst();
 
             break;
         }
@@ -519,7 +519,7 @@ Block ActionsDAG::updateHeader(Block header) const
             if (it != input_positions.end() && !it->second.empty())
             {
                 auto & list = it->second;
-                pos_to_remove.push_back(list.front());
+                pos_to_remove.push_back(pos);
                 result_cache[inputs[list.front()]] = std::move(col);
                 list.pop_front();
             }
@@ -559,20 +559,23 @@ Block ActionsDAG::updateHeader(Block header) const
 
                     ColumnsWithTypeAndName arguments(node->children.size());
                     for (size_t i = 0; i < arguments.size(); ++i)
-                        arguments[i] = result_cache[node->children[i]];
-
-                    if (node->type == ActionsDAG::ActionType::INPUT)
                     {
-                        if (result_cache.find(node) == result_cache.end())
+                        arguments[i] = result_cache[node->children[i]];
+                        if (!arguments[i].column)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                            "Not found column {} in block", node->result_name);
+                                            "Not found column {} in block", node->children[i]->result_name);
                     }
-                    else
+
+                    if (node->type != ActionsDAG::ActionType::INPUT)
                         result_cache[node] = executeActionForHeader(node, std::move(arguments));
+                    else
+                        result_cache[node] = {};
                 }
             }
 
-            result_columns.push_back(result_cache[output]);
+            auto & column = result_cache[output];
+            if (column.column)
+                result_columns.push_back(result_cache[output]);
         }
     }
 
