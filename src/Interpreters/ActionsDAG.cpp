@@ -439,6 +439,99 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
     inputs.erase(it, inputs.end());
 }
 
+NameSet ActionsDAG::foldActionsByProjection(
+    const NameSet & required_columns, const Block & projection_block_for_keys, const String & predicate_column_name, bool add_missing_keys)
+{
+    std::unordered_set<const Node *> visited_nodes;
+    std::unordered_set<std::string_view> visited_index_names;
+    std::stack<Node *> stack;
+    std::vector<const ColumnWithTypeAndName *> missing_input_from_projection_keys;
+
+    for (const auto & node : index)
+    {
+        if (required_columns.find(node->result_name) != required_columns.end() || node->result_name == predicate_column_name)
+        {
+            visited_nodes.insert(node);
+            visited_index_names.insert(node->result_name);
+            stack.push(const_cast<Node *>(node));
+        }
+    }
+
+    if (add_missing_keys)
+    {
+        for (const auto & column : required_columns)
+        {
+            if (visited_index_names.find(column) == visited_index_names.end())
+            {
+                if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(column))
+                {
+                    const auto * node = &addInput(*column_with_type_name);
+                    visited_nodes.insert(node);
+                    index.push_back(node);
+                    visited_index_names.insert(column);
+                }
+                else
+                {
+                    // Missing column
+                    return {};
+                }
+            }
+        }
+    }
+
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(node->result_name))
+        {
+            if (node->type != ActionsDAG::ActionType::INPUT)
+            {
+                /// Projection folding.
+                node->type = ActionsDAG::ActionType::INPUT;
+                node->result_type = std::move(column_with_type_name->type);
+                node->result_name = std::move(column_with_type_name->name);
+                node->children.clear();
+                inputs.push_back(node);
+            }
+        }
+
+        for (const auto * child : node->children)
+        {
+            if (visited_nodes.count(child) == 0)
+            {
+                stack.push(const_cast<Node *>(child));
+                visited_nodes.insert(child);
+            }
+        }
+    }
+
+    std::erase_if(inputs, [&](const Node * node) { return visited_nodes.count(node) == 0; });
+    std::erase_if(index, [&](const Node * node) { return visited_index_names.count(node->result_name) == 0; });
+    nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
+
+    NameSet next_required_columns;
+    for (const auto & input : inputs)
+        next_required_columns.insert(input->result_name);
+
+    return next_required_columns;
+}
+
+void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
+{
+    std::sort(index.begin(), index.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
+    {
+        return key_names_pos_map.find(lhs->result_name)->second < key_names_pos_map.find(rhs->result_name)->second;
+    });
+}
+
+void ActionsDAG::addAggregatesViaProjection(const Block & aggregates)
+{
+    for (const auto & aggregate : aggregates)
+        index.push_back(&addInput(aggregate));
+}
+
 void ActionsDAG::addAliases(const NamesWithAliases & aliases)
 {
     std::unordered_map<std::string_view, size_t> names_map;
@@ -681,8 +774,12 @@ std::string ActionsDAG::dumpDAG() const
         out << " " << (node.column ? node.column->getName() : "(no column)");
         out << " " << (node.result_type ? node.result_type->getName() : "(no type)");
         out << " " << (!node.result_name.empty() ? node.result_name : "(no name)");
+
         if (node.function_base)
             out << " [" << node.function_base->getName() << "]";
+
+        if (node.is_function_compiled)
+            out << " [compiled]";
 
         out << "\n";
     }
@@ -1195,10 +1292,9 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
 {
-
     struct Frame
     {
-        const Node * node;
+        const Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 
@@ -1294,7 +1390,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         bool is_predicate = false;
         size_t next_child_to_visit = 0;
         size_t num_allowed_children = 0;
@@ -1410,7 +1506,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
 
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 

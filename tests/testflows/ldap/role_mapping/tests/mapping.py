@@ -2,11 +2,11 @@
 from testflows.core import *
 from testflows.asserts import error
 
-from multiprocessing.dummy import Pool
+from helpers.common import Pool, join
 
 from ldap.role_mapping.requirements import *
 from ldap.role_mapping.tests.common import *
-from ldap.external_user_directory.tests.common import join, randomword
+from ldap.external_user_directory.tests.common import randomword
 
 from ldap.external_user_directory.tests.authentications import login_with_valid_username_and_password
 from ldap.external_user_directory.tests.authentications import login_with_invalid_username_and_valid_password
@@ -973,17 +973,16 @@ def group_removed_and_added_in_parallel(self, ldap_server, ldap_user, count=20, 
                 role_mappings=role_mappings, restart=True)
 
         tasks = []
-        try:
-            with When("user try to login while LDAP groups are added and removed in parallel"):
-                p = Pool(15)
-                for i in range(15):
-                    tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                    tasks.append(p.apply_async(remove_ldap_groups_in_parallel, (groups, i, 10,)))
-                    tasks.append(p.apply_async(add_ldap_groups_in_parallel,(ldap_user, role_names, i, 10,)))
-
-        finally:
-            with Finally("it should work", flags=TE):
-                join(tasks, timeout)
+        with Pool(4) as pool:
+            try:
+                with When("user try to login while LDAP groups are added and removed in parallel"):
+                    for i in range(10):
+                        tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                        tasks.append(pool.apply_async(remove_ldap_groups_in_parallel, (groups, i, 10,)))
+                        tasks.append(pool.apply_async(add_ldap_groups_in_parallel,(ldap_user, role_names, i, 10,)))
+            finally:
+                with Finally("it should work", flags=TE):
+                    join(tasks, timeout)
     finally:
         with Finally("I clean up all LDAP groups"):
             for group in groups:
@@ -1026,17 +1025,16 @@ def user_removed_and_added_in_ldap_groups_in_parallel(self, ldap_server, ldap_us
             role_mappings=role_mappings, restart=True)
 
     tasks = []
-    try:
-        with When("user try to login while user is added and removed from LDAP groups in parallel"):
-            p = Pool(15)
-            for i in range(15):
-                tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                tasks.append(p.apply_async(remove_user_from_ldap_groups_in_parallel, (ldap_user, groups, i, 1,)))
-                tasks.append(p.apply_async(add_user_to_ldap_groups_in_parallel, (ldap_user, groups, i, 1,)))
-
-    finally:
-        with Finally("it should work", flags=TE):
-            join(tasks, timeout)
+    with Pool(4) as pool:
+        try:
+            with When("user try to login while user is added and removed from LDAP groups in parallel"):
+                for i in range(10):
+                    tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(pool.apply_async(remove_user_from_ldap_groups_in_parallel, (ldap_user, groups, i, 1,)))
+                    tasks.append(pool.apply_async(add_user_to_ldap_groups_in_parallel, (ldap_user, groups, i, 1,)))
+        finally:
+            with Finally("it should work", flags=TE):
+                join(tasks, timeout)
 
 @TestScenario
 @Requirements(
@@ -1076,22 +1074,21 @@ def roles_removed_and_added_in_parallel(self, ldap_server, ldap_user, count=20, 
             role_mappings=role_mappings, restart=True)
 
     tasks = []
-    try:
-        with When("user try to login while mapped roles are added and removed in parallel"):
-            p = Pool(15)
-            for i in range(15):
-                tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                tasks.append(p.apply_async(remove_roles_in_parallel, (role_names, i, 10,)))
-                tasks.append(p.apply_async(add_roles_in_parallel, (role_names, i, 10,)))
+    with Pool(4) as pool:
+        try:
+            with When("user try to login while mapped roles are added and removed in parallel"):
+                for i in range(10):
+                    tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(pool.apply_async(remove_roles_in_parallel, (role_names, i, 10,)))
+                    tasks.append(pool.apply_async(add_roles_in_parallel, (role_names, i, 10,)))
+        finally:
+            with Finally("it should work", flags=TE):
+                join(tasks, timeout)
 
-    finally:
-        with Finally("it should work", flags=TE):
-            join(tasks, timeout)
-
-        with And("I clean up all the roles"):
-            for role_name in role_names:
-                with By(f"dropping role {role_name}", flags=TE):
-                    self.context.node.query(f"DROP ROLE IF EXISTS {role_name}")
+            with And("I clean up all the roles"):
+                for role_name in role_names:
+                    with By(f"dropping role {role_name}", flags=TE):
+                        self.context.node.query(f"DROP ROLE IF EXISTS {role_name}")
 
 @TestOutline
 def parallel_login(self, ldap_server, ldap_user, user_count=10, timeout=200, role_count=10):
@@ -1132,21 +1129,20 @@ def parallel_login(self, ldap_server, ldap_user, user_count=10, timeout=200, rol
             role_mappings=role_mappings, restart=True)
 
     tasks = []
-    try:
-        with When("users try to login in parallel", description="""
-            * with valid username and password
-            * with invalid username and valid password
-            * with valid username and invalid password
-            """):
-            p = Pool(15)
-            for i in range(25):
-                tasks.append(p.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                tasks.append(p.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                tasks.append(p.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
-
-    finally:
-        with Then("it should work"):
-            join(tasks, timeout)
+    with Pool(4) as pool:
+        try:
+            with When("users try to login in parallel", description="""
+                * with valid username and password
+                * with invalid username and valid password
+                * with valid username and invalid password
+                """):
+                for i in range(10):
+                    tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
+                    tasks.append(pool.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                    tasks.append(pool.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+        finally:
+            with Then("it should work"):
+                join(tasks, timeout)
 
 @TestScenario
 @Requirements(
@@ -1313,22 +1309,20 @@ def parallel_login_with_multiple_servers(self, ldap_server, ldap_user, user_coun
                     self.context.node.query(f"GRANT {role_name} TO {user['cn']}")
 
     tasks = []
-
-    try:
-        with When("users in each group try to login in parallel", description="""
-            * with valid username and password
-            * with invalid username and valid password
-            * with valid username and invalid password
-            """):
-            p = Pool(15)
-            for i in range(25):
-                for users in user_groups.values():
-                    for check in checks:
-                        tasks.append(p.apply_async(check, (users, i, 50,)))
-
-    finally:
-        with Then("it should work"):
-            join(tasks, timeout)
+    with Pool(4) as pool:
+        try:
+            with When("users in each group try to login in parallel", description="""
+                * with valid username and password
+                * with invalid username and valid password
+                * with valid username and invalid password
+                """):
+                for i in range(10):
+                    for users in user_groups.values():
+                        for check in checks:
+                            tasks.append(pool.apply_async(check, (users, i, 50,)))
+        finally:
+            with Then("it should work"):
+                join(tasks, timeout)
 
 @TestFeature
 @Name("mapping")
