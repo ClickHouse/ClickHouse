@@ -42,7 +42,7 @@ Chunk ORCBlockInputFormat::generate()
         return res;
 
     std::shared_ptr<arrow::RecordBatch> batch_result;
-    arrow::Status batch_status = file_reader->ReadStripe(stripe_current, include_indices, &batch_result);
+    arrow::Status batch_status = file_reader->ReadStripe(stripe_current, &batch_result);
     if (!batch_status.ok())
         throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
                                "Error while reading batch of ORC data: {}", batch_status.ToString());
@@ -63,7 +63,6 @@ void ORCBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 
     file_reader.reset();
-    include_indices.clear();
     stripe_current = 0;
 }
 
@@ -72,17 +71,6 @@ void ORCBlockInputFormat::prepareReader()
     THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
     stripe_total = file_reader->NumberOfStripes();
     stripe_current = 0;
-
-    std::shared_ptr<arrow::Schema> schema;
-    THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
-
-    for (int i = 0; i < schema->num_fields(); ++i)
-    {
-        if (getPort().getHeader().has(schema->field(i)->name()))
-        {
-            include_indices.push_back(i);
-        }
-    }
 }
 
 void registerInputFormatProcessorORC(FormatFactory &factory)
