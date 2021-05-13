@@ -55,23 +55,31 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     size_t estimated_size,
     size_t aio_threshold,
     size_t mmap_threshold,
-    MMappedFileCache * mmap_cache) const {
-    return wrapped_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    MMappedFileCache * mmap_cache) const
+{
+    auto wrapped_path = wrappedPath(path);
+    return wrapped_disk->readFile(wrapped_path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(
     const String & path,
     size_t buf_size,
-    WriteMode mode) {
-    return wrapped_disk->writeFile(path, buf_size, mode);
+    WriteMode mode)
+{
+    auto wrapped_path = wrappedPath(path);
+    return wrapped_disk->writeFile(wrapped_path, buf_size, mode);
 }
 
-void DiskEncrypted::truncateFile(const String & path, size_t size) {
-    wrapped_disk->truncateFile(path, size);
+void DiskEncrypted::truncateFile(const String & path, size_t size)
+{
+    auto wrapped_path = wrappedPath(path);
+    wrapped_disk->truncateFile(wrapped_path, size);
 }
 
-SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const {
-    return wrapped_disk->getDirectorySyncGuard(path);
+SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const
+{
+    auto wrapped_path = wrappedPath(path);
+    return wrapped_disk->getDirectorySyncGuard(wrapped_path);
 }
 
 void registerDiskEncrypted(DiskFactory & factory)
@@ -96,7 +104,9 @@ void registerDiskEncrypted(DiskFactory & factory)
             throw Exception("The wrapped disk must have been announced earlier. No disk with name " + wrapped_disk_name + ". Disk " + name,
                             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
-        return std::make_shared<DiskEncrypted>(name, wrapped_disk->second, key);
+        String relative_path = config.getString(config_prefix + ".path", "");
+
+        return std::make_shared<DiskEncrypted>(name, wrapped_disk->second, key, relative_path);
     };
     factory.registerDiskType("encrypted", creator);
 }
