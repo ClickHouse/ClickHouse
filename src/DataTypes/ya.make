@@ -62,11 +62,12 @@ SRCS(
     Serializations/SerializationTupleElement.cpp
     Serializations/SerializationUUID.cpp
     Serializations/SerializationWrapper.cpp
+    UserDefinedDataType.cpp
     convertMySQLDataType.cpp
     getLeastSupertype.cpp
     getMostSubtype.cpp
     registerDataTypeDateTime.cpp
-    UserDefinedDataType.cpp
+
 )
 
 END()
