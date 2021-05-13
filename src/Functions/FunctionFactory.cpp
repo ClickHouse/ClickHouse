@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
+    extern const int FUNCTION_ALREADY_EXISTS;
 }
 
 const String & getFunctionCanonicalNameIfAny(const String & name)
@@ -140,6 +141,9 @@ void FunctionFactory::registerUserDefinedFunction(
         const ASTCreateFunctionQuery & create_function_query,
         CaseSensitiveness case_sensitiveness)
 {
+    if (hasNameOrAlias(create_function_query.function_name))
+        throw Exception("The function '" + create_function_query.function_name + "' already exists", ErrorCodes::FUNCTION_ALREADY_EXISTS);
+
     registerFunction(create_function_query.function_name, [create_function_query](ContextPtr context)
     {
         auto function = UserDefinedFunction::create(context);
