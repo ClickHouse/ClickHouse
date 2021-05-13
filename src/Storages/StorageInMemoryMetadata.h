@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
@@ -25,6 +26,9 @@ struct StorageInMemoryMetadata
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
+    /// Table projections. Currently supported for MergeTree only.
+    ProjectionsDescription projections;
+    mutable const ProjectionDescription * selected_projection{};
     /// PARTITION BY expression. Currently supported for MergeTree only.
     KeyDescription partition_key;
     /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
@@ -61,6 +65,9 @@ struct StorageInMemoryMetadata
     /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
 
+    /// Sets projections
+    void setProjections(ProjectionsDescription projections_);
+
     /// Set partition key for storage (methods below, are just wrappers for this struct).
     void setPartitionKey(const KeyDescription & partition_key_);
     /// Set sorting key for storage (methods below, are just wrappers for this struct).
@@ -85,14 +92,19 @@ struct StorageInMemoryMetadata
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
-    /// Returns secondary indices
 
+    /// Returns secondary indices
     const IndicesDescription & getSecondaryIndices() const;
+
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
     /// Return table constraints
     const ConstraintsDescription & getConstraints() const;
+
+    const ProjectionsDescription & getProjections() const;
+    /// Has at least one projection
+    bool hasProjections() const;
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
@@ -146,8 +158,7 @@ struct StorageInMemoryMetadata
     /// Storage metadata. StorageID required only for more clear exception
     /// message.
     Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
-
+        const Names & column_names, const NamesAndTypesList & virtuals = {}, const StorageID & storage_id = StorageID::createEmpty()) const;
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.

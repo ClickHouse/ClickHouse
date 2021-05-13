@@ -25,6 +25,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,6 +34,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include "Core/Protocol.h"
 #include "TCPHandler.h"
 
 #if !defined(ARCADIA_BUILD)
@@ -55,6 +57,7 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
@@ -62,8 +65,8 @@ TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket
     , server(server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
-    , connection_context(server.context())
-    , query_context(server.context())
+    , connection_context(Context::createCopy(server.context()))
+    , query_context(Context::createCopy(server.context()))
     , server_display_name(std::move(server_display_name_))
 {
 }
@@ -72,7 +75,8 @@ TCPHandler::~TCPHandler()
     try
     {
         state.reset();
-        out->next();
+        if (out)
+            out->next();
     }
     catch (...)
     {
@@ -85,13 +89,13 @@ void TCPHandler::runImpl()
     setThreadName("TCPHandler");
     ThreadStatus thread_status;
 
-    connection_context = server.context();
-    connection_context.makeSessionContext();
+    connection_context = Context::createCopy(server.context());
+    connection_context->makeSessionContext();
 
     /// These timeouts can be changed after receiving query.
 
-    auto global_receive_timeout = connection_context.getSettingsRef().receive_timeout;
-    auto global_send_timeout = connection_context.getSettingsRef().send_timeout;
+    auto global_receive_timeout = connection_context->getSettingsRef().receive_timeout;
+    auto global_send_timeout = connection_context->getSettingsRef().send_timeout;
 
     socket().setReceiveTimeout(global_receive_timeout);
     socket().setSendTimeout(global_send_timeout);
@@ -132,7 +136,7 @@ void TCPHandler::runImpl()
         try
         {
             /// We try to send error information to the client.
-            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
+            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -146,28 +150,30 @@ void TCPHandler::runImpl()
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
-            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
+            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
             return;
         }
 
-        connection_context.setCurrentDatabase(default_database);
+        connection_context->setCurrentDatabase(default_database);
     }
 
-    Settings connection_settings = connection_context.getSettings();
+    Settings connection_settings = connection_context->getSettings();
+    UInt64 idle_connection_timeout = connection_settings.idle_connection_timeout;
+    UInt64 poll_interval = connection_settings.poll_interval;
 
     sendHello();
 
-    connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    connection_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
     while (true)
     {
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
-            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(
-                std::min(connection_settings.poll_interval, connection_settings.idle_connection_timeout) * 1000000))
+            UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
+            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
             {
-                if (idle_time.elapsedSeconds() > connection_settings.idle_connection_timeout)
+                if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
                     LOG_TRACE(log, "Closing idle connection");
                     return;
@@ -180,7 +186,7 @@ void TCPHandler::runImpl()
             break;
 
         /// Set context of request.
-        query_context = connection_context;
+        query_context = Context::createCopy(connection_context);
 
         Stopwatch watch;
         state.reset();
@@ -208,12 +214,21 @@ void TCPHandler::runImpl()
             if (!receivePacket())
                 continue;
 
+            /** If Query received, then settings in query_context has been updated
+             *  So, update some other connection settings, for flexibility.
+             */
+            {
+                const Settings & settings = query_context->getSettingsRef();
+                idle_connection_timeout = settings.idle_connection_timeout;
+                poll_interval = settings.poll_interval;
+            }
+
             /** If part_uuids got received in previous packet, trying to read again.
               */
             if (state.empty() && state.part_uuids && !receivePacket())
                 continue;
 
-            query_scope.emplace(*query_context);
+            query_scope.emplace(query_context);
 
             send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
 
@@ -228,9 +243,9 @@ void TCPHandler::runImpl()
                 CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
             }
 
-            query_context->setExternalTablesInitializer([&connection_settings, this] (Context & context)
+            query_context->setExternalTablesInitializer([&connection_settings, this] (ContextPtr context)
             {
-                if (&context != &*query_context)
+                if (context != query_context)
                     throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
 
                 /// Get blocks of temporary tables
@@ -245,9 +260,9 @@ void TCPHandler::runImpl()
             });
 
             /// Send structure of columns to client for function input()
-            query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
+            query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
             {
-                if (&context != &query_context.value())
+                if (context != query_context)
                     throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
 
                 auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
@@ -265,15 +280,15 @@ void TCPHandler::runImpl()
                 sendData(state.input_header);
             });
 
-            query_context->setInputBlocksReaderCallback([&connection_settings, this] (Context & context) -> Block
+            query_context->setInputBlocksReaderCallback([&connection_settings, this] (ContextPtr context) -> Block
             {
-                if (&context != &query_context.value())
+                if (context != query_context)
                     throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
 
-                size_t poll_interval;
+                size_t poll_interval_ms;
                 int receive_timeout;
-                std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
-                if (!readDataNext(poll_interval, receive_timeout))
+                std::tie(poll_interval_ms, receive_timeout) = getReadTimeouts(connection_settings);
+                if (!readDataNext(poll_interval_ms, receive_timeout))
                 {
                     state.block_in.reset();
                     state.maybe_compressed_in.reset();
@@ -282,11 +297,21 @@ void TCPHandler::runImpl()
                 return state.block_for_input;
             });
 
-            customizeContext(*query_context);
+            customizeContext(query_context);
+
+            /// This callback is needed for requesting read tasks inside pipeline for distributed processing
+            query_context->setReadTaskCallback([this]() -> String
+            {
+                std::lock_guard lock(task_callback_mutex);
+                sendReadTaskRequestAssumeLocked();
+                return receiveReadTaskResponseAssumeLocked();
+            });
 
             bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
-            state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
+            state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
+
+            unknown_packet_in_send_data = query_context->getSettingsRef().unknown_packet_in_send_data;
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -450,7 +475,7 @@ void TCPHandler::runImpl()
 }
 
 
-bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_timeout)
+bool TCPHandler::readDataNext(size_t poll_interval, time_t receive_timeout)
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
@@ -468,8 +493,8 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
          *  If we periodically poll, the receive_timeout of the socket itself does not work.
          *  Therefore, an additional check is added.
          */
-        double elapsed = watch.elapsedSeconds();
-        if (elapsed > receive_timeout)
+        Float64 elapsed = watch.elapsedSeconds();
+        if (elapsed > static_cast<Float64>(receive_timeout))
         {
             throw Exception(ErrorCodes::SOCKET_TIMEOUT,
                             "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
@@ -510,10 +535,7 @@ std::tuple<size_t, int> TCPHandler::getReadTimeouts(const Settings & connection_
 
 void TCPHandler::readData(const Settings & connection_settings)
 {
-    size_t poll_interval;
-    int receive_timeout;
-
-    std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
+    auto [poll_interval, receive_timeout] = getReadTimeouts(connection_settings);
     sendLogs();
 
     while (readDataNext(poll_interval, receive_timeout))
@@ -536,7 +558,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
         {
             if (!table_id.empty())
             {
-                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, *query_context);
+                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
                 sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
             }
         }
@@ -545,7 +567,16 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     /// Send block to the client - table structure.
     sendData(state.io.out->getHeader());
 
-    readData(connection_settings);
+    try
+    {
+        readData(connection_settings);
+    }
+    catch (...)
+    {
+        /// To avoid flushing from the destructor, that may lead to uncaught exception.
+        state.io.out->writeSuffix();
+        throw;
+    }
     state.io.out->writeSuffix();
 }
 
@@ -643,6 +674,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         Block block;
         while (executor.pull(block, query_context->getSettingsRef().interactive_delay / 1000))
         {
+            std::lock_guard lock(task_callback_mutex);
+
             if (isQueryCancelled())
             {
                 /// A packet was received requesting to stop execution of the request.
@@ -700,7 +733,7 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
-        auto resolved_id = connection_context.tryResolveStorageID({table_name.database, table_name.table});
+        auto resolved_id = connection_context->tryResolveStorageID({table_name.database, table_name.table});
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, connection_context);
         if (!table)
             continue;
@@ -712,7 +745,7 @@ void TCPHandler::processTablesStatusRequest()
             status.absolute_delay = replicated_table->getAbsoluteDelay();
         }
         else
-            status.is_replicated = false;
+            status.is_replicated = false; //-V1048
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
@@ -752,6 +785,13 @@ void TCPHandler::sendPartUUIDs()
         writeVectorBinary(uuids, *out);
         out->next();
     }
+}
+
+
+void TCPHandler::sendReadTaskRequestAssumeLocked()
+{
+    writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
+    out->next();
 }
 
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
@@ -861,7 +901,7 @@ bool TCPHandler::receiveProxyHeader()
     }
 
     LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
-    connection_context.getClientInfo().forwarded_for = forwarded_address;
+    connection_context->getClientInfo().forwarded_for = forwarded_address;
     return true;
 }
 
@@ -914,7 +954,7 @@ void TCPHandler::receiveHello()
 
     if (user != USER_INTERSERVER_MARKER)
     {
-        connection_context.setUser(user, password, socket().peerAddress());
+        connection_context->setUser(user, password, socket().peerAddress());
     }
     else
     {
@@ -961,8 +1001,6 @@ bool TCPHandler::receivePacket()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
-
-//    std::cerr << "Server got packet: " << Protocol::Client::toString(packet_type) << "\n";
 
     switch (packet_type)
     {
@@ -1015,6 +1053,34 @@ void TCPHandler::receiveIgnoredPartUUIDs()
         query_context->getIgnoredPartUUIDs()->add(uuids);
 }
 
+
+String TCPHandler::receiveReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::ReadTaskResponse)
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            return {};
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    UInt64 version;
+    readVarUInt(version, *in);
+    if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
+        throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
+    String response;
+    readStringBinary(response, *in);
+    return response;
+}
+
+
 void TCPHandler::receiveClusterNameAndSalt()
 {
     readStringBinary(cluster, *in);
@@ -1032,7 +1098,7 @@ void TCPHandler::receiveClusterNameAndSalt()
         try
         {
             /// We try to send error information to the client.
-            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
+            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -1235,18 +1301,18 @@ bool TCPHandler::receiveData(bool scalar)
             /// If such a table does not exist, create it.
             if (resolved)
             {
-                storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+                storage = DatabaseCatalog::instance().getTable(resolved, query_context);
             }
             else
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
+                auto temporary_table = TemporaryTableHolder(query_context, ColumnsDescription{columns}, {});
                 storage = temporary_table.getTable();
                 query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
             }
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
             /// The data will be written directly to the table.
-            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, query_context);
             temporary_table_out->write(block);
             temporary_table_out->writeSuffix();
 
@@ -1345,7 +1411,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
+            !connection_context->getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -1358,7 +1424,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
+            !connection_context->getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -1414,6 +1480,14 @@ void TCPHandler::sendData(const Block & block)
 
     try
     {
+        /// For testing hedged requests
+        if (unknown_packet_in_send_data)
+        {
+            --unknown_packet_in_send_data;
+            if (unknown_packet_in_send_data == 0)
+                writeVarUInt(UInt64(-1), *out);
+        }
+
         writeVarUInt(Protocol::Server::Data, *out);
         /// Send external table name (empty name is the main table)
         writeStringBinary("", *out);

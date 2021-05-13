@@ -10,7 +10,7 @@ class FunctionArrayHasSubstr : public FunctionArrayHasAllAny
 {
 public:
     static constexpr auto name = "hasSubstr";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayHasSubstr>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayHasSubstr>(); }
     FunctionArrayHasSubstr() : FunctionArrayHasAllAny(GatherUtils::ArraySearchType::Substr, name) {}
 };
 

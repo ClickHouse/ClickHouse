@@ -77,7 +77,7 @@ public:
 class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
-    explicit FunctionRandomFixedString(const Context & context) : selector(context)
+    explicit FunctionRandomFixedString(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
@@ -93,7 +93,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionRandomFixedString>(context);
     }

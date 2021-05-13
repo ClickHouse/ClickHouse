@@ -23,3 +23,5 @@ ${CLICKHOUSE_CLIENT} -q "SELECT '-------------------------------------'"
 ${CLICKHOUSE_CLIENT} -q "SELECT name, polygonAreaSpherical(p) from country_rings"
 ${CLICKHOUSE_CLIENT} -q "SELECT '-------------------------------------'"
 ${CLICKHOUSE_CLIENT} -q "drop table if exists country_rings;"
+
+${CLICKHOUSE_CLIENT} -q "drop table country_polygons"
