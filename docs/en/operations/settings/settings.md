@@ -143,6 +143,16 @@ Possible values:
 
 Default value: 0.
 
+## http_max_uri_size {#http-max-uri-size}
+
+Sets the maximum URI length of an HTTP request.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: 1048576.
+
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.

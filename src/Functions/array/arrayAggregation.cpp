@@ -68,12 +68,13 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 {
     using Result =
         std::conditional_t<std::is_same_v<ArrayElement, Int128>, Int128,
-            std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
-                std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
-                    std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
-                        std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
-                            std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
-                                UInt64>>>>>>;
+        std::conditional_t<std::is_same_v<ArrayElement, UInt128>, UInt128,
+        std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
+        std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
+        std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
+        std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
+        std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
+            UInt64>>>>>>>;
 };
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -173,7 +174,7 @@ struct ArrayAggregateImpl
                 {
                     size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
-                    res[i] = x * array_size;
+                    res[i] = x * ResultType(array_size);
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::min ||
                                 aggregate_operation == AggregateOperation::max)
@@ -244,12 +245,15 @@ struct ArrayAggregateImpl
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            AggregationType aggregate_value = 0;
+            AggregationType aggregate_value{};
 
             /// Array is empty
             if (offsets[i] == pos)
             {
-                res[i] = aggregate_value;
+                if constexpr (IsDecimalNumber<AggregationType>)
+                    res[i] = aggregate_value.value;
+                else
+                    res[i] = aggregate_value;
                 continue;
             }
 
@@ -304,7 +308,7 @@ struct ArrayAggregateImpl
             {
                 if constexpr (IsDecimalNumber<Element>)
                 {
-                    aggregate_value = aggregate_value / count;
+                    aggregate_value = aggregate_value / AggregationType(count);
                     res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, data.getScale());
                 }
                 else
@@ -340,6 +344,7 @@ struct ArrayAggregateImpl
             executeType<UInt16>(mapped, offsets, res) ||
             executeType<UInt32>(mapped, offsets, res) ||
             executeType<UInt64>(mapped, offsets, res) ||
+            executeType<UInt128>(mapped, offsets, res) ||
             executeType<UInt256>(mapped, offsets, res) ||
             executeType<Int8>(mapped, offsets, res) ||
             executeType<Int16>(mapped, offsets, res) ||

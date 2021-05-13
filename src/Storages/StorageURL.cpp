@@ -79,7 +79,7 @@ namespace
             if (CurrentThread::isInitialized())
             {
                 const auto & thread_trace_context = CurrentThread::get().thread_trace_context;
-                if (thread_trace_context.trace_id)
+                if (thread_trace_context.trace_id != UUID())
                 {
                     header.emplace_back("traceparent",
                         thread_trace_context.composeTraceparentHeader());
