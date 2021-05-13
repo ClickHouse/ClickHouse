@@ -41,9 +41,4 @@ bool isColumnConst(const IColumn & column)
     return checkColumn<ColumnConst>(column);
 }
 
-bool isColumnArray(const IColumn & column)
-{
-    return checkColumn<ColumnArray>(column);
-}
-
 }
