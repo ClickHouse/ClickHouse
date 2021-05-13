@@ -33,9 +33,7 @@ ASTPtr ASTStorage::clone() const
         res->set(res->settings, settings->clone());
 
     if (comment)
-    {
-        res->comment = comment->clone();
-    }
+        res->set(res->comment, comment->clone());
 
     return res;
 }
