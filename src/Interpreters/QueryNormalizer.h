@@ -48,12 +48,14 @@ public:
         MapOfASTs finished_asts;    /// already processed vertices (and by what they replaced)
         SetOfASTs current_asts;     /// vertices in the current call stack of this method
         std::string current_alias;  /// the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
+        bool ignore_alias; /// normalize query without any aliases
 
-        Data(const Aliases & aliases_, const NameSet & source_columns_set_, ExtractedSettings && settings_)
+        Data(const Aliases & aliases_, const NameSet & source_columns_set_, bool ignore_alias_, ExtractedSettings && settings_)
             : aliases(aliases_)
             , source_columns_set(source_columns_set_)
             , settings(settings_)
             , level(0)
+            , ignore_alias(ignore_alias_)
         {}
     };
 

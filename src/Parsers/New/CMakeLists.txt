@@ -50,12 +50,6 @@ set (SRCS
 
 add_library (clickhouse_parsers_new ${SRCS})
 
-# XXX: hack for old clang-10!
-check_cxx_compiler_flag("-Wsuggest-destructor-override" HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
-
-# XXX: hack for old gcc-10!
-check_cxx_compiler_flag("-Wshadow" HAS_SHADOW)
-
 target_compile_options (clickhouse_parsers_new
     PRIVATE
         -Wno-c++2a-compat
@@ -68,12 +62,16 @@ target_compile_options (clickhouse_parsers_new
         -Wno-extra-semi
         -Wno-inconsistent-missing-destructor-override
 )
+
+# XXX: hack for old clang-10!
 if (HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
     target_compile_options (clickhouse_parsers_new
         PRIVATE
             -Wno-suggest-destructor-override
     )
 endif ()
+
+# XXX: hack for old gcc-10!
 if (HAS_SHADOW)
     target_compile_options (clickhouse_parsers_new
         PRIVATE
