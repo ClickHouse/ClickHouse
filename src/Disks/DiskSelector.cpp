@@ -37,7 +37,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
 
-        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
+        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));
     }
     if (!has_default_disk)
         disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0));
@@ -65,7 +65,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         if (result->getDisksMap().count(disk_name) == 0)
         {
             auto disk_config_prefix = config_prefix + "." + disk_name;
-            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
+            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context, result->getDisksMap()));
         }
         else
         {
