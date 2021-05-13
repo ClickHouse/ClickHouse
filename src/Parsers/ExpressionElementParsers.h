@@ -209,10 +209,22 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserCastExpression : public IParserBase
+/// Fast path of cast operator "::".
+/// It tries to read literal as text.
+/// If it fails, later operator will be transformed to function CAST.
+/// Examples: "0.1::Decimal(38, 38)", "[1, 2]::Array(UInt8)"
+class ParserCastOperator : public IParserBase
 {
 protected:
-    const char * getName() const override { return "CAST expression"; }
+    const char * getName() const override { return "CAST operator"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
+class ParserCastAsExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "CAST AS expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

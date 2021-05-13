@@ -48,9 +48,9 @@ public:
     {
         String message;
         String message_id;
-        uint64_t timestamp;
-        bool redelivered;
-        AckTracker track;
+        uint64_t timestamp = 0;
+        bool redelivered = false;
+        AckTracker track{};
     };
 
     ChannelPtr & getChannel() { return consumer_channel; }
