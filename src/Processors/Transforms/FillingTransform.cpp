@@ -1,6 +1,11 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/IDataType.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypesDecimal.h>
+
 
 namespace DB
 {
@@ -38,10 +43,18 @@ FillingTransform::FillingTransform(
         DataTypePtr to_type;
 
         /// TODO Wrong results for big integers.
-        if (isInteger(type) || which.isDateOrDateTime())
+        if (isInteger(type) || which.isDate() || which.isDateTime())
         {
             max_type = Field::Types::Int64;
             to_type = std::make_shared<DataTypeInt64>();
+        }
+        else if (which.isDateTime64())
+        {
+            max_type = Field::Types::Decimal64;
+            const auto & date_type = static_cast<const DataTypeDateTime64 &>(*type);
+            size_t precision = date_type.getPrecision();
+            size_t scale = date_type.getScale();
+            to_type = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
         }
         else if (which.isFloat())
         {
