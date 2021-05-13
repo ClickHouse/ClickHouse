@@ -446,6 +446,9 @@ if args.report == 'main':
                 attrs[3] = f'style="background: {color_bad}"'
             else:
                 attrs[3] = ''
+                # Just don't add the slightly unstable queries we don't consider
+                # errors. It's not clear what the user should do with them.
+                continue
 
             text += tableRow(r, attrs, anchor)
 
