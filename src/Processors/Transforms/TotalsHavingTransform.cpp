@@ -119,6 +119,7 @@ TotalsHavingTransform::TotalsHavingTransform(
 
 IProcessor::Status TotalsHavingTransform::prepare()
 {
+    LOG_DEBUG(log, "TotalsHavingTransform::prepare()");
     if (!finished_transform)
     {
         auto status = ISimpleTransform::prepare();
@@ -143,20 +144,24 @@ IProcessor::Status TotalsHavingTransform::prepare()
 
     totals_output.push(std::move(totals));
     totals_output.finish();
+    LOG_DEBUG(log, "exit TotalsHavingTransform::prepare()");
     return Status::Finished;
 }
 
 void TotalsHavingTransform::work()
 {
+    LOG_DEBUG(log, "TotalsHavingTransform::work()");
     if (finished_transform)
         prepareTotals();
     else
         ISimpleTransform::work();
+    LOG_DEBUG(log, "exit TotalsHavingTransform::work()");
 }
 
 void TotalsHavingTransform::transform(Chunk & chunk)
 {
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
+    LOG_DEBUG(log, "TotalsHavingTransform::transform()");
     if (overflow_row)
     {
         const auto & info = chunk.getChunkInfo();
@@ -249,10 +254,12 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     }
 
     passed_keys += chunk.getNumRows();
+    LOG_DEBUG(log, "exit TotalsHavingTransform::transform()");
 }
 
 void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filter * filter)
 {
+    LOG_DEBUG(log, "TotalsHavingTransform::addToTotals()");
     auto num_columns = chunk.getNumColumns();
     for (size_t col = 0; col < num_columns; ++col)
     {
@@ -284,10 +291,12 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
             }
         }
     }
+    LOG_DEBUG(log, "exit TotalsHavingTransform::addToTotals()");
 }
 
 void TotalsHavingTransform::prepareTotals()
 {
+    LOG_DEBUG(log, "TotalsHavingTransform::prepareTotals()");
     /// If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
     /// not passed max_rows_to_group_by.
     if (overflow_aggregates)
@@ -312,6 +321,7 @@ void TotalsHavingTransform::prepareTotals()
         /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
         totals = Chunk(block.getColumns(), num_rows);
     }
+    LOG_DEBUG(log, "exit TotalsHavingTransform::prepareTotals()");
 }
 
 }
