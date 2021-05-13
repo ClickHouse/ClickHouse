@@ -64,6 +64,11 @@ int mainEntryClickHouseStart(int argc, char ** argv);
 int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
+int mainEntryClickHouseKeeperInstall(int argc, char ** argv);
+int mainEntryClickHouseKeeperStart(int argc, char ** argv);
+int mainEntryClickHouseKeeperStop(int argc, char ** argv);
+int mainEntryClickHouseKeeperStatus(int argc, char ** argv);
+int mainEntryClickHouseKeeperRestart(int argc, char ** argv);
 #endif
 
 int mainEntryClickHouseHashBinary(int, char **)
@@ -124,6 +129,12 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
+
+    {"install-keeper", mainEntryClickHouseKeeperInstall},
+    {"start-keeper", mainEntryClickHouseKeeperStart},
+    {"stop-keeper", mainEntryClickHouseKeeperStop},
+    {"status-keeper", mainEntryClickHouseKeeperStatus},
+    {"restart-keeper", mainEntryClickHouseKeeperRestart},
 #endif
     {"hash-binary", mainEntryClickHouseHashBinary},
 };

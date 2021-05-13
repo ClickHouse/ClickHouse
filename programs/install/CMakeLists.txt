@@ -1,4 +1,4 @@
-set (CLICKHOUSE_INSTALL_SOURCES Install.cpp)
+set (CLICKHOUSE_INSTALL_SOURCES InstallCommon.cpp InstallKeeper.cpp InstallServer.cpp)
 
 set (CLICKHOUSE_INSTALL_LINK
     PRIVATE
