@@ -4,7 +4,7 @@
 #include <Processors/ISource.h>
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-
+#include <DataStreams/materializeBlock.h>
 
 namespace ProfileEvents
 {
@@ -522,8 +522,18 @@ void AggregatingTransform::consume(Chunk chunk)
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
-    if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
-        is_consume_finished = true;
+    if (params->only_merge)
+    {
+        auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
+        block = materializeBlock(block);
+        if (!params->aggregator.mergeBlock(block, variants, no_more_keys))
+            is_consume_finished = true;
+    }
+    else
+    {
+        if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
+            is_consume_finished = true;
+    }
 }
 
 void AggregatingTransform::initGenerate()

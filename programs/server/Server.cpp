@@ -1033,6 +1033,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
+        /// We load temporary database first, because projections need it.
+        database_catalog.loadTemporaryDatabase();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();
