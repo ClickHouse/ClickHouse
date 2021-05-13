@@ -2457,8 +2457,8 @@ def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'csv',
-                     kafka_group_name = 'csv',
+                     kafka_topic_list = 'csv_with_thread_per_consumer',
+                     kafka_group_name = 'csv_with_thread_per_consumer',
                      kafka_format = 'CSV',
                      kafka_row_delimiter = '\\n',
                      kafka_num_consumers = 4,
@@ -2468,7 +2468,7 @@ def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
     messages = []
     for i in range(50):
         messages.append('{i}, {i}'.format(i=i))
-    kafka_produce('csv', messages)
+    kafka_produce('csv_with_thread_per_consumer', messages)
 
     result = ''
     while True:
@@ -2490,8 +2490,8 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster):
         CREATE TABLE test.kafka (i Int64, s String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'json',
-                     kafka_group_name = 'json',
+                     kafka_topic_list = 'kafka_engine_put_errors_to_stream',
+                     kafka_group_name = 'kafka_engine_put_errors_to_stream',
                      kafka_format = 'JSONEachRow',
                      kafka_max_block_size = 128,
                      kafka_handle_error_mode = 'stream';
@@ -2519,17 +2519,11 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster):
             # Unexpected json content for table test.kafka.
             messages.append(json.dumps({'i': 'n_' + random_string(4), 's': random_string(8)}))
 
-    kafka_produce('json', messages)
+    kafka_produce('kafka_engine_put_errors_to_stream', messages)
+    instance.wait_for_log_line("Committed offset 128")
 
-    while True:
-      total_rows = instance.query('SELECT count() FROM test.kafka_data', ignore_error=True)
-      if total_rows == '64\n':
-        break
-
-    while True:
-      total_error_rows = instance.query('SELECT count() FROM test.kafka_errors', ignore_error=True)
-      if total_error_rows == '64\n':
-        break
+    assert TSV(instance.query('SELECT count() FROM test.kafka_data')) == TSV('64')
+    assert TSV(instance.query('SELECT count() FROM test.kafka_errors')) == TSV('64')
 
     instance.query('''
         DROP TABLE test.kafka;
@@ -2545,8 +2539,15 @@ def gen_malformed_json():
 
 def gen_message_with_jsons(jsons = 10, malformed = 0):
     s = io.StringIO()
+
+    # we don't care on which position error will be added
+    # (we skip whole broken message), but we need to be
+    # sure that at least one error will be added,
+    # otherwise test will fail.
+    error_pos = random.randint(0,jsons-1)
+
     for i in range (jsons):
-        if malformed and random.randint(0,1) == 1:
+        if malformed and i == error_pos:
             s.write(gen_malformed_json())
         else:
             s.write(gen_normal_json())
@@ -2562,8 +2563,8 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(kafka_clus
         CREATE TABLE test.kafka (i Int64, s String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'json',
-                     kafka_group_name = 'json',
+                     kafka_topic_list = 'kafka_engine_put_errors_to_stream_with_random_malformed_json',
+                     kafka_group_name = 'kafka_engine_put_errors_to_stream_with_random_malformed_json',
                      kafka_format = 'JSONEachRow',
                      kafka_max_block_size = 100,
                      kafka_poll_max_batch_size = 1,
@@ -2591,17 +2592,13 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(kafka_clus
         else:
             messages.append(gen_message_with_jsons(10, 0))
 
-    kafka_produce('json', messages)
+    kafka_produce('kafka_engine_put_errors_to_stream_with_random_malformed_json', messages)
 
-    while True:
-      total_rows = instance.query('SELECT count() FROM test.kafka_data', ignore_error=True)
-      if total_rows == '640\n':
-        break
-
-    while True:
-      total_error_rows = instance.query('SELECT count() FROM test.kafka_errors', ignore_error=True)
-      if total_error_rows == '64\n':
-        break
+    instance.wait_for_log_line("Committed offset 128")
+    # 64 good messages, each containing 10 rows
+    assert TSV(instance.query('SELECT count() FROM test.kafka_data')) == TSV('640')
+    # 64 bad messages, each containing some broken row
+    assert TSV(instance.query('SELECT count() FROM test.kafka_errors')) == TSV('64')
 
     instance.query('''
         DROP TABLE test.kafka;
@@ -2847,12 +2844,12 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
 15	0	AM	0.5	1	{topic_name}	0	{offset_1}
 0	0	AM	0.5	1	{topic_name}	0	{offset_2}
 '''.format(topic_name=topic_name, offset_0=offsets[0], offset_1=offsets[1], offset_2=offsets[2])
-        print(('Checking result\n {result} \n expected \n {expected}\n'.format(result=str(result), expected=str(expected))))
+        # print(('Checking result\n {result} \n expected \n {expected}\n'.format(result=str(result), expected=str(expected))))
         assert TSV(result) == TSV(expected), 'Proper result for format: {}'.format(format_name)
         errors_result = instance.query('SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv format JSONEachRow'.format(format_name=format_name))
         errors_expected = format_opts['expected']
-        print(errors_result.strip())
-        print(errors_expected.strip())
+        # print(errors_result.strip())
+        # print(errors_expected.strip())
         assert  errors_result.strip() == errors_expected.strip(), 'Proper errors for format: {}'.format(format_name)
 
 if __name__ == '__main__':
