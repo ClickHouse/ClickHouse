@@ -45,6 +45,8 @@ void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
     }
     catch (...)
     {
+        MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+
         /// It is better to catch the errors here in order to avoid
         /// breaking some functionality because of unexpected "File not
         /// found" (or similar) error.
