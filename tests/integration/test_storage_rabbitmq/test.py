@@ -1980,7 +1980,7 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'drop',
                      rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_queue_base = 'rabbit_queue'
+                     rabbitmq_queue_base = 'rabbit_queue_drop'
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
@@ -1994,14 +1994,14 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
         if result == "1\t2\n":
             break
 
-    exists = channel.queue_declare(queue='rabbit_queue', passive=True)
+    exists = channel.queue_declare(queue='rabbit_queue_drop', passive=True)
     assert(exists)
 
     instance.query("DROP TABLE test.rabbitmq_drop")
     time.sleep(30)
 
     try:
-        exists = channel.queue_declare(callback, queue='rabbit_queue', passive=True)
+        exists = channel.queue_declare(callback, queue='rabbit_queue_drop', passive=True)
     except Exception as e:
         exists = False
 
@@ -2016,7 +2016,7 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'rabbit_exchange',
                      rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_queue_base = 'rabbit_queue',
+                     rabbitmq_queue_base = 'rabbit_queue_settings',
                      rabbitmq_queue_settings_list = 'x-max-length=10,x-overflow=reject-publish'
         ''')
 

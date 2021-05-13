@@ -159,9 +159,9 @@ private:
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
 
-    void initExchange(RabbitMQChannel & rabbit_channel);
-    void bindExchange(RabbitMQChannel & rabbit_channel);
-    void bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channel);
+    void initExchange(AMQP::TcpChannel & rabbit_channel);
+    void bindExchange(AMQP::TcpChannel & rabbit_channel);
+    void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
     bool restoreConnection(bool reconnecting);
     bool streamToViews();

@@ -271,7 +271,7 @@ void StorageRabbitMQ::initRabbitMQ()
         return;
     }
 
-    RabbitMQChannel rabbit_channel(connection.get());
+    AMQP::TcpChannel rabbit_channel(connection.get());
 
     /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
 
@@ -283,10 +283,11 @@ void StorageRabbitMQ::initRabbitMQ()
 
     LOG_TRACE(log, "RabbitMQ setup completed");
     rabbit_is_ready = true;
+    rabbit_channel.close();
 }
 
 
-void StorageRabbitMQ::initExchange(RabbitMQChannel & rabbit_channel)
+void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
 {
     /// Exchange hierarchy:
     /// 1. Main exchange (defined with table settings - rabbitmq_exchange_name, rabbitmq_exchange_type).
@@ -357,7 +358,7 @@ void StorageRabbitMQ::initExchange(RabbitMQChannel & rabbit_channel)
 }
 
 
-void StorageRabbitMQ::bindExchange(RabbitMQChannel & rabbit_channel)
+void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
 {
     size_t bound_keys = 0;
 
@@ -418,7 +419,7 @@ void StorageRabbitMQ::bindExchange(RabbitMQChannel & rabbit_channel)
 }
 
 
-void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channel)
+void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel)
 {
     auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
     {
@@ -574,7 +575,7 @@ void StorageRabbitMQ::unbindExchange()
         event_handler->updateLoopState(Loop::STOP);
         looping_task->deactivate();
 
-        RabbitMQChannel rabbit_channel(connection.get());
+        AMQP::TcpChannel rabbit_channel(connection.get());
         rabbit_channel.removeExchange(bridge_exchange)
         .onSuccess([&]()
         {
@@ -589,6 +590,7 @@ void StorageRabbitMQ::unbindExchange()
         {
             event_handler->iterateLoop();
         }
+        rabbit_channel.close();
     });
 }
 
@@ -720,7 +722,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
     if (use_user_setup)
         return;
 
-    RabbitMQChannel rabbit_channel(connection.get());
+    AMQP::TcpChannel rabbit_channel(connection.get());
     for (const auto & queue : queues)
     {
         /// AMQP::ifunused is needed, because it is possible to share queues between multiple tables and dropping
@@ -740,6 +742,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
         });
     }
     event_handler->startBlockingLoop();
+    rabbit_channel.close();
 
     /// Also there is no need to cleanup exchanges as they were created with AMQP::autodelete option. Once queues
     /// are removed, exchanges will also be cleaned.
