@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_ALREADY_EXISTS;
+}
+
 DataTypePtr UserDefinedDataType::getNested() const
 {
     return nested;
@@ -81,6 +86,9 @@ static UserDefinedDataTypePtr create()
 
 void registerUserDefinedDataType(DataTypeFactory & factory, const ASTCreateDataTypeQuery & createDataTypeQuery)
 {
+    if (factory.hasNameOrAlias(createDataTypeQuery.type_name))
+        throw Exception("The data type '" + createDataTypeQuery.type_name + "' already exists", ErrorCodes::TYPE_ALREADY_EXISTS);
+
     factory.get(createDataTypeQuery.nested); // will throw exception if nested type was not registered
     factory.registerUserDefinedDataType(createDataTypeQuery.type_name, create, createDataTypeQuery);
 }
