@@ -10,7 +10,7 @@ toc_title: External Dictionaries
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-## dictGet, dictGetOrDefault {#dictget}
+## dictGet, dictGetOrDefault, dictGetOrNull {#dictget}
 
 Retrieves values from an external dictionary. 
 
