@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+import uuid
+
+from testflows._core.testtype import TestSubType
+from testflows.core.name import basename, parentname
+from testflows.core import current
+
 modes = [
     # mode, key_len, iv_len, aad
     ("'aes-128-ecb'", 16, None, None),
@@ -130,3 +136,10 @@ def hex(s):
     if isinstance(s, bytes):
         return "".join(['%X' % c for c in s])
     return _hex(s)
+
+def getuid():
+    if current().subtype == TestSubType.Example:
+        testname = f"{basename(parentname(current().name)).replace(' ', '_').replace(',','')}"
+    else:
+        testname = f"{basename(current().name).replace(' ', '_').replace(',','')}"
+    return testname + "_" + str(uuid.uuid1()).replace('-', '_')

@@ -113,8 +113,8 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    std::optional<UInt64> lifetimeRows() const override { return writes.rows; }
-    std::optional<UInt64> lifetimeBytes() const override { return writes.bytes; }
+    std::optional<UInt64> lifetimeRows() const override { return lifetime_writes.rows; }
+    std::optional<UInt64> lifetimeBytes() const override { return lifetime_writes.bytes; }
 
 
 private:
@@ -144,12 +144,13 @@ private:
     StorageID destination_id;
     bool allow_materialized;
 
-    /// Lifetime
-    struct LifeTimeWrites
+    struct Writes
     {
         std::atomic<size_t> rows = 0;
         std::atomic<size_t> bytes = 0;
-    } writes;
+    };
+    Writes lifetime_writes;
+    Writes total_writes;
 
     Poco::Logger * log;
 
