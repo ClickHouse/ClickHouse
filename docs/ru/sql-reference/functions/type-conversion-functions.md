@@ -369,7 +369,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-Функция принимает шестнадцатибайтную строку и интерпретирует ее байты в network order (big-endian). Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количеством нулевых байтов с конца. Если строка длиннее, чем шестнадцать байтов, то игнорируются лишние байты с конца.
+Функция принимает строку из 16 байт и интерпретирует ее байты в порядок байт от старшего к младшему. Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количеством нулевых байтов с конца. Если строка длиннее, чем 16 байтов, то лишние байты с конца игнорируются.
 
 **Синтаксис**
 
@@ -466,7 +466,8 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 Поддерживается также синтаксис `CAST(x AS t)`.
 
-Обратите внимание, что если значение `x` не может быть преобразовано к типу `T`, возникает переполнение. Например, `CAST(-1, 'UInt8')` возвращает 255.
+!!! note "Примечание"
+    Обратите внимание, что если значение `x` не может быть преобразовано к типу `T`, возникает переполнение. Например, `CAST(-1, 'UInt8')` возвращает 255.
 
 **Синтаксис**
 
@@ -479,7 +480,7 @@ CAST(x, T)
 -   `x` — любой тип данных. 
 -   `T` — конечный тип данных. [String](../../sql-reference/data-types/string.md).  
 
-**Returned value**
+**Возвращаемое значение**
 
 -   Конечный тип данных.
 
@@ -523,7 +524,7 @@ SELECT
 
 Преобразование в FixedString(N) работает только для аргументов типа [String](../../sql-reference/data-types/string.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
 
-Поддержано преобразование к типу [Nullable](../../sql-reference/functions/type-conversion-functions.md) и обратно. 
+Поддерживается преобразование к типу [Nullable](../../sql-reference/functions/type-conversion-functions.md) и обратно. 
 
 **Примеры**
 
@@ -893,7 +894,7 @@ AS parseDateTimeBestEffortUS;
 ## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
 ## parseDateTime32BestEffortOrZero {#parsedatetime32besteffortorzero}
 
-Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает нулевую дату или нулевую дату и время, когда получает формат даты, который не может быть обработан.
+Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает нулевую дату или нулевую дату и время в случае, если получает формат даты, который не может быть обработан.
 
 ## parseDateTimeBestEffortUSOrNull {#parsedatetimebesteffortusornull}
 
@@ -1077,7 +1078,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOr
 parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату или дату со временем, которые нужно преобразовать. [String](../../sql-reference/data-types/string.md).
 -   `precision` — `3` для миллисекунд, `6` для микросекунд. По умолчанию `3`. Необязательный. [UInt8](../../sql-reference/data-types/int-uint.md).
@@ -1115,11 +1116,11 @@ FORMAT PrettyCompactMonoBlcok;
 
 ## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
 
-Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL`, когда встречает формат даты, который не может обработать.
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL` в случае, если встречает формат даты, который не может обработать.
 
 ## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
 
-Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает "нулевую" дату и время, когда встречает формат даты, который не может обработать.
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает нулевую дату и время в случае, если встречает формат даты, который не может обработать.
 
 ## toLowCardinality {#tolowcardinality}
 
@@ -1166,7 +1167,10 @@ SELECT toLowCardinality('1');
 ## toUnixTimestamp64Nano {#tounixtimestamp64nano}
 
 Преобразует значение `DateTime64` в значение `Int64` с фиксированной точностью менее одной секунды. 
-Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. Обратите внимание, что возвращаемое значение — это временная метка в UTC, а не в часовом поясе `DateTime64`.
+Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. 
+
+!!! note "Примечание"
+    Обратите внимание, что возвращаемое значение — это временная метка в UTC, а не в часовом поясе `DateTime64`.
 
 **Синтаксис**
 

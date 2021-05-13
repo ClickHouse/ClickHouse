@@ -469,7 +469,8 @@ Converts input value `x` to the `T` data type. Unlike to `reinterpret` function,
 
 The syntax `CAST(x AS t)` is also supported.
 
-Note, that if value `x` does not fit the bounds of type `T`, the function overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
+!!! note "Note"
+    If value `x` does not fit the bounds of type `T`, the function overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
 
 **Syntax**
 
@@ -1167,8 +1168,10 @@ Result:
 
 ## toUnixTimestamp64Nano {#tounixtimestamp64nano}
 
-Converts a `DateTime64` to a `Int64` value with fixed sub-second precision.
-Input value is scaled up or down appropriately depending on it precision. Please note that output value is a timestamp in UTC, not in timezone of `DateTime64`.
+Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision. 
+
+!!! note "Note"
+    Please note that output value is a timestamp in UTC, not in timezone of `DateTime64`.
 
 **Syntax**
 
