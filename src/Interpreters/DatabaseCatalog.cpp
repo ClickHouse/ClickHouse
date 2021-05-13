@@ -86,7 +86,8 @@ TemporaryTableHolder::TemporaryTableHolder(
     bool create_for_global_subquery)
     : TemporaryTableHolder(
         context_,
-        [&](const StorageID & table_id) {
+        [&](const StorageID & table_id)
+        {
             auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
             if (create_for_global_subquery)

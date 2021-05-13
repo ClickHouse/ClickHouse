@@ -23,9 +23,9 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
+    IAST * comment = nullptr;
     ASTSetQuery * settings = nullptr;
 
-    ASTPtr comment;
 
     String getID(char) const override { return "Storage definition"; }
 

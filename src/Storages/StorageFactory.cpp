@@ -199,8 +199,7 @@ StoragePtr StorageFactory::get(
     }
 
     ASTs empty_engine_args;
-    Arguments arguments
-    {
+    Arguments arguments{
         .engine_name = name,
         .engine_args = has_engine_args ? storage_def->engine->arguments->children : empty_engine_args,
         .storage_def = storage_def,
@@ -213,8 +212,8 @@ StoragePtr StorageFactory::get(
         .constraints = constraints,
         .attach = query.attach,
         .has_force_restore_data_flag = has_force_restore_data_flag,
-        .comment = comment 
-    };
+        .comment = comment};
+
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);

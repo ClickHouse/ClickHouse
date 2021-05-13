@@ -408,7 +408,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     storage->set(storage->settings, settings);
 
-    storage->comment = comment_expression;
+    storage->set(storage->comment, comment_expression);
 
     node = storage;
     return true;
