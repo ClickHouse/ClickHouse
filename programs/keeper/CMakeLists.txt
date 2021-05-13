@@ -13,4 +13,4 @@ set (CLICKHOUSE_KEEPER_LINK
 
 clickhouse_program_add(keeper)
 
-install (FILES clickhouse-keeper.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-keeper" COMPONENT clickhouse-keeper RENAME keeper_config.xml)
+install (FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-keeper" COMPONENT clickhouse-keeper)
