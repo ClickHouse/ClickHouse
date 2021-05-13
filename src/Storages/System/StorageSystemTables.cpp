@@ -245,6 +245,7 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // comment
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
@@ -437,9 +438,11 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
+                auto settings = context->getSettingsRef();
+                settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
-                    auto total_rows = table ? table->totalRows(context->getSettingsRef()) : std::nullopt;
+                    auto total_rows = table ? table->totalRows(settings) : std::nullopt;
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -448,7 +451,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto total_bytes = table ? table->totalBytes(context->getSettingsRef()) : std::nullopt;
+                    auto total_bytes = table ? table->totalBytes(settings) : std::nullopt;
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -475,8 +478,10 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    res_columns[res_index++]->insert(metadata_snapshot->comment);
+                    if (metadata_snapshot)
+                        res_columns[res_index++]->insert(metadata_snapshot->comment);
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
             }
         }

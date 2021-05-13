@@ -36,7 +36,8 @@ public:
     Pipe read(const Names &, const StorageMetadataPtr &, SelectQueryInfo &,
         ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
 

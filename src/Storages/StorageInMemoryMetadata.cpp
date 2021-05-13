@@ -27,6 +27,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     : columns(other.columns)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
+    , projections(other.projections.clone())
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
@@ -47,6 +48,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     columns = other.columns;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
+    projections = other.projections.clone();
     partition_key = other.partition_key;
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
@@ -82,6 +84,11 @@ void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_i
 void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
 {
     constraints = std::move(constraints_);
+}
+
+void StorageInMemoryMetadata::setProjections(ProjectionsDescription projections_)
+{
+    projections = std::move(projections_);
 }
 
 void StorageInMemoryMetadata::setTableTTLs(const TTLTableDescription & table_ttl_)
@@ -125,6 +132,16 @@ bool StorageInMemoryMetadata::hasSecondaryIndices() const
 const ConstraintsDescription & StorageInMemoryMetadata::getConstraints() const
 {
     return constraints;
+}
+
+const ProjectionsDescription & StorageInMemoryMetadata::getProjections() const
+{
+    return projections;
+}
+
+bool StorageInMemoryMetadata::hasProjections() const
+{
+    return !projections.empty();
 }
 
 TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
@@ -205,6 +222,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
     ColumnDependencies res;
 
     NameSet indices_columns;
+    NameSet projections_columns;
     NameSet required_ttl_columns;
     NameSet updated_ttl_columns;
 
@@ -225,6 +243,9 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     for (const auto & index : getSecondaryIndices())
         add_dependent_columns(index.expression, indices_columns);
+
+    for (const auto & projection : getProjections())
+        add_dependent_columns(&projection, projections_columns);
 
     if (hasRowsTTL())
     {
@@ -251,6 +272,8 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);
+    for (const auto & column : projections_columns)
+        res.emplace(column, ColumnDependency::PROJECTION);
     for (const auto & column : required_ttl_columns)
         res.emplace(column, ColumnDependency::TTL_EXPRESSION);
     for (const auto & column : updated_ttl_columns)

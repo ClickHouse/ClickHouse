@@ -183,6 +183,11 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "skipping indices",
                     [](StorageFeatures features) { return features.supports_skipping_indices; });
+
+            if (query.columns_list && query.columns_list->projections && !query.columns_list->projections->children.empty())
+                check_feature(
+                    "projections",
+                    [](StorageFeatures features) { return features.supports_projections; });
         }
     }
 
