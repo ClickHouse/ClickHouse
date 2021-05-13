@@ -14,10 +14,10 @@ namespace ErrorCodes
 
 BlockIO InterpreterTransactionControlQuery::execute()
 {
-    if (!query_context.hasSessionContext())
+    if (!getContext()->hasSessionContext())
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction Control Language queries are allowed only inside session");
 
-    Context & session_context = query_context.getSessionContext();
+    ContextPtr session_context = getContext()->getSessionContext();
     const auto & tcl = query_ptr->as<const ASTTransactionControl &>();
 
     switch (tcl.action)
@@ -31,33 +31,33 @@ BlockIO InterpreterTransactionControlQuery::execute()
     }
 }
 
-BlockIO InterpreterTransactionControlQuery::executeBegin(Context & context)
+BlockIO InterpreterTransactionControlQuery::executeBegin(ContextPtr session_context)
 {
-    if (context.getCurrentTransaction())
+    if (session_context->getCurrentTransaction())
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Nested transactions are not supported");
 
     auto txn = TransactionLog::instance().beginTransaction();
-    context.initCurrentTransaction(txn);
-    query_context.setCurrentTransaction(txn);
+    session_context->initCurrentTransaction(txn);
+    getContext()->setCurrentTransaction(txn);
     return {};
 }
 
-BlockIO InterpreterTransactionControlQuery::executeCommit(Context & context)
+BlockIO InterpreterTransactionControlQuery::executeCommit(ContextPtr session_context)
 {
-    auto txn = context.getCurrentTransaction();
+    auto txn = session_context->getCurrentTransaction();
     if (!txn)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     if (txn->getState() != MergeTreeTransaction::RUNNING)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
     TransactionLog::instance().commitTransaction(txn);
-    context.setCurrentTransaction(nullptr);
+    session_context->setCurrentTransaction(nullptr);
     return {};
 }
 
-BlockIO InterpreterTransactionControlQuery::executeRollback(Context & context)
+BlockIO InterpreterTransactionControlQuery::executeRollback(ContextPtr session_context)
 {
-    auto txn = context.getCurrentTransaction();
+    auto txn = session_context->getCurrentTransaction();
     if (!txn)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     if (txn->getState() == MergeTreeTransaction::COMMITTED)
@@ -65,7 +65,7 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(Context & context)
 
     if (txn->getState() == MergeTreeTransaction::RUNNING)
         TransactionLog::instance().rollbackTransaction(txn);
-    context.getSessionContext().setCurrentTransaction(nullptr);
+    session_context->setCurrentTransaction(nullptr);
     return {};
 }
 

@@ -12,7 +12,7 @@
 /// Warning in boost::geometry during template strategy substitution.
 #pragma GCC diagnostic push
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
@@ -285,7 +285,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     const Point & max_corner = box.max_corner();
 
 #pragma GCC diagnostic push
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
@@ -322,7 +322,7 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
     for (size_t row = 0; row < grid_size; ++row)
     {
 #pragma GCC diagnostic push
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
         CoordinateType y_min = min_corner.y() + row * cell_height;
@@ -646,7 +646,7 @@ UInt128 sipHash128(Polygon && polygon)
         hash_ring(inner);
 
     UInt128 res;
-    hash.get128(res.low, res.high);
+    hash.get128(res);
     return res;
 }
 

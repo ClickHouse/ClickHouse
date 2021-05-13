@@ -13,7 +13,7 @@
 namespace DB
 {
 
-namespace
+namespace detail
 {
 
 /// This function returns true if both values are large and comparable.
@@ -72,7 +72,7 @@ public:
         Float64 factor = static_cast<Float64>(count * source.count) / total_count;
         Float64 delta = mean - source.mean;
 
-        if (areComparable(count, source.count))
+        if (detail::areComparable(count, source.count))
             mean = (source.count * source.mean + count * mean) / total_count;
         else
             mean = source.mean + delta * (static_cast<Float64>(count) / total_count);
@@ -122,6 +122,8 @@ public:
     {
         return std::make_shared<DataTypeFloat64>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -300,7 +302,7 @@ public:
         Float64 left_delta = left_mean - source.left_mean;
         Float64 right_delta = right_mean - source.right_mean;
 
-        if (areComparable(count, source.count))
+        if (detail::areComparable(count, source.count))
         {
             left_mean = (source.count * source.left_mean + count * left_mean) / total_count;
             right_mean = (source.count * source.right_mean + count * right_mean) / total_count;
@@ -374,6 +376,8 @@ public:
     {
         return std::make_shared<DataTypeFloat64>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

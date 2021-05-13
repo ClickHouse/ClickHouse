@@ -36,7 +36,7 @@ void registerStorageNull(StorageFactory & factory)
     });
 }
 
-void StorageNull::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
+void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
     auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
@@ -46,7 +46,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, const Con
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
-        if (command.type == AlterCommand::DROP_COLUMN)
+        if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
@@ -61,7 +61,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, const Con
 }
 
 
-void StorageNull::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
+void StorageNull::alter(const AlterCommands & params, ContextPtr context, TableLockHolder &)
 {
     auto table_id = getStorageID();
 

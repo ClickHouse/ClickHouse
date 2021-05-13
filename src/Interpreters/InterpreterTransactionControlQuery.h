@@ -5,12 +5,12 @@
 namespace DB
 {
 
-class InterpreterTransactionControlQuery : public IInterpreter
+class InterpreterTransactionControlQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterTransactionControlQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_)
-    , query_context(context_)
+    InterpreterTransactionControlQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    : WithContext(context_)
+    , query_ptr(query_ptr_)
     {
     }
 
@@ -19,13 +19,12 @@ public:
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 private:
-    BlockIO executeBegin(Context & context);
-    BlockIO executeCommit(Context & context);
-    BlockIO executeRollback(Context & context);
+    BlockIO executeBegin(ContextPtr session_context);
+    BlockIO executeCommit(ContextPtr session_context);
+    BlockIO executeRollback(ContextPtr session_context);
 
 private:
     ASTPtr query_ptr;
-    Context & query_context;
 };
 
 }

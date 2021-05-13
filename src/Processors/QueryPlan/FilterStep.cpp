@@ -4,6 +4,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -111,6 +112,15 @@ void FilterStep::describeActions(FormatSettings & settings) const
     for (const auto & pos : expression->getResultPositions())
         settings.out << ' ' << pos;
     settings.out << '\n';
+}
+
+void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Filter Column", filter_column_name);
+    map.add("Removes Filter", remove_filter_column);
+
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    map.add("Expression", expression->toTree());
 }
 
 }

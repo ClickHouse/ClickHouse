@@ -46,7 +46,7 @@ inline size_t readAlpha(char * res, size_t max_chars, ReadBuffer & in)
 }
 
 #if defined(__PPC__)
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 #endif
@@ -634,7 +634,7 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 }
 
 #if defined(__PPC__)
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 #endif

@@ -2,9 +2,8 @@
 
 #include <Core/Block.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
+#include <DataStreams/SizeLimits.h>
 #include <DataStreams/StreamLocalLimits.h>
 #include <IO/Progress.h>
 #include <Storages/TableLockHolder.h>
@@ -159,7 +158,7 @@ public:
 
     /** Set the approximate total number of rows to read.
       */
-    virtual void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
+    void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
 
     /** Ask to abort the receipt of data as soon as possible.

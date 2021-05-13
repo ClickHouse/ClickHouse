@@ -535,7 +535,7 @@ class FunctionStringHashFixedString : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHashFixedString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringHashFixedString>(); }
 
     String getName() const override
     {
@@ -700,7 +700,7 @@ template <typename Impl, typename Name>
 class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
 {
 public:
-    explicit FunctionIntHash(const Context & context) : selector(context)
+    explicit FunctionIntHash(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
@@ -718,7 +718,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionIntHash>(context);
     }
@@ -973,7 +973,7 @@ private:
         else if (which.isUInt16()) executeIntType<UInt16, first>(icolumn, vec_to);
         else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
         else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
-        else if (which.isUInt128() || which.isUUID()) executeBigIntType<UInt128, first>(icolumn, vec_to);
+        else if (which.isUInt128()) executeBigIntType<UInt128, first>(icolumn, vec_to);
         else if (which.isUInt256()) executeBigIntType<UInt256, first>(icolumn, vec_to);
         else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
@@ -981,6 +981,7 @@ private:
         else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
         else if (which.isInt128()) executeBigIntType<Int128, first>(icolumn, vec_to);
         else if (which.isInt256()) executeBigIntType<Int256, first>(icolumn, vec_to);
+        else if (which.isUUID()) executeBigIntType<UUID, first>(icolumn, vec_to);
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
@@ -1076,7 +1077,7 @@ template <typename Impl>
 class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl>
 {
 public:
-    explicit FunctionAnyHash(const Context & context) : selector(context)
+    explicit FunctionAnyHash(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionAnyHash<Impl>>();
@@ -1094,7 +1095,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionAnyHash>(context);
     }
@@ -1181,7 +1182,7 @@ class FunctionURLHash : public IFunction
 {
 public:
     static constexpr auto name = "URLHash";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionURLHash>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionURLHash>(); }
 
     String getName() const override { return name; }
 

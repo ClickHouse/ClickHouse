@@ -90,7 +90,7 @@ template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
 {
 public:
-    static FunctionPtr create(const Context & /* context */) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 
@@ -142,7 +142,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
-    hash.get128(key.low, key.high);
+    hash.get128(key);
 
     return key;
 }

@@ -20,6 +20,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
@@ -228,6 +229,25 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::ADD_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.projection_decl = command_ast->projection_decl;
+        command.type = AlterCommand::ADD_PROJECTION;
+
+        const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
+
+        command.projection_name = ast_projection_decl.name;
+
+        if (command_ast->projection)
+            command.after_projection_name = command_ast->projection->as<ASTIdentifier &>().name();
+
+        command.first = command_ast->first;
+        command.if_not_exists = command_ast->if_not_exists;
+
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
     {
         AlterCommand command;
@@ -246,6 +266,21 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.index_name = command_ast->index->as<ASTIdentifier &>().name();
         command.if_exists = command_ast->if_exists;
         if (command_ast->clear_index)
+            command.clear = true;
+
+        if (command_ast->partition)
+            command.partition = command_ast->partition;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::DROP_PROJECTION;
+        command.projection_name = command_ast->projection->as<ASTIdentifier &>().name();
+        command.if_exists = command_ast->if_exists;
+        if (command_ast->clear_projection)
             command.clear = true;
 
         if (command_ast->partition)
@@ -299,7 +334,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (type == ADD_COLUMN)
     {
@@ -320,7 +355,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         metadata.columns.add(column, after_column, first);
 
         /// Slow, because each time a list is copied
-        if (context.getSettingsRef().flatten_nested)
+        if (context->getSettingsRef().flatten_nested)
             metadata.columns.flattenNested();
     }
     else if (type == DROP_COLUMN)
@@ -499,6 +534,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         }
         metadata.constraints.constraints.erase(erase_it);
     }
+    else if (type == ADD_PROJECTION)
+    {
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, context);
+        metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
+    }
+    else if (type == DROP_PROJECTION)
+    {
+        if (!partition && !clear)
+            metadata.projections.remove(projection_name);
+    }
     else if (type == MODIFY_TTL)
     {
         metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
@@ -645,7 +690,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX || type == RENAME_COLUMN)
+    if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
@@ -702,7 +747,7 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata))
         return {};
@@ -737,6 +782,17 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 
         result.predicate = nullptr;
     }
+    else if (type == DROP_PROJECTION)
+    {
+        result.type = MutationCommand::Type::DROP_PROJECTION;
+        result.column_name = projection_name;
+        if (clear)
+            result.clear = true;
+        if (partition)
+            result.partition = partition;
+
+        result.predicate = nullptr;
+    }
     else if (type == RENAME_COLUMN)
     {
         result.type = MutationCommand::Type::RENAME_COLUMN;
@@ -760,6 +816,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "ADD CONSTRAINT";
     case AlterCommand::Type::ADD_INDEX:
         return "ADD INDEX";
+    case AlterCommand::Type::ADD_PROJECTION:
+        return "ADD PROJECTION";
     case AlterCommand::Type::COMMENT_COLUMN:
         return "COMMENT COLUMN";
     case AlterCommand::Type::DROP_COLUMN:
@@ -768,6 +826,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "DROP CONSTRAINT";
     case AlterCommand::Type::DROP_INDEX:
         return "DROP INDEX";
+    case AlterCommand::Type::DROP_PROJECTION:
+        return "DROP PROJECTION";
     case AlterCommand::Type::MODIFY_COLUMN:
         return "MODIFY COLUMN";
     case AlterCommand::Type::MODIFY_ORDER_BY:
@@ -784,11 +844,13 @@ String alterTypeToString(const AlterCommand::Type type)
         return "RENAME COLUMN";
     case AlterCommand::Type::REMOVE_TTL:
         return "REMOVE TTL";
+    default:
+        throw Exception("Uninitialized ALTER command", ErrorCodes::LOGICAL_ERROR);
     }
-    __builtin_unreachable();
+
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -821,7 +883,33 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
-        index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, context);
+    {
+        try
+        {
+            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, context);
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage("Cannot apply mutation because it breaks skip index " + index.name);
+            throw;
+        }
+    }
+
+    /// Changes in columns may lead to changes in projections
+    ProjectionsDescription new_projections;
+    for (const auto & projection : metadata_copy.projections)
+    {
+        try
+        {
+            new_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, context));
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage("Cannot apply mutation because it breaks projection " + projection.name);
+            throw;
+        }
+    }
+    metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
@@ -880,7 +968,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     prepared = true;
 }
 
-void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
@@ -907,7 +995,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::BAD_ARGUMENTS};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -927,7 +1015,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::NOT_IMPLEMENTED};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs);
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
             {
@@ -1172,7 +1260,7 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
