@@ -30,16 +30,6 @@ private:
 public:
     static void chChunkToArrowTable(std::shared_ptr<arrow::Table> & res, const Block & header, const Chunk & chunk,
                                     size_t columns_num, String format_name);
-
-    static void fillArrowArray(
-        const String & column_name,
-        ColumnPtr & column,
-        const std::shared_ptr<const IDataType> & column_type,
-        const PaddedPODArray<UInt8> * null_bytemap,
-        arrow::ArrayBuilder * array_builder,
-        String format_name,
-        size_t start,
-        size_t end);
 };
 }
 #endif
