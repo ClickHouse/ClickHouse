@@ -552,22 +552,18 @@ struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
 struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
 
-template <
-    template <typename, typename> class Op,
-    typename Name>
+template <template <typename, typename> class Op, typename Name>
 class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(const Context & context_)
-    :   context(context_),
-        check_decimal_overflow(decimalCheckComparisonOverflow(context))
-    {}
+    explicit FunctionComparison(ContextPtr context_)
+        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
 
 private:
-    const Context & context;
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -1244,23 +1240,27 @@ public:
         if (2 != types.size())
             return false;
 
-        auto isBigInteger = &typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeUUID>;
-        auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
-        if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1]))
-            || (isBigInteger(*types[1]) && isFloatingPoint(*types[0]))
-            || (WhichDataType(types[0]).isDate() && WhichDataType(types[1]).isDateTime())
-            || (WhichDataType(types[1]).isDate() && WhichDataType(types[0]).isDateTime()))
+        WhichDataType data_type_lhs(types[0]);
+        WhichDataType data_type_rhs(types[1]);
+
+        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64(); };
+
+        if ((is_big_integer(data_type_lhs) && data_type_rhs.isFloat())
+            || (is_big_integer(data_type_rhs) && data_type_lhs.isFloat())
+            || (data_type_lhs.isDate() && data_type_rhs.isDateTime())
+            || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
+
         return isCompilableType(types[0]) && isCompilableType(types[1]);
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         assert(2 == types.size() && 2 == values.size());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto * x = values[0]();
-        auto * y = values[1]();
+        auto * x = values[0];
+        auto * y = values[1];
         if (!types[0]->equals(*types[1]))
         {
             llvm::Type * common;

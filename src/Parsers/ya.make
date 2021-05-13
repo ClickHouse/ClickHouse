@@ -38,6 +38,8 @@ SRCS(
     ASTOptimizeQuery.cpp
     ASTOrderByElement.cpp
     ASTPartition.cpp
+    ASTProjectionDeclaration.cpp
+    ASTProjectionSelectQuery.cpp
     ASTQualifiedAsterisk.cpp
     ASTQueryParameter.cpp
     ASTQueryWithOnCluster.cpp
@@ -105,6 +107,7 @@ SRCS(
     ParserKillQueryQuery.cpp
     ParserOptimizeQuery.cpp
     ParserPartition.cpp
+    ParserProjectionSelectQuery.cpp
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp

@@ -15,7 +15,7 @@ class FunctionBlockSerializedSize : public IFunction
 public:
     static constexpr auto name = "blockSerializedSize";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBlockSerializedSize>();
     }

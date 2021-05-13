@@ -29,8 +29,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
 {
     static const std::vector<String> supported_functions{"any", "anyLast", "min",
         "max", "sum", "sumWithOverflow", "groupBitAnd", "groupBitOr", "groupBitXor",
-        "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray",
-        "argMin", "argMax"};
+        "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray"};
 
     // check function
     if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
