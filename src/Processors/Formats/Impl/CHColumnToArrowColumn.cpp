@@ -93,6 +93,16 @@ namespace DB
         checkStatus(status, write_column->getName(), format_name);
     }
 
+    static void fillArrowArray(
+        const String & column_name,
+        ColumnPtr & column,
+        const std::shared_ptr<const IDataType> & column_type,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        arrow::ArrayBuilder * array_builder,
+        String format_name,
+        size_t start,
+        size_t end);
+
     static void fillArrowArrayWithArrayColumnData(
         const String & column_name,
         ColumnPtr & column,
@@ -117,7 +127,7 @@ namespace DB
             /// Start new array
             components_status = builder.Append();
             checkStatus(components_status, nested_column->getName(), format_name);
-            CHColumnToArrowColumn::fillArrowArray(column_name, nested_column, nested_type, null_bytemap, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx]);
+            fillArrowArray(column_name, nested_column, nested_type, null_bytemap, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx]);
         }
     }
 
@@ -200,7 +210,7 @@ namespace DB
         }
     }
 
-    void CHColumnToArrowColumn::fillArrowArray(
+    static void fillArrowArray(
         const String & column_name,
         ColumnPtr & column,
         const std::shared_ptr<const IDataType> & column_type,
