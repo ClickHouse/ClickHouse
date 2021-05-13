@@ -339,6 +339,12 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 if (getContext()->getSettingsRef().enable_positional_arguments)
                     replaceForPositionalArguments(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
 
+                if (select_query->group_by_with_grouping_sets)
+                {
+                    LOG_DEBUG(poco_log, "analyzeAggregation: detect group by with grouping sets");
+                    /// TODO
+                }
+
                 getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
                 const auto & column_name = group_asts[i]->getColumnName();
@@ -374,6 +380,11 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 /// Aggregation keys are uniqued.
                 if (!unique_keys.count(key.name))
                 {
+                    if (select_query->group_by_with_grouping_sets)
+                    {
+                        aggregation_keys_list.push_back({key});
+                    }
+
                     unique_keys.insert(key.name);
                     aggregation_keys.push_back(key);
 

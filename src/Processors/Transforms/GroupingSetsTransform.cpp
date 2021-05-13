@@ -19,6 +19,7 @@ GroupingSetsTransform::GroupingSetsTransform(Block header, AggregatingTransformP
 
 Chunk GroupingSetsTransform::merge(Chunks && chunks, bool final)
 {
+    LOG_DEBUG(log, "merge {} blocks", chunks.size());
     BlocksList rollup_blocks;
     for (auto & chunk : chunks)
         rollup_blocks.emplace_back(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
@@ -31,12 +32,15 @@ Chunk GroupingSetsTransform::merge(Chunks && chunks, bool final)
 void GroupingSetsTransform::consume(Chunk chunk)
 {
     consumed_chunks.emplace_back(std::move(chunk));
+    LOG_DEBUG(log, "consumed block, now consumed_chunks size is {}", consumed_chunks.size());
 }
 
 Chunk GroupingSetsTransform::generate()
 {
+    LOG_DEBUG(log, "generate start, mask = {}", mask);
     if (!consumed_chunks.empty())
     {
+        LOG_DEBUG(log, "consumed_chunks not empty, size is {}", consumed_chunks.size());
         if (consumed_chunks.size() > 1)
             grouping_sets_chunk = merge(std::move(consumed_chunks), false);
         else
@@ -46,6 +50,7 @@ Chunk GroupingSetsTransform::generate()
 
         auto num_rows = grouping_sets_chunk.getNumRows();
         mask = (UInt64(1) << keys.size());
+        LOG_DEBUG(log, "changed mask, mask = {}", mask);
 
         current_columns = grouping_sets_chunk.getColumns();
         current_zero_columns.clear();
@@ -56,9 +61,10 @@ Chunk GroupingSetsTransform::generate()
     }
 
     // auto gen_chunk = std::move(cube_chunk);
-
+    LOG_DEBUG(log, "before if mask");
     if (mask > 1)
     {
+        LOG_DEBUG(log, "in if mask > 1");
         mask = mask >> 1;
 
         auto columns = current_columns;
@@ -72,6 +78,7 @@ Chunk GroupingSetsTransform::generate()
         chunks.emplace_back(std::move(columns), current_columns.front()->size());
         grouping_sets_chunk = merge(std::move(chunks), false);
     }
+    LOG_DEBUG(log, "before gen_chunk");
     auto gen_chunk = std::move(grouping_sets_chunk);
 
     finalizeChunk(gen_chunk);
