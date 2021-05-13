@@ -13,6 +13,7 @@ void registerDiskMemory(DiskFactory & factory);
 #if USE_AWS_S3
 void registerDiskS3(DiskFactory & factory);
 #endif
+void registerDiskEncrypted(DiskFactory & factory);
 
 void registerDisks()
 {
@@ -23,6 +24,7 @@ void registerDisks()
 #if USE_AWS_S3
     registerDiskS3(factory);
 #endif
+    registerDiskEncrypted(factory);
 }
 
 }

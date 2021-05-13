@@ -11,7 +11,8 @@ struct DiskType
     {
         Local,
         RAM,
-        S3
+        S3,
+        Encrypted
     };
     static String toString(Type disk_type)
     {
@@ -23,6 +24,8 @@ struct DiskType
                 return "memory";
             case Type::S3:
                 return "s3";
+	    case Type::Encrypted:
+		return "encrypted";
         }
         __builtin_unreachable();
     }
