@@ -3,6 +3,7 @@
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -384,6 +385,37 @@ ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String
         res->create_time = stat.ctime / 1000;
 
     return res;
+}
+
+Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormatVersion format_version) const
+{
+    /// Doesn't produce any part
+    if (type == ALTER_METADATA)
+        return {};
+
+    /// DROP_RANGE does not add a real part, but we must disable merges in that range
+    if (type == DROP_RANGE)
+        return {new_part_name};
+
+    /// Return {} because selection of merges in the partition where the column is cleared
+    /// should not be blocked (only execution of merges should be blocked).
+    if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
+        return {};
+
+    if (type == REPLACE_RANGE)
+    {
+        Strings res = replace_range_entry->new_part_names;
+        auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
+        assert(drop_range_info.getBlocksCount() != 0);
+        if (drop_range_info.getBlocksCount() > 1)
+        {
+            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
+            res.emplace_back(replace_range_entry->drop_range_part_name);
+        }
+        return res;
+    }
+
+    return {new_part_name};
 }
 
 }

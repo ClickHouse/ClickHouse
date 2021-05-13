@@ -2005,8 +2005,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
             }
 
             if (!new_part_info.isDisjoint((*prev)->info))
-                throw Exception("Part " + new_part_name + " intersects previous part " + (*prev)->getNameWithState() +
-                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug.",
+                                new_part_name, (*prev)->getNameWithState());
 
             break;
         }
@@ -2019,7 +2019,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     while (end != committed_parts_range.end())
     {
         if ((*end)->info == new_part_info)
-            throw Exception("Unexpected duplicate part " + (*end)->getNameWithState() + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", (*end)->getNameWithState());
 
         if (!new_part_info.contains((*end)->info))
         {
@@ -2030,8 +2030,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
             }
 
             if (!new_part_info.isDisjoint((*end)->info))
-                throw Exception("Part " + new_part_name + " intersects next part " + (*end)->getNameWithState() +
-                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug.",
+                                new_part_name, (*end)->getNameWithState());
 
             break;
         }
