@@ -33,8 +33,10 @@ namespace ErrorCodes
 StorageView::StorageView(
     const StorageID & table_id_,
     const ASTCreateQuery & query,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    const Settings & settings)
     : IStorage(table_id_)
+    , settings_changes{{"join_use_nulls", Field(settings.join_use_nulls)}}
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -85,7 +87,10 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
+    auto modified_context = Context::createCopy(context);
+    modified_context->applySettingsChanges(settings_changes);
+
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, modified_context, {}, column_names);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.
@@ -173,7 +178,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_id, args.query, args.columns);
+        return StorageView::create(args.table_id, args.query, args.columns, args.getLocalContext()->getSettingsRef());
     });
 }
 

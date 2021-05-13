@@ -52,7 +52,10 @@ protected:
     StorageView(
         const StorageID & table_id_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const Settings & settings);
+
+    SettingsChanges settings_changes;
 };
 
 }
