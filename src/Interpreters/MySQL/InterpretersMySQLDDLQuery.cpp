@@ -7,6 +7,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTAlterCommand.h>
 #include <Parsers/MySQL/ASTDeclareColumn.h>
@@ -40,7 +41,7 @@ namespace MySQLInterpreter
 {
 
 static inline String resolveDatabase(
-    const String & database_in_query, const String & replica_mysql_database, const String & replica_clickhouse_database, const Context & context)
+    const String & database_in_query, const String & replica_mysql_database, const String & replica_clickhouse_database, ContextPtr context)
 {
     if (!database_in_query.empty())
     {
@@ -62,7 +63,7 @@ static inline String resolveDatabase(
     /// context.getCurrentDatabase() is always return `default database`
     /// When USE replica_mysql_database; CREATE TABLE table_name;
     /// context.getCurrentDatabase() is always return replica_clickhouse_database
-    const String & current_database = context.getCurrentDatabase();
+    const String & current_database = context->getCurrentDatabase();
     return current_database != replica_clickhouse_database ? "" : replica_clickhouse_database;
 }
 
@@ -116,7 +117,7 @@ static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_defin
     return columns_name_and_type;
 }
 
-static NamesAndTypesList getNames(const ASTFunction & expr, const Context & context, const NamesAndTypesList & columns)
+static NamesAndTypesList getNames(const ASTFunction & expr, ContextPtr context, const NamesAndTypesList & columns)
 {
     if (expr.arguments->children.empty())
         return NamesAndTypesList{};
@@ -157,7 +158,7 @@ static NamesAndTypesList modifyPrimaryKeysToNonNullable(const NamesAndTypesList 
 }
 
 static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameSet> getKeys(
-    ASTExpressionList * columns_define, ASTExpressionList * indices_define, const Context & context, NamesAndTypesList & columns)
+    ASTExpressionList * columns_define, ASTExpressionList * indices_define, ContextPtr context, NamesAndTypesList & columns)
 {
     NameSet increment_columns;
     auto keys = makeASTFunction("tuple");
@@ -184,7 +185,7 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
                     {
                         const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
 
-                        if (prefix_limit && isInt64FieldType(prefix_limit->value.getType()))
+                        if (prefix_limit && isInt64OrUInt64FieldType(prefix_limit->value.getType()))
                             res->children.back() = std::make_shared<ASTIdentifier>(function->name);
                     }
                 }
@@ -369,7 +370,7 @@ static ASTPtr getOrderByPolicy(
     return order_by_expression;
 }
 
-void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & create_query, const Context &)
+void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & create_query, ContextPtr)
 {
     /// This is dangerous, because the like table may not exists in ClickHouse
     if (create_query.like_table)
@@ -382,7 +383,7 @@ void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & creat
 }
 
 ASTs InterpreterCreateImpl::getRewrittenQueries(
-    const TQuery & create_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
+    const TQuery & create_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
     auto rewritten_query = std::make_shared<ASTCreateQuery>();
     if (resolveDatabase(create_query.database, mysql_database, mapped_to_database, context) != mapped_to_database)
@@ -411,12 +412,25 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
         return column_declaration;
     };
 
-    /// Add _sign and _version column.
+    /// Add _sign and _version columns.
     String sign_column_name = getUniqueColumnName(columns_name_and_type, "_sign");
     String version_column_name = getUniqueColumnName(columns_name_and_type, "_version");
     columns->set(columns->columns, InterpreterCreateQuery::formatColumns(columns_name_and_type));
     columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", UInt64(1)));
     columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
+
+    /// Add minmax skipping index for _version column.
+    auto version_index = std::make_shared<ASTIndexDeclaration>();
+    version_index->name = version_column_name;
+    auto index_expr = std::make_shared<ASTIdentifier>(version_column_name);
+    auto index_type = makeASTFunction("minmax");
+    index_type->no_empty_args = true;
+    version_index->set(version_index->expr, index_expr);
+    version_index->set(version_index->type, index_type);
+    version_index->granularity = 1;
+    ASTPtr indices = std::make_shared<ASTExpressionList>();
+    indices->children.push_back(version_index);
+    columns->set(columns->indices, indices);
 
     auto storage = std::make_shared<ASTStorage>();
 
@@ -439,12 +453,12 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     return ASTs{rewritten_query};
 }
 
-void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/, const Context & /*context*/)
+void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/, ContextPtr /*context*/)
 {
 }
 
 ASTs InterpreterDropImpl::getRewrittenQueries(
-    const InterpreterDropImpl::TQuery & drop_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
+    const InterpreterDropImpl::TQuery & drop_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
     const auto & database_name = resolveDatabase(drop_query.database, mysql_database, mapped_to_database, context);
 
@@ -457,14 +471,14 @@ ASTs InterpreterDropImpl::getRewrittenQueries(
     return ASTs{rewritten_query};
 }
 
-void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & rename_query, const Context & /*context*/)
+void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & rename_query, ContextPtr /*context*/)
 {
     if (rename_query.exchange)
         throw Exception("Cannot execute exchange for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 ASTs InterpreterRenameImpl::getRewrittenQueries(
-    const InterpreterRenameImpl::TQuery & rename_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
+    const InterpreterRenameImpl::TQuery & rename_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
     ASTRenameQuery::Elements elements;
     for (const auto & rename_element : rename_query.elements)
@@ -493,12 +507,12 @@ ASTs InterpreterRenameImpl::getRewrittenQueries(
     return ASTs{rewritten_query};
 }
 
-void InterpreterAlterImpl::validate(const InterpreterAlterImpl::TQuery & /*query*/, const Context & /*context*/)
+void InterpreterAlterImpl::validate(const InterpreterAlterImpl::TQuery & /*query*/, ContextPtr /*context*/)
 {
 }
 
 ASTs InterpreterAlterImpl::getRewrittenQueries(
-    const InterpreterAlterImpl::TQuery & alter_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
+    const InterpreterAlterImpl::TQuery & alter_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
     if (resolveDatabase(alter_query.database, mysql_database, mapped_to_database, context) != mapped_to_database)
         return {};

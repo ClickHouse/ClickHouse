@@ -12,6 +12,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/UncompressedCache.h>
+#include <IO/MMappedFileCache.h>
 #include <Databases/IDatabase.h>
 #include <chrono>
 
@@ -171,7 +172,7 @@ void AsynchronousMetrics::update()
     AsynchronousMetricValues new_values;
 
     {
-        if (auto mark_cache = global_context.getMarkCache())
+        if (auto mark_cache = getContext()->getMarkCache())
         {
             new_values["MarkCacheBytes"] = mark_cache->weight();
             new_values["MarkCacheFiles"] = mark_cache->count();
@@ -179,21 +180,31 @@ void AsynchronousMetrics::update()
     }
 
     {
-        if (auto uncompressed_cache = global_context.getUncompressedCache())
+        if (auto uncompressed_cache = getContext()->getUncompressedCache())
         {
             new_values["UncompressedCacheBytes"] = uncompressed_cache->weight();
             new_values["UncompressedCacheCells"] = uncompressed_cache->count();
         }
     }
 
+    {
+        if (auto mmap_cache = getContext()->getMMappedFileCache())
+        {
+            new_values["MMapCacheCells"] = mmap_cache->count();
+        }
+    }
+
 #if USE_EMBEDDED_COMPILER
     {
-        if (auto compiled_expression_cache = global_context.getCompiledExpressionCache())
+        if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+        {
+            new_values["CompiledExpressionCacheBytes"] = compiled_expression_cache->weight();
             new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
+        }
     }
 #endif
 
-    new_values["Uptime"] = global_context.getUptimeSeconds();
+    new_values["Uptime"] = getContext()->getUptimeSeconds();
 
     /// Process memory usage according to OS
 #if defined(OS_LINUX)
@@ -256,7 +267,7 @@ void AsynchronousMetrics::update()
             /// Check if database can contain MergeTree tables
             if (!db.second->canContainMergeTreeTables())
                 continue;
-            for (auto iterator = db.second->getTablesIterator(global_context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 const auto & table = iterator->table();
@@ -299,14 +310,14 @@ void AsynchronousMetrics::update()
                 if (table_merge_tree)
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
-                    const auto & settings = global_context.getSettingsRef();
+                    const auto & settings = getContext()->getSettingsRef();
                     total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_merge_tree->totalRows(settings).value();
                     total_number_of_parts += table_merge_tree->getPartsCount();
                 }
                 if (table_replicated_merge_tree)
                 {
-                    const auto & settings = global_context.getSettingsRef();
+                    const auto & settings = getContext()->getSettingsRef();
                     total_number_of_bytes += table_replicated_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_replicated_merge_tree->totalRows(settings).value();
                     total_number_of_parts += table_replicated_merge_tree->getPartsCount();
@@ -446,7 +457,7 @@ void AsynchronousMetrics::update()
     /// Add more metrics as you wish.
 
     // Log the new metrics.
-    if (auto log = global_context.getAsynchronousMetricLog())
+    if (auto log = getContext()->getAsynchronousMetricLog())
     {
         log->addValues(new_values);
     }

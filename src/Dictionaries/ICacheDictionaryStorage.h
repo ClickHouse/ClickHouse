@@ -12,9 +12,9 @@ struct KeyState
 {
     enum State: uint8_t
     {
-        not_found = 2,
-        expired = 4,
-        found = 8,
+        not_found = 0,
+        expired = 1,
+        found = 2,
     };
 
     KeyState(State state_, size_t fetched_column_index_)
@@ -31,9 +31,10 @@ struct KeyState
     inline bool isNotFound() const { return state == State::not_found; }
     inline bool isDefault() const { return is_default; }
     inline void setDefault() { is_default = true; }
+    inline void setDefaultValue(bool is_default_value) { is_default = is_default_value; }
     /// Valid only if keyState is found or expired
     inline size_t getFetchedColumnIndex() const { return fetched_column_index; }
-
+    inline void setFetchedColumnIndex(size_t fetched_column_index_value) { fetched_column_index = fetched_column_index_value; }
 private:
     State state = not_found;
     size_t fetched_column_index = 0;
@@ -111,8 +112,8 @@ public:
     /// Return size of keys in storage
     virtual size_t getSize() const = 0;
 
-    /// Return maximum size of keys in storage
-    virtual size_t getMaxSize() const = 0;
+    /// Returns storage load factor
+    virtual double getLoadFactor() const = 0;
 
     /// Return bytes allocated in storage
     virtual size_t getBytesAllocated() const = 0;

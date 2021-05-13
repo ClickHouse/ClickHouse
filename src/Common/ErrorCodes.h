@@ -1,11 +1,12 @@
 #pragma once
 
-#include <stddef.h>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <mutex>
-#include <common/types.h>
 #include <string_view>
+#include <vector>
+#include <common/types.h>
 
 /** Allows to count number of simultaneously happening error codes.
   * See also Exception.cpp for incrementing part.
@@ -19,6 +20,7 @@ namespace ErrorCodes
     /// ErrorCode identifier (index in array).
     using ErrorCode = int;
     using Value = size_t;
+    using FramePointers = std::vector<void *>;
 
     /// Get name of error_code by identifier.
     /// Returns statically allocated string.
@@ -27,13 +29,13 @@ namespace ErrorCodes
     struct Error
     {
         /// Number of times Exception with this ErrorCode had been throw.
-        Value count;
+        Value count = 0;
         /// Time of the last error.
         UInt64 error_time_ms = 0;
         /// Message for the last error.
         std::string message;
         /// Stacktrace for the last error.
-        std::string stacktrace;
+        FramePointers trace;
     };
     struct ErrorPair
     {
@@ -46,7 +48,7 @@ namespace ErrorCodes
     {
     public:
         ErrorPair get();
-        void increment(bool remote, const std::string & message, const std::string & stacktrace);
+        void increment(bool remote, const std::string & message, const FramePointers & trace);
 
     private:
         ErrorPair value;
@@ -60,7 +62,7 @@ namespace ErrorCodes
     ErrorCode end();
 
     /// Add value for specified error_code.
-    void increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & stacktrace);
+    void increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace);
 }
 
 }

@@ -137,8 +137,8 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (window())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str <<
-            "WINDOW " << (s.hilite ? hilite_none : "");
-        window()->formatImpl(s, state, frame);
+            "WINDOW" << (s.hilite ? hilite_none : "");
+        window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (orderBy())

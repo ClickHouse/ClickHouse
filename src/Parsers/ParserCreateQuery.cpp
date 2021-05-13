@@ -2,6 +2,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -13,6 +14,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
+#include <Parsers/ParserProjectionSelectQuery.h>
 #include <IO/ReadHelpers.h>
 
 
@@ -152,14 +154,47 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 }
 
 
+bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier name_p;
+    ParserProjectionSelectQuery query_p;
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ASTPtr name;
+    ASTPtr query;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!s_lparen.ignore(pos, expected))
+        return false;
+
+    if (!query_p.parse(pos, query, expected))
+        return false;
+
+    if (!s_rparen.ignore(pos, expected))
+        return false;
+
+    auto projection = std::make_shared<ASTProjectionDeclaration>();
+    projection->name = name->as<ASTIdentifier &>().name();
+    projection->query = query;
+    projection->children.emplace_back(projection->query);
+    node = projection;
+
+    return true;
+}
+
+
 bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_index("INDEX");
     ParserKeyword s_constraint("CONSTRAINT");
+    ParserKeyword s_projection("PROJECTION");
     ParserKeyword s_primary_key("PRIMARY KEY");
 
     ParserIndexDeclaration index_p;
     ParserConstraintDeclaration constraint_p;
+    ParserProjectionDeclaration projection_p;
     ParserColumnDeclaration column_p{true, true};
     ParserExpression primary_key_p;
 
@@ -173,6 +208,11 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     else if (s_constraint.ignore(pos, expected))
     {
         if (!constraint_p.parse(pos, new_node, expected))
+            return false;
+    }
+    else if (s_projection.ignore(pos, expected))
+    {
+        if (!projection_p.parse(pos, new_node, expected))
             return false;
     }
     else if (s_primary_key.ignore(pos, expected))
@@ -202,6 +242,12 @@ bool ParserConstraintDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expect
             .parse(pos, node, expected);
 }
 
+bool ParserProjectionDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserProjectionDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, node, expected);
+}
+
 bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list;
@@ -214,6 +260,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr columns = std::make_shared<ASTExpressionList>();
     ASTPtr indices = std::make_shared<ASTExpressionList>();
     ASTPtr constraints = std::make_shared<ASTExpressionList>();
+    ASTPtr projections = std::make_shared<ASTExpressionList>();
     ASTPtr primary_key;
 
     for (const auto & elem : list->children)
@@ -224,6 +271,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             indices->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
             constraints->children.push_back(elem);
+        else if (elem->as<ASTProjectionDeclaration>())
+            projections->children.push_back(elem);
         else if (elem->as<ASTIdentifier>() || elem->as<ASTFunction>())
         {
             if (primary_key)
@@ -245,6 +294,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         res->set(res->indices, indices);
     if (!constraints->children.empty())
         res->set(res->constraints, constraints);
+    if (!projections->children.empty())
+        res->set(res->projections, projections);
     if (primary_key)
         res->set(res->primary_key, primary_key);
 
@@ -780,6 +831,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     ASTPtr table;
     ASTPtr to_table;
+    ASTPtr to_inner_uuid;
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -830,9 +882,16 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    // TO [db.]table
-    if (ParserKeyword{"TO"}.ignore(pos, expected))
+
+    if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
+        ParserLiteral literal_p;
+        if (!literal_p.parse(pos, to_inner_uuid, expected))
+            return false;
+    }
+    else if (ParserKeyword{"TO"}.ignore(pos, expected))
+    {
+        // TO [db.]table
         if (!table_name_p.parse(pos, to_table, expected))
             return false;
     }
@@ -883,6 +942,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (to_table)
         query->to_table_id = getTableIdentifier(to_table);
+    if (to_inner_uuid)
+        query->to_inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.get<String>());
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
