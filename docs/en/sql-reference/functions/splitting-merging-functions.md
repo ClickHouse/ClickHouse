@@ -109,22 +109,22 @@ splitByRegexp(<regexp>, <s>)
 
 Returns an array of selected substrings. Empty substrings may be selected when:
 
-Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
 
 -   A non-empty regular expression match occurs at the beginning or end of the string;
 -   There are multiple consecutive non-empty regular expression matches;
 -   The original string `s` is empty while the regular expression is not empty.
 
+Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
 **Example**
 
 ``` sql
-SELECT splitByRegexp('\\d+', 'a1bc2de3f')
+SELECT splitByRegexp('\\d+', 'a12bc23de345f')
 ```
 
 ``` text
-┌─splitByRegexp('\\d+', 'a1bc2de3f')─┐
-│ ['a','bc','de','f']                │
-└────────────────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 ``` sql
@@ -196,4 +196,3 @@ Result:
 │ [['abc','123'],['8','"hkl"']]                                         │
 └───────────────────────────────────────────────────────────────────────┘
 ```
-
