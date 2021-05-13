@@ -2857,5 +2857,37 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 │ 109 │
 └─────┘
 ```
+## http_connection_timeout {#http_connection_timeout}
+
+Тайм-аут HTTP-соединения (в секундах).
+
+Возможные значения:
+
+-   0 - тайм-аут не задан.
+-   Любое положительное целое число.
+
+Значение по умолчанию: `0`.
+
+## http_send_timeout {#replicated_fetches_http_send_timeout}
+
+Тайм-аут отправки HTTP (в секундах).
+
+Возможные значения:
+
+-   0 - тайм-аут не задан.
+-   Любое положительное целое число.
+
+Значение по умолчанию: `0`.
+
+## http_receive_timeout {#http_receive_timeout}
+
+Тайм-аут приема HTTP (в секундах).
+
+Возможные значения:
+
+-   0 - тайм-аут не задан.
+-   Любое положительное целое число.
+
+Значение по умолчанию: `0`.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
