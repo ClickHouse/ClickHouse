@@ -97,8 +97,8 @@ The dictionary is completely stored in memory in the form of a hash table. The d
 
 If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make the dictionary load faster). But note that you should use it only if:
 
-- the source support an approximate number of elements (for now it is supported only by the `ClickHouse` source)
-- there are no duplicates in the data (otherwise it may increase memory usage for the hashtable)
+- The source support an approximate number of elements (for now it is supported only by the `ClickHouse` source).
+- There are no duplicates in the data (otherwise it may increase memory usage for the hashtable).
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
