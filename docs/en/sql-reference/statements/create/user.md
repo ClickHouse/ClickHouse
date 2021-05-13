@@ -15,7 +15,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
-	[GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
@@ -58,12 +58,12 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#grant-privileges) from this user on the condition this user has also all required access granted with [GRANT](../../../sql-reference/statements/grant.md) option. Options of the `GRANTEES` clause:
 
--   `user` — Specifies user which is allowed to receive privileges from this user.
--   `role` — Specifies role which is allowed to receive privileges from this user.
--   `ANY` — User with the `GRANT` option can provide privileges to anyone. Used by default.
--   `NONE` — User with the `GRANT` option provides privileges to nobody.
+-   `user` — Specifies a user this user can grant privileges to.
+-   `role` — Specifies a role this user can grant privileges to.
+-   `ANY` — This user can grant privileges to anyone. It's the default setting.
+-   `NONE` — This user can grant privileges to none.
 
-You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`.
+You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with the `GRANT` option it will be able to grant those privileges to anyone except `user2`.
 
 ## Examples {#create-user-examples}
 
