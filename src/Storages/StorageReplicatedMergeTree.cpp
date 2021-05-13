@@ -2175,10 +2175,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     MergeTreePartInfo drop_range = MergeTreePartInfo::fromPartName(entry_replace.drop_range_part_name, format_version);
-    /// Range with only one block has special meaning ATTACH PARTITION
-    bool replace = drop_range.getBlocksCount() > 1; //FIXME
+    /// Range with only one block has special meaning: it's ATTACH PARTITION or MOVE PARTITION, so there is no drop range
+    bool replace = drop_range.getBlocksCount() > 1;
 
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry); //FIXME
+    if (replace)
+        queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
+    else
+        drop_range = {};
 
     struct PartDescription
     {
@@ -6233,9 +6236,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
             txn->moveOpsTo(ops);
 
+        delimiting_block_lock->getUnlockOps(ops);
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
-        delimiting_block_lock->getUnlockOps(ops);
 
         Transaction transaction(*this);
         {

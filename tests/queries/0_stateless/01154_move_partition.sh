@@ -92,7 +92,7 @@ export -f replace_partition_src_src_thread;
 export -f drop_partition_thread;
 export -f optimize_thread;
 
-TIMEOUT=100
+TIMEOUT=60
 
 #timeout $TIMEOUT bash -c "create_drop_thread ${engines[@]}" &
 timeout $TIMEOUT bash -c 'insert_thread src' &
