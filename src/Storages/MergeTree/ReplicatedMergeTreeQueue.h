@@ -381,7 +381,8 @@ public:
     /// Add part to virtual_parts, which means that part must exist
     /// after processing replication log up to log_pointer.
     /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
-    void disableMergesInBlockRange(const String & part_name);
+    /// NOTE It does not disable merges on other leader replicas.
+    void disableMergesInBlockRangeOnLocalReplica(const String & part_name);
 
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;

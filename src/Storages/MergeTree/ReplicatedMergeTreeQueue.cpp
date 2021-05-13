@@ -1579,13 +1579,10 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 }
 
 
-void ReplicatedMergeTreeQueue::disableMergesInBlockRange(const String & part_name)
+void ReplicatedMergeTreeQueue::disableMergesInBlockRangeOnLocalReplica(const String & part_name)
 {
-    {
-        std::lock_guard lock(state_mutex);
-        virtual_parts.add(part_name);
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));    //FIXME
+    std::lock_guard lock(state_mutex);
+    virtual_parts.add(part_name);
 }
 
 
@@ -1817,24 +1814,6 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     }
     else
         inprogress_quorum_part.clear();
-
-    String blocks_str;
-    for (const auto & partition : committing_blocks)
-    {
-        blocks_str += partition.first;
-        blocks_str += " (";
-        for (const auto & num : partition.second)
-            blocks_str += toString(num);
-        blocks_str += + ") ";
-    }
-    ActiveDataPartSet virtual_parts(queue.format_version);
-    {
-        std::lock_guard lock(queue.state_mutex);
-        virtual_parts = queue.virtual_parts;
-    }
-
-    LOG_DEBUG(queue.log, "MergePredicate: ver {},\t prev_virt {},\t comm {},\t, virt {},\t iqp {}",
-              merges_version, boost::algorithm::join(prev_virtual_parts.getParts(), ", "), blocks_str, boost::algorithm::join(virtual_parts.getParts(), ", "), inprogress_quorum_part);
 }
 
 bool ReplicatedMergeTreeMergePredicate::operator()(

@@ -1357,7 +1357,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
-                removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+                removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
         }
 
         PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
