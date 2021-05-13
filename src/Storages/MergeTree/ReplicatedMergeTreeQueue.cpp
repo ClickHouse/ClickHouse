@@ -133,7 +133,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
     std::lock_guard<std::mutex> & state_lock)
 {
-    for (const String & virtual_part_name : entry->getVirtualPartNames())
+    for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
     {
         virtual_parts.add(virtual_part_name);
         addPartToMutations(virtual_part_name);
@@ -220,7 +220,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             removeCoveredPartsFromMutations(entry->actual_new_part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
         }
 
-        for (const String & virtual_part_name : entry->getVirtualPartNames())
+        for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
         {
             current_parts.add(virtual_part_name);
 
@@ -249,7 +249,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     }
     else
     {
-        for (const String & virtual_part_name : entry->getVirtualPartNames())
+        for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
         {
             /// Because execution of the entry is unsuccessful,
             /// `virtual_part_name` will never appear so we won't need to mutate
@@ -752,7 +752,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 /// mutation block number that would appear as a result of executing the queue.
                 for (const auto & queue_entry : queue)
                 {
-                    for (const String & produced_part_name : queue_entry->getVirtualPartNames())
+                    for (const String & produced_part_name : queue_entry->getVirtualPartNames(format_version))
                     {
                         auto part_info = MergeTreePartInfo::fromPartName(produced_part_name, format_version);
 
@@ -1033,7 +1033,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         || entry.type == LogEntry::ATTACH_PART
         || entry.type == LogEntry::MUTATE_PART)
     {
-        for (const String & new_part_name : entry.getBlockingPartNames())
+        for (const String & new_part_name : entry.getBlockingPartNames(format_version))
         {
             if (!isNotCoveredByFuturePartsImpl(entry.znode_name, new_part_name, out_postpone_reason, state_lock))
                 return false;
@@ -1251,7 +1251,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const Replicate
     ++entry->num_tries;
     entry->last_attempt_time = time(nullptr);
 
-    for (const String & new_part_name : entry->getBlockingPartNames())
+    for (const String & new_part_name : entry->getBlockingPartNames(queue.format_version))
     {
         if (!queue.future_parts.emplace(new_part_name, entry).second)
             throw Exception("Tagging already tagged future part " + new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -1288,7 +1288,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     entry->currently_executing = false;
     entry->execution_complete.notify_all();
 
-    for (const String & new_part_name : entry->getBlockingPartNames())
+    for (const String & new_part_name : entry->getBlockingPartNames(queue.format_version))
     {
         if (!queue.future_parts.erase(new_part_name))
             LOG_ERROR(queue.log, "Untagging already untagged future part {}. This is a bug.", new_part_name);
@@ -1585,7 +1585,7 @@ void ReplicatedMergeTreeQueue::disableMergesInBlockRange(const String & part_nam
         std::lock_guard lock(state_mutex);
         virtual_parts.add(part_name);
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));    //FIXME
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));    //FIXME
 }
 
 
@@ -1817,6 +1817,24 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     }
     else
         inprogress_quorum_part.clear();
+
+    String blocks_str;
+    for (const auto & partition : committing_blocks)
+    {
+        blocks_str += partition.first;
+        blocks_str += " (";
+        for (const auto & num : partition.second)
+            blocks_str += toString(num);
+        blocks_str += + ") ";
+    }
+    ActiveDataPartSet virtual_parts(queue.format_version);
+    {
+        std::lock_guard lock(queue.state_mutex);
+        virtual_parts = queue.virtual_parts;
+    }
+
+    LOG_DEBUG(queue.log, "MergePredicate: ver {},\t prev_virt {},\t comm {},\t, virt {},\t iqp {}",
+              merges_version, boost::algorithm::join(prev_virtual_parts.getParts(), ", "), blocks_str, boost::algorithm::join(virtual_parts.getParts(), ", "), inprogress_quorum_part);
 }
 
 bool ReplicatedMergeTreeMergePredicate::operator()(

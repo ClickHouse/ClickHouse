@@ -236,6 +236,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
 
+    String range_str;
     size_t parts_selected_precondition = 0;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
@@ -244,7 +245,11 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         if (!prev_partition_id || partition_id != *prev_partition_id)
         {
             if (parts_ranges.empty() || !parts_ranges.back().empty())
+            {
+                LOG_DEBUG(log, "selectPartsToMerge 1: range {}", range_str);
+                range_str.clear();
                 parts_ranges.emplace_back();
+            }
             /// New partition frame.
             prev_partition_id = &partition_id;
             prev_part = nullptr;
@@ -257,17 +262,26 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
             * of each partition because it will be automatically checked for a pair of parts. */
-            if (!can_merge_callback(nullptr, part, nullptr))
+            String reason;
+            bool can = can_merge_callback(nullptr, part, &reason);
+            LOG_DEBUG(log, "Can merge single part {}: {} {}", part->name, can, reason);
+            if (!can)
                 continue;
+
         }
         else
         {
             /// If we cannot merge with previous part we had to start new parts
             /// interval (in the same partition)
-            if (!can_merge_callback(*prev_part, part, nullptr))
+            String reason;
+            bool can = can_merge_callback(*prev_part, part, &reason);
+            LOG_DEBUG(log, "Can merge {} and {}: {} {}", (*prev_part)->name, part->name, can, reason);
+            if (!can)
             {
                 /// Starting new interval in the same partition
                 assert(!parts_ranges.back().empty());
+                LOG_DEBUG(log, "selectPartsToMerge 2: range {}", range_str);
+                range_str.clear();
                 parts_ranges.emplace_back();
 
                 /// Now we have no previous part, but it affects only logging
@@ -286,6 +300,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
         ++parts_selected_precondition;
 
+        range_str += part->name + " ";
         parts_ranges.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
@@ -298,6 +313,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         prev_part = &part;
     }
 
+    LOG_DEBUG(log, "selectPartsToMerge 3: range {}", range_str);
+
+    LOG_DEBUG(log, "selectPartsToMerge: {} ranges", parts_ranges.size());
     if (parts_selected_precondition == 0)
     {
         if (out_disable_reason)

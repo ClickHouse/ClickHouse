@@ -67,7 +67,7 @@ function drop_partition_thread()
     while true; do
         REPLICA=$(($RANDOM % 16))
         PARTITION=$(($RANDOM % 10))
-        $CLICKHOUSE_CLIENT -q "ALTER TABLE dst_$TO_REPLICA DROP PARTITION $PARTITION" 2>/dev/null
+        $CLICKHOUSE_CLIENT -q "ALTER TABLE dst_$REPLICA DROP PARTITION $PARTITION" 2>/dev/null
         sleep 0.$RANDOM;
     done
 }
