@@ -292,7 +292,8 @@ public:
                             + " of first argument of function " + getName() + ". Must be constant string.",
                             ErrorCodes::ILLEGAL_COLUMN);
 
-        re = Regexps::get<false, false>(col->getValue<String>());
+        if (!col->getValue<String>().empty())
+            re = Regexps::get<false, false>(col->getValue<String>());
 
         matches.resize(1);
     }
@@ -313,20 +314,32 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (!pos || pos > end)
-            return false;
-
-        token_begin = pos;
-
-        if (!re->match(pos, end - pos, matches) || !matches[0].length)
+        if (!re)
         {
-            token_end = end;
-            pos = end + 1;
+            if (pos == end)
+                return false;
+
+            token_begin = pos;
+            pos += 1;
+            token_end = pos;
         }
         else
         {
-            token_end = pos + matches[0].offset;
-            pos = token_end + matches[0].length;
+            if (!pos || pos > end)
+                return false;
+
+            token_begin = pos;
+
+            if (!re->match(pos, end - pos, matches) || !matches[0].length)
+            {
+                token_end = end;
+                pos = end + 1;
+            }
+            else
+            {
+                token_end = pos + matches[0].offset;
+                pos = token_end + matches[0].length;
+            }
         }
 
         return true;
