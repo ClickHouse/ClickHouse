@@ -114,7 +114,7 @@ def test_invalidate_query(started_cluster):
 
 
 def test_postgres_scema(started_cluster):
-    conn = get_postgres_conn(port=5432, database=True)
+    conn = get_postgres_conn(True)
     cursor = conn.cursor()
 
     cursor.execute('CREATE SCHEMA test_schema')
