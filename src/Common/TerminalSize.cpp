@@ -1,5 +1,8 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
+#if defined(OS_SUNOS)
+#  include <sys/termios.h>
+#endif
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <boost/program_options.hpp>
@@ -14,7 +17,7 @@ uint16_t getTerminalWidth()
 {
     if (isatty(STDIN_FILENO))
     {
-        winsize terminal_size {};
+        struct winsize terminal_size {};
 
         if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
             DB::throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", DB::ErrorCodes::SYSTEM_ERROR);

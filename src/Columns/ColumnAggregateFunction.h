@@ -82,7 +82,7 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
-    ColumnAggregateFunction() {}
+    ColumnAggregateFunction() = default;
 
     /// Create a new column that has another column as a source.
     MutablePtr createView() const;
@@ -119,7 +119,7 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const;
+    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, ContextPtr context) const;
 
     size_t size() const override
     {
@@ -154,6 +154,8 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * src_arena) override;
+
+    const char * skipSerializedInArena(const char *) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -198,6 +200,11 @@ public:
         throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    bool hasEqualValues() const override
+    {
+        throw Exception("Method hasEqualValues is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 
@@ -215,7 +222,7 @@ public:
     void getExtremes(Field & min, Field & max) const override;
 
     bool structureEquals(const IColumn &) const override;
+
+    MutableColumnPtr cloneResized(size_t size) const override;
 };
-
-
 }

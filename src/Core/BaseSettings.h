@@ -2,7 +2,6 @@
 
 #include <Core/SettingsFields.h>
 #include <Common/SettingsChanges.h>
-#include <Common/FieldVisitors.h>
 #include <ext/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>

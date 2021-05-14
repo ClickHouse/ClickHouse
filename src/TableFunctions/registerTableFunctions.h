@@ -21,6 +21,7 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory);
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
+void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
 void registerTableFunctionCOS(TableFunctionFactory & factory);
 #endif
 
@@ -37,6 +38,11 @@ void registerTableFunctionView(TableFunctionFactory & factory);
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
 #endif
 
+#if USE_LIBPQXX
+void registerTableFunctionPostgreSQL(TableFunctionFactory & factory);
+#endif
+
+void registerTableFunctionDictionary(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

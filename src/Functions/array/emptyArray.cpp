@@ -14,27 +14,20 @@
 namespace DB
 {
 
-/// TODO Make it simple.
-
-template <typename Type> struct TypeToColumnType { using ColumnType = ColumnVector<Type>; };
-template <> struct TypeToColumnType<String> { using ColumnType = ColumnString; };
-
-template <typename DataType> struct DataTypeToName : TypeName<typename DataType::FieldType> { };
-template <> struct DataTypeToName<DataTypeDate> { static std::string get() { return "Date"; } };
-template <> struct DataTypeToName<DataTypeDateTime> { static std::string get() { return "DateTime"; } };
-
+namespace
+{
 
 template <typename DataType>
-struct FunctionEmptyArray : public IFunction
+class FunctionEmptyArray : public IFunction
 {
-    static constexpr auto base_name = "emptyArray";
-    static const String name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEmptyArray>(); }
+public:
+    static String getNameImpl() { return "emptyArray" + DataType().getName(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
     String getName() const override
     {
-        return name;
+        return getNameImpl();
     }
 
     size_t getNumberOfArguments() const override { return 0; }
@@ -46,48 +39,35 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
-
         return ColumnArray::create(
-            UnderlyingColumnType::create(),
+            DataType().createColumn(),
             ColumnArray::ColumnOffsets::create(input_rows_count, 0));
     }
 };
 
+template <typename F>
+void registerFunction(FunctionFactory & factory)
+{
+    factory.registerFunction<F>(F::getNameImpl());
+}
 
-template <typename DataType>
-const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name + String(DataTypeToName<DataType>::get());
-
-using FunctionEmptyArrayUInt8 = FunctionEmptyArray<DataTypeUInt8>;
-using FunctionEmptyArrayUInt16 = FunctionEmptyArray<DataTypeUInt16>;
-using FunctionEmptyArrayUInt32 = FunctionEmptyArray<DataTypeUInt32>;
-using FunctionEmptyArrayUInt64 = FunctionEmptyArray<DataTypeUInt64>;
-using FunctionEmptyArrayInt8 = FunctionEmptyArray<DataTypeInt8>;
-using FunctionEmptyArrayInt16 = FunctionEmptyArray<DataTypeInt16>;
-using FunctionEmptyArrayInt32 = FunctionEmptyArray<DataTypeInt32>;
-using FunctionEmptyArrayInt64 = FunctionEmptyArray<DataTypeInt64>;
-using FunctionEmptyArrayFloat32 = FunctionEmptyArray<DataTypeFloat32>;
-using FunctionEmptyArrayFloat64 = FunctionEmptyArray<DataTypeFloat64>;
-using FunctionEmptyArrayDate = FunctionEmptyArray<DataTypeDate>;
-using FunctionEmptyArrayDateTime = FunctionEmptyArray<DataTypeDateTime>;
-using FunctionEmptyArrayString = FunctionEmptyArray<DataTypeString>;
-
+}
 
 void registerFunctionsEmptyArray(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionEmptyArrayUInt8>();
-    factory.registerFunction<FunctionEmptyArrayUInt16>();
-    factory.registerFunction<FunctionEmptyArrayUInt32>();
-    factory.registerFunction<FunctionEmptyArrayUInt64>();
-    factory.registerFunction<FunctionEmptyArrayInt8>();
-    factory.registerFunction<FunctionEmptyArrayInt16>();
-    factory.registerFunction<FunctionEmptyArrayInt32>();
-    factory.registerFunction<FunctionEmptyArrayInt64>();
-    factory.registerFunction<FunctionEmptyArrayFloat32>();
-    factory.registerFunction<FunctionEmptyArrayFloat64>();
-    factory.registerFunction<FunctionEmptyArrayDate>();
-    factory.registerFunction<FunctionEmptyArrayDateTime>();
-    factory.registerFunction<FunctionEmptyArrayString>();
+    registerFunction<FunctionEmptyArray<DataTypeUInt8>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeUInt16>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeUInt32>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeUInt64>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeInt8>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeInt16>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeInt32>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeInt64>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeFloat32>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeFloat64>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeDate>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeDateTime>>(factory);
+    registerFunction<FunctionEmptyArray<DataTypeString>>(factory);
 }
 
 }

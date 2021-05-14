@@ -6,7 +6,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/PODArray_fwd.h>
 #include <common/types.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -21,7 +20,7 @@
 
 #include <Common/ArenaAllocator.h>
 
-#include <iostream>
+
 namespace DB
 {
 
@@ -147,7 +146,7 @@ public:
         }
 
         if (params[0].getType() != Field::Types::String)
-            throw Exception("Aggregate function " + getName() + " require require first parameter to be a String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Aggregate function " + getName() + " require first parameter to be a String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto param = params[0].get<String>();
         if (param == "two-sided")
@@ -158,13 +157,13 @@ public:
             alternative = Alternative::Greater;
         else
             throw Exception("Unknown parameter in aggregate function " + getName() +
-                    ". It must be one of: 'two sided', 'less', 'greater'", ErrorCodes::BAD_ARGUMENTS);
+                    ". It must be one of: 'two-sided', 'less', 'greater'", ErrorCodes::BAD_ARGUMENTS);
 
         if (params.size() != 2)
             return;
 
         if (params[1].getType() != Field::Types::UInt64)
-                throw Exception("Aggregate function " + getName() + " require require second parameter to be a UInt64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception("Aggregate function " + getName() + " require second parameter to be a UInt64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         continuity_correction = static_cast<bool>(params[1].get<UInt64>());
     }
@@ -173,6 +172,8 @@ public:
     {
         return "mannWhitneyUTest";
     }
+
+    bool allocatesMemoryInArena() const override { return true; }
 
     DataTypePtr getReturnType() const override
     {
@@ -194,7 +195,7 @@ public:
         );
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         Float64 value = columns[0]->getFloat64(row_num);
         UInt8 is_second = columns[1]->getUInt(row_num);
@@ -205,25 +206,25 @@ public:
             this->data(place).addX(value, arena);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = this->data(place);
-        auto & b = this->data(rhs);
+        const auto & b = this->data(rhs);
 
         a.merge(b, arena);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         this->data(place).read(buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         if (!this->data(place).size_x || !this->data(place).size_y)
             throw Exception("Aggregate function " + getName() + " require both samples to be non empty", ErrorCodes::BAD_ARGUMENTS);

@@ -16,6 +16,7 @@
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
 #include <common/getThreadId.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -60,6 +61,7 @@ namespace
 
     void signalHandler(int, siginfo_t * info, void * context)
     {
+        DENY_ALLOCATIONS_IN_SCOPE;
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
         /// In case malicious user is sending signals manually (for unknown reason).
@@ -149,6 +151,7 @@ namespace
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     : IStorageSystemOneBlock<StorageSystemStackTrace>(table_id_)
+    , log(&Poco::Logger::get("StorageSystemStackTrace"))
 {
     notification_pipe.open();
 
@@ -180,7 +183,7 @@ NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 }
 
 
-void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemStackTrace::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     /// It shouldn't be possible to do concurrent reads from this table.
     std::lock_guard lock(mutex);
@@ -228,6 +231,8 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         }
         else
         {
+            LOG_DEBUG(log, "Cannot obtain a stack trace for thread {}", tid);
+
             /// Cannot obtain a stack trace. But create a record in result nevertheless.
 
             res_columns[0]->insert(tid);

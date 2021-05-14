@@ -145,6 +145,11 @@ public:
         return cells.size();
     }
 
+    size_t maxSize() const
+    {
+        return max_size;
+    }
+
     void reset()
     {
         std::lock_guard lock(mutex);
@@ -271,16 +276,23 @@ private:
 
     void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
-        auto res = cells.emplace(std::piecewise_construct,
+        auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
             std::forward_as_tuple());
 
-        Cell & cell = res.first->second;
-        bool inserted = res.second;
+        Cell & cell = it->second;
 
         if (inserted)
         {
-            cell.queue_iterator = queue.insert(queue.end(), key);
+            try
+            {
+                cell.queue_iterator = queue.insert(queue.end(), key);
+            }
+            catch (...)
+            {
+                cells.erase(it);
+                throw;
+            }
         }
         else
         {

@@ -17,7 +17,7 @@ Main features:
 
 -   Partitions can be used if the [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) is specified.
 
-    ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query. This also improves query performance.
+    ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query.
 
 -   Data replication support.
 
@@ -45,7 +45,10 @@ ORDER BY expr
 [PARTITION BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
+[TTL expr 
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ] 
 [SETTINGS name=value, ...]
 ```
 
@@ -80,7 +83,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
     Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
 
-    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`). Default type of the rule is removal (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
+    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
@@ -101,7 +104,8 @@ For a description of parameters, see the [CREATE query description](../../../sql
     -   `max_parts_in_total` — Maximum number of parts in all partitions.
 	-   `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. You can also specify this setting in the global settings (see [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
 	-   `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark. You can also specify this setting in the global settings (see [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
-
+    -   `max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) in the global setting.
+    
 **Example of Sections Setting**
 
 ``` sql
@@ -187,9 +191,7 @@ Sparse indexes allow you to work with a very large number of table rows, because
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
-You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses. To allow this feature, turn on the [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key) setting.
-
-The [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
+You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key) setting. The [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
 
 ### Selecting the Primary Key {#selecting-the-primary-key}
 
@@ -349,7 +351,7 @@ The `set` index can be used with all functions. Function subsets for other index
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, <>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
@@ -357,10 +359,10 @@ The `set` index can be used with all functions. Function subsets for other index
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
 | [in](../../../sql-reference/functions/in-functions.md#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [notIn](../../../sql-reference/functions/in-functions.md#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [less (<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greater (>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [lessOrEquals (<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greaterOrEquals (>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [empty](../../../sql-reference/functions/array-functions.md#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
 | hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
@@ -455,18 +457,28 @@ ALTER TABLE example_table
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving feature, all rows of a part must satisfy the movement expression criteria.
 
 ``` sql
-TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
+TTL expr 
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]   
 ```
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
 
 -   `DELETE` - delete expired rows (default action);
 -   `TO DISK 'aaa'` - move part to the disk `aaa`;
--   `TO VOLUME 'bbb'` - move part to the disk `bbb`.
+-   `TO VOLUME 'bbb'` - move part to the disk `bbb`;
+-   `GROUP BY` - aggregate expired rows.
 
-Examples:
+With `WHERE` clause you may specify which of the expired rows to delete or aggregate (it cannot be applied to moves).
 
-Creating a table with TTL
+`GROUP BY` expression must be a prefix of the table primary key. 
+
+If a column is not part of the `GROUP BY` expression and is not set explicitely in the `SET` clause, in result row it contains an occasional value from the grouped rows (as if aggregate function `any` is applied to it).
+
+**Examples**
+
+Creating a table with TTL:
 
 ``` sql
 CREATE TABLE example_table
@@ -482,11 +494,41 @@ TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-Altering TTL of the table
+Altering TTL of the table:
 
 ``` sql
 ALTER TABLE example_table
     MODIFY TTL d + INTERVAL 1 DAY;
+```
+
+Creating a table, where the rows are expired after one month. The expired rows where dates are Mondays are deleted:
+
+``` sql
+CREATE TABLE table_with_where
+(
+    d DateTime, 
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
+```
+
+Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value accross the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
+
+``` sql
+CREATE TABLE table_for_aggregation
+(
+    d DateTime, 
+    k1 Int, 
+    k2 Int, 
+    x Int, 
+    y Int
+)
+ENGINE = MergeTree
+ORDER BY (k1, k2)
+TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
 **Removing Data**
@@ -682,5 +724,98 @@ Moving data does not interfere with data replication. Therefore, different stora
 
 After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
+
+## Using S3 for Data Storage {#table_engine-mergetree-s3}
+
+`MergeTree` family table engines is able to store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
+
+Configuration markup:
+``` xml
+<storage_configuration>
+    ...
+    <disks>
+        <s3>
+            <type>s3</type>
+            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <access_key_id>your_access_key_id</access_key_id>
+            <secret_access_key>your_secret_access_key</secret_access_key>
+            <region></region>
+            <server_side_encryption_customer_key_base64>your_base64_encoded_customer_key</server_side_encryption_customer_key_base64>
+            <proxy>
+                <uri>http://proxy1</uri>
+                <uri>http://proxy2</uri>
+            </proxy>
+            <connect_timeout_ms>10000</connect_timeout_ms>
+            <request_timeout_ms>5000</request_timeout_ms>
+            <retry_attempts>10</retry_attempts>
+            <min_bytes_for_seek>1000</min_bytes_for_seek>
+            <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            <cache_enabled>true</cache_enabled>
+            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
+            <skip_access_check>false</skip_access_check>
+        </s3>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+Required parameters:
+-   `endpoint` — S3 endpoint url in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint url should contain bucket and root path to store data.
+-   `access_key_id` — S3 access key id. 
+-   `secret_access_key` — S3 secret access key.
+
+Optional parameters:    
+-   `region` — S3 region name.
+-   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
+-   `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
+-   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL. 
+-   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`. 
+-   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`. 
+-   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`. 
+-   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`. 
+-   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`. 
+-   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`. 
+-   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`. 
+-   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+-   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
+
+
+S3 disk can be configured as `main` or `cold` storage:
+``` xml
+<storage_configuration>
+    ...
+    <disks>
+        <s3>
+            <type>s3</type>
+            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <access_key_id>your_access_key_id</access_key_id>
+            <secret_access_key>your_secret_access_key</secret_access_key>
+        </s3>
+    </disks>
+    <policies>
+        <s3_main>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
+        </s3_main>
+        <s3_cold>
+            <volumes>
+                <main>
+                    <disk>default</disk>
+                </main>
+                <external>
+                    <disk>s3</disk>
+                </external>
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </s3_cold>
+    </policies>
+    ...
+</storage_configuration>
+```
+
+In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule. 
 
 [Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->

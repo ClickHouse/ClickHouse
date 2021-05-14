@@ -91,7 +91,7 @@ Hierarchy of privileges:
             -   `ALTER ADD CONSTRAINT`
             -   `ALTER DROP CONSTRAINT`
         -   `ALTER TTL`
-        -   `ALTER MATERIALIZE TTL`
+            -   `ALTER MATERIALIZE TTL`
         -   `ALTER SETTINGS`
         -   `ALTER MOVE PARTITION`
         -   `ALTER FETCH PARTITION`
@@ -102,9 +102,9 @@ Hierarchy of privileges:
 -   [CREATE](#grant-create)
     -   `CREATE DATABASE`
     -   `CREATE TABLE`
+        -   `CREATE TEMPORARY TABLE`
     -   `CREATE VIEW`
     -   `CREATE DICTIONARY`
-    -   `CREATE TEMPORARY TABLE`
 -   [DROP](#grant-drop)
     -   `DROP DATABASE`
     -   `DROP TABLE`
@@ -150,7 +150,7 @@ Hierarchy of privileges:
     -   `SYSTEM RELOAD`
         -   `SYSTEM RELOAD CONFIG`
         -   `SYSTEM RELOAD DICTIONARY`
-        -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+            -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`
     -   `SYSTEM MERGES`
     -   `SYSTEM TTL MERGES`
     -   `SYSTEM FETCHES`
@@ -276,10 +276,10 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
             -   `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
             -   `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
         -   `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
-        -   `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
+            -   `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
         -   `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
         -   `ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
-        -   `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `FETCH PARTITION`
+        -   `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
         -   `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
     -   `ALTER VIEW` Level: `GROUP`
         -   `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
@@ -304,9 +304,9 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 -   `CREATE`. Level: `GROUP`
     -   `CREATE DATABASE`. Level: `DATABASE`
     -   `CREATE TABLE`. Level: `TABLE`
+        -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
     -   `CREATE VIEW`. Level: `VIEW`
     -   `CREATE DICTIONARY`. Level: `DICTIONARY`
-    -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
 
 **Notes**
 
@@ -401,7 +401,7 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
     -   `SYSTEM RELOAD`. Level: `GROUP`
         -   `SYSTEM RELOAD CONFIG`. Level: `GLOBAL`. Aliases: `RELOAD CONFIG`
         -   `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
-        -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: R`ELOAD EMBEDDED DICTIONARIES`
+            -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
     -   `SYSTEM MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
     -   `SYSTEM TTL MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
     -   `SYSTEM FETCHES`. Level: `TABLE`. Aliases: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
@@ -473,4 +473,3 @@ Doesn’t grant any privileges.
 
 The `ADMIN OPTION` privilege allows a user to grant their role to another user.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->

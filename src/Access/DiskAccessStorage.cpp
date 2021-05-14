@@ -217,6 +217,7 @@ namespace
         /// Write the file.
         WriteBufferFromFile out{tmp_file_path.string()};
         out.write(file_contents.data(), file_contents.size());
+        out.close();
 
         /// Rename.
         std::filesystem::rename(tmp_file_path, file_path);
@@ -274,6 +275,7 @@ namespace
             writeStringBinary(name, out);
             writeUUIDText(id, out);
         }
+        out.close();
     }
 
 
@@ -353,8 +355,9 @@ String DiskAccessStorage::getStorageParamsJSON() const
     std::lock_guard lock{mutex};
     Poco::JSON::Object json;
     json.set("path", directory_path);
-    if (readonly)
-        json.set("readonly", readonly.load());
+    bool readonly_loaded = readonly;
+    if (readonly_loaded)
+        json.set("readonly", Poco::Dynamic::Var{true});
     std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);

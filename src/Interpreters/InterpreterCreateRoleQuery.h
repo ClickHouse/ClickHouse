@@ -6,14 +6,14 @@
 
 namespace DB
 {
+
 class ASTCreateRoleQuery;
 struct Role;
 
-
-class InterpreterCreateRoleQuery : public IInterpreter
+class InterpreterCreateRoleQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterCreateRoleQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
+    InterpreterCreateRoleQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
@@ -21,6 +21,6 @@ public:
 
 private:
     ASTPtr query_ptr;
-    Context & context;
 };
+
 }

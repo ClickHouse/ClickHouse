@@ -45,7 +45,7 @@ protected:
 class ParserIdentifier : public IParserBase
 {
 public:
-    ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
+    explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -59,7 +59,7 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
+    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
         : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_)
     {
     }
@@ -85,7 +85,7 @@ public:
     using ColumnTransformers = MultiEnum<ColumnTransformer, UInt8>;
     static constexpr auto AllTransformers = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
 
-    ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
+    explicit ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
         : allowed_transformers(allowed_transformers_)
         , is_strict(is_strict_)
     {}
@@ -103,7 +103,7 @@ class ParserAsterisk : public IParserBase
 {
 public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+    explicit ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
     {}
 
@@ -129,7 +129,7 @@ class ParserColumnsMatcher : public IParserBase
 {
 public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+    explicit ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
     {}
 
@@ -149,17 +149,46 @@ protected:
 class ParserFunction : public IParserBase
 {
 public:
-    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
+    explicit ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
+        : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_function_parameters;
+    bool is_table_function;
 };
 
-// Window definition (the thing that goes after OVER) for window function.
+// A special function parser for view table function.
+// It parses an SELECT query as its argument and doesn't support getColumnName().
+class ParserTableFunctionView : public IParserBase
+{
+protected:
+    const char * getName() const override { return "function"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+// Window reference (the thing that goes after OVER) for window function.
+// Can be either window name or window definition.
+class ParserWindowReference : public IParserBase
+{
+    const char * getName() const override { return "window reference"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserWindowDefinition : public IParserBase
 {
     const char * getName() const override { return "window definition"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+// The WINDOW clause of a SELECT query that defines a list of named windows.
+// Returns an ASTExpressionList of ASTWindowListElement's.
+class ParserWindowList : public IParserBase
+{
+    const char * getName() const override { return "WINDOW clause"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -180,10 +209,22 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserCastExpression : public IParserBase
+/// Fast path of cast operator "::".
+/// It tries to read literal as text.
+/// If it fails, later operator will be transformed to function CAST.
+/// Examples: "0.1::Decimal(38, 38)", "[1, 2]::Array(UInt8)"
+class ParserCastOperator : public IParserBase
 {
 protected:
-    const char * getName() const override { return "CAST expression"; }
+    const char * getName() const override { return "CAST operator"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
+class ParserCastAsExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "CAST AS expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -306,18 +347,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         return tuple_parser.parse(pos, node, expected);
-    }
-};
-
-class ParserMapOfLiterals : public IParserBase
-{
-public:
-    ParserCollectionOfLiterals<Map> map_parser{TokenType::OpeningCurlyBrace, TokenType::ClosingCurlyBrace};
-protected:
-    const char * getName() const override { return "map"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return map_parser.parse(pos, node, expected);
     }
 };
 
@@ -465,6 +494,14 @@ class ParserTTLElement : public IParserBase
 {
 protected:
     const char * getName() const override { return "element of TTL expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// Part of the UPDATE command or TTL with GROUP BY of the form: col_name = expr
+class ParserAssignment : public IParserBase
+{
+protected:
+    const char * getName() const  override{ return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -63,6 +63,8 @@ Block QueryLogElement::createBlock()
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "tables"},
         {std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "columns"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "projections"},
         {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
         {std::make_shared<DataTypeString>(),                                  "stack_trace"},
@@ -86,16 +88,29 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt32>(),                                  "client_version_patch"},
         {std::make_shared<DataTypeUInt8>(),                                   "http_method"},
         {std::make_shared<DataTypeString>(),                                  "http_user_agent"},
+        {std::make_shared<DataTypeString>(),                                  "http_referer"},
         {std::make_shared<DataTypeString>(),                                  "forwarded_for"},
         {std::make_shared<DataTypeString>(),                                  "quota_key"},
 
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
 
+        {std::make_shared<DataTypeString>(),                                  "log_comment"},
+
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "thread_ids"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"}
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"},
+
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_aggregate_functions"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_aggregate_function_combinators"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_database_engines"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_data_type_families"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_dictionaries"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_formats"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_functions"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_storages"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_table_functions"}
     };
 
 }
@@ -106,7 +121,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(type);
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(query_start_time);
@@ -131,6 +146,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
+
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
             size_t size = 0;
@@ -142,9 +159,11 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
             auto & offsets = column.getOffsets();
             offsets.push_back(offsets.back() + size);
         };
+
         fill_column(query_databases, column_databases);
         fill_column(query_tables, column_tables);
         fill_column(query_columns, column_columns);
+        fill_column(query_projections, column_projections);
     }
 
     columns[i++]->insert(exception_code);
@@ -154,6 +173,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     appendClientInfo(client_info, columns, i);
 
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
+
+    columns[i++]->insertData(log_comment.data(), log_comment.size());
 
     {
         Array threads_array;
@@ -186,6 +207,40 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
+
+    {
+        auto & column_aggregate_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_aggregate_function_combinator_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_database_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_data_type_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_dictionary_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_format_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+
+        auto fill_column = [](const std::unordered_set<String> & data, ColumnArray & column)
+        {
+            size_t size = 0;
+            for (const auto & name : data)
+            {
+                column.getData().insertData(name.data(), name.size());
+                ++size;
+            }
+            auto & offsets = column.getOffsets();
+            offsets.push_back(offsets.back() + size);
+        };
+
+        fill_column(used_aggregate_functions, column_aggregate_function_factory_objects);
+        fill_column(used_aggregate_function_combinators, column_aggregate_function_combinator_factory_objects);
+        fill_column(used_database_engines, column_database_factory_objects);
+        fill_column(used_data_type_families, column_data_type_factory_objects);
+        fill_column(used_dictionaries, column_dictionary_factory_objects);
+        fill_column(used_formats, column_format_factory_objects);
+        fill_column(used_functions, column_function_factory_objects);
+        fill_column(used_storages, column_storage_factory_objects);
+        fill_column(used_table_functions, column_table_function_factory_objects);
+    }
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
@@ -214,6 +269,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 
     columns[i++]->insert(UInt64(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);
+    columns[i++]->insert(client_info.http_referer);
     columns[i++]->insert(client_info.forwarded_for);
 
     columns[i++]->insert(client_info.quota_key);

@@ -37,9 +37,12 @@ SRCS(
     ClusterProxy/SelectStreamFactory.cpp
     ClusterProxy/executeQuery.cpp
     CollectJoinOnKeysVisitor.cpp
+    ColumnAliasesVisitor.cpp
     Context.cpp
+    ConvertStringsToEnumVisitor.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
+    DDLTask.cpp
     DDLWorker.cpp
     DNSCacheUpdater.cpp
     DatabaseAndTableWithAlias.cpp
@@ -48,15 +51,17 @@ SRCS(
     EmbeddedDictionaries.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
+    ExpressionActionsSettings.cpp
     ExpressionAnalyzer.cpp
     ExternalDictionariesLoader.cpp
     ExternalLoader.cpp
-    ExternalLoaderDatabaseConfigRepository.cpp
+    ExternalLoaderDictionaryStorageConfigRepository.cpp
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
+    FunctionNameNormalizer.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
     IInterpreter.cpp
@@ -99,6 +104,7 @@ SRCS(
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
     InterpreterWatchQuery.cpp
+    InterserverCredentials.cpp
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
     JoinedTables.cpp
@@ -108,10 +114,12 @@ SRCS(
     MetricLog.cpp
     MutationsInterpreter.cpp
     MySQL/InterpretersMySQLDDLQuery.cpp
+    NormalizeSelectWithUnionQueryVisitor.cpp
     NullableUtils.cpp
     OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
+    OptimizeShardingKeyRewriteInVisitor.cpp
     PartLog.cpp
     PredicateExpressionsOptimizer.cpp
     PredicateRewriteVisitor.cpp
@@ -128,6 +136,8 @@ SRCS(
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
     RewriteAnyFunctionVisitor.cpp
+    RewriteCountVariantsVisitor.cpp
+    RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
@@ -143,12 +153,14 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
+    WindowDescription.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     castColumn.cpp
     convertFieldToType.cpp
     createBlockSelector.cpp
     evaluateConstantExpression.cpp
+    executeDDLQueryOnCluster.cpp
     executeQuery.cpp
     getClusterName.cpp
     getHeaderForProcessingStage.cpp
@@ -158,6 +170,7 @@ SRCS(
     join_common.cpp
     loadMetadata.cpp
     processColumnTransformers.cpp
+    replaceAliasColumnsInQuery.cpp
     sortBlock.cpp
 
 )

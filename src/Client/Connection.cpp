@@ -8,10 +8,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <IO/TimeoutSetter.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
-#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -108,6 +109,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        in->setAsyncCallback(std::move(async_callback));
+
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
@@ -137,6 +140,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
+    maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -540,10 +544,28 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
+void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
+    writeVectorBinary(uuids, *out);
+    out->next();
+}
+
+
+void Connection::sendReadTaskResponse(const String & response)
+{
+    writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
+    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+    writeStringBinary(response, *out);
+    out->next();
+}
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
+
+    if (input.eof())
+        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
 
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
@@ -658,8 +680,12 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
+        if (!elem->pipe)
+            elem->pipe = elem->creating_pipe_callback();
+
         QueryPipeline pipeline;
         pipeline.init(std::move(*elem->pipe));
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
@@ -742,11 +768,8 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet Connection::receivePacket()
 {
-    in->setAsyncCallback(std::move(async_callback));
-    SCOPE_EXIT(in->setAsyncCallback({}));
-
     try
     {
         Packet res;
@@ -793,6 +816,13 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
             case Protocol::Server::EndOfStream:
                 return res;
 
+            case Protocol::Server::PartUUIDs:
+                readVectorBinary(res.part_uuids, *in);
+                return res;
+
+            case Protocol::Server::ReadTaskRequest:
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -803,6 +833,9 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
     }
     catch (Exception & e)
     {
+        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
+        e.setRemoteException();
+
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -890,13 +923,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException()
+std::unique_ptr<Exception> Connection::receiveException() const
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -906,7 +939,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 }
 
 
-Progress Connection::receiveProgress()
+Progress Connection::receiveProgress() const
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -914,7 +947,7 @@ Progress Connection::receiveProgress()
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo()
+BlockStreamProfileInfo Connection::receiveProfileInfo() const
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);
