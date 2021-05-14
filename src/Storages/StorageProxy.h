@@ -32,9 +32,12 @@ public:
     NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & ast) const override
+        ContextPtr context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageMetadataPtr &,
+        SelectQueryInfo & info) const override
     {
-        return getNested()->getQueryProcessingStage(context, to_stage, ast);
+        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
     }
 
     BlockInputStreams watch(

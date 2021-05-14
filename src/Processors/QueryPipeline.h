@@ -135,7 +135,7 @@ public:
     {
         auto num_threads = pipe.maxParallelStreams();
 
-        if (max_threads)
+        if (max_threads) //-V1051
             num_threads = std::min(num_threads, max_threads);
 
         return std::max<size_t>(1, num_threads);

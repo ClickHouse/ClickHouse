@@ -18,6 +18,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UnicodeBar.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
 #include <IO/ReadBufferFromFile.h>
@@ -387,11 +388,34 @@ void LocalServer::processQueries()
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(context);
 
+    ///Set progress show
+    progress_bar.need_render_progress = config().getBool("progress", false);
+
+    if (progress_bar.need_render_progress)
+    {
+        context->setProgressCallback([&](const Progress & value)
+                                     {
+                                         if (!progress_bar.updateProgress(progress, value))
+                                         {
+                                             // Just a keep-alive update.
+                                              return;
+                                         }
+                                         progress_bar.writeProgress(progress, watch.elapsed());
+                                     });
+    }
+
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
 
     for (const auto & query : queries)
     {
+        watch.restart();
+        progress.reset();
+        progress_bar.show_progress_bar = false;
+        progress_bar.written_progress_chars = 0;
+        progress_bar.written_first_block = false;
+
+
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
@@ -548,6 +572,7 @@ void LocalServer::init(int argc, char ** argv)
         ("ignore-error", "do not stop processing if a query failed")
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
+        ("progress", "print progress of queries execution")
         ;
 
     cmd_settings.addProgramOptions(description);
@@ -597,6 +622,8 @@ void LocalServer::init(int argc, char ** argv)
 
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
+    if (options.count("progress"))
+        config().setBool("progress", true);
     if (options.count("echo"))
         config().setBool("echo", true);
     if (options.count("verbose"))
