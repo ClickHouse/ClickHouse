@@ -868,7 +868,7 @@ struct DateTimeTransformImpl
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
             WhichDataType result_data_type(result_type);
-            if (result_data_type.isDateOrDateTime())
+            if (result_data_type.isDateTime() || result_data_type.isDateTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
                 Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
