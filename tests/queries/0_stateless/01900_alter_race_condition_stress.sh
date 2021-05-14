@@ -9,7 +9,7 @@ exitcode=0
 
 for i in $(seq 1 $N)
 do
-   ${CURDIR}/01900_alter_race_condition.sh.disabled > ${CURDIR}/01900_alter_race_condition_${i}.stdout 2>&1 &
+   ${CURDIR}/01900_alter_race_condition.sh > ${CURDIR}/01900_alter_race_condition_${i}.stdout 2>&1 &
 done
 
 wait
