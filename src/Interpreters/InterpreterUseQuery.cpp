@@ -11,8 +11,8 @@ namespace DB
 BlockIO InterpreterUseQuery::execute()
 {
     const String & new_database = query_ptr->as<ASTUseQuery &>().database;
-    context.checkAccess(AccessType::SHOW_DATABASES, new_database);
-    context.getSessionContext().setCurrentDatabase(new_database);
+    getContext()->checkAccess(AccessType::SHOW_DATABASES, new_database);
+    getContext()->getSessionContext()->setCurrentDatabase(new_database);
     return {};
 }
 

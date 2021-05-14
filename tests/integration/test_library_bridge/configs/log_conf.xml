@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<yandex>
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-server/log.log</log>
+        <errorlog>/var/log/clickhouse-server/log.err.log</errorlog>
+        <size>1000M</size>
+        <count>10</count>
+        <stderr>/var/log/clickhouse-server/stderr.log</stderr>
+        <stdout>/var/log/clickhouse-server/stdout.log</stdout>
+        <library_bridge_log>/var/log/clickhouse-server/clickhouse-library-bridge.log</library_bridge_log>
+        <library_bridge_errlog>/var/log/clickhouse-server/clickhouse-library-bridge.err.log</library_bridge_errlog>
+        <library_bridge_stdout>/var/log/clickhouse-server/clickhouse-library-bridge.stdout</library_bridge_stdout>
+        <library_bridge_stderr>/var/log/clickhouse-server/clickhouse-library-bridge.stderr</library_bridge_stderr>
+        <library_bridge_level>trace</library_bridge_level>
+    </logger>
+</yandex>

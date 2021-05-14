@@ -14,7 +14,6 @@ class TableJoin;
 class HashJoin;
 using HashJoinPtr = std::shared_ptr<HashJoin>;
 
-
 /** Allows you save the state for later use on the right side of the JOIN.
   * When inserted into a table, the data will be inserted into the state,
   *  and also written to the backup file, to restore after the restart.
@@ -28,20 +27,25 @@ class StorageJoin final : public ext::shared_ptr_helper<StorageJoin>, public Sto
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
-    /// Access the innards.
-    HashJoinPtr & getJoin() { return join; }
-    HashJoinPtr getJoin(std::shared_ptr<TableJoin> analyzed_join) const;
+    /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
+    /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
+    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const;
 
-    /// Verify that the data structure is suitable for implementing this type of JOIN.
-    void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
+    /// Get result type for function "joinGet(OrNull)"
+    DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
+
+    /// Execute function "joinGet(OrNull)" on data block.
+    /// Takes rwlock for read to prevent parallel StorageJoin updates during processing data block
+    /// (but not during processing whole query, it's safe for joinGet that doesn't involve `used_flags` from HashJoin)
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -60,6 +64,10 @@ private:
 
     std::shared_ptr<TableJoin> table_join;
     HashJoinPtr join;
+
+    /// Protect state for concurrent use in insertFromBlock and joinBlock.
+    /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
+    mutable std::shared_mutex rwlock;
 
     void insertBlock(const Block & block) override;
     void finishInsert() override {}

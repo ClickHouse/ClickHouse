@@ -68,7 +68,7 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
     case MetricsProvider::Netlink:
         stats_getter = [metrics_provider = std::make_shared<TaskStatsInfoGetter>(), tid]()
                 {
-                    ::taskstats result;
+                    ::taskstats result{};
                     metrics_provider->getStat(result, tid);
                     return result;
                 };
@@ -76,7 +76,7 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
     case MetricsProvider::Procfs:
         stats_getter = [metrics_provider = std::make_shared<ProcfsMetricsProvider>(tid)]()
                 {
-                    ::taskstats result;
+                    ::taskstats result{};
                     metrics_provider->getTaskStats(result);
                     return result;
                 };
@@ -125,7 +125,7 @@ void TasksStatsCounters::incrementProfileEvents(const ::taskstats & prev, const 
 
 #endif
 
-#if defined(__linux__) && !defined(ARCADIA_BUILD)
+#if defined(__linux__)
 
 namespace DB
 {
@@ -568,7 +568,7 @@ void PerfDescriptorsHolder::releaseResources()
 namespace DB
 {
 
-// Not on Linux or in Arcadia: the functionality is disabled.
+// the functionality is disabled when we are not running on Linux.
 PerfEventsCounters current_thread_counters;
 
 }

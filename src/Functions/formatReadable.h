@@ -28,7 +28,7 @@ class FunctionFormatReadable : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
 
     String getName() const override
     {

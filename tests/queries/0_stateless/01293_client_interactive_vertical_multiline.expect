@@ -1,10 +1,18 @@
 #!/usr/bin/expect -f
 
 log_user 0
-set timeout 60
-spawn bash -c "$env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT)"
+set timeout 5
 match_max 100000
 
+# A default timeout action is to do nothing, change it to fail
+expect_after {
+    timeout {
+        exit 1
+    }
+}
+
+set basedir [file dirname $argv0]
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
 expect ":) "
 
 send -- "SELECT 1\r"
@@ -33,10 +41,7 @@ expect ":) "
 send -- ""
 expect eof
 
-set timeout 60
-spawn bash -c "$env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT) --multiline"
-match_max 100000
-
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
 expect ":) "
 
 send -- "SELECT 1;\r"

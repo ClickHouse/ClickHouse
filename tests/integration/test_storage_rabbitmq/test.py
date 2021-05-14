@@ -253,12 +253,20 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
 @pytest.mark.timeout(240)
 def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'tsv',
                      rabbitmq_format = 'TSV',
+                     rabbitmq_queue_base = 'tsv',
                      rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
@@ -272,13 +280,11 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
 
     for message in messages:
         channel.basic_publish(exchange='tsv', routing_key='', body=message)
-
     connection.close()
-    time.sleep(1)
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
+        result = instance.query('SELECT * FROM test.view ORDER BY key')
         if rabbitmq_check_result(result):
             break
 
@@ -1910,6 +1916,82 @@ def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
     ''')
 
     assert int(result) == messages_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(120)
+def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.format_settings (
+            id String, date DateTime
+        ) ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'format_settings',
+                     rabbitmq_format = 'JSONEachRow',
+                     date_time_input_format = 'best_effort';
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    message = json.dumps({"id":"format_settings_test","date":"2021-01-19T14:42:33.1829214Z"})
+    expected = instance.query('''SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))''')
+
+    channel.basic_publish(exchange='format_settings', routing_key='', body=message)
+    result = ''
+    while True:
+        result = instance.query('SELECT date FROM test.format_settings')
+        if result == expected:
+            break;
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (
+            id String, date DateTime
+        ) ENGINE = MergeTree ORDER BY id;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.format_settings;
+        ''')
+
+    channel.basic_publish(exchange='format_settings', routing_key='', body=message)
+    result = ''
+    while True:
+        result = instance.query('SELECT date FROM test.view')
+        if result == expected:
+            break;
+
+    connection.close()
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.format_settings;
+    ''')
+
+    assert(result == expected)
+
+
+@pytest.mark.timeout(120)
+def test_rabbitmq_vhost(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq_vhost (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'vhost',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_vhost = '/'
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.basic_publish(exchange='vhost', routing_key='', body=json.dumps({'key': 1, 'value': 2}))
+    connection.close()
+    while True:
+        result = instance.query('SELECT * FROM test.rabbitmq_vhost ORDER BY key', ignore_error=True)
+        if result == "1\t2\n":
+            break
 
 
 if __name__ == '__main__':

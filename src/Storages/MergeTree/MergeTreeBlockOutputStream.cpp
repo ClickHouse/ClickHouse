@@ -28,13 +28,21 @@ void MergeTreeBlockOutputStream::write(const Block & block)
     {
         Stopwatch watch;
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
-        storage.renameTempPartAndAdd(part, &storage.increment);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
-        PartLog::addNewPart(storage.global_context, part, watch.elapsed());
+        /// If optimize_on_insert setting is true, current_block could become empty after merge
+        /// and we didn't create part.
+        if (!part)
+            continue;
 
-        /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-        storage.background_executor.triggerTask();
+        /// Part can be deduplicated, so increment counters and add to part log only if it's really added
+        if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog()))
+        {
+            PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
+
+            /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
+            storage.background_executor.triggerTask();
+        }
     }
 }
 

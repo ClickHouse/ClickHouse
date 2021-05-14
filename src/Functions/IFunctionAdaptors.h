@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Functions/IFunctionImpl.h>
 
 namespace DB
@@ -53,7 +54,7 @@ public:
 
     bool isCompilable() const final { return impl->isCompilable(); }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
     {
         return impl->compile(builder, std::move(values));
     }
@@ -182,7 +183,10 @@ public:
 
     bool isCompilable() const override { return function->isCompilable(getArgumentTypes()); }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return function->compile(builder, getArgumentTypes(), std::move(values)); }
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
+    {
+        return function->compile(builder, getArgumentTypes(), std::move(values));
+    }
 
 #endif
 

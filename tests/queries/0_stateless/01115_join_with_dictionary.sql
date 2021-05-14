@@ -74,13 +74,34 @@ SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 RIGHT JOIN dict_flat d O
 SELECT '-';
 SELECT * FROM (SELECT number + 2 AS key FROM numbers(4)) s1 FULL JOIN dict_flat d USING(key) ORDER BY s1.key, d.key;
 SELECT '-';
-SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 ANY INNER JOIN dict_flat d USING(key);
+SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 ANY INNER JOIN dict_flat d USING(key) ORDER BY s1.key;
 SELECT '-';
-SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 ANY RIGHT JOIN dict_flat d USING(key);
+SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 ANY RIGHT JOIN dict_flat d USING(key) ORDER BY s1.key;
 SELECT '-';
-SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 SEMI RIGHT JOIN dict_flat d USING(key);
+SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 SEMI RIGHT JOIN dict_flat d USING(key) ORDER BY s1.key;
 SELECT '-';
-SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 ANTI RIGHT JOIN dict_flat d USING(key);
+SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 ANTI RIGHT JOIN dict_flat d USING(key) ORDER BY s1.key;
+
+SET join_use_nulls = 0;
+
+SELECT 'issue 23002';
+
+SET join_algorithm = 'auto';
+SELECT '-';
+SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 LEFT JOIN dict_flat d ON s1.key = d.key ORDER BY s1.key;
+SELECT '-';
+SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key;
+SELECT '-';
+SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 RIGHT JOIN dict_flat d ON s1.key = d.key ORDER BY d.key;
+
+SET join_algorithm = 'partial_merge';
+SELECT '-';
+SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 LEFT JOIN dict_flat d ON s1.key = d.key ORDER BY s1.key;
+SELECT '-';
+SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key;
+SELECT '-';
+SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 RIGHT JOIN dict_flat d ON s1.key = d.key ORDER BY d.key;
+
 
 DROP DICTIONARY dict_flat;
 DROP DICTIONARY dict_hashed;

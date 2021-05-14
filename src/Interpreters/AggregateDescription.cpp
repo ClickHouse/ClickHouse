@@ -1,7 +1,8 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Common/FieldVisitors.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTFunction.h>
+
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -100,31 +101,50 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
     }
 }
 
-std::string WindowFunctionDescription::dump() const
+void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
 {
-    WriteBufferFromOwnString ss;
+    map.add("Name", column_name);
 
-    ss << "window function '" << column_name << "\n";
-    ss << "function node " << function_node->dumpTree() << "\n";
-    ss << "aggregate function '" << aggregate_function->getName() << "'\n";
-    if (!function_parameters.empty())
+    if (function)
     {
-        ss << "parameters " << toString(function_parameters) << "\n";
+        auto function_map = std::make_unique<JSONBuilder::JSONMap>();
+
+        function_map->add("Name", function->getName());
+
+        const auto & params = function->getParameters();
+        if (!params.empty())
+        {
+            auto params_array = std::make_unique<JSONBuilder::JSONArray>();
+            for (const auto & param : params)
+                params_array->add(applyVisitor(FieldVisitorToString(), param));
+
+            function_map->add("Parameters", std::move(params_array));
+        }
+
+        auto args_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & type : function->getArgumentTypes())
+            args_array->add(type->getName());
+
+        function_map->add("Argument Types", std::move(args_array));
+        function_map->add("Result Type", function->getReturnType()->getName());
+
+        map.add("Function", std::move(function_map));
     }
 
-    return ss.str();
-}
+    auto args_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & name : argument_names)
+        args_array->add(name);
 
-std::string WindowDescription::dump() const
-{
-    WriteBufferFromOwnString ss;
+    map.add("Arguments", std::move(args_array));
 
-    ss << "window '" << window_name << "'\n";
-    ss << "partition_by " << dumpSortDescription(partition_by) << "\n";
-    ss << "order_by " << dumpSortDescription(order_by) << "\n";
-    ss << "full_sort_description " << dumpSortDescription(full_sort_description) << "\n";
+    if (!arguments.empty())
+    {
+        auto args_pos_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (auto pos : arguments)
+            args_pos_array->add(pos);
 
-    return ss.str();
+        map.add("Argument Positions", std::move(args_pos_array));
+    }
 }
 
 }

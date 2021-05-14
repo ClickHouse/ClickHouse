@@ -24,14 +24,15 @@ struct StoragesInfo
     MergeTreeData * data = nullptr;
 
     operator bool() const { return storage != nullptr; }
-    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
+    MergeTreeData::DataPartsVector
+    getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */
 class StoragesInfoStream
 {
 public:
-    StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context);
+    StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context);
     StoragesInfo next();
 
 private:
@@ -59,7 +60,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -74,7 +75,8 @@ protected:
 
     StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
 
-    virtual void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) = 0;
+    virtual void
+    processNextStorage(MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
 };
 
 }

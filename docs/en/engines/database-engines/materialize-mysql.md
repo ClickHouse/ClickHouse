@@ -5,9 +5,11 @@ toc_title: MaterializeMySQL
 
 # MaterializeMySQL {#materialize-mysql}
 
- Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables. 
+Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
 
- ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.   
+ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.
+
+This feature is experimental.
 
 ## Creating a Database {#creating-a-database}
 
@@ -25,12 +27,12 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 
 ## Virtual columns {#virtual-columns}
 
- When working with the `MaterializeMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
+When working with the `MaterializeMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
  
- - `_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md). 
- - `_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values: 
-     - `1` — Row is not deleted, 
-     - `-1` — Row is deleted.
+- `_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md).
+- `_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
+    - `1` — Row is not deleted, 
+    - `-1` — Row is deleted.
 
 ## Data Types Support {#data_types-support}
 
@@ -61,23 +63,23 @@ Other types are not supported. If MySQL table contains a column of such type, Cl
 
 MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
 
-###  Data Replication {#data-replication}
+### Data Replication {#data-replication}
 
-MaterializeMySQL does not support direct `INSERT`, `DELETE` and `UPDATE` queries. However, they are supported in terms of data replication:
+`MaterializeMySQL` does not support direct `INSERT`, `DELETE` and `UPDATE` queries. However, they are supported in terms of data replication:
 
 - MySQL `INSERT` query is converted into `INSERT` with `_sign=1`.
 
-- MySQl `DELETE` query is converted into `INSERT` with `_sign=-1`. 
+- MySQL `DELETE` query is converted into `INSERT` with `_sign=-1`. 
 
 - MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
 
 ### Selecting from MaterializeMySQL Tables {#select}
 
-`SELECT` query form MaterializeMySQL tables has some specifics:
+`SELECT` query from `MaterializeMySQL` tables has some specifics:
 
 - If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
-- If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default, so the deleted rows are not included into the result set. 
+- If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not included into the result set.
 
 ### Index Conversion {#index-conversion}
 
@@ -85,12 +87,13 @@ MySQL `PRIMARY KEY` and `INDEX` clauses are converted into `ORDER BY` tuples in 
 
 ClickHouse has only one physical order, which is determined by `ORDER BY` clause. To create a new physical order, use [materialized views](../../sql-reference/statements/create/view.md#materialized).
 
- **Notes**
+**Notes**
 
- - Rows with `_sign=-1` are not deleted physically from the tables. 
- - Cascade `UPDATE/DELETE` queries are not supported by the `MaterializeMySQL` engine.
- - Replication can be easily broken.
- - Manual operations on database and tables are forbidden.
+- Rows with `_sign=-1` are not deleted physically from the tables.
+- Cascade `UPDATE/DELETE` queries are not supported by the `MaterializeMySQL` engine.
+- Replication can be easily broken.
+- Manual operations on database and tables are forbidden.
+- `MaterializeMySQL` is influenced by [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged in the corresponding table in the `MaterializeMySQL` database when a table in the MySQL server changes.
 
 ## Examples of Use {#examples-of-use}
 
@@ -105,6 +108,7 @@ mysql> ALTER TABLE db.test ADD COLUMN c VARCHAR(16);
 mysql> UPDATE db.test SET c='Wow!', b=222;
 mysql> SELECT * FROM test;
 ```
+
 ```text
 +---+------+------+ 
 | a |    b |    c |
@@ -153,4 +157,4 @@ SELECT * FROM mysql.test;
 └───┴─────┴──────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/database_engines/materialize-mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/database-engines/materialize-mysql/) <!--hide-->
