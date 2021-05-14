@@ -545,7 +545,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
                 actual_column = &column_const->getDataColumn();
         }
 
-        if (getNameOfBaseColumn(*actual.column) != getNameOfBaseColumn(*expected.column))
+        if (getNameOfBaseColumn(*actual_column) != getNameOfBaseColumn(*expected.column))
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 

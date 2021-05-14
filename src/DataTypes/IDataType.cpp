@@ -185,14 +185,7 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
     if (column.isSparse())
         return getSparseSerialization();
 
-    ISerialization::Settings settings =
-    {
-        .num_rows = column.size(),
-        .num_default_rows = column.getNumberOfDefaultRows(IColumn::DEFAULT_ROWS_SEARCH_STEP),
-        .ratio_for_sparse_serialization = IColumn::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION
-    };
-
-    return getSerialization(settings);
+    return getDefaultSerialization();
 }
 
 SerializationPtr IDataType::getSerialization(const ISerialization::Kinds & kinds) const
