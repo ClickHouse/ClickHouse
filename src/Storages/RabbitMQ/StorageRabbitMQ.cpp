@@ -458,6 +458,9 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
 
     AMQP::Table queue_settings;
 
+    std::unordered_set<String> integer_settings = {"x-max-length", "x-max-length-bytes", "x-message-ttl", "x-expires", "x-priority", "x-max-priority"};
+    std::unordered_set<String> string_settings = {"x-overflow", "x-dead-letter-exchange", "x-queue-type"};
+
     /// Check user-defined settings.
     if (!queue_settings_list.empty())
     {
@@ -465,13 +468,12 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
         {
             Strings setting_values;
             splitInto<'='>(setting_values, setting);
-            assert(setting_values.size() == 2);
+            if (setting_values.size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid settings string: {}", setting);
+
             String key = setting_values[0], value = setting_values[1];
 
-            std::unordered_set<String> integer_settings = {"x-max-length", "x-max-length-bytes", "x-message-ttl", "x-expires", "x-priority", "x-max-priority"};
-            std::unordered_set<String> string_settings = {"x-overflow", "x-dead-letter-exchange", "x-queue-type"};
-
-            if (integer_settings.find(key) != integer_settings.end())
+            if (integer_settings.contains(key))
                 queue_settings[key] = parse<uint64_t>(value);
             else if (string_settings.find(key) != string_settings.end())
                 queue_settings[key] = value;
