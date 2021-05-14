@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int FUNCTION_ALREADY_EXISTS;
+    extern const int CANNOT_DROP_SYSTEM_FUNCTION;
 }
 
 const String & getFunctionCanonicalNameIfAny(const String & name)
@@ -137,12 +138,10 @@ FunctionFactory & FunctionFactory::instance()
     return ret;
 }
 
-void FunctionFactory::registerUserDefinedFunction(
-        const ASTCreateFunctionQuery & create_function_query,
-        CaseSensitiveness case_sensitiveness)
+void FunctionFactory::registerUserDefinedFunction(const ASTCreateFunctionQuery & create_function_query)
 {
     if (hasNameOrAlias(create_function_query.function_name))
-        throw Exception("The function '" + create_function_query.function_name + "' already exists", ErrorCodes::FUNCTION_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function {} already exists", create_function_query.function_name);
 
     registerFunction(create_function_query.function_name, [create_function_query](ContextPtr context)
     {
@@ -152,7 +151,28 @@ void FunctionFactory::registerUserDefinedFunction(
 
         FunctionOverloadResolverImplPtr res = std::make_unique<DefaultOverloadResolver>(function);
         return res;
-    }, case_sensitiveness);
+    }, CaseSensitiveness::CaseSensitive);
+    user_defined_functions.insert(create_function_query.function_name);
+}
+
+void FunctionFactory::unregisterUserDefinedFunction(const String & name)
+{
+    if (functions.contains(name))
+    {
+        if (user_defined_functions.contains(name))
+        {
+            functions.erase(name);
+            user_defined_functions.erase(name);
+            return;
+        } else
+            throw Exception("System functions cannot be dropped", ErrorCodes::CANNOT_DROP_SYSTEM_FUNCTION);
+    }
+
+    auto hints = this->getHints(name);
+    if (!hints.empty())
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}. Maybe you meant: {}", name, toString(hints));
+    else
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}", name);
 }
 
 }

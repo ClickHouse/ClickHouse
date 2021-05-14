@@ -80,6 +80,7 @@ SRCS(
     InterpreterCreateUserQuery.cpp
     InterpreterDescribeQuery.cpp
     InterpreterDropAccessEntityQuery.cpp
+    InterpreterDropFunctionQuery.cpp
     InterpreterDropQuery.cpp
     InterpreterExistsQuery.cpp
     InterpreterExplainQuery.cpp
