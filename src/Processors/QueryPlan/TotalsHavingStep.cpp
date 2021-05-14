@@ -37,7 +37,7 @@ TotalsHavingStep::TotalsHavingStep(
             input_stream_,
             TotalsHavingTransform::transformHeader(
                     input_stream_.header,
-                    (actions_dag_ ? std::make_shared<ExpressionActions>(actions_dag_, ExpressionActionsSettings{}) : nullptr),
+                    actions_dag_.get(),
                     final_),
             getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
