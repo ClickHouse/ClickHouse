@@ -1082,7 +1082,7 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 **Parameters**
 
 -   `time_string` — String containing a date or date with time to convert. [String](../../sql-reference/data-types/string.md).
--   `precision` — `3` for milliseconds, `6` for microseconds. Default `3`. Optional. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](../../sql-reference/data-types/int-uint.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
