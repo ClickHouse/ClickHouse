@@ -67,12 +67,12 @@ void ReplicatedMergeTreeRestartingThread::run()
             }
             else
             {
-                if (!readonly_mode_was_set)
+                if (storage.getZooKeeper()->expired())
                 {
                     LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
                     setReadonly();
                 }
-                else
+                else if (readonly_mode_was_set)
                 {
                     LOG_WARNING(log, "Table was in readonly mode. Will try to activate it.");
                 }
