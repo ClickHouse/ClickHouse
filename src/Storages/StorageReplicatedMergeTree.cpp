@@ -2518,7 +2518,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                     parts_to_remove_str += part->name;
                     parts_to_remove_str += " ";
                 }
-                LOG_TRACE(log, "Replacing {} parts {}with {} parts ", parts_to_remove.size(), parts_to_remove_str,
+                LOG_TRACE(log, "Replacing {} parts {}with {} parts {}", parts_to_remove.size(), parts_to_remove_str,
                           final_parts.size(), boost::algorithm::join(final_part_names, ", "));
             }
         }
@@ -4907,13 +4907,12 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 
     if (for_replace_range)
     {
-        /// NOTE Undo max block number decrement for REPLACE_RANGE, because there are invariants:
+        /// NOTE Do not decrement max block number for REPLACE_RANGE, because there are invariants:
         /// - drop range for REPLACE PARTITION must contain at least 2 blocks (1 skipped block and at least 1 real block)
         /// - drop range for MOVE PARTITION/ATTACH PARTITION FROM always contains 1 block
 
-        /// REPLACE/MOVE PARTITION uses different max level for unknown (probably historical) reason.
-        auto max_level = std::numeric_limits<decltype(part_info.level)>::max();
-        part_info = MergeTreePartInfo(partition_id, left, right, max_level, mutation_version);
+        /// NOTE UINT_MAX was previously used as max level for REPLACE/MOVE PARTITION (it was incorrect)
+        part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
         return right != 0;
     }
 

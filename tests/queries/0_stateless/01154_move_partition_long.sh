@@ -76,9 +76,9 @@ function optimize_thread()
 {
   while true; do
         REPLICA=$(($RANDOM % 16))
-        TABLE="src_"
+        TABLE="src"
         if (( RANDOM % 2 )); then
-            TABLE="dst_"
+            TABLE="dst"
         fi
         $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE ${TABLE}_$REPLICA" 2>/dev/null
         sleep 0.$RANDOM;
@@ -105,9 +105,10 @@ timeout $TIMEOUT bash -c optimize_thread &
 wait
 
 for ((i=0; i<16; i++)) do
-    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA dst_$i"
-    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA src_$i" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA dst_$i" &
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA src_$i" 2>/dev/null &
 done
+wait
 echo "Replication did not hang"
 
 for ((i=0; i<16; i++)) do

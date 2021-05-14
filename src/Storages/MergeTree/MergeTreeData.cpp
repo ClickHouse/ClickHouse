@@ -3215,7 +3215,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
             {
                 std::swap(buf, res);
                 res.clear();
-                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart()); //-V783
             }
         }
 
