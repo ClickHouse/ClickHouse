@@ -71,6 +71,15 @@ public:
         return res;
     }
 
+    bool nextWithoutAssert()
+    {
+        bool res = nextImplWithoutAssert();
+        if (!res)
+            working_buffer = Buffer(pos, pos);
+
+        return res;
+    }
+
 
     inline void nextIfAtEnd()
     {
@@ -209,6 +218,8 @@ private:
       * Throw an exception if something is wrong.
       */
     virtual bool nextImpl() { return false; }
+
+    virtual bool nextImplWithoutAssert() { return false; }
 
     [[noreturn]] static void throwReadAfterEOF()
     {

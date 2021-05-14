@@ -47,6 +47,8 @@ public:
 
     bool nextImpl() override;
 
+    bool nextImplWithoutAssert() override;
+
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
 

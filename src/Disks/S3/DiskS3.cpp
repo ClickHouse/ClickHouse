@@ -355,7 +355,7 @@ private:
             current_buf = initialize();
 
         /// If current buffer has remaining data - use it.
-        if (current_buf && current_buf->next())
+        if (current_buf && current_buf->nextWithoutAssert())
         {
             working_buffer = current_buf->buffer();
             absolute_position += working_buffer.size();
@@ -369,7 +369,7 @@ private:
         ++current_buf_idx;
         const auto & path = metadata.s3_objects[current_buf_idx].first;
         current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.s3_root_path + path, s3_max_single_read_retries, buf_size);
-        current_buf->next();
+        current_buf->nextWithoutAssert();
         working_buffer = current_buf->buffer();
         absolute_position += working_buffer.size();
 

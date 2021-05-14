@@ -43,9 +43,6 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 bool ReadBufferFromS3::nextImpl()
 {
-    /// Restoring valid value of `count()` during `nextImpl()`. See `ReadBuffer::next()`.
-    pos = working_buffer.begin();
-
     if (!impl)
         impl = initialize();
 
@@ -60,6 +57,56 @@ bool ReadBufferFromS3::nextImpl()
         try
         {
             next_result = impl->next();
+            /// FIXME. 1. Poco `istream` cannot read less than buffer_size or this state is being discarded during
+            ///           istream <-> iostream conversion. `gcount` always contains 0,
+            ///           that's why we always have error "Cannot read from istream at offset 0".
+
+            break;
+        }
+        catch (const Exception & e)
+        {
+            ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
+
+            LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Remaining attempts: {}, Message: {}",
+                    bucket, key, getPosition(), attempt, e.message());
+
+            impl.reset();
+
+            if (!attempt)
+                throw;
+        }
+    }
+
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
+    if (!next_result)
+        return false;
+    internal_buffer = impl->buffer();
+
+    ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
+
+    already_read_bytes += internal_buffer.size();
+
+    working_buffer = internal_buffer;
+    return true;
+}
+
+bool ReadBufferFromS3::nextImplWithoutAssert()
+{
+    if (!impl)
+        impl = initialize();
+
+    Stopwatch watch;
+    bool next_result = false;
+
+    for (Int64 attempt = static_cast<Int64>(s3_max_single_read_retries); attempt >= 0; --attempt)
+    {
+        if (!impl)
+            impl = initialize();
+
+        try
+        {
+            next_result = impl->nextWithoutAssert();
             /// FIXME. 1. Poco `istream` cannot read less than buffer_size or this state is being discarded during
             ///           istream <-> iostream conversion. `gcount` always contains 0,
             ///           that's why we always have error "Cannot read from istream at offset 0".
@@ -112,7 +159,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromS3::getPosition()
 {
-    return offset + count();
+    return offset + already_read_bytes;
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
@@ -123,19 +170,8 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     req.SetBucket(bucket);
     req.SetKey(key);
 
-    auto position = offset + already_read_bytes;
-    if (position)
-		req.SetRange("bytes=" + std::to_string(position) + "-");
-
-    if (position != static_cast<size_t>(getPosition()))
-        LOG_TRACE(
-            log,
-            "DIFF: position:{}, getPosition():{}, already_read_bytes:{}, offset:{}, count():{}",
-            position,
-            getPosition(),
-            already_read_bytes,
-            offset,
-            count());
+    if (getPosition())
+        req.SetRange("bytes=" + std::to_string(getPosition()) + "-");
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 

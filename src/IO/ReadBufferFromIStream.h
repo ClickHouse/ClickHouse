@@ -16,6 +16,8 @@ private:
 
     bool nextImpl() override;
 
+    bool nextImplWithoutAssert() override;
+
 public:
     explicit ReadBufferFromIStream(std::istream & istr_, size_t size = DBMS_DEFAULT_BUFFER_SIZE);
 };
