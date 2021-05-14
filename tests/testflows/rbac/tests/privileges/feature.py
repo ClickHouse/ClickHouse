@@ -7,9 +7,7 @@ from rbac.helper.common import *
 def feature(self):
 
     tasks = []
-    pool = Pool(10)
-
-    try:
+    with Pool(10) as pool:
         try:
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.insert", "feature")), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.select", "feature"), ), {})
@@ -96,7 +94,5 @@ def feature(self):
 
         finally:
             join(tasks)
-    finally:
-        pool.close()
 
     Feature(test=load("rbac.tests.privileges.system.shutdown", "feature"))

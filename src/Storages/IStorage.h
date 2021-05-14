@@ -496,7 +496,7 @@ public:
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
-    /// - Simple count() opimization
+    /// - Simple count() optimization
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
