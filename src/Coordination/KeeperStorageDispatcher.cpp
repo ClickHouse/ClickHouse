@@ -109,7 +109,7 @@ void KeeperStorageDispatcher::requestThread()
                     }
                     else
                     {
-                        addErrorResponses(current_batch, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                        addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
                         current_batch.clear();
                     }
 
@@ -123,7 +123,7 @@ void KeeperStorageDispatcher::requestThread()
                     if (server->isLeaderAlive())
                         server->putLocalReadRequest(request);
                     else
-                        addErrorResponses({request}, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                        addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                 }
             }
         }
@@ -405,7 +405,7 @@ void KeeperStorageDispatcher::forceWaitAndProcessResult(RaftAppendResult & resul
     if (!result->get_accepted() || result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
         addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
     else if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
 
     result = nullptr;
     requests_for_sessions.clear();

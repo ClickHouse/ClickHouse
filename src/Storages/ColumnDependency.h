@@ -17,6 +17,9 @@ struct ColumnDependency
         /// Exists any skip index, that requires @column_name
         SKIP_INDEX,
 
+        /// Exists any projection, that requires @column_name
+        PROJECTION,
+
         /// Exists any TTL expression, that requires @column_name
         TTL_EXPRESSION,
 
@@ -32,7 +35,7 @@ struct ColumnDependency
 
     bool isReadOnly() const
     {
-        return kind == SKIP_INDEX || kind == TTL_EXPRESSION;
+        return kind == SKIP_INDEX || kind == PROJECTION || kind == TTL_EXPRESSION;
     }
 
     bool operator==(const ColumnDependency & other) const
