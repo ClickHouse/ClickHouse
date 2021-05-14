@@ -392,11 +392,33 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     
     time.sleep(5) # Wait for TTL
 
-    node_right.query("OPTIMIZE TABLE test_ttl_delete FINAL")
+    # after restart table can be in readonly mode
+    exception = None
+    for _ in range(40):
+        try:
+            node_right.query("OPTIMIZE TABLE test_ttl_delete FINAL")
+            break
+        except Exception as ex:
+            print("Cannot optimaze table on node", node_right.name, "exception", ex)
+            time.sleep(0.5)
+            exception = ex
+    else:
+        raise ex
+
     node_right.query("OPTIMIZE TABLE test_ttl_group_by FINAL")
     node_right.query("OPTIMIZE TABLE test_ttl_where FINAL")
 
-    node_left.query("SYSTEM SYNC REPLICA test_ttl_delete", timeout=20)
+    for _ in range(40):
+        try:
+            node_left.query("SYSTEM SYNC REPLICA test_ttl_delete", timeout=20)
+            break
+        except Exception as ex:
+            print("Cannot sync replica table on node", node_left.name, "exception", ex)
+            time.sleep(0.5)
+            exception = ex
+    else:
+        raise ex
+
     node_left.query("SYSTEM SYNC REPLICA test_ttl_group_by", timeout=20)
     node_left.query("SYSTEM SYNC REPLICA test_ttl_where", timeout=20)
 
