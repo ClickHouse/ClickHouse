@@ -4,6 +4,9 @@
 #include <Common/UnicodeBar.h>
 #include <Databases/DatabaseMemory.h>
 
+/// FIXME: progress bar in clickhouse-local needs to be cleared after query execution
+///        - same as it is now in clickhouse-client. Also there is no writeFinalProgress call
+///        in clickhouse-local.
 
 namespace DB
 {
@@ -28,10 +31,12 @@ void ProgressIndication::resetProgress()
     progress.reset();
     show_progress_bar = false;
     written_progress_chars = 0;
+    write_progress_on_update = false;
 }
 
-void ProgressIndication::setFileProgressCallback(ContextPtr context, bool write_progress_on_update)
+void ProgressIndication::setFileProgressCallback(ContextPtr context, bool write_progress_on_update_)
 {
+    write_progress_on_update = write_progress_on_update_;
     context->setFileProgressCallback([&](const FileProgress & file_progress)
     {
         progress.incrementPiecewiseAtomically(Progress(file_progress));

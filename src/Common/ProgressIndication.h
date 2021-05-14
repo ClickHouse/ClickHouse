@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Stopwatch.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
@@ -56,6 +55,8 @@ private:
 
     /// Track query execution time.
     Stopwatch watch;
+
+    bool write_progress_on_update = false;
 };
 
 }
