@@ -140,7 +140,7 @@ Pipe StorageS3Cluster::read(
 }
 
 QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
-    ContextPtr context, QueryProcessingStage::Enum to_stage, SelectQueryInfo &) const
+    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageMetadataPtr &, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)

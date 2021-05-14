@@ -64,6 +64,8 @@ RUN groupadd -r clickhouse --gid=101 \
                 clickhouse-client=$version \
                 clickhouse-server=$version ; \
        fi \
+    && wget --progress=bar:force:noscroll "https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-$(dpkg --print-architecture)" -O /bin/gosu \
+    && chmod +x /bin/gosu \
     && clickhouse-local -q 'SELECT * FROM system.build_options' \
     && rm -rf \
         /var/lib/apt/lists/* \
@@ -76,8 +78,6 @@ RUN groupadd -r clickhouse --gid=101 \
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)
 
-ADD https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-amd64 /bin/gosu
-
 RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
@@ -88,10 +88,7 @@ RUN mkdir /docker-entrypoint-initdb.d
 
 COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
-
-RUN chmod +x \
-    /entrypoint.sh \
-    /bin/gosu
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 9000 8123 9009
 VOLUME /var/lib/clickhouse

@@ -119,9 +119,9 @@ public:
 
     class iterator
     {
-        Self * container;
-        size_t bucket;
-        typename Impl::iterator current_it;
+        Self * container{};
+        size_t bucket{};
+        typename Impl::iterator current_it{};
 
         friend class TwoLevelHashTable;
 
@@ -156,9 +156,9 @@ public:
 
     class const_iterator
     {
-        Self * container;
-        size_t bucket;
-        typename Impl::const_iterator current_it;
+        Self * container{};
+        size_t bucket{};
+        typename Impl::const_iterator current_it{};
 
         friend class TwoLevelHashTable;
 
