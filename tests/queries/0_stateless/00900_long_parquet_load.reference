@@ -1,6 +1,10 @@
 === Try load data from alltypes_dictionary.parquet
 0	1	0	0	0	0	0	0	01/01/09	0	1230768000
 1	0	1	1	1	10	1.1	10.1	01/01/09	1	1230768060
+=== Try load data from alltypes_list.parquet
+[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]
+[1,-2,3]	[1,2,3]	[100,-200,300]	[100,200,300]	[10000000,-20000000,30000000]	[10000000,2000000,3000000]	[100000000000000,-200000000000,3000000000000]	[100000000000000,20000000000000,3000000000000]	['Some string','Some string','Some string']	['0000','1111','2222']	[42.42,424.2,0.4242]	[424242.424242,4242042420.242424,42]	['2000-01-01','2001-01-01','2002-01-01']	['2000-01-01 00:00:00','2001-01-01 00:00:00','2002-01-01 00:00:00']	[0.20,10.00,4.00]	[4.00,10000.10,10000.10]	[1000000000.00,90.00,101001.01]
+[1,-2,3]	[1,2,3]	[100,-200,300]	[100,200,300]	[10000000,-20000000,30000000]	[10000000,2000000,3000000]	[100000000000000,-200000000000,3000000000000]	[100000000000000,20000000000000,3000000000000]	['Some string','Some string','Some string']	['0000','1111','2222']	[42.42,424.2,0.4242]	[424242.424242,4242042420.242424,42]	['2000-01-01','2001-01-01','2002-01-01']	['2000-01-01 00:00:00','2001-01-01 00:00:00','2002-01-01 00:00:00']	[0.20,10.00,4.00]	[4.00,10000.10,10000.10]	[1000000000.00,90.00,101001.01]
 === Try load data from alltypes_plain.parquet
 4	1	0	0	0	0	0	0	03/01/09	0	1235865600
 5	0	1	1	1	10	1.1	10.1	03/01/09	1	1235865660
@@ -13,6 +17,39 @@
 === Try load data from alltypes_plain.snappy.parquet
 6	1	0	0	0	0	0	0	04/01/09	0	1238544000
 7	0	1	1	1	10	1.1	10.1	04/01/09	1	1238544060
+=== Try load data from array_float.parquet
+idx1	[]
+idx2	[10.2,8.2,7.2]
+idx3	[10.2,8.2]
+idx4	[10.2]
+idx5	[10.2,8.2]
+idx6	[10.2]
+idx7	[10.2,8.2]
+idx8	[10.2,8.2]
+idx9	[10.2]
+idx10	[10.2,8.2]
+=== Try load data from array_int.parquet
+idx1	[100,101,102]
+idx2	[100,101]
+idx3	[100,101,102,101]
+idx4	[100]
+idx5	[100,101]
+idx6	[100,101]
+idx7	[100,101]
+idx8	[100,101]
+idx9	[100,101,102]
+idx10	[100,101,102]
+=== Try load data from array_string.parquet
+idx1	['This','is','a','test']
+idx2	['cigarette','smoke']
+idx3	['the','grocery','clerks']
+idx4	[]
+idx5	['wants','to','get','out']
+idx6	['me','up?']
+idx7	['then','I','put','him','back']
+idx8	['make','a','man']
+idx9	['Which','Heaven','to','gaudy','day','denies']
+idx10	['This','is','a','test']
 === Try load data from binary.parquet
 \0
 
@@ -225,8 +262,9 @@ Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Not y
 23.00
 24.00
 === Try load data from list_columns.parquet
-Code: 70. DB::Ex---tion: The type "list" of an input column "int64_list" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
-
+[1,2,3]	['abc','efg','hij']
+[NULL,1]	[]
+[4]	['efg',NULL,'hij','xyz']
 === Try load data from nation.dict-malformed.parquet
 0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai
 1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon
@@ -253,9 +291,12 @@ Code: 70. DB::Ex---tion: The type "list" of an input column "int64_list" is not 
 22	RUSSIA	3	 requests against the platelets use never according to the quickly regular pint
 23	UNITED KINGDOM	3	eans boost carefully special requests. accounts are. carefull
 24	UNITED STATES	1	y final packages. slow foxes cajole quickly. quickly silent platelets breach ironic accounts. unusual pinto be
+=== Try load data from nested_lists.parquet
+[[[1,2,3],[1,2,3]],[[1,2,3]],[[],[1,2,3]]]	[[['Some string','Some string'],[]],[['Some string']],[[]]]	[[NULL,1,2],[NULL],[1,2],[]]	[['Some string',NULL,'Some string'],[NULL],[]]
 === Try load data from nested_lists.snappy.parquet
-Code: 70. DB::Ex---tion: The type "list" of an input column "a" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
-
+[[['a','b'],['c']],[[],['d']]]	1
+[[['a','b'],['c','d']],[[],['e']]]	1
+[[['a','b'],['c','d'],['e']],[[],['f']]]	1
 === Try load data from nested_maps.snappy.parquet
 Code: 70. DB::Ex---tion: The type "map" of an input column "a" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
 
@@ -268,6 +309,10 @@ Code: 70. DB::Ex---tion: The type "map" of an input column "a" is not supported 
 ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id()) 
 === Try load data from nullable.impala.parquet
 ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id()) 
+=== Try load data from nullable_list.parquet
+[1,NULL,2]	[NULL,'Some string',NULL]	[0.00,NULL,42.42]
+[NULL]	[NULL]	[NULL]
+[]	[]	[]
 === Try load data from nulls.snappy.parquet
 Code: 70. DB::Ex---tion: The type "struct" of an input column "b_struct" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
 
