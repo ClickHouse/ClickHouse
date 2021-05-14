@@ -24,10 +24,10 @@ bool ParserDropDataTypeQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     if (!type_name_p.parse(pos, type_name, expected))
         return false;
 
-    auto drop_function_query = std::make_shared<ASTDropDataTypeQuery>();
-    node = drop_function_query;
+    auto drop_data_type_query = std::make_shared<ASTDropDataTypeQuery>();
+    node = drop_data_type_query;
 
-    drop_function_query->type_name = type_name->as<ASTIdentifier &>().name();
+    drop_data_type_query->type_name = type_name->as<ASTIdentifier &>().name();
 
     return true;
 }
