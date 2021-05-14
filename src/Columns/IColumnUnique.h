@@ -1,7 +1,6 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
-#include <Common/UInt128.h>
 
 namespace DB
 {
@@ -24,6 +23,7 @@ public:
     virtual const ColumnPtr & getNestedNotNullableColumn() const = 0;
 
     virtual bool nestedColumnIsNullable() const = 0;
+    virtual void nestedToNullable() = 0;
 
     /// Returns array with StringRefHash calculated for each row of getNestedNotNullableColumn() column.
     /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
@@ -171,6 +171,11 @@ public:
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throw Exception("Method compareColumn is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    bool hasEqualValues() const override
+    {
+        throw Exception("Method hasEqualValues is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 

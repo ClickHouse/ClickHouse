@@ -4,7 +4,8 @@
 #include <type_traits>
 #include <utility>
 
-template <class T, class Tag>
+
+template <typename T, typename Tag>
 struct StrongTypedef
 {
 private:
@@ -12,6 +13,7 @@ private:
     T t;
 
 public:
+    using UnderlyingType = T;
     template <class Enable = typename std::is_copy_constructible<T>::type>
     explicit StrongTypedef(const T & t_) : t(t_) {}
     template <class Enable = typename std::is_move_constructible<T>::type>
@@ -37,14 +39,16 @@ public:
 
     bool operator==(const Self & rhs) const { return t == rhs.t; }
     bool operator<(const Self & rhs) const { return t < rhs.t; }
+    bool operator>(const Self & rhs) const { return t > rhs.t; }
 
     T & toUnderType() { return t; }
     const T & toUnderType() const { return t; }
 };
 
+
 namespace std
 {
-    template <class T, class Tag>
+    template <typename T, typename Tag>
     struct hash<StrongTypedef<T, Tag>>
     {
         size_t operator()(const StrongTypedef<T, Tag> & x) const

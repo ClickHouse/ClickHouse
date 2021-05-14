@@ -79,6 +79,7 @@ SRCS(
     LimitTransform.cpp
     Merges/Algorithms/AggregatingSortedAlgorithm.cpp
     Merges/Algorithms/CollapsingSortedAlgorithm.cpp
+    Merges/Algorithms/FinishAggregatingInOrderAlgorithm.cpp
     Merges/Algorithms/GraphiteRollupSortedAlgorithm.cpp
     Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.cpp
     Merges/Algorithms/IMergingAlgorithmWithSharedChunks.cpp
@@ -92,11 +93,9 @@ SRCS(
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
-    QueryPlan/AddingConstColumnStep.cpp
-    QueryPlan/AddingDelayedSourceStep.cpp
-    QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
+    QueryPlan/BuildQueryPipelineSettings.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
@@ -108,19 +107,27 @@ SRCS(
     QueryPlan/IQueryPlanStep.cpp
     QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
+    QueryPlan/JoinStep.cpp
     QueryPlan/LimitByStep.cpp
     QueryPlan/LimitStep.cpp
-    QueryPlan/MaterializingStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
     QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
+    QueryPlan/Optimizations/QueryPlanOptimizationSettings.cpp
+    QueryPlan/Optimizations/filterPushDown.cpp
+    QueryPlan/Optimizations/liftUpArrayJoin.cpp
+    QueryPlan/Optimizations/limitPushDown.cpp
+    QueryPlan/Optimizations/mergeExpressions.cpp
+    QueryPlan/Optimizations/optimizeTree.cpp
+    QueryPlan/Optimizations/splitFilter.cpp
     QueryPlan/PartialSortingStep.cpp
+    QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
+    QueryPlan/ReadFromMergeTree.cpp
     QueryPlan/ReadFromPreparedSource.cpp
     QueryPlan/ReadNothingStep.cpp
-    QueryPlan/ReverseRowsStep.cpp
     QueryPlan/RollupStep.cpp
     QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
@@ -132,7 +139,6 @@ SRCS(
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
-    Transforms/AddingMissedTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp

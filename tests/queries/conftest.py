@@ -25,6 +25,9 @@ def bin_prefix(cmdopts):
     prefix = 'clickhouse'
     if cmdopts['builddir'] is not None:
         prefix = os.path.join(cmdopts['builddir'], 'programs', prefix)
+    # FIXME: does this hangs the server start for some reason?
+    # if not os.path.isabs(prefix):
+    #     prefix = os.path.abspath(prefix)
     return prefix
 
 

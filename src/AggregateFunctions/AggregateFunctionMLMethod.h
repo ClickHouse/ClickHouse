@@ -3,10 +3,10 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/typeid_cast.h>
 #include "IAggregateFunction.h"
 
 namespace DB
@@ -44,7 +44,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        const Context & context) const = 0;
+        ContextPtr context) const = 0;
 };
 
 
@@ -69,7 +69,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        const Context & context) const override;
+        ContextPtr context) const override;
 };
 
 
@@ -94,7 +94,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        const Context & context) const override;
+        ContextPtr context) const override;
 };
 
 
@@ -264,7 +264,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const Context & context) const;
+        ContextPtr context) const;
 
     void returnWeights(IColumn & to) const;
 private:
@@ -323,13 +323,15 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     /// This function is called from evalMLMethod function for correct predictValues call
     DataTypePtr getReturnTypeToPredict() const override
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override
     {
         std::shared_ptr<IWeightsUpdater> new_weights_updater;
         if (weights_updater_name == "SGD")
@@ -346,16 +348,16 @@ public:
         new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gradient_computer, new_weights_updater);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).add(columns, row_num);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override { this->data(place).write(buf); }
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override { this->data(place).write(buf); }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override { this->data(place).read(buf); }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override { this->data(place).read(buf); }
 
     void predictValues(
         ConstAggregateDataPtr place,
@@ -363,7 +365,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const Context & context) const override
+        ContextPtr context) const override
     {
         if (arguments.size() != param_num + 1)
             throw Exception(
@@ -383,7 +385,7 @@ public:
     /** This function is called if aggregate function without State modifier is selected in a query.
      *  Inserts all weights of the model into the column 'to', so user may use such information if needed
      */
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         this->data(place).returnWeights(to);
     }

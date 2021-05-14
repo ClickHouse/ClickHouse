@@ -40,15 +40,15 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    Context & context_,
+    ContextPtr context_,
     const String & compression_method_ = "")
     : IStorage(table_id_)
+    , WithContext(context_)
     , uri(uri_)
     , format_name(format_name_)
-    , context(context_)
     , compression_method(compression_method_)
 {
-    context.getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -59,7 +59,7 @@ StorageHDFS::StorageHDFS(const String & uri_,
 namespace
 {
 
-class HDFSSource : public SourceWithProgress
+class HDFSSource : public SourceWithProgress, WithContext
 {
 public:
     struct SourcesInfo
@@ -90,16 +90,16 @@ public:
         String format_,
         String compression_method_,
         Block sample_block_,
-        const Context & context_,
+        ContextPtr context_,
         UInt64 max_block_size_)
         : SourceWithProgress(getHeader(sample_block_, source_info_->need_path_column, source_info_->need_file_column))
+        , WithContext(context_)
         , source_info(std::move(source_info_))
         , uri(std::move(uri_))
         , format(std::move(format_))
         , compression_method(compression_method_)
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
-        , context(context_)
     {
     }
 
@@ -122,11 +122,10 @@ public:
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
-                auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path, context.getGlobalContext().getConfigRef()), compression);
-                auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
-                auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
+                read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
+                auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
 
-                reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+                reader = std::make_shared<InputStreamFromInputFormat>(input_format);
                 reader->readPrefix();
             }
 
@@ -156,10 +155,12 @@ public:
 
             reader->readSuffix();
             reader.reset();
+            read_buf.reset();
         }
     }
 
 private:
+    std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
     SourcesInfoPtr source_info;
     String uri;
@@ -169,7 +170,6 @@ private:
 
     UInt64 max_block_size;
     Block sample_block;
-    const Context & context;
 };
 
 class HDFSBlockOutputStream : public IBlockOutputStream
@@ -178,12 +178,12 @@ public:
     HDFSBlockOutputStream(const String & uri,
         const String & format,
         const Block & sample_block_,
-        const Context & context,
+        ContextPtr context,
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context.getGlobalContext().getConfigRef()), compression_method, 3);
-        writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block, context);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef()), compression_method, 3);
+        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
     Block getHeader() const override
@@ -267,20 +267,31 @@ Pipe StorageHDFS::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & context_,
+    ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+    size_t begin_of_path;
+    /// This uri is checked for correctness in constructor of StorageHDFS and never modified afterwards
+    auto two_slash = uri.find("//");
+
+    if (two_slash == std::string::npos)
+        begin_of_path = uri.find('/');
+    else
+        begin_of_path = uri.find('/', two_slash + 2);
+
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
 
-    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_.getGlobalContext().getConfigRef());
+    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
     auto sources_info = std::make_shared<HDFSSource::SourcesInfo>();
     sources_info->uris = LSWithRegexpMatching("/", fs, path_from_uri);
+
+    if (sources_info->uris.empty())
+        LOG_WARNING(log, "No file in HDFS matches the path: {}", uri);
 
     for (const auto & column : column_names)
     {
@@ -302,12 +313,12 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<HDFSBlockOutputStream>(uri,
         format_name,
         metadata_snapshot->getSampleBlock(),
-        context,
+        getContext(),
         chooseCompressionMethod(uri, compression_method));
 }
 
@@ -321,22 +332,22 @@ void registerStorageHDFS(StorageFactory & factory)
             throw Exception(
                 "Storage HDFS requires 2 or 3 arguments: url, name of used format and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         String compression_method;
         if (engine_args.size() == 3)
         {
-            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
-        return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
+        return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.getContext(), compression_method);
     },
     {
         .source_access_type = AccessType::HDFS,

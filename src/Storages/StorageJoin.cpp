@@ -68,7 +68,7 @@ StorageJoin::StorageJoin(
 
 
 void StorageJoin::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder&)
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder&)
 {
     disk->removeRecursive(path);
     disk->createDirectories(path);
@@ -79,7 +79,7 @@ void StorageJoin::truncate(
 }
 
 
-HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -96,17 +96,47 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
     analyzed_join->setRightKeys(key_names);
 
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
+    join_clone->setLock(rwlock);
     join_clone->reuseJoinedData(*join);
+
     return join_clone;
 }
 
 
-void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block, true); }
+void StorageJoin::insertBlock(const Block & block)
+{
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+    join->addJoinedBlock(block, true);
+}
 
-size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
-std::optional<UInt64> StorageJoin::totalRows(const Settings &) const { return join->getTotalRowCount(); }
-std::optional<UInt64> StorageJoin::totalBytes(const Settings &) const { return join->getTotalByteCount(); }
+size_t StorageJoin::getSize() const
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+    return join->getTotalRowCount();
+}
 
+std::optional<UInt64> StorageJoin::totalRows(const Settings &) const
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+    return join->getTotalRowCount();
+}
+
+std::optional<UInt64> StorageJoin::totalBytes(const Settings &) const
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+    return join->getTotalByteCount();
+}
+
+DataTypePtr StorageJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
+{
+    return join->joinGetCheckAndGetReturnType(data_types, column_name, or_null);
+}
+
+ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+    return join->joinGet(block, block_with_columns_to_add);
+}
 
 void registerStorageJoin(StorageFactory & factory)
 {
@@ -116,7 +146,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         ASTs & engine_args = args.engine_args;
 
-        const auto & settings = args.context.getSettingsRef();
+        const auto & settings = args.getContext()->getSettingsRef();
 
         auto join_use_nulls = settings.join_use_nulls;
         auto max_rows_in_join = settings.max_rows_in_join;
@@ -156,7 +186,7 @@ void registerStorageJoin(StorageFactory & factory)
             }
         }
 
-        DiskPtr disk = args.context.getDisk(disk_name);
+        DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         if (engine_args.size() < 3)
             throw Exception(
@@ -264,24 +294,24 @@ size_t rawSize(const StringRef & t)
 class JoinSource : public SourceWithProgress
 {
 public:
-    JoinSource(const HashJoin & parent_, UInt64 max_block_size_, Block sample_block_)
+    JoinSource(HashJoinPtr join_, std::shared_mutex & rwlock, UInt64 max_block_size_, Block sample_block_)
         : SourceWithProgress(sample_block_)
-        , parent(parent_)
-        , lock(parent.data->rwlock)
+        , join(join_)
+        , lock(rwlock)
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
         column_indices.resize(sample_block.columns());
 
-        auto & saved_block = parent.getJoinedData()->sample_block;
+        auto & saved_block = join->getJoinedData()->sample_block;
 
         for (size_t i = 0; i < sample_block.columns(); ++i)
         {
             auto & [_, type, name] = sample_block.getByPosition(i);
-            if (parent.right_table_keys.has(name))
+            if (join->right_table_keys.has(name))
             {
                 key_pos = i;
-                const auto & column = parent.right_table_keys.getByName(name);
+                const auto & column = join->right_table_keys.getByName(name);
                 restored_block.insert(column);
             }
             else
@@ -300,19 +330,20 @@ public:
 protected:
     Chunk generate() override
     {
-        if (parent.data->blocks.empty())
+        if (join->data->blocks.empty())
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps,
+        if (!joinDispatch(join->kind, join->strictness, join->data->maps,
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness", ErrorCodes::LOGICAL_ERROR);
         return chunk;
     }
 
 private:
-    const HashJoin & parent;
+    HashJoinPtr join;
     std::shared_lock<std::shared_mutex> lock;
+
     UInt64 max_block_size;
     Block sample_block;
     Block restored_block; /// sample_block with parent column types
@@ -330,7 +361,7 @@ private:
 
         size_t rows_added = 0;
 
-        switch (parent.data->type)
+        switch (join->data->type)
         {
 #define M(TYPE)                                           \
     case HashJoin::Type::TYPE:                                \
@@ -340,7 +371,7 @@ private:
 #undef M
 
             default:
-                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(parent.data->type)),
+                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(join->data->type)),
                                 ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
@@ -377,7 +408,7 @@ private:
 
         if (!position)
             position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())),
+                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
                 [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
 
         auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());
@@ -461,14 +492,15 @@ Pipe StorageJoin::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    return Pipe(std::make_shared<JoinSource>(*join, max_block_size, metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+    Block source_sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    return Pipe(std::make_shared<JoinSource>(join, rwlock, max_block_size, source_sample_block));
 }
 
 }

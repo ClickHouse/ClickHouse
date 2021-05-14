@@ -27,6 +27,8 @@ We recommend using SQL-driven workflow. Both of the configuration methods work s
 !!! note "Warning"
     You can’t manage the same access entity by both configuration methods simultaneously.
 
+To see all users, roles, profiles, etc. and all their grants use [SHOW ACCESS](../sql-reference/statements/show.md#show-access-statement) statement.
+
 ## Usage {#access-control-usage}
 
 By default, the ClickHouse server provides the `default` user account which is not allowed using SQL-driven access control and account management but has all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster doesn’t specify the [user and password](../engines/table-engines/special/distributed.md) properties.
@@ -98,6 +100,9 @@ Privileges can be granted to a role by the [GRANT](../sql-reference/statements/g
 ## Row Policy {#row-policy-management}
 
 Row policy is a filter that defines which of the rows are available to a user or a role. Row policy contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
+
+!!! note "Warning"
+    Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
 
 Management queries:
 

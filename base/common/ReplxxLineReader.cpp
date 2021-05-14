@@ -12,6 +12,8 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
+#include <fmt/format.h>
+
 
 namespace
 {
@@ -89,6 +91,10 @@ ReplxxLineReader::ReplxxLineReader(
     /// it also binded to M-p/M-n).
     rx.bind_key(Replxx::KEY::meta('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_NEXT, code); });
     rx.bind_key(Replxx::KEY::meta('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_PREVIOUS, code); });
+    /// By default M-BACKSPACE is KILL_TO_WHITESPACE_ON_LEFT, while in readline it is backward-kill-word
+    rx.bind_key(Replxx::KEY::meta(Replxx::KEY::BACKSPACE), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_BEGINING_OF_WORD, code); });
+    /// By default C-w is KILL_TO_BEGINING_OF_WORD, while in readline it is unix-word-rubout
+    rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
     rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
 }
@@ -189,8 +195,8 @@ void ReplxxLineReader::openEditor()
         return;
     }
 
-    String editor = std::getenv("EDITOR");
-    if (editor.empty())
+    const char * editor = std::getenv("EDITOR");
+    if (!editor || !*editor)
         editor = "vim";
 
     replxx::Replxx::State state(rx.get_state());
@@ -204,7 +210,7 @@ void ReplxxLineReader::openEditor()
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
             rx.print("Cannot write to temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
-            return;
+            break;
         }
         bytes_written += res;
     }
@@ -215,7 +221,7 @@ void ReplxxLineReader::openEditor()
         return;
     }
 
-    if (0 == execute(editor + " " + filename))
+    if (0 == execute(fmt::format("{} {}", editor, filename)))
     {
         try
         {

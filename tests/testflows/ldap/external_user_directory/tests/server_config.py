@@ -41,7 +41,7 @@ def invalid_host(self):
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Host("1.0")
 )
-def empty_host(self, tail=20, timeout=60):
+def empty_host(self, tail=30, timeout=300):
     """Check that server returns an error when LDAP server
     host value is empty.
     """
@@ -50,14 +50,14 @@ def empty_host(self, tail=20, timeout=60):
 
     servers = {"foo": {"host": "", "port": "389", "enable_tls": "no"}}
 
-    invalid_server_config(servers, message=message, tail=16, timeout=timeout)
+    invalid_server_config(servers, message=message, tail=30, timeout=timeout)
 
 @TestScenario
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid("1.0"),
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Host("1.0")
 )
-def missing_host(self, tail=20, timeout=60):
+def missing_host(self, tail=30, timeout=300):
     """Check that server returns an error when LDAP server
     host is missing.
     """
@@ -148,7 +148,7 @@ def invalid_enable_tls_value(self, timeout=60):
     servers = {"openldap1": {"host": "openldap1", "port": "389", "enable_tls": "foo",
         "auth_dn_prefix": "cn=", "auth_dn_suffix": ",ou=users,dc=company,dc=com"
     }}
-    invalid_server_config(servers, message=message, tail=17, timeout=timeout)
+    invalid_server_config(servers, message=message, tail=30, timeout=timeout)
 
 @TestScenario
 @Requirements(
@@ -243,7 +243,7 @@ def auth_dn_value(self):
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown_Invalid("1.0")
 )
-def invalid_verification_cooldown_value(self, invalid_value, timeout=20):
+def invalid_verification_cooldown_value(self, invalid_value, timeout=300):
     """Check that server returns an error when LDAP server
     verification cooldown parameter is invalid.
     """
@@ -259,7 +259,7 @@ def invalid_verification_cooldown_value(self, invalid_value, timeout=20):
         }}
 
     with When("I try to use this configuration then it should not work"):
-        invalid_server_config(servers, message=error_message, tail=17, timeout=timeout)
+        invalid_server_config(servers, message=error_message, tail=30, timeout=timeout)
 
 @TestScenario
 @Requirements(

@@ -11,7 +11,7 @@ class StorageProxy : public IStorage
 {
 public:
 
-    StorageProxy(const StorageID & table_id_) : IStorage(table_id_) {}
+    explicit StorageProxy(const StorageID & table_id_) : IStorage(table_id_) {}
 
     virtual StoragePtr getNested() const = 0;
 
@@ -32,15 +32,18 @@ public:
     NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
-        const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & ast) const override
+        ContextPtr context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageMetadataPtr &,
+        SelectQueryInfo & info) const override
     {
-        return getNested()->getQueryProcessingStage(context, to_stage, ast);
+        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
     }
 
     BlockInputStreams watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override
@@ -52,7 +55,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override
@@ -60,10 +63,7 @@ public:
         return getNested()->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    BlockOutputStreamPtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Context & context) override
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
     {
         return getNested()->write(query, metadata_snapshot, context);
     }
@@ -73,7 +73,7 @@ public:
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
-        const Context & context,
+        ContextPtr context,
         TableExclusiveLockHolder & lock) override
     {
         getNested()->truncate(query, metadata_snapshot, context, lock);
@@ -91,21 +91,21 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, const Context & context, TableLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
         IStorage::setInMemoryMetadata(getNested()->getInMemoryMetadata());
     }
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override
     {
-        getNested()->checkAlterIsPossible(commands, settings);
+        getNested()->checkAlterIsPossible(commands, context);
     }
 
     Pipe alterPartition(
             const StorageMetadataPtr & metadata_snapshot,
             const PartitionCommands & commands,
-            const Context & context) override
+            ContextPtr context) override
     {
         return getNested()->alterPartition(metadata_snapshot, commands, context);
     }
@@ -122,12 +122,12 @@ public:
             bool final,
             bool deduplicate,
             const Names & deduplicate_by_columns,
-            const Context & context) override
+            ContextPtr context) override
     {
         return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
     }
 
-    void mutate(const MutationCommands & commands, const Context & context) override { getNested()->mutate(commands, context); }
+    void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
 
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
@@ -137,12 +137,12 @@ public:
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
     bool supportsIndexForIn() const override { return getNested()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
     {
         return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    CheckResults checkData(const ASTPtr & query , const Context & context) override { return getNested()->checkData(query, context); }
+    CheckResults checkData(const ASTPtr & query , ContextPtr context) override { return getNested()->checkData(query, context); }
     void checkTableCanBeDropped() const override { getNested()->checkTableCanBeDropped(); }
     void checkPartitionCanBeDropped(const ASTPtr & partition) override { getNested()->checkPartitionCanBeDropped(partition); }
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }

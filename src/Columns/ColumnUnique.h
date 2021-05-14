@@ -26,15 +26,21 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
+/** Stores another column with unique values
+  * and also an index that allows to find position by value.
+  *
+  * This column is not used on it's own but only as implementation detail of ColumnLowCardinality.
+  */
 template <typename ColumnType>
 class ColumnUnique final : public COWHelper<IColumnUnique, ColumnUnique<ColumnType>>
 {
     friend class COWHelper<IColumnUnique, ColumnUnique<ColumnType>>;
 
 private:
-    explicit ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
+    ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
     explicit ColumnUnique(const IDataType & type);
     ColumnUnique(const ColumnUnique & other);
 
@@ -44,6 +50,7 @@ public:
     const ColumnPtr & getNestedColumn() const override;
     const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
     bool nestedColumnIsNullable() const override { return is_nullable; }
+    void nestedToNullable() override;
 
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
@@ -73,6 +80,7 @@ public:
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override
     {
         return getNestedColumn()->updateHashWithValue(n, hash_func);
@@ -257,6 +265,13 @@ void ColumnUnique<ColumnType>::updateNullMask()
 }
 
 template <typename ColumnType>
+void ColumnUnique<ColumnType>::nestedToNullable()
+{
+    is_nullable = true;
+    createNullMask();
+}
+
+template <typename ColumnType>
 const ColumnPtr & ColumnUnique<ColumnType>::getNestedColumn() const
 {
     if (is_nullable)
@@ -366,6 +381,12 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
 
     /// -1 because of terminating zero
     return uniqueInsertData(pos, string_size - 1);
+}
+
+template <typename ColumnType>
+const char * ColumnUnique<ColumnType>::skipSerializedInArena(const char *) const
+{
+    throw Exception("Method skipSerializedInArena is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template <typename ColumnType>
@@ -644,7 +665,7 @@ UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & co
             column.updateHashWithValue(i, sip_hash);
 
         std::lock_guard lock(mutex);
-        sip_hash.get128(hash.low, hash.high);
+        sip_hash.get128(hash);
         cur_hash = hash;
         num_added_rows.store(column_size);
     }

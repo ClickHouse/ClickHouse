@@ -96,7 +96,7 @@ def test_alias_columns():
 
     select_query = "SELECT s FROM table1"
     assert "it's necessary to have grant SELECT(s) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
-    
+
     instance.query("GRANT SELECT(s) ON default.table1 TO A")
     assert instance.query(select_query, user = 'A') == ""
 
@@ -155,3 +155,25 @@ def test_select_union():
 
     instance.query("REVOKE SELECT ON default.table1 FROM A")
     assert "it's necessary to have grant SELECT(a, b) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
+
+
+def test_select_count():
+    instance.query("CREATE TABLE table1(x String, y UInt8) ENGINE = MergeTree ORDER BY tuple()")
+
+    select_query = "SELECT count() FROM table1"
+    assert "it's necessary to have grant SELECT for at least one column on default.table1" in instance.query_and_get_error(select_query, user = 'A')
+
+    instance.query("GRANT SELECT(x) ON default.table1 TO A")
+    assert instance.query(select_query, user = 'A') == "0\n"
+
+    instance.query("REVOKE SELECT(x) ON default.table1 FROM A")
+    assert "it's necessary to have grant SELECT for at least one column on default.table1" in instance.query_and_get_error(select_query, user = 'A')
+
+    instance.query("GRANT SELECT(y) ON default.table1 TO A")
+    assert instance.query(select_query, user = 'A') == "0\n"
+
+    instance.query("REVOKE SELECT(y) ON default.table1 FROM A")
+    assert "it's necessary to have grant SELECT for at least one column on default.table1" in instance.query_and_get_error(select_query, user = 'A')
+
+    instance.query("GRANT SELECT ON default.table1 TO A")
+    assert instance.query(select_query, user = 'A') == "0\n"
