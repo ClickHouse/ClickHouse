@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
+    extern const int LOGICAL_ERROR;
 }
 
 String ISerialization::kindToString(Kind kind)
@@ -22,6 +23,49 @@ String ISerialization::kindToString(Kind kind)
             return "Default";
         case Kind::SPARSE:
             return "Sparse";
+    }
+}
+
+void ISerialization::Kinds::writeBinary(WriteBuffer & ostr) const
+{
+    writeIntBinary(static_cast<UInt8>(main), ostr);
+    writeIntBinary(subcolumns.size(), ostr);
+    for (size_t i = 0; i < subcolumns.size(); ++i)
+    {
+        writeIntBinary(subcolumns[i].index(), ostr);
+        if (const auto * elem_kinds = std::get_if<Kinds>(&subcolumns[i]))
+            elem_kinds->writeBinary(ostr);
+        else
+            writeIntBinary(static_cast<UInt8>(main), ostr);
+    }
+}
+
+void ISerialization::Kinds::readBinary(ReadBuffer & istr)
+{
+    readIntBinary(main, istr);
+    size_t num_subcolumns;
+    readIntBinary(num_subcolumns, istr);
+    subcolumns.reserve(num_subcolumns);
+    for (size_t i = 0; i < num_subcolumns; ++i)
+    {
+        size_t index;
+        readIntBinary(index, istr);
+        if (index == 0)
+        {
+            Kinds elem_kinds;
+            elem_kinds.readBinary(istr);
+            subcolumns.emplace_back(elem_kinds);
+        }
+        else if (index == 1)
+        {
+            Kind elem_kind;
+            readIntBinary(elem_kind, istr);
+            subcolumns.emplace_back(elem_kind);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index of variant: {}, must be 0 or 1", index);
+        }
     }
 }
 

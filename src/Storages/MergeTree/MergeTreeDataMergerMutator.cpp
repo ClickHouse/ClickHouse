@@ -716,7 +716,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     bool need_remove_expired_values = false;
     bool force_ttl = false;
-    SerializationInfo new_serialization_info(data_settings->ratio_for_sparse_serialization);
+    SerializationInfo new_serialization_info(data_settings->ratio_of_defaults_for_sparse_serialization);
 
     for (const auto & part : parts)
     {

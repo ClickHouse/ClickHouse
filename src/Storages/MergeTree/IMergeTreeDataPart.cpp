@@ -280,7 +280,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , volume(volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
-    , serialization_info(storage_.getSettings()->ratio_for_sparse_serialization)
+    , serialization_info(storage_.getSettings()->ratio_of_defaults_for_sparse_serialization)
     , part_type(part_type_)
 {
     incrementStateMetric(state);

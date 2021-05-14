@@ -62,6 +62,8 @@ public:
     SerializationPtr getSubcolumnSerialization(
         const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
 
+    SerializationPtr getSerialization(const ISerialization::Kinds & kinds) const override;
+
     SerializationPtr doGetDefaultSerialization() const override;
 
     const DataTypes & getElements() const { return elems; }

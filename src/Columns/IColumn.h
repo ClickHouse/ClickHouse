@@ -376,6 +376,7 @@ public:
 
     static constexpr auto DEFAULT_ROWS_SEARCH_STEP = 8;
     static constexpr auto MIN_ROWS_TO_SEARCH_DEFAULTS = DEFAULT_ROWS_SEARCH_STEP * 16;
+    static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.95;
 
     virtual size_t getNumberOfDefaultRows(size_t /* step */) const { return 0; }
 

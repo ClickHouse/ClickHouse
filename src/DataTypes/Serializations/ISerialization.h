@@ -7,6 +7,7 @@
 
 #include <unordered_map>
 #include <memory>
+#include <variant>
 
 namespace DB
 {
@@ -46,6 +47,20 @@ public:
 
     virtual Kind getKind() const { return Kind::DEFAULT; }
     static String kindToString(Kind kind);
+
+    struct Kinds
+    {
+        Kinds() = default;
+        Kinds(Kind main_) : main(main_) {}
+
+        Kind main = Kind::DEFAULT;
+        std::vector<std::variant<Kinds, Kind>> subcolumns;
+
+        void writeBinary(WriteBuffer & ostr) const;
+        void readBinary(ReadBuffer & istr);
+    };
+
+    virtual Kinds getKinds() const { return Kinds(getKind()); }
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *

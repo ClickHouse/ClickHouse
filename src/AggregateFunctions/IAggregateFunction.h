@@ -227,11 +227,6 @@ public:
 
     virtual bool supportsSparseArguments() const { return false; }
 
-    virtual void addManyDefaults(size_t /* length */) const
-    {
-        throw Exception("Method addManyDefaults is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
 

@@ -11,7 +11,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , metadata_snapshot(metadata_snapshot_)
     , volume(data_part->volume)
     , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
-    , new_serialization_info(data_part->storage.getSettings()->ratio_for_sparse_serialization)
+    , new_serialization_info(data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization)
 {
 }
 
