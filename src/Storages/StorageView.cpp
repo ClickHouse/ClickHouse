@@ -36,7 +36,7 @@ StorageView::StorageView(
     const ColumnsDescription & columns_,
     const Settings & settings)
     : IStorage(table_id_)
-    , settings_changes{{"join_use_nulls", Field(settings.join_use_nulls)}}
+    , settings_changes(settings.changes())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
