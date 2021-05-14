@@ -502,15 +502,13 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
 Block ActionsDAG::updateHeader(Block header) const
 {
     std::unordered_map<const Node *, ColumnWithTypeAndName> node_to_column;
-    std::vector<size_t> pos_to_remove;
+    std::set<size_t> pos_to_remove;
 
     {
         std::unordered_map<std::string_view, std::list<size_t>> input_positions;
 
         for (size_t pos = 0; pos < inputs.size(); ++pos)
             input_positions[inputs[pos]->result_name].emplace_back(pos);
-
-        pos_to_remove.reserve(inputs.size());
 
         for (size_t pos = 0; pos < header.columns(); ++pos)
         {
@@ -519,7 +517,7 @@ Block ActionsDAG::updateHeader(Block header) const
             if (it != input_positions.end() && !it->second.empty())
             {
                 auto & list = it->second;
-                pos_to_remove.push_back(pos);
+                pos_to_remove.insert(pos);
                 node_to_column[inputs[list.front()]] = std::move(col);
                 list.pop_front();
             }
@@ -585,15 +583,9 @@ Block ActionsDAG::updateHeader(Block header) const
     }
 
     if (isInputProjected())
-    {
         header.clear();
-    }
     else
-    {
-        std::sort(pos_to_remove.rbegin(), pos_to_remove.rend());
-        for (auto pos : pos_to_remove)
-                header.erase(pos);
-    }
+        header.erase(pos_to_remove);
 
     Block res;
 
