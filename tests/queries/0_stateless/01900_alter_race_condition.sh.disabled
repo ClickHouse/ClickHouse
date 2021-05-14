@@ -4,8 +4,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-UUID=$(uuid | tr '-' '_')
-USER_UUID=$(uuid | tr '-' '_')
+UUID=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()" | tr '-' '_')
+USER_UUID=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()" | tr '-' '_')
 
 echo -e "DROP TABLE IF EXISTS merge_tree_user_column_privileges_${UUID}" | ${CLICKHOUSE_CLIENT} -n > /dev/null 2>&1
 echo $?
