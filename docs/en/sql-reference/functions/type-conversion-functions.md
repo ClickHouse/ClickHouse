@@ -1171,7 +1171,7 @@ Result:
 Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision. 
 
 !!! info "Note"
-    Please note that output value is a timestamp in UTC, not in timezone of `DateTime64`.
+    The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
 
 **Syntax**
 
