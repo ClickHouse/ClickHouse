@@ -161,7 +161,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             query_info.merge_tree_data_select_cache.get());
     }
 
-    LOG_DEBUG(log, "Choose projection {}", query_info.projection->desc->name);
+    LOG_DEBUG(
+        log,
+        "Choose {} projection {}",
+        ProjectionDescription::typeToString(query_info.projection->desc->type),
+        query_info.projection->desc->name);
 
     if (query_info.projection->merge_tree_data_select_base_cache->sum_marks
             + query_info.projection->merge_tree_data_select_projection_cache->sum_marks
