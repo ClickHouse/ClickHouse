@@ -367,6 +367,12 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
     in >> "columns_version: " >> columns_version;
 }
 
+bool ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info)
+{
+    assert(drop_range_info.getBlocksCount() != 0);
+    return drop_range_info.getBlocksCount() == 1;
+}
+
 String ReplicatedMergeTreeLogEntryData::toString() const
 {
     WriteBufferFromOwnString out;
@@ -397,8 +403,7 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
     if (type == DROP_RANGE)
         return {new_part_name};
 
-    /// Return {} because selection of merges in the partition where the column is cleared
-    /// should not be blocked (only execution of merges should be blocked).
+    /// CLEAR_COLUMN and CLEAR_INDEX are deprecated since 20.3
     if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
         return {};
 
@@ -406,8 +411,7 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
     {
         Strings res = replace_range_entry->new_part_names;
         auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
-        assert(drop_range_info.getBlocksCount() != 0);
-        if (drop_range_info.getBlocksCount() > 1)
+        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
         {
             /// It's REPLACE, not MOVE or ATTACH, so drop range is real
             res.emplace_back(replace_range_entry->drop_range_part_name);

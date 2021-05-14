@@ -1578,13 +1578,6 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 }
 
 
-void ReplicatedMergeTreeQueue::disableMergesInBlockRangeOnLocalReplica(const String & part_name)
-{
-    std::lock_guard lock(state_mutex);
-    virtual_parts.add(part_name);
-}
-
-
 ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 {
     std::lock_guard lock(state_mutex);

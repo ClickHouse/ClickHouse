@@ -19,6 +19,7 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 class ReplicatedMergeTreeQueue;
+struct MergeTreePartInfo;
 
 namespace ErrorCodes
 {
@@ -110,6 +111,8 @@ struct ReplicatedMergeTreeLogEntryData
 
         void writeText(WriteBuffer & out) const;
         void readText(ReadBuffer & in);
+
+        static bool isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info);
     };
 
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
