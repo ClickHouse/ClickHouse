@@ -367,7 +367,7 @@ SHOW ACCESS
 Возвращает список кластеров. Все доступные кластера собраны в таблице [system.clusters](../../operations/system-tables/clusters.md).
 
 !!! info "Note"
-    По запросу `SHOW CLUSTER name` вы получите содержимое таблицы system.clusters для этого кластера.
+    Результатом запроса `SHOW CLUSTER name` будет содержимое таблицы system.clusters для этого кластера.
 
 ### Синтаксис {#show-cluster-syntax}
 
