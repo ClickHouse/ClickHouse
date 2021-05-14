@@ -7,3 +7,7 @@ create table TestTable (first MyType1, second MyType2) ENGINE = MergeTree() ORDE
 insert into TestTable values(10, 'test');
 
 select * from TestTable;
+
+drop type MyType1;
+
+drop type MyType2;
