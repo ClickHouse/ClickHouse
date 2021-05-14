@@ -9,6 +9,7 @@
 #include <common/getMemoryAmount.h>
 #include <common/logger_useful.h>
 
+#include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -101,7 +102,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     auto * logger = &Poco::Logger::get("SentryWriter");
     if (config.getBool("send_crash_reports.enabled", false))
     {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0))
+        if (debug || (strlen(VERSION_OFFICIAL) > 0)) //-V560
         {
             enabled = true;
         }

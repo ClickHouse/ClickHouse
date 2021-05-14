@@ -31,6 +31,8 @@ struct Quota : public IAccessEntity
     enum ResourceType
     {
         QUERIES,        /// Number of queries.
+        QUERY_SELECTS,  /// Number of select queries.
+        QUERY_INSERTS,  /// Number of inserts queries.
         ERRORS,         /// Number of queries with exceptions.
         RESULT_ROWS,    /// Number of rows returned as result.
         RESULT_BYTES,   /// Number of bytes returned as result.
@@ -43,7 +45,7 @@ struct Quota : public IAccessEntity
 
     struct ResourceTypeInfo
     {
-        const char * const raw_name;
+        const char * const raw_name = "";
         const String name;    /// Lowercased with underscores, e.g. "result_rows".
         const String keyword; /// Uppercased with spaces, e.g. "RESULT ROWS".
         const bool output_as_float = false;
@@ -150,6 +152,16 @@ inline const Quota::ResourceTypeInfo & Quota::ResourceTypeInfo::get(ResourceType
         case Quota::QUERIES:
         {
             static const auto info = make_info("QUERIES", 1);
+            return info;
+        }
+        case Quota::QUERY_SELECTS:
+        {
+            static const auto info = make_info("QUERY_SELECTS", 1);
+            return info;
+        }
+        case Quota::QUERY_INSERTS:
+        {
+            static const auto info = make_info("QUERY_INSERTS", 1);
             return info;
         }
         case Quota::ERRORS:

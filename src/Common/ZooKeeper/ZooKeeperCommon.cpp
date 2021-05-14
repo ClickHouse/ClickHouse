@@ -37,6 +37,26 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
     out.next();
 }
 
+void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+}
+
+void ZooKeeperSyncRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+}
+
+void ZooKeeperSyncResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+}
+
+void ZooKeeperSyncResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+}
+
 void ZooKeeperWatchResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(type, in);
@@ -49,6 +69,13 @@ void ZooKeeperWatchResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(type, out);
     Coordination::write(state, out);
     Coordination::write(path, out);
+}
+
+void ZooKeeperWatchResponse::write(WriteBuffer & out) const
+{
+    if (error == Error::ZOK)
+        ZooKeeperResponse::write(out);
+    /// skip bad responses for watches
 }
 
 void ZooKeeperAuthRequest::writeImpl(WriteBuffer & out) const
@@ -326,6 +353,12 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
     }
 }
 
+bool ZooKeeperMultiRequest::isReadRequest() const
+{
+    /// Possibly we can do better
+    return false;
+}
+
 void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 {
     for (auto & response : responses)
@@ -410,6 +443,7 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 }
 
 ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_shared<ZooKeeperHeartbeatResponse>(); }
+ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return std::make_shared<ZooKeeperSyncResponse>(); }
 ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return std::make_shared<ZooKeeperAuthResponse>(); }
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const { return std::make_shared<ZooKeeperCreateResponse>(); }
 ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return std::make_shared<ZooKeeperRemoveResponse>(); }
@@ -420,6 +454,39 @@ ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return std::ma
 ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return std::make_shared<ZooKeeperCheckResponse>(); }
 ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const { return std::make_shared<ZooKeeperMultiResponse>(requests); }
 ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return std::make_shared<ZooKeeperCloseResponse>(); }
+
+void ZooKeeperSessionIDRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(internal_id, out);
+    Coordination::write(session_timeout_ms, out);
+    Coordination::write(server_id, out);
+}
+
+void ZooKeeperSessionIDRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(internal_id, in);
+    Coordination::read(session_timeout_ms, in);
+    Coordination::read(server_id, in);
+}
+
+Coordination::ZooKeeperResponsePtr ZooKeeperSessionIDRequest::makeResponse() const
+{
+    return std::make_shared<ZooKeeperSessionIDResponse>();
+}
+
+void ZooKeeperSessionIDResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(internal_id, in);
+    Coordination::read(session_id, in);
+    Coordination::read(server_id, in);
+}
+
+void ZooKeeperSessionIDResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(internal_id, out);
+    Coordination::write(session_id, out);
+    Coordination::write(server_id, out);
+}
 
 void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 {
@@ -465,6 +532,7 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
 ZooKeeperRequestFactory::ZooKeeperRequestFactory()
 {
     registerZooKeeperRequest<OpNum::Heartbeat, ZooKeeperHeartbeatRequest>(*this);
+    registerZooKeeperRequest<OpNum::Sync, ZooKeeperSyncRequest>(*this);
     registerZooKeeperRequest<OpNum::Auth, ZooKeeperAuthRequest>(*this);
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
@@ -476,6 +544,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::List, ZooKeeperListRequest>(*this);
     registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
+    registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);
 }
 
 }

@@ -53,7 +53,7 @@ ColumnGathererStream::ColumnGathererStream(
 Block ColumnGathererStream::readImpl()
 {
     /// Special case: single source and there are no skipped rows
-    if (children.size() == 1 && row_sources_buf.eof())
+    if (children.size() == 1 && row_sources_buf.eof() && !source_to_fully_copy)
         return children[0]->read();
 
     if (!source_to_fully_copy && row_sources_buf.eof())
@@ -61,9 +61,12 @@ Block ColumnGathererStream::readImpl()
 
     MutableColumnPtr output_column = column.column->cloneEmpty();
     output_block = Block{column.cloneEmpty()};
+    /// Surprisingly this call may directly change output_block, bypassing
+    /// output_column. See ColumnGathererStream::gather.
     output_column->gather(*this);
     if (!output_column->empty())
         output_block.getByPosition(0).column = std::move(output_column);
+
     return output_block;
 }
 

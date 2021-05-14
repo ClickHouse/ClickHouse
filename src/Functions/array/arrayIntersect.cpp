@@ -38,8 +38,8 @@ class FunctionArrayIntersect : public IFunction
 {
 public:
     static constexpr auto name = "arrayIntersect";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayIntersect>(context); }
-    explicit FunctionArrayIntersect(const Context & context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayIntersect>(context); }
+    explicit FunctionArrayIntersect(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -53,7 +53,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
-    const Context & context;
+    ContextPtr context;
 
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 6;
@@ -281,7 +281,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
     return {.initial = initial_columns, .casted = casted_columns};
 }
 
-static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, const Context & context)
+static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, ContextPtr context)
 {
     ColumnsWithTypeAndName args{first, second};
     auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
@@ -518,7 +518,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     typename Map::mapped_type * value = nullptr;
 
                     if constexpr (is_numeric_column)
+                    {
                         value = &map[columns[arg_num]->getElement(i)];
+                    }
                     else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
                         value = &map[columns[arg_num]->getDataAt(i)];
                     else

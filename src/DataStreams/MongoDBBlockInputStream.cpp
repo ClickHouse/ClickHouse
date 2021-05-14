@@ -25,7 +25,6 @@
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitors.h>
 #include <ext/enumerate.h>
 
 namespace DB
@@ -270,8 +269,8 @@ namespace
                     throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
                                     ErrorCodes::TYPE_MISMATCH};
 
-                assert_cast<ColumnUInt16 &>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())});
+                assert_cast<ColumnUInt16 &>(column).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())));
                 break;
             }
 
@@ -290,7 +289,7 @@ namespace
                 if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                    assert_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
+                    assert_cast<ColumnUUID &>(column).getData().push_back(parse<UUID>(string));
                 }
                 else
                     throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) + " for column "

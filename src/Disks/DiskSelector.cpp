@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
 }
 
-DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context)
+DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -40,12 +40,12 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
     }
     if (!has_default_disk)
-        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context.getPath(), 0));
+        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0));
 }
 
 
 DiskSelectorPtr DiskSelector::updateFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context) const
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -55,11 +55,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
     constexpr auto default_disk_name = "default";
-    std::set<String> old_disks_minus_new_disks;
-    for (const auto & [disk_name, _] : result->getDisksMap())
-    {
-        old_disks_minus_new_disks.insert(disk_name);
-    }
+    DisksMap old_disks_minus_new_disks (result->getDisksMap());
 
     for (const auto & disk_name : keys)
     {
@@ -73,10 +69,11 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         }
         else
         {
-            old_disks_minus_new_disks.erase(disk_name);
+            auto disk = old_disks_minus_new_disks[disk_name];
 
-            /// TODO: Ideally ClickHouse shall complain if disk has changed, but
-            /// implementing that may appear as not trivial task.
+            disk->applyNewSettings(config, context);
+
+            old_disks_minus_new_disks.erase(disk_name);
         }
     }
 
@@ -91,7 +88,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             writeString("Disks ", warning);
 
         int index = 0;
-        for (const String & name : old_disks_minus_new_disks)
+        for (const auto & [name, _] : old_disks_minus_new_disks)
         {
             if (index++ > 0)
                 writeString(", ", warning);

@@ -774,7 +774,7 @@ UInt128 diffHash(const CommitDiff & file_changes)
     }
 
     UInt128 hash_of_diff;
-    hasher.get128(hash_of_diff.low, hash_of_diff.high);
+    hasher.get128(hash_of_diff.items[0], hash_of_diff.items[1]);
 
     return hash_of_diff;
 }
@@ -1064,7 +1064,7 @@ void processCommit(
 
     time_t commit_time;
     readText(commit_time, in);
-    commit.time = commit_time;
+    commit.time = LocalDateTime(commit_time);
     assertChar('\0', in);
     readNullTerminated(commit.author, in);
     std::string parent_hash;

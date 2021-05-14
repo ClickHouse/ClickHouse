@@ -4,7 +4,6 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <Core/BigInt.h>
 
 #include <common/unaligned.h>
 #include <common/sort.h>
@@ -15,6 +14,7 @@
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnCompressed.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -30,6 +30,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
+
+template class DecimalPaddedPODArray<Decimal32>;
+template class DecimalPaddedPODArray<Decimal64>;
+template class DecimalPaddedPODArray<Decimal128>;
+template class DecimalPaddedPODArray<Decimal256>;
+template class DecimalPaddedPODArray<DateTime64>;
 
 template <typename T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
@@ -53,6 +59,12 @@ void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 }
 
 template <typename T>
+bool ColumnDecimal<T>::hasEqualValues() const
+{
+    return this->template hasEqualValuesImpl<ColumnDecimal<T>>();
+}
+
+template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto * pos = arena.allocContinue(sizeof(T), begin);
@@ -64,6 +76,12 @@ template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
+}
+
+template <typename T>
+const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
+{
     return pos + sizeof(T);
 }
 
@@ -342,6 +360,30 @@ void ColumnDecimal<T>::gather(ColumnGathererStream & gatherer)
 }
 
 template <typename T>
+ColumnPtr ColumnDecimal<T>::compress() const
+{
+    size_t source_size = data.size() * sizeof(T);
+
+    /// Don't compress small blocks.
+    if (source_size < 4096) /// A wild guess.
+        return ColumnCompressed::wrap(this->getPtr());
+
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+
+    if (!compressed)
+        return ColumnCompressed::wrap(this->getPtr());
+
+    return ColumnCompressed::create(data.size(), compressed->size(),
+        [compressed = std::move(compressed), column_size = data.size(), scale = this->scale]
+        {
+            auto res = ColumnDecimal<T>::create(column_size, scale);
+            ColumnCompressed::decompressBuffer(
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+            return res;
+        });
+}
+
+template <typename T>
 void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.empty())
@@ -371,4 +413,5 @@ template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
 template class ColumnDecimal<DateTime64>;
+
 }

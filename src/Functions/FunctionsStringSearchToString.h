@@ -36,7 +36,7 @@ class FunctionsStringSearchToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringSearchToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearchToString>(); }
 
     String getName() const override { return name; }
 

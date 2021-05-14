@@ -11,9 +11,18 @@ PEERDIR(
 
 SRCS(
     GRPCServer.cpp
+    HTTP/HTMLForm.cpp
+    HTTP/HTTPServer.cpp
+    HTTP/HTTPServerConnection.cpp
+    HTTP/HTTPServerConnectionFactory.cpp
+    HTTP/HTTPServerRequest.cpp
+    HTTP/HTTPServerResponse.cpp
+    HTTP/ReadHeaders.cpp
+    HTTP/WriteBufferFromHTTPServerResponse.cpp
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
     InterserverIOHTTPHandler.cpp
+    KeeperTCPHandler.cpp
     MySQLHandler.cpp
     MySQLHandlerFactory.cpp
     NotFoundHandler.cpp
@@ -25,7 +34,6 @@ SRCS(
     ReplicasStatusHandler.cpp
     StaticRequestHandler.cpp
     TCPHandler.cpp
-    TestKeeperTCPHandler.cpp
     WebUIRequestHandler.cpp
 
 )

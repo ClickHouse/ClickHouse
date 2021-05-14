@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <DataTypes/IDataType.h>
 #include <Core/Field.h>
 
 
@@ -17,7 +17,7 @@ namespace ErrorCodes
   *
   * That is, this class is used just to distinguish the corresponding data type from the others.
   */
-class IDataTypeDummy : public DataTypeWithSimpleSerialization
+class IDataTypeDummy : public IDataType
 {
 private:
     [[noreturn]] void throwNoSerialization() const
@@ -26,17 +26,6 @@ private:
     }
 
 public:
-    void serializeBinary(const Field &, WriteBuffer &) const override                       { throwNoSerialization(); }
-    void deserializeBinary(Field &, ReadBuffer &) const override                            { throwNoSerialization(); }
-    void serializeBinary(const IColumn &, size_t, WriteBuffer &) const override             { throwNoSerialization(); }
-    void deserializeBinary(IColumn &, ReadBuffer &) const override                          { throwNoSerialization(); }
-    void serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const override { throwNoSerialization(); }
-    void deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const override      { throwNoSerialization(); }
-    void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwNoSerialization(); }
-    void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &) const override    { throwNoSerialization(); }
-    void serializeProtobuf(const IColumn &, size_t, ProtobufWriter &, size_t &) const override { throwNoSerialization(); }
-    void deserializeProtobuf(IColumn &, ProtobufReader &, bool, bool &) const override      { throwNoSerialization(); }
-
     MutableColumnPtr createColumn() const override
     {
         throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -54,6 +43,8 @@ public:
 
     bool haveSubtypes() const override { return false; }
     bool cannotBeStoredInTables() const override { return true; }
+
+    SerializationPtr doGetDefaultSerialization() const override { throwNoSerialization(); }
 };
 
 }

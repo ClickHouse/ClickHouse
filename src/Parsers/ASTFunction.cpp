@@ -1,7 +1,9 @@
 #include <Parsers/ASTFunction.h>
 
+#include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/NumberTraits.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -14,8 +16,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_EXPRESSION;
+}
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
+    if (name == "view")
+        throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
+
     writeString(name, ostr);
 
     if (parameters)
@@ -42,12 +52,20 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     if (is_window_function)
     {
-        writeCString(" OVER (", ostr);
-        FormatSettings settings{ostr, true /* one_line */};
-        FormatState state;
-        FormatStateStacked frame;
-        appendWindowDescription(settings, state, frame);
-        writeCString(")", ostr);
+        writeCString(" OVER ", ostr);
+        if (!window_name.empty())
+        {
+            ostr << window_name;
+        }
+        else
+        {
+            FormatSettings settings{ostr, true /* one_line */};
+            FormatState state;
+            FormatStateStacked frame;
+            writeCString("(", ostr);
+            window_definition->formatImpl(settings, state, frame);
+            writeCString(")", ostr);
+        }
     }
 }
 
@@ -65,22 +83,10 @@ ASTPtr ASTFunction::clone() const
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
-    if (window_name)
+    if (window_definition)
     {
-        res->window_name = window_name->clone();
-        res->children.push_back(res->window_name);
-    }
-
-    if (window_partition_by)
-    {
-        res->window_partition_by = window_partition_by->clone();
-        res->children.push_back(res->window_partition_by);
-    }
-
-    if (window_order_by)
-    {
-        res->window_order_by = window_order_by->clone();
-        res->children.push_back(res->window_order_by);
+        res->window_definition = window_definition->clone();
+        res->children.push_back(res->window_definition);
     }
 
     return res;
@@ -217,27 +223,77 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (strcasecmp(name.c_str(), func[0]) != 0)
                 {
-                    if (frame.need_parens)
-                        settings.ostr << '(';
-
-                    settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
-
-                    /** A particularly stupid case. If we have a unary minus before a literal that is a negative number
-                        * "-(-1)" or "- -1", this can not be formatted as `--1`, since this will be interpreted as a comment.
-                        * Instead, add a space.
-                        * PS. You can not just ask to add parentheses - see formatImpl for ASTLiteral.
-                        */
-                    if (name == "negate" && arguments->children[0]->as<ASTLiteral>())
-                        settings.ostr << ' ';
-
-                    arguments->formatImpl(settings, state, nested_need_parens);
-                    written = true;
-
-                    if (frame.need_parens)
-                        settings.ostr << ')';
+                    continue;
                 }
+
+                const auto * literal = arguments->children[0]->as<ASTLiteral>();
+                /* A particularly stupid case. If we have a unary minus before
+                 * a literal that is a negative number "-(-1)" or "- -1", this
+                 * can not be formatted as `--1`, since this will be
+                 * interpreted as a comment. Instead, negate the literal
+                 * in place. Another possible solution is to use parentheses,
+                 * but the old comment said it is impossible, without mentioning
+                 * the reason. We should also negate the nonnegative literals,
+                 * for symmetry. We print the negated value without parentheses,
+                 * because they are not needed around a single literal. Also we
+                 * use formatting from FieldVisitorToString, so that the type is
+                 * preserved (e.g. -0. is printed with trailing period).
+                 */
+                if (literal && name == "negate")
+                {
+                    written = applyVisitor(
+                        [&settings](const auto & value)
+                        // -INT_MAX is negated to -INT_MAX by the negate()
+                        // function, so we can implement this behavior here as
+                        // well. Technically it is an UB to perform such negation
+                        // w/o a cast to unsigned type.
+                        NO_SANITIZE_UNDEFINED
+                        {
+                            using ValueType = std::decay_t<decltype(value)>;
+                            if constexpr (isDecimalField<ValueType>())
+                            {
+                                // The parser doesn't create decimal literals, but
+                                // they can be produced by constant folding or the
+                                // fuzzer. Decimals are always signed, so no need
+                                // to deduce the result type like we do for ints.
+                                const auto int_value = value.getValue().value;
+                                settings.ostr << FieldVisitorToString{}(ValueType{
+                                    -int_value,
+                                    value.getScale()});
+                            }
+                            else if constexpr (std::is_arithmetic_v<ValueType>)
+                            {
+                                using ResultType = typename NumberTraits::ResultOfNegate<ValueType>::Type;
+                                settings.ostr << FieldVisitorToString{}(
+                                    -static_cast<ResultType>(value));
+                                return true;
+                            }
+
+                            return false;
+                        },
+                        literal->value);
+
+                    if (written)
+                    {
+                        break;
+                    }
+                }
+
+                // We don't need parentheses around a single literal.
+                if (!literal && frame.need_parens)
+                    settings.ostr << '(';
+
+                settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+
+                arguments->formatImpl(settings, state, nested_need_parens);
+                written = true;
+
+                if (!literal && frame.need_parens)
+                    settings.ostr << ')';
+
+                break;
             }
         }
 
@@ -327,10 +383,40 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
-                if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
+                // fuzzer sometimes may inserts tupleElement() created from ASTLiteral:
+                //
+                //     Function_tupleElement, 0xx
+                //     -ExpressionList_, 0xx
+                //     --Literal_Int64_255, 0xx
+                //     --Literal_Int64_100, 0xx
+                //
+                // And in this case it will be printed as "255.100", which
+                // later will be parsed as float, and formatting will be
+                // inconsistent.
+                //
+                // So instead of printing it as regular tuple,
+                // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                bool tuple_arguments_valid = true;
+                const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
+                const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
+
+                if (lit_left)
                 {
-                    if (lit->value.getType() == Field::Types::UInt64)
+                    Field::Types::Which type = lit_left->value.getType();
+                    if (type != Field::Types::Tuple && type != Field::Types::Array)
+                    {
+                        tuple_arguments_valid = false;
+                    }
+                }
+
+                // It can be printed in a form of 'x.1' only if right hand side
+                // is an unsigned integer lineral. We also allow nonnegative
+                // signed integer literals, because the fuzzer sometimes inserts
+                // them, and we want to have consistent formatting.
+                if (tuple_arguments_valid && lit_right)
+                {
+                    if (isInt64OrUInt64FieldType(lit_right->value.getType())
+                        && lit_right->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';
@@ -428,14 +514,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         if (!written && 0 == strcmp(name.c_str(), "map"))
         {
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << "map(" << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
                     settings.ostr << ", ";
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
             written = true;
         }
     }
@@ -487,44 +573,16 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         return;
     }
 
-    settings.ostr << " OVER (";
-    appendWindowDescription(settings, state, nested_dont_need_parens);
-    settings.ostr << ")";
-}
-
-std::string ASTFunction::getWindowDescription() const
-{
-    WriteBufferFromOwnString ostr;
-    FormatSettings settings{ostr, true /* one_line */};
-    FormatState state;
-    FormatStateStacked frame;
-    appendWindowDescription(settings, state, frame);
-    return ostr.str();
-}
-
-void ASTFunction::appendWindowDescription(const FormatSettings & settings,
-    FormatState & state, FormatStateStacked frame) const
-{
-    if (!is_window_function)
+    settings.ostr << " OVER ";
+    if (!window_name.empty())
     {
-        return;
+        settings.ostr << backQuoteIfNeed(window_name);
     }
-
-    if (window_partition_by)
+    else
     {
-        settings.ostr << "PARTITION BY ";
-        window_partition_by->formatImpl(settings, state, frame);
-    }
-
-    if (window_partition_by && window_order_by)
-    {
-        settings.ostr << " ";
-    }
-
-    if (window_order_by)
-    {
-        settings.ostr << "ORDER BY ";
-        window_order_by->formatImpl(settings, state, frame);
+        settings.ostr << "(";
+        window_definition->formatImpl(settings, state, frame);
+        settings.ostr << ")";
     }
 }
 
