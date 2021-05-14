@@ -1101,7 +1101,7 @@ UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
 UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
-FORMAT PrettyCompactMonoBlcok;
+FORMAT PrettyCompactMonoBlock;
 ```
 
 Result:
@@ -1337,4 +1337,3 @@ Result:
 │ 2,"good"                                  │
 └───────────────────────────────────────────┘
 ```
-
