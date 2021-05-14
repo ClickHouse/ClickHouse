@@ -834,7 +834,7 @@ void Pipe::transform(const Transformer & transformer)
 
     if (collected_processors)
     {
-        for (const auto & processor : processors)
+        for (const auto & processor : new_processors)
             collected_processors->emplace_back(processor);
     }
 
