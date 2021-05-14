@@ -301,6 +301,8 @@ inline String fullPath(const DiskPtr & disk, const String & path)
 /// Return parent path for the specified path.
 inline String parentPath(const String & path)
 {
+    if (path.ends_with('/'))
+        return fs::path(path).parent_path().parent_path() / "";
     return fs::path(path).parent_path() / "";
 }
 

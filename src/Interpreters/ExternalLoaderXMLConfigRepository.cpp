@@ -40,8 +40,8 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
         if (pattern[0] != '/')
         {
             const auto app_config_path = main_config.getString("config-file", "config.xml");
-            const auto config_dir = Poco::Path{app_config_path}.parent().toString();
-            const auto absolute_path = config_dir + pattern;
+            const String config_dir = fs::path(app_config_path).parent_path();
+            const String absolute_path = fs::path(config_dir) / pattern;
             Poco::Glob::glob(absolute_path, files, 0);
             if (!files.empty())
                 continue;
