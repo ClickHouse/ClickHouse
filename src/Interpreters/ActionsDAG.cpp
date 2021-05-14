@@ -501,7 +501,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
 
 Block ActionsDAG::updateHeader(Block header) const
 {
-    std::unordered_map<const Node *, ColumnWithTypeAndName> result_cache;
+    std::unordered_map<const Node *, ColumnWithTypeAndName> node_to_column;
     std::vector<size_t> pos_to_remove;
 
     {
@@ -520,7 +520,7 @@ Block ActionsDAG::updateHeader(Block header) const
             {
                 auto & list = it->second;
                 pos_to_remove.push_back(pos);
-                result_cache[inputs[list.front()]] = std::move(col);
+                node_to_column[inputs[list.front()]] = std::move(col);
                 list.pop_front();
             }
         }
@@ -529,30 +529,38 @@ Block ActionsDAG::updateHeader(Block header) const
     ColumnsWithTypeAndName result_columns;
     result_columns.reserve(index.size());
 
+    struct Frame
+    {
+        const Node * node;
+        size_t next_child = 0;
+    };
+
     {
         for (const auto * output : index)
         {
-            if (result_cache.count(output) == 0)
+            if (node_to_column.count(output) == 0)
             {
-                std::stack<const Node *> stack;
-                stack.push(output);
+                std::stack<Frame> stack;
+                stack.push({.node = output});
 
                 while (!stack.empty())
                 {
-                    const Node * node = stack.top();
+                    auto & frame = stack.top();
+                    const auto * node = frame.node;
 
-                    bool all_children_calculated = true;
-                    for (const auto * child : node->children)
+                    while (frame.next_child < node->children.size())
                     {
-                        if (result_cache.count(child) == 0)
+                        const auto * child = node->children[frame.next_child];
+                        if (node_to_column.count(child) == 0)
                         {
-                            stack.push(child);
-                            all_children_calculated = false;
+                            stack.push({.node = child});
                             break;
                         }
+
+                        ++frame.next_child;
                     }
 
-                    if (!all_children_calculated)
+                    if (frame.next_child < node->children.size())
                         continue;
 
                     stack.pop();
@@ -560,22 +568,19 @@ Block ActionsDAG::updateHeader(Block header) const
                     ColumnsWithTypeAndName arguments(node->children.size());
                     for (size_t i = 0; i < arguments.size(); ++i)
                     {
-                        arguments[i] = result_cache[node->children[i]];
+                        arguments[i] = node_to_column[node->children[i]];
                         if (!arguments[i].column)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                                             "Not found column {} in block", node->children[i]->result_name);
                     }
 
-                    if (node->type != ActionsDAG::ActionType::INPUT)
-                        result_cache[node] = executeActionForHeader(node, std::move(arguments));
-                    else
-                        result_cache[node] = {};
+                    node_to_column[node] = executeActionForHeader(node, std::move(arguments));
                 }
             }
 
-            auto & column = result_cache[output];
+            auto & column = node_to_column[output];
             if (column.column)
-                result_columns.push_back(result_cache[output]);
+                result_columns.push_back(node_to_column[output]);
         }
     }
 
