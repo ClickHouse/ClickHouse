@@ -45,7 +45,7 @@ struct LiveViewCommand
 
     static std::optional<LiveViewCommand> parse(ASTAlterCommand * command)
     {
-        if (command->type == ASTAlterCommand::LIVE_VIEW_REFRESH)
+        if (command->type == ASTAlterCommand::VIEW_REFRESH)
             return refresh(command->values);
         return {};
     }

@@ -62,7 +62,7 @@ public:
 
         NO_TYPE,
 
-        LIVE_VIEW_REFRESH,
+        VIEW_REFRESH,
     };
 
     Type type = NO_TYPE;

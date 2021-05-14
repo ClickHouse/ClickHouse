@@ -116,7 +116,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         if (s_refresh.ignore(pos, expected))
         {
-            command->type = ASTAlterCommand::LIVE_VIEW_REFRESH;
+            command->type = ASTAlterCommand::VIEW_REFRESH;
         }
         else
             return false;
@@ -632,6 +632,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!select_p.parse(pos, command->select, expected))
                 return false;
             command->type = ASTAlterCommand::MODIFY_QUERY;
+        }
+        else if (s_refresh.ignore(pos, expected))
+        {
+            command->type = ASTAlterCommand::VIEW_REFRESH;
         }
         else
             return false;

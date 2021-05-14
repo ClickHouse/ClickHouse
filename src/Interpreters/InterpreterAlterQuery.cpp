@@ -15,6 +15,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/LiveView/LiveViewCommands.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include <Storages/MaterializedViewCommands.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/typeid_cast.h>
@@ -74,6 +76,7 @@ BlockIO InterpreterAlterQuery::execute()
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
+    MaterializedViewCommands mat_view_commands;
     LiveViewCommands live_view_commands;
     for (const auto & child : alter.command_list->children)
     {
@@ -92,6 +95,8 @@ BlockIO InterpreterAlterQuery::execute()
 
             mutation_commands.emplace_back(std::move(*mut_command));
         }
+        else if (auto mat_view_command = MaterializedViewCommand::parse(command_ast))
+            mat_view_commands.emplace_back(std::move(*mat_view_command));
         else if (auto live_view_command = LiveViewCommand::parse(command_ast))
             live_view_commands.emplace_back(std::move(*live_view_command));
         else
@@ -119,6 +124,21 @@ BlockIO InterpreterAlterQuery::execute()
         auto partition_commands_pipe = table->alterPartition(metadata_snapshot, partition_commands, getContext());
         if (!partition_commands_pipe.empty())
             res.pipeline.init(std::move(partition_commands_pipe));
+    }
+
+    if (!mat_view_commands.empty())
+    {
+        mat_view_commands.validate(*table);
+        for (const MaterializedViewCommand & command : mat_view_commands)
+        {
+            auto mat_view = std::dynamic_pointer_cast<StorageMaterializedView>(table);
+            switch (command.type)
+            {
+                case MaterializedViewCommand::REFRESH:
+                    mat_view->refresh();
+                    break;
+            }
+        }
     }
 
     if (!live_view_commands.empty())
@@ -307,7 +327,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_QUERY, database, table);
             break;
         }
-        case ASTAlterCommand::LIVE_VIEW_REFRESH:
+        case ASTAlterCommand::VIEW_REFRESH:
         {
             required_access.emplace_back(AccessType::ALTER_VIEW_REFRESH, database, table);
             break;

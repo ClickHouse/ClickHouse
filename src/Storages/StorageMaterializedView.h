@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
+#include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -12,10 +13,17 @@
 namespace DB
 {
 
+using Time = std::chrono::time_point<std::chrono::system_clock>;
+using Seconds = std::chrono::seconds;
+using MilliSeconds = std::chrono::milliseconds;
+
 class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage, WithContext
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
+    void startup() override;
+    void shutdown() override;
+
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
 
@@ -50,6 +58,8 @@ public:
         const Names & deduplicate_by_columns,
         ContextPtr context) override;
 
+    void refresh(bool grab_lock = true);
+
     void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
@@ -63,8 +73,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
-
-    void shutdown() override;
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
@@ -95,12 +103,27 @@ public:
     Strings getDataPaths() const override;
 
 private:
+    Poco::Logger * log;
+
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
 
+    bool is_periodically_refreshed = false;
     bool has_inner_table = false;
 
     void checkStatementCanBeForwarded() const;
+
+    std::mutex mutex;
+
+    Time last_refresh_time;
+    Seconds periodic_view_refresh;
+
+    /// Periodic refresh task used when [PERIODIC] REFRESH is specified in create statement
+    BackgroundSchedulePool::TaskHolder periodic_refresh_task;
+    void periodicRefreshTaskFunc();
+
+    /// Must be called with mutex locked
+    void scheduleNextPeriodicRefresh();
 
 protected:
     StorageMaterializedView(

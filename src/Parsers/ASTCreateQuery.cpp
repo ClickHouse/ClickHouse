@@ -270,7 +270,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
                           << *live_view_timeout;
 
-        if (live_view_periodic_refresh)
+        if (is_live_view && view_periodic_refresh)
         {
             if (live_view_timeout)
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << " AND" << (settings.hilite ? hilite_none : "");
@@ -278,7 +278,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH" << (settings.hilite ? hilite_none : "");
 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
-                << *live_view_periodic_refresh;
+                << *view_periodic_refresh;
         }
 
         formatOnCluster(settings);
@@ -365,6 +365,10 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
+    
+    if (is_materialized_view && view_periodic_refresh)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
+                      << *view_periodic_refresh;
 
     if (select)
     {

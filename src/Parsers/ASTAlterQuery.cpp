@@ -348,7 +348,7 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY QUERY " << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
+    else if (type == ASTAlterCommand::VIEW_REFRESH)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
     }

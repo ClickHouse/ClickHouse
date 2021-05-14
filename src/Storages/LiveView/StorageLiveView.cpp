@@ -281,17 +281,17 @@ StorageLiveView::StorageLiveView(
         temporary_live_view_timeout = Seconds {*query.live_view_timeout};
     }
 
-    if (query.live_view_periodic_refresh)
+    if (query.view_periodic_refresh)
     {
         is_periodically_refreshed = true;
-        periodic_live_view_refresh = Seconds {*query.live_view_periodic_refresh};
+        periodic_live_view_refresh = Seconds {*query.view_periodic_refresh};
     }
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
 
-    periodic_refresh_task = getContext()->getSchedulePool().createTask("LieViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
+    periodic_refresh_task = getContext()->getSchedulePool().createTask("LiveViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
     periodic_refresh_task->deactivate();
 }
 
