@@ -30,7 +30,7 @@ LIFETIME(300)
 
 Setting `<lifetime>0</lifetime>` (`LIFETIME(0)`) prevents dictionaries from updating.
 
-You can set a time interval for upgrades, and ClickHouse will choose a uniformly random time within this range. This is necessary in order to distribute the load on the dictionary source when upgrading on a large number of servers.
+You can set a time interval for updates, and ClickHouse will choose a uniformly random time within this range. This is necessary in order to distribute the load on the dictionary source when updating on a large number of servers.
 
 Example of settings:
 
@@ -54,7 +54,7 @@ LIFETIME(MIN 300 MAX 360)
 If `<min>0</min>` and `<max>0</max>`, ClickHouse does not reload the dictionary by timeout.
 In this case, ClickHouse can reload the dictionary earlier if the dictionary configuration file was changed or the `SYSTEM RELOAD DICTIONARY` command was executed.
 
-When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md):
+When updating the dictionaries, the ClickHouse server applies different logic depending on the type of [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md):
 
 -   For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
 -   For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`. 
@@ -86,3 +86,4 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
+For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronious and asynchronious updates are supported. 

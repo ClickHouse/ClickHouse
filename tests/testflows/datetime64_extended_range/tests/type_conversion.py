@@ -25,7 +25,7 @@ def to_int_8_16_32_64_128_256(self, cast):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for d in datetimes:
@@ -66,7 +66,7 @@ def to_uint_8_16_32_64_256(self, cast):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for d in datetimes:
@@ -107,7 +107,7 @@ def to_float_32_64(self, cast):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for d in datetimes:
@@ -142,7 +142,7 @@ def to_datetime64_from_string_missing_time(self):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for dt in datetimes:
@@ -169,7 +169,7 @@ def to_datetime64(self):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for dt in datetimes:
@@ -196,7 +196,7 @@ def to_date(self, cast):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for dt in datetimes:
@@ -232,7 +232,7 @@ def to_datetime(self, cast):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for dt in datetimes:
@@ -271,7 +271,7 @@ def to_string(self, cast):
     timezones = timezones_range(stress)
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for dt in datetimes:
@@ -311,7 +311,7 @@ def to_decimal_32_64_128_256(self, cast):
     scales = {32: 9, 64: 18, 128: 38, 256: 76}
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
         for d in datetimes:
@@ -345,7 +345,7 @@ def to_unix_timestamp64_milli_micro_nano(self, scale):
     func = {3: 'Milli', 6: 'Micro', 9: 'Nano'}
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
         for d in datetimes:
@@ -408,7 +408,7 @@ def from_unix_timestamp64_milli_micro_nano(self, scale):
     func = {3: 'Milli', 6: 'Micro', 9: 'Nano'}
 
     for year in years_range(stress):
-        with Given("I select datetimes in a year"):
+        with Given(f"I select datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress, microseconds=True)
 
         for d in datetimes:
@@ -462,18 +462,16 @@ def from_unix_timestamp64_nano(self):
     from_unix_timestamp64_milli_micro_nano(scale=9)
 
 
-
-
-
 @TestFeature
 @Requirements(
     RQ_SRS_010_DateTime64_ExtendedRange_TypeConversionFunctions("1.0")
 )
 def type_conversion(self, node="clickhouse1"):
-    """Check the type conversion operations with DateTime64. Cast can be set as Requirement thereby as the module
+    """Check the type conversion operations with DateTime64.
+    Cast can be set as Requirement thereby as the module
     tests exactly what CAST does.
     """
     self.context.node = self.context.cluster.node(node)
 
     for scenario in loads(current_module(), Scenario):
-        Scenario(run=scenario, flags=TE)
+        Scenario(run=scenario)

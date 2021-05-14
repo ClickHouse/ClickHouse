@@ -126,24 +126,23 @@ def walk_datetime_in_incrementing_steps(self, date, hrs_range=(0, 24), step=1, t
     """
 
     stress = self.context.stress
-
-    tasks = []
-    pool = Pool(4)
     secs = f"00{'.' * (precision > 0)}{'0' * precision}"
 
-    try:
-        with When(f"I loop through datetime range {hrs_range} starting from {date} in {step}min increments"):
-            for hrs in range(*hrs_range) if stress else (hrs_range[0], hrs_range[1]-1):
-                for mins in range(0, 60, step) if stress else (0, 59):
-                    datetime = f"{date} {str(hrs).zfill(2)}:{str(mins).zfill(2)}:{secs}"
-                    expected = datetime
+    tasks = []
+    with Pool(2) as pool:
+        try:
+            with When(f"I loop through datetime range {hrs_range} starting from {date} in {step}min increments"):
+                for hrs in range(*hrs_range) if stress else (hrs_range[0], hrs_range[1]-1):
+                    for mins in range(0, 60, step) if stress else (0, 59):
+                        datetime = f"{date} {str(hrs).zfill(2)}:{str(mins).zfill(2)}:{secs}"
+                        expected = datetime
 
-                    with When(f"time is {datetime}"):
-                        run_scenario(pool, tasks, Test(name=f"{hrs}:{mins}:{secs}", test=select_check_datetime),
-                                     kwargs=dict(datetime=datetime, precision=precision, timezone=timezone,
-                                                 expected=expected))
-    finally:
-        join(tasks)
+                        with When(f"time is {datetime}"):
+                            run_scenario(pool, tasks, Test(name=f"{hrs}:{mins}:{secs}", test=select_check_datetime),
+                                         kwargs=dict(datetime=datetime, precision=precision, timezone=timezone,
+                                                     expected=expected))
+        finally:
+            join(tasks)
 
 
 @TestStep
@@ -157,23 +156,21 @@ def walk_datetime_in_decrementing_steps(self, date, hrs_range=(23, 0), step=1, t
     :param step: step in minutes
     :param timezone: String
     """
-
     stress = self.context.stress
-
-    tasks = []
-    pool = Pool(4)
     secs = f"00{'.' * (precision > 0)}{'0' * precision}"
 
-    try:
-        with When(f"I loop through datetime range {hrs_range} starting from {date} in {step}min decrements"):
-            for hrs in range(*hrs_range, -1) if stress else (hrs_range[1], hrs_range[0]):
-                for mins in range(59, 0, -step) if stress else (59, 0):
-                    datetime = f"{date} {str(hrs).zfill(2)}:{str(mins).zfill(2)}:{secs}"
-                    expected = datetime
+    tasks = []
+    with Pool(2) as pool:
+        try:
+            with When(f"I loop through datetime range {hrs_range} starting from {date} in {step}min decrements"):
+                for hrs in range(*hrs_range, -1) if stress else (hrs_range[1], hrs_range[0]):
+                    for mins in range(59, 0, -step) if stress else (59, 0):
+                        datetime = f"{date} {str(hrs).zfill(2)}:{str(mins).zfill(2)}:{secs}"
+                        expected = datetime
 
-                    with When(f"time is {datetime}"):
-                        run_scenario(pool, tasks, Test(name=f"{hrs}:{mins}:{secs}", test=select_check_datetime),
-                                     kwargs=dict(datetime=datetime, precision=precision, timezone=timezone,
-                                                 expected=expected))
-    finally:
-        join(tasks)
+                        with When(f"time is {datetime}"):
+                            run_scenario(pool, tasks, Test(name=f"{hrs}:{mins}:{secs}", test=select_check_datetime),
+                                         kwargs=dict(datetime=datetime, precision=precision, timezone=timezone,
+                                                     expected=expected))
+        finally:
+            join(tasks)

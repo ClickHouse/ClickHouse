@@ -167,7 +167,8 @@
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
         "00140_rename",
-        "01783_http_chunk_size"
+        "01783_http_chunk_size",
+        "01710_projection_fetch"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
