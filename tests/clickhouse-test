@@ -440,6 +440,7 @@ def run_tests_array(all_tests_with_params):
                     else:
                         counter = 1
                         while need_retry(stderr):
+                            testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir)
                             proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                             sleep(2**counter)
                             counter += 1
