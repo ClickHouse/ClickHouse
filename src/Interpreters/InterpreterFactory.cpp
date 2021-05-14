@@ -7,6 +7,7 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
+#include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -42,6 +43,7 @@
 #include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/InterpreterDropFunctionQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -268,6 +270,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextPtr
     else if (query->as<ASTCreateFunctionQuery>())
     {
         return std::make_unique<InterpreterCreateFunctionQuery>(query, context);
+    }
+    else if (query->as<ASTDropFunctionQuery>())
+    {
+        return std::make_unique<InterpreterDropFunctionQuery>(query, context);
     }
     else
     {
