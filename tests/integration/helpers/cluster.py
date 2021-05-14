@@ -1031,13 +1031,18 @@ class ClickHouseInstance:
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
 
-    def is_built_with_thread_sanitizer(self):
+    def is_built_with_sanitizer(self, sanitizer_name=''):
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=thread" in build_opts
+        return "-fsanitize={}".format(sanitizer_name) in build_opts
+
+    def is_built_with_thread_sanitizer(self):
+        return self.is_built_with_sanitizer('thread')
 
     def is_built_with_address_sanitizer(self):
-        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=address" in build_opts
+        return self.is_built_with_sanitizer('address')
+
+    def is_built_with_memory_sanitizer(self):
+        return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,

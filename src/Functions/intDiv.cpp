@@ -39,7 +39,7 @@ struct DivideIntegralByConstantImpl
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
-    static NO_INLINE void vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
+    static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"

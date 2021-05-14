@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -21,6 +22,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
+        {"uuid",                                       std::make_shared<DataTypeUUID>()},
         {"part_type",                                  std::make_shared<DataTypeString>()},
         {"active",                                     std::make_shared<DataTypeUInt8>()},
         {"marks",                                      std::make_shared<DataTypeUInt64>()},
@@ -125,6 +127,8 @@ void StorageSystemPartsColumns::processNextStorage(
             }
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->uuid);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getTypeName());
             if (columns_mask[src_index++])

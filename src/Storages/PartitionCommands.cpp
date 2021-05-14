@@ -13,6 +13,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
     if (command_ast->type == ASTAlterCommand::DROP_PARTITION)
@@ -155,8 +161,9 @@ std::string PartitionCommand::typeToString() const
         return "UNFREEZE ALL";
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
+    default:
+        throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
     }
-    __builtin_unreachable();
 }
 
 Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)

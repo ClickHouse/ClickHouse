@@ -51,6 +51,13 @@ public:
     FunctionOverloadResolverImplPtr getImpl(const std::string & name, ContextPtr context) const;
     FunctionOverloadResolverImplPtr tryGetImpl(const std::string & name, ContextPtr context) const;
 
+    /// Register a function by its name.
+    /// No locking, you must register all functions before usage of get.
+    void registerFunction(
+        const std::string & name,
+        Value creator,
+        CaseSensitiveness case_sensitiveness = CaseSensitive);
+
 private:
     using Functions = std::unordered_map<std::string, Value>;
 
@@ -68,13 +75,6 @@ private:
     const Functions & getCaseInsensitiveMap() const override { return case_insensitive_functions; }
 
     String getFactoryName() const override { return "FunctionFactory"; }
-
-    /// Register a function by its name.
-    /// No locking, you must register all functions before usage of get.
-    void registerFunction(
-            const std::string & name,
-            Value creator,
-            CaseSensitiveness case_sensitiveness = CaseSensitive);
 };
 
 }

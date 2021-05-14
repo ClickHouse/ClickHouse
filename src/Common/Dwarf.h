@@ -121,7 +121,7 @@ public:
     struct CallLocation
     {
         Path file = {};
-        uint64_t line;
+        uint64_t line = 0;
         std::string_view name;
     };
 
@@ -202,8 +202,8 @@ private:
     // Abbreviation for a Debugging Information Entry.
     struct DIEAbbreviation
     {
-        uint64_t code;
-        uint64_t tag;
+        uint64_t code = 0;
+        uint64_t tag = 0;
         bool has_children = false;
 
         std::string_view attributes;
