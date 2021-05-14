@@ -1625,7 +1625,7 @@ private:
         if (is_interactive)
         {
             std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
-            /// Write final progress if it makes sence to do so.
+            /// Write final progress if it makes sense to do so.
             writeFinalProgress();
 
             std::cout << std::endl << std::endl;
