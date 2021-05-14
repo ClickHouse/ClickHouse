@@ -12,7 +12,7 @@ ASTPtr ASTDropDataTypeQuery::clone() const
 
 void ASTDropDataTypeQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE DROP " << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP TYPE " << (settings.hilite ? hilite_none : "");
     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(type_name) << (settings.hilite ? hilite_none : "");
 }
 
