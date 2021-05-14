@@ -33,9 +33,11 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
 {
     auto & query = query_ptr->as<ASTShowAccessEntitiesQuery &>();
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
     String origin;
     String expr = "*";
-    String filter, order;
+    String filter;
+    String order;
 
     switch (query.type)
     {
@@ -43,8 +45,10 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
         {
             origin = "row_policies";
             expr = "name";
+
             if (!query.short_name.empty())
-                filter += String{filter.empty() ? "" : " AND "} + "short_name = " + quoteString(query.short_name);
+                filter = "short_name = " + quoteString(query.short_name);
+
             if (query.database_and_table_name)
             {
                 const String & database = query.database_and_table_name->first;

@@ -95,7 +95,10 @@ LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
-The hash table will be preallocated (this will make dictionary load faster), if the is approx number of total rows is known, this is supported only if the source is `clickhouse` without any `<where>` (since in case of `<where>` you can filter out too much rows and the dictionary will allocate too much memory, that will not be used eventually).
+If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make the dictionary load faster). But note that you should use it only if:
+
+- The source support an approximate number of elements (for now it is supported only by the `ClickHouse` source).
+- There are no duplicates in the data (otherwise it may increase memory usage for the hashtable).
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
@@ -103,21 +106,23 @@ Configuration example:
 
 ``` xml
 <layout>
-  <hashed />
+  <hashed>
+    <preallocate>0</preallocate>
+  </hashed>
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(HASHED())
+LAYOUT(HASHED(PREALLOCATE 0))
 ```
 
 ### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 
-It will be also preallocated so as `hashed`, note that it is even more significant for `sparse_hashed`.
+It will be also preallocated so as `hashed` (with `preallocate` set to `true`), and note that it is even more significant for `sparse_hashed`.
 
 Configuration example:
 
@@ -127,8 +132,10 @@ Configuration example:
 </layout>
 ```
 
+or
+
 ``` sql
-LAYOUT(SPARSE_HASHED())
+LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 ```
 
 ### complex_key_hashed {#complex-key-hashed}

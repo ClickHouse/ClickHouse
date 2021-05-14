@@ -42,7 +42,6 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
-
     if (check_config)
         context->getRemoteHostFilter().checkURL(Poco::URI(url));
 
@@ -87,6 +86,16 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     credentials.setPassword(other.credentials.getPassword());
 }
 
+BlockInputStreamPtr HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
+{
+    Poco::URI uri(url);
+    String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
+    auto in_ptr_wrapped
+        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
+    auto input_stream = context->getInputFormat(format, *in_ptr_wrapped, sample_block, max_block_size);
+    return std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(in_ptr_wrapped));
+}
+
 void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
 {
     if (update_time != std::chrono::system_clock::from_time_t(0))
@@ -109,10 +118,15 @@ BlockInputStreamPtr HTTPDictionarySource::loadAll()
     LOG_TRACE(log, "loadAll {}", toString());
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
-        0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
-    auto input_stream = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+        uri,
+        Poco::Net::HTTPRequest::HTTP_GET,
+        ReadWriteBufferFromHTTP::OutStreamCallback(),
+        timeouts,
+        0,
+        credentials,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        header_entries);
+    return createWrappedBuffer(std::move(in_ptr));
 }
 
 BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
@@ -121,10 +135,15 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
     getUpdateFieldAndDate(uri);
     LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
-        0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
-    auto input_stream = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+        uri,
+        Poco::Net::HTTPRequest::HTTP_GET,
+        ReadWriteBufferFromHTTP::OutStreamCallback(),
+        timeouts,
+        0,
+        credentials,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        header_entries);
+    return createWrappedBuffer(std::move(in_ptr));
 }
 
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -142,10 +161,15 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback, timeouts,
-        0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
-    auto input_stream = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+        uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        out_stream_callback,
+        timeouts,
+        0,
+        credentials,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        header_entries);
+    return createWrappedBuffer(std::move(in_ptr));
 }
 
 BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
@@ -163,10 +187,15 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, 
 
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback, timeouts,
-        0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
-    auto input_stream = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+        uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        out_stream_callback,
+        timeouts,
+        0,
+        credentials,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        header_entries);
+    return createWrappedBuffer(std::move(in_ptr));
 }
 
 bool HTTPDictionarySource::isModified() const
@@ -198,21 +227,19 @@ std::string HTTPDictionarySource::toString() const
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                 const Poco::Util::AbstractConfiguration & config,
-                                 const std::string & config_prefix,
-                                 Block & sample_block,
-                                 ContextPtr context,
-                                 const std::string & /* default_database */,
-                                 bool check_config) -> DictionarySourcePtr
-    {
+                                   const Poco::Util::AbstractConfiguration & config,
+                                   const std::string & config_prefix,
+                                   Block & sample_block,
+                                   ContextPtr context,
+                                   const std::string & /* default_database */,
+                                   bool check_config) -> DictionarySourcePtr {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `http` does not support attribute expressions");
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
         return std::make_unique<HTTPDictionarySource>(
-            dict_struct, config, config_prefix + ".http",
-            sample_block, context_local_copy, check_config);
+            dict_struct, config, config_prefix + ".http", sample_block, context_local_copy, check_config);
     };
     factory.registerSource("http", create_table_source);
 }
