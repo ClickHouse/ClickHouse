@@ -17,10 +17,11 @@ wait
 for i in $(seq 1 $N)
 do
    diff ${CURDIR}/01900_alter_race_condition_${i}.stdout ${CURDIR}/01900_alter_race_condition.reference > /dev/null 2>&1
-   rm -rf ${CURDIR}/01900_alter_race_condition_${i}.stdout
-   if [ $? -ne 0 ]; then
+   rc=$?
+   if [ $rc -ne 0 ]; then
       exitcode=1
    fi
+   rm -rf ${CURDIR}/01900_alter_race_condition_${i}.stdout
 done
 
 if [ $exitcode -ne 0 ]; then
