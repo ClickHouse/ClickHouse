@@ -154,7 +154,7 @@ public:
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context, const String &, const DisksMap &) override;
 
 private:
     bool tryReserve(UInt64 bytes);
