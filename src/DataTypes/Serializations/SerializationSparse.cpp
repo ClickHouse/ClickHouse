@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -53,8 +59,8 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
         return limit;
     }
 
-    /// TODO:
-    offsets.reserve(limit / 10);
+    /// Just try to guess number of offsets.
+    offsets.reserve(static_cast<size_t>(limit * IColumn::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION));
 
     bool first = true;
     size_t total_rows = state.num_trailing_defaults;
@@ -114,8 +120,8 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
 
 }
 
-SerializationSparse::SerializationSparse(const SerializationPtr & nested_serialization_)
-    : SerializationWrapper(nested_serialization_)
+SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
+    : nested(nested_)
 {
 }
 
@@ -124,7 +130,7 @@ void SerializationSparse::enumerateStreams(const StreamCallback & callback, Subs
     path.push_back(Substream::SparseOffsets);
     callback(path);
     path.back() = Substream::SparseElements;
-    nested_serialization->enumerateStreams(callback, path);
+    nested->enumerateStreams(callback, path);
     path.pop_back();
 }
 
@@ -133,7 +139,7 @@ void SerializationSparse::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
-    nested_serialization->serializeBinaryBulkStatePrefix(settings, state);
+    nested->serializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -165,12 +171,12 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
             const auto & values = column_sparse->getValuesColumn();
             size_t begin = column_sparse->getValueIndex(offsets_data[0]);
             size_t end = column_sparse->getValueIndex(offsets_data.back());
-            nested_serialization->serializeBinaryBulkWithMultipleStreams(values, begin, end - begin + 1, settings, state);
+            nested->serializeBinaryBulkWithMultipleStreams(values, begin, end - begin + 1, settings, state);
         }
         else
         {
             auto values = column.index(*offsets_column, 0);
-            nested_serialization->serializeBinaryBulkWithMultipleStreams(*values, 0, values->size(), settings, state);
+            nested->serializeBinaryBulkWithMultipleStreams(*values, 0, values->size(), settings, state);
         }
     }
 
@@ -182,7 +188,7 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
-    nested_serialization->serializeBinaryBulkStateSuffix(settings, state);
+    nested->serializeBinaryBulkStateSuffix(settings, state);
     settings.path.pop_back();
 }
 
@@ -193,7 +199,7 @@ void SerializationSparse::deserializeBinaryBulkStatePrefix(
     auto state_sparse = std::make_shared<DeserializeStateSparse>();
 
     settings.path.push_back(Substream::SparseElements);
-    nested_serialization->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested);
+    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested);
     settings.path.pop_back();
 
     state = std::move(state_sparse);
@@ -226,7 +232,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     size_t values_limit = offsets_data.size() - old_size;
 
     settings.path.back() = Substream::SparseElements;
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(values_column, values_limit, settings, state_sparse->nested, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(values_column, values_limit, settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
     if (offsets_data.size() + 1 != values_column->size())
@@ -235,6 +241,88 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
     column_sparse.insertManyDefaults(read_rows);
     column = std::move(mutable_column);
+}
+
+void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ostr) const
+{
+    nested->serializeBinary(field, ostr);
+}
+
+void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr) const
+{
+    nested->deserializeBinary(field, istr);
+}
+
+void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr);
+}
+
+void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeBinary' is not implemented for SerializationSparse");
+}
+
+void SerializationSparse::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextEscaped(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparse::deserializeTextEscaped(IColumn &, ReadBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextEscaped' is not implemented for SerializationSparse");
+}
+
+void SerializationSparse::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextQuoted(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparse::deserializeTextQuoted(IColumn &, ReadBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextQuoted' is not implemented for SerializationSparse");
+}
+
+void SerializationSparse::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextCSV(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparse::deserializeTextCSV(IColumn &, ReadBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextCSV' is not implemented for SerializationSparse");
+}
+
+void SerializationSparse::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeText(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparse::deserializeWholeText(IColumn &, ReadBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeWholeText' is not implemented for SerializationSparse");
+}
+
+void SerializationSparse::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextJSON(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparse::deserializeTextJSON(IColumn &, ReadBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextJSON' is not implemented for SerializationSparse");
+}
+
+void SerializationSparse::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextXML(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
 }

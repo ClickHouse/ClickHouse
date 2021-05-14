@@ -120,11 +120,17 @@ void NativeBlockOutputStream::write(const Block & block)
 
         writeStringBinary(type_name, ostr);
 
-        column.column = recursiveRemoveSparse(column.column);
-
-        /// TODO: add revision
-        auto serialization = column.type->getSerialization(*column.column);
-        writeIntBinary(serialization->getKind(), ostr);
+        SerializationPtr serialization;
+        if (client_revision < DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        {
+            serialization = column.type->getDefaultSerialization();
+            column.column = recursiveRemoveSparse(column.column);
+        }
+        else
+        {
+            serialization = column.type->getSerialization(*column.column);
+            serialization->getKinds().writeBinary(ostr);
+        }
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.

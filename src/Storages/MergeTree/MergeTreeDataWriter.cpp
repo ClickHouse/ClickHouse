@@ -400,7 +400,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     const auto & data_settings = data.getSettings();
 
-    SerializationInfo serialization_info(data_settings->ratio_for_sparse_serialization);
+    SerializationInfo serialization_info(data_settings->ratio_of_defaults_for_sparse_serialization);
     serialization_info.add(block);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();

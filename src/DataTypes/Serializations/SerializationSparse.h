@@ -1,11 +1,11 @@
 #pragma once
 
-#include <DataTypes/Serializations/SerializationWrapper.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
 
-class SerializationSparse final : public SerializationWrapper
+class SerializationSparse final : public ISerialization
 {
 public:
     SerializationSparse(const SerializationPtr & nested_);
@@ -40,8 +40,31 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
-    // void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
 
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
+private:
+    SerializationPtr nested;
 };
 
 }

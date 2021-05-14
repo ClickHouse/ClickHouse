@@ -318,7 +318,6 @@ SerializationPtr DataTypeTuple::getSubcolumnSerialization(
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
-
 SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
@@ -350,21 +349,35 @@ SerializationPtr DataTypeTuple::getSerialization(const String & column_name, con
     for (size_t i = 0; i < elems.size(); ++i)
     {
         auto subcolumn_name = Nested::concatenateName(column_name, names[i]);
+        auto serialization = elems[i]->getSerialization(subcolumn_name, info);
+        serializations[i] = std::make_shared<SerializationTupleElement>(serialization, names[i]);
+    }
+
+    return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
+}
+
+SerializationPtr DataTypeTuple::getSerialization(const ISerialization::Kinds & kinds) const
+{
+    if (kinds.subcolumns.empty())
+        return doGetDefaultSerialization();
+
+    if (kinds.subcolumns.size() != elems.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong nmber of kinds of serializations for subcolumns. "
+        "Expected: {}, got {}", elems.size(), kinds.subcolumns.size());
+
+    SerializationTuple::ElementSerializations serializations(elems.size());
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
         SerializationPtr serialization;
-        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(elems[i].get()))
+        if (const auto * elem_kinds = std::get_if<ISerialization::Kinds>(&kinds.subcolumns[i]))
         {
-            serialization = type_tuple->getSerialization(subcolumn_name, info);
+            serialization = elems[i]->getSerialization(*elem_kinds);
         }
         else
         {
-            ISerialization::Settings settings =
-            {
-                .num_rows = info.getNumberOfRows(),
-                .num_default_rows = info.getNumberOfDefaultRows(subcolumn_name),
-                .ratio_for_sparse_serialization = info.getRatioForSparseSerialization()
-            };
-
-            serialization = elems[i]->getSerialization(settings);
+            auto elem_kind = std::get<ISerialization::Kind>(kinds.subcolumns[i]);
+            serialization = elem_kind == ISerialization::Kind::SPARSE
+                ? elems[i]->getSparseSerialization() : getDefaultSerialization();
         }
 
         serializations[i] = std::make_shared<SerializationTupleElement>(serialization, names[i]);

@@ -78,8 +78,6 @@ constexpr auto KEY_VERSION = "version";
 
 }
 
-/// TODO: add all fields.
-
 void SerializationInfo::fromJSON(const String & json_str)
 {
     Poco::JSON::Parser parser;
