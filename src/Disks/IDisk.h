@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Core/Defines.h>
 #include <common/types.h>
 #include <Common/CurrentMetrics.h>
@@ -232,7 +233,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) { }
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr, const String &, const DisksMap &) { }
 
 protected:
     friend class DiskDecorator;
