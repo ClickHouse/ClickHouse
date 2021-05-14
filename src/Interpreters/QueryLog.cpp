@@ -63,6 +63,8 @@ Block QueryLogElement::createBlock()
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "tables"},
         {std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "columns"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "projections"},
         {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
         {std::make_shared<DataTypeString>(),                                  "stack_trace"},
@@ -144,6 +146,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
@@ -160,6 +163,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_databases, column_databases);
         fill_column(query_tables, column_tables);
         fill_column(query_columns, column_columns);
+        fill_column(query_projections, column_projections);
     }
 
     columns[i++]->insert(exception_code);

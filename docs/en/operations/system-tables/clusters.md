@@ -4,63 +4,68 @@ Contains information about clusters available in the config file and the servers
 
 Columns:
 
--   `cluster` (String) — The cluster name.
--   `shard_num` (UInt32) — The shard number in the cluster, starting from 1.
--   `shard_weight` (UInt32) — The relative weight of the shard when writing data.
--   `replica_num` (UInt32) — The replica number in the shard, starting from 1.
--   `host_name` (String) — The host name, as specified in the config.
--   `host_address` (String) — The host IP address obtained from DNS.
--   `port` (UInt16) — The port to use for connecting to the server.
--   `user` (String) — The name of the user for connecting to the server.
--   `errors_count` (UInt32) - number of times this host failed to reach replica.
--   `estimated_recovery_time` (UInt32) - seconds left until replica error count is zeroed and it is considered to be back to normal.
-
-Please note that `errors_count` is updated once per query to the cluster, but `estimated_recovery_time` is recalculated on-demand. So there could be a case of non-zero `errors_count` and zero `estimated_recovery_time`, that next query will zero `errors_count` and try to use replica as if it has no errors.
-
-**See also**
-
--   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
--   [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+-   `cluster` ([String](../../sql-reference/data-types/string.md)) — The cluster name.
+-   `shard_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The shard number in the cluster, starting from 1.
+-   `shard_weight` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The relative weight of the shard when writing data.
+-   `replica_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The replica number in the shard, starting from 1.
+-   `host_name` ([String](../../sql-reference/data-types/string.md)) — The host name, as specified in the config.
+-   `host_address` ([String](../../sql-reference/data-types/string.md)) — The host IP address obtained from DNS.
+-   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The port to use for connecting to the server.
+-   `is_local` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the host is local.
+-   `user` ([String](../../sql-reference/data-types/string.md)) — The name of the user for connecting to the server.
+-   `default_database` ([String](../../sql-reference/data-types/string.md)) — The default database name.
+-   `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of times this host failed to reach replica.
+-   `slowdowns_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of slowdowns that led to changing replica when establishing a connection with hedged requests.
+-   `estimated_recovery_time` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Seconds remaining until the replica error count is zeroed and it is considered to be back to normal.
 
 **Example**
 
+Query:
+
 ```sql
-:) SELECT * FROM system.clusters LIMIT 2 FORMAT Vertical;
+SELECT * FROM system.clusters LIMIT 2 FORMAT Vertical;
 ```
+
+Result:
 
 ```text
 Row 1:
 ──────
-cluster:                 test_cluster
+cluster:                 test_cluster_two_shards
 shard_num:               1
 shard_weight:            1
 replica_num:             1
-host_name:               clickhouse01
-host_address:            172.23.0.11
+host_name:               127.0.0.1
+host_address:            127.0.0.1
 port:                    9000
 is_local:                1
 user:                    default
-default_database:        
+default_database:
 errors_count:            0
+slowdowns_count:         0
 estimated_recovery_time: 0
 
 Row 2:
 ──────
-cluster:                 test_cluster
-shard_num:               1
+cluster:                 test_cluster_two_shards
+shard_num:               2
 shard_weight:            1
-replica_num:             2
-host_name:               clickhouse02
-host_address:            172.23.0.12
+replica_num:             1
+host_name:               127.0.0.2
+host_address:            127.0.0.2
 port:                    9000
 is_local:                0
 user:                    default
-default_database:        
+default_database:
 errors_count:            0
+slowdowns_count:         0
 estimated_recovery_time: 0
-
-2 rows in set. Elapsed: 0.002 sec. 
 ```
+
+**See Also**
+
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
+-   [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/clusters) <!--hide-->
