@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/UnicodeBar.h>
-#include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 
 

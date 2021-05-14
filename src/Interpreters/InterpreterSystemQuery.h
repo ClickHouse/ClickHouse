@@ -52,6 +52,7 @@ private:
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
     void flushDistributed(ASTSystemQuery & query);
+    void restartDisk(String & name);
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

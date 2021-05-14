@@ -72,16 +72,6 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
-            "build-type": "",
-            "sanitizer": "",
-            "package-type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": false
-        },
-        {
             "compiler": "clang-11",
             "build-type": "debug",
             "sanitizer": "",
@@ -92,7 +82,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-9",
+            "compiler": "gcc-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -359,7 +349,7 @@
         },
         "Functional stateless tests (unbundled)": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",

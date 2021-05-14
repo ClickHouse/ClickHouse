@@ -541,7 +541,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 }
 
 
-Poco::Timespan Cluster::saturate(const Poco::Timespan & v, const Poco::Timespan & limit)
+Poco::Timespan Cluster::saturate(Poco::Timespan v, Poco::Timespan limit)
 {
     if (limit.totalMicroseconds() == 0)
         return v;

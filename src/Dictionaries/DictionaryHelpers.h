@@ -243,13 +243,19 @@ public:
         {
             return ColumnType::create();
         }
-        if constexpr (IsDecimalNumber<DictionaryAttributeType>)
+        else if constexpr (std::is_same_v<DictionaryAttributeType, UUID>)
+        {
+            return ColumnType::create(size);
+        }
+        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
         {
             auto scale = getDecimalScale(*dictionary_attribute.nested_type);
             return ColumnType::create(size, scale);
         }
-        else if constexpr (IsNumber<DictionaryAttributeType>)
+        else if constexpr (is_arithmetic_v<DictionaryAttributeType>)
+        {
             return ColumnType::create(size);
+        }
         else
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
     }
@@ -437,23 +443,35 @@ private:
   */
 template <DictionaryKeyType dictionary_key_type>
 void mergeBlockWithStream(
-    size_t key_column_size [[maybe_unused]],
-    Block & block_to_update [[maybe_unused]],
-    BlockInputStreamPtr & stream [[maybe_unused]])
+    size_t key_columns_size,
+    Block & block_to_update,
+    BlockInputStreamPtr & stream)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by updatePreviousyLoadedBlockWithStream");
 
     Columns saved_block_key_columns;
-    saved_block_key_columns.reserve(key_column_size);
+    saved_block_key_columns.reserve(key_columns_size);
 
     /// Split into keys columns and attribute columns
-    for (size_t i = 0; i < key_column_size; ++i)
+    for (size_t i = 0; i < key_columns_size; ++i)
         saved_block_key_columns.emplace_back(block_to_update.safeGetByPosition(i).column);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> saved_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
     auto saved_keys_extracted_from_block = saved_keys_extractor.extractAllKeys();
+
+    /**
+     * We create filter with our block to update size, because we want to filter out values that have duplicate keys
+     * if they appear in blocks that we fetch from stream.
+     * But first we try to filter out duplicate keys from existing block.
+     * For example if we have block with keys 1, 2, 2, 2, 3, 3
+     * Our filter will have [1, 0, 0, 1, 0, 1] after first stage.
+     * We also update saved_key_to_index hash map for keys to point to their latest indexes.
+     * For example if in blocks from stream we will get keys [4, 2, 3]
+     * Our filter will be [1, 0, 0, 0, 0, 0].
+     * After reading all blocks from stream we filter our duplicate keys from block_to_update and insert loaded columns.
+     */
 
     IColumn::Filter filter(saved_keys_extracted_from_block.size(), true);
 
@@ -483,10 +501,10 @@ void mergeBlockWithStream(
     while (Block block = stream->read())
     {
         Columns block_key_columns;
-        block_key_columns.reserve(key_column_size);
+        block_key_columns.reserve(key_columns_size);
 
         /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < key_column_size; ++i)
+        for (size_t i = 0; i < key_columns_size; ++i)
             block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
         DictionaryKeysExtractor<dictionary_key_type> update_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
@@ -551,7 +569,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
-            TypeName<T>::get());
+            TypeName<T>);
     }
 
     if (is_const_column)
