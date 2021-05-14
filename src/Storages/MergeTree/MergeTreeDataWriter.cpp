@@ -516,12 +516,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
+    SerializationInfo serialization_info(data.getSettings()->ratio_of_defaults_for_sparse_serialization);
+    serialization_info.add(block);
+
     MergedBlockOutputStream out(
         new_data_part,
         metadata_snapshot,
         columns,
         {},
-        compression_codec);
+        compression_codec,
+        serialization_info);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
@@ -560,6 +564,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const IMergeTreeDataPart * parent_part,
     size_t block_num)
 {
+
+
+
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
