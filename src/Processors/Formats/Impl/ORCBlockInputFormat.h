@@ -30,6 +30,9 @@ private:
 
     int stripe_current = 0;
 
+    // indices of columns to read from ORC file
+    std::vector<int> include_indices;
+
     void prepareReader();
 };
 
