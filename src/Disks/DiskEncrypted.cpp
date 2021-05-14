@@ -5,6 +5,12 @@
 #include "Disks/DiskFactory.h"
 #include "DiskEncrypted.h"
 
+#include <Functions/FileEncryption.h>
+#include <IO/ReadEncryptedBuffer.h>
+#include <IO/WriteEncryptedBuffer.h>
+
+#include <limits>
+
 namespace DB
 {
 
@@ -14,6 +20,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
+constexpr size_t kIVSize = 128 / CHAR_BIT;
 using DiskEncryptedPtr = std::shared_ptr<DiskEncrypted>;
 
 class DiskEncryptedReservation : public IReservation
@@ -43,7 +50,7 @@ private:
 
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 {
-    auto reservation = wrapped_disk->reserve(bytes);
+    auto reservation = delegate->reserve(bytes);
     if (!reservation)
         return {};
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
@@ -58,7 +65,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     MMappedFileCache * mmap_cache) const
 {
     auto wrapped_path = wrappedPath(path);
-    return wrapped_disk->readFile(wrapped_path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    auto buffer = delegate->readFile(wrapped_path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    InitVector iv = GetRandomIV(kIVSize);
+    size_t offset = 0;
+    if (delegate->getFileSize(wrapped_path))
+    {
+        iv = ReadIV(kIVSize, *buffer);
+        offset = kIVSize;
+    }
+    return std::make_unique<ReadEncryptedBuffer>(buf_size, std::move(buffer), EVP_aes_128_gcm(), iv, key, offset);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(
@@ -67,19 +82,60 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(
     WriteMode mode)
 {
     auto wrapped_path = wrappedPath(path);
-    return wrapped_disk->writeFile(wrapped_path, buf_size, mode);
+    InitVector iv = GetRandomIV(kIVSize);
+    try {
+        auto read_buffer = delegate->readFile(wrapped_path, kIVSize);
+        iv = ReadIV(kIVSize, *read_buffer);
+    }
+    catch ( ... ) { }
+    auto buffer = delegate->writeFile(wrapped_path, buf_size, mode);
+    return std::make_unique<WriteEncryptedBuffer>(buf_size, std::move(buffer), EVP_aes_128_gcm(), iv, key,
+                                                  mode == WriteMode::Append ? delegate->getFileSize(wrapped_path) : 0);
+}
+
+
+size_t DiskEncrypted::getFileSize(const String & path) const
+{
+    auto wrapped_path = wrappedPath(path);
+    size_t size = delegate->getFileSize(wrapped_path);
+    return size > kIVSize ? (size - kIVSize) : 0;
 }
 
 void DiskEncrypted::truncateFile(const String & path, size_t size)
 {
     auto wrapped_path = wrappedPath(path);
-    wrapped_disk->truncateFile(wrapped_path, size);
+    delegate->truncateFile(wrapped_path, size ? (size + kIVSize) : 0);
 }
 
 SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const
 {
     auto wrapped_path = wrappedPath(path);
-    return wrapped_disk->getDirectorySyncGuard(wrapped_path);
+    return delegate->getDirectorySyncGuard(wrapped_path);
+}
+
+void DiskEncrypted::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & config,
+    ContextConstPtr /*context*/,
+    const String & config_prefix,
+    const DisksMap & map)
+{
+    String wrapped_disk_name = config.getString(config_prefix + ".disk", "");
+    if (wrapped_disk_name.empty())
+        throw Exception("The wrapped disk name can not be empty. An encrypted disk is a wrapper over another disk. "
+                        "Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+
+    key = config.getString(config_prefix + ".key", "");
+    if (key.empty())
+        throw Exception("Encrypted disk key can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+
+    auto wrapped_disk = map.find(wrapped_disk_name);
+    if (wrapped_disk == map.end())
+        throw Exception("The wrapped disk must have been announced earlier. No disk with name " + wrapped_disk_name + ". Disk " + name,
+                        ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+    delegate = wrapped_disk->second;
+
+    disk_path = config.getString(config_prefix + ".path", "");
+    initialize();
 }
 
 void registerDiskEncrypted(DiskFactory & factory)
