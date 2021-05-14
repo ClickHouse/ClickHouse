@@ -41,12 +41,11 @@ $ clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNIO
 Результат:
 
 ```text
-SELECT 1
-;
-
-SELECT 1
-UNION ALL
+SELECT *
+FROM
 (
+    SELECT 1 AS x
+    UNION ALL
     SELECT 1
     UNION DISTINCT
     SELECT 3
