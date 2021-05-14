@@ -69,6 +69,7 @@ INSTANTIATE(Decimal128)
 INSTANTIATE(Decimal256)
 INSTANTIATE(DateTime64)
 INSTANTIATE(char *)
+INSTANTIATE(UUID)
 
 #undef INSTANTIATE
 
@@ -251,14 +252,18 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column)
     column = typeid_cast<const ColumnFunction *>(column_function)->reduce();
 }
 
-bool checkArgumentsForColumnFunction(const ColumnsWithTypeAndName & arguments)
+
+int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments)
 {
-    for (const auto & arg : arguments)
+    int last_short_circuit_argument_index = -1;
+    for (size_t i = 0; i != arguments.size(); ++i)
     {
-        if (checkAndGetColumn<ColumnFunction>(*arg.column))
-            return true;
+        const auto * column_func = checkAndGetColumn<ColumnFunction>(*arguments[i].column);
+        if (column_func && column_func->isShortCircuitArgument())
+            last_short_circuit_argument_index = i;
     }
-    return false;
+
+    return last_short_circuit_argument_index;
 }
 
 }

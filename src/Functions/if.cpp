@@ -923,11 +923,12 @@ public:
 
     void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override
     {
-        if (!checkArgumentsForColumnFunction(arguments))
+        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
+        if (last_short_circuit_argument_index < 0)
             return;
 
         executeColumnIfNeeded(arguments[0]);
-        if (isColumnFunction(*arguments[1].column) || isColumnFunction(*arguments[2].column))
+        if (last_short_circuit_argument_index > 0)
         {
             IColumn::Filter mask;
             getMaskFromColumn(arguments[0].column, mask);

@@ -67,6 +67,13 @@ public:
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
 
+    enum class LazyExecution
+    {
+        DISABLED,
+        ENABLED,
+        FORCE_ENABLED,
+    };
+
     struct Node
     {
         NodeRawConstPtrs children;
@@ -90,9 +97,9 @@ public:
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
 
-        void toTree(JSONBuilder::JSONMap & map) const;
+        LazyExecution lazy_execution = LazyExecution::DISABLED;
 
-        bool is_lazy_executed = false;
+        void toTree(JSONBuilder::JSONMap & map) const;
     };
 
     /// NOTE: std::list is an implementation detail.
