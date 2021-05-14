@@ -134,6 +134,46 @@ Result:
 └───────────────────┘
 ```
 
+## timeZoneOffset {#timezoneoffset}
+
+Returns a timezone offset in seconds from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time). The function takes into account [daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes at the specified date and time.
+[IANA timezone database](https://www.iana.org/time-zones) is used to calculate the offset.
+
+**Syntax**
+
+``` sql
+timeZoneOffset(value)
+```
+
+Alias: `timezoneOffset`.
+
+**Arguments**
+
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+
+**Returned value**
+
+-   Offset from UTC in seconds. 
+
+Type: [Int32](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDateTime('2021-04-21 10:20:30', 'America/New_York') AS Time, toTypeName(Time) AS Type,
+       timeZoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
+```
+
+Result:
+
+``` text
+┌────────────────Time─┬─Type─────────────────────────┬─Offset_in_seconds─┬─Offset_in_hours─┐
+│ 2021-04-21 10:20:30 │ DateTime('America/New_York') │            -14400 │              -4 │
+└─────────────────────┴──────────────────────────────┴───────────────────┴─────────────────┘
+```
+
 ## toYear {#toyear}
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).

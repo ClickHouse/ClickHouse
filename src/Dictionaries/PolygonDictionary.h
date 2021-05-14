@@ -63,6 +63,14 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
+
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return attributes.empty() ? 0 : attributes.front()->size(); }
@@ -141,6 +149,7 @@ private:
 
     size_t bytes_allocated = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 
     /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
      *  corresponding to the row in which any other attributes for this entry are located.

@@ -197,7 +197,10 @@ void AsynchronousMetrics::update()
 #if USE_EMBEDDED_COMPILER
     {
         if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+        {
+            new_values["CompiledExpressionCacheBytes"] = compiled_expression_cache->weight();
             new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
+        }
     }
 #endif
 

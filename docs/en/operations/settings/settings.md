@@ -143,6 +143,16 @@ Possible values:
 
 Default value: 0.
 
+## http_max_uri_size {#http-max-uri-size}
+
+Sets the maximum URI length of an HTTP request.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: 1048576.
+
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
@@ -2863,6 +2873,50 @@ Possible values:
 -   1 — the query shows the general table check status.
 
 Default value: `0`.
+
+## prefer_column_name_to_alias {#prefer-column-name-to-alias}
+
+Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](../../sql-reference/syntax.md#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
+
+Possible values:
+
+- 0 — The column name is substituted with the alias.
+- 1 — The column name is not substituted with the alias. 
+
+Default value: `0`.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET prefer_column_name_to_alias = 0;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Result:
+
+```text
+Received exception from server (version 21.5.1):
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
+Query:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Result:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
 
 ## limit {#limit}
 
