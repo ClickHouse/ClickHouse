@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+    extern const int CANNOT_DROP_SYSTEM_TYPE;
 }
 
 
@@ -155,7 +156,7 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerUserDefinedDataType(const String & name, UserDefinedTypeCreator creator, const ASTCreateDataTypeQuery & createDataTypeQuery, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerUserDefinedDataType(const String & name, UserDefinedTypeCreator creator, const ASTCreateDataTypeQuery & createDataTypeQuery)
 {
     registerDataType(name, [this, creator, createDataTypeQuery](const ASTPtr &)
     {
@@ -164,7 +165,28 @@ void DataTypeFactory::registerUserDefinedDataType(const String & name, UserDefin
         res->setTypeName(createDataTypeQuery.type_name);
 
         return res;
-    }, case_sensitiveness);
+    }, CaseSensitiveness::CaseSensitive);
+    user_defined_data_types.insert(name);
+}
+
+void DataTypeFactory::unregisterUserDefinedDataType(const String & name)
+{
+    if (data_types.contains(name))
+    {
+        if (user_defined_data_types.contains(name))
+        {
+            data_types.erase(name);
+            user_defined_data_types.erase(name);
+            return;
+        } else
+            throw Exception("System types cannot be dropped", ErrorCodes::CANNOT_DROP_SYSTEM_TYPE);
+    }
+
+    auto hints = this->getHints(name);
+    if (!hints.empty())
+        throw Exception("Unknown data type family: " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_TYPE);
+    else
+        throw Exception("Unknown data type family: " + name, ErrorCodes::UNKNOWN_TYPE);
 }
 
 const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const

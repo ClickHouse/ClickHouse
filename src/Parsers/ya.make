@@ -25,6 +25,7 @@ SRCS(
     ASTDictionary.cpp
     ASTDictionaryAttributeDeclaration.cpp
     ASTDropAccessEntityQuery.cpp
+    ASTDropDataTypeQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
     ASTFunction.cpp
@@ -101,6 +102,7 @@ SRCS(
     ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
+    ParserDropDataTypeQuery.cpp
     ParserDropQuery.cpp
     ParserExplainQuery.cpp
     ParserExternalDDLQuery.cpp

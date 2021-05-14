@@ -55,7 +55,7 @@ SRCS(
     ExpressionAnalyzer.cpp
     ExternalDictionariesLoader.cpp
     ExternalLoader.cpp
-    ExternalLoaderDatabaseConfigRepository.cpp
+    ExternalLoaderDictionaryStorageConfigRepository.cpp
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
@@ -80,6 +80,7 @@ SRCS(
     InterpreterCreateUserQuery.cpp
     InterpreterDescribeQuery.cpp
     InterpreterDropAccessEntityQuery.cpp
+    InterpreterDropDataTypeQuery.cpp
     InterpreterDropQuery.cpp
     InterpreterExistsQuery.cpp
     InterpreterExplainQuery.cpp

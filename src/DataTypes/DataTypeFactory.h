@@ -52,13 +52,16 @@ public:
     void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     /// Register a user defined data type
-    void registerUserDefinedDataType(const String & name, UserDefinedTypeCreator creator, const ASTCreateDataTypeQuery & createDataTypeQuery, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerUserDefinedDataType(const String & name, UserDefinedTypeCreator creator, const ASTCreateDataTypeQuery & createDataTypeQuery);
+
+    void unregisterUserDefinedDataType(const String & name);
 
 private:
     const Value & findCreatorByName(const String & family_name) const;
 
 private:
     DataTypesDictionary data_types;
+    std::unordered_set<String> user_defined_data_types;
 
     /// Case insensitive data types will be additionally added here with lowercased name.
     DataTypesDictionary case_insensitive_data_types;
