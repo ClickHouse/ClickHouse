@@ -255,7 +255,7 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
 
 
 IMergeTreeDataPart::IMergeTreeDataPart(
-    MergeTreeData & storage_,
+    const MergeTreeData & storage_,
     const String & name_,
     const VolumePtr & volume_,
     const std::optional<String> & relative_path_,
@@ -267,6 +267,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , volume(parent_part_ ? parent_part_->volume : volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
+    , serialization_info(storage_.getSettings()->ratio_of_defaults_for_sparse_serialization)
     , part_type(part_type_)
     , parent_part(parent_part_)
 {
