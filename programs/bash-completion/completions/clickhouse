@@ -23,19 +23,9 @@ function _complete_for_clickhouse_entrypoint_bin()
     fi
     util="${words[1]}"
 
-    case "$prev" in
-        -C|--config-file|--config)
-            return
-            ;;
-        # Argh...  This looks like a bash bug...
-        # Redirections are passed to the completion function
-        # although it is managed by the shell directly...
-        '<'|'>'|'>>'|[12]'>'|[12]'>>')
-            return
-            ;;
-    esac
-
-    COMPREPLY=( $(compgen -W "$(_clickhouse_get_options "$cmd" "$util")" -- "$cur") )
+    if _complete_for_clickhouse_generic_bin_impl "$prev"; then
+        COMPREPLY=( $(compgen -W "$(_clickhouse_get_options "$cmd" "$util")" -- "$cur") )
+    fi
 
     return 0
 }

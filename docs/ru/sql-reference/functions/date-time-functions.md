@@ -23,13 +23,53 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
+## timeZone {#timezone}
+
+Возвращает часовой пояс сервера.
+
+**Синтаксис** 
+
+``` sql
+timeZone()
+```
+
+Псевдоним: `timezone`. 
+
+**Возвращаемое значение**
+
+-   Часовой пояс. 
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
 ## toTimeZone {#totimezone}
 
-Переводит дату или дату-с-временем в указанный часовой пояс. Часовой пояс (таймзона) это атрибут типов Date/DateTime, внутреннее значение (количество секунд) поля таблицы или колонки результата не изменяется, изменяется тип поля и автоматически его текстовое отображение.
+Переводит дату или дату с временем в указанный часовой пояс. Часовой пояс - это атрибут типов `Date` и `DateTime`. Внутреннее значение (количество секунд) поля таблицы или результирующего столбца не изменяется, изменяется тип поля и, соответственно, его текстовое отображение. 
+
+**Синтаксис** 
+
+``` sql
+toTimezone(value, timezone)
+```
+
+Псевдоним: `toTimezone`.
+
+**Аргументы** 
+
+-   `value` — время или дата с временем. [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — часовой пояс для возвращаемого значения. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Дата с временем. 
+
+Тип: [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Пример**
+
+Запрос:
 
 ```sql
-SELECT
-    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
     toTypeName(time_utc) AS type_utc,
     toInt32(time_utc) AS int32utc,
     toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
@@ -40,6 +80,7 @@ SELECT
     toInt32(time_samoa) AS int32samoa
 FORMAT Vertical;
 ```
+Результат:
 
 ```text
 Row 1:
@@ -56,6 +97,82 @@ int32samoa: 1546300800
 ```
 
 `toTimeZone(time_utc, 'Asia/Yekaterinburg')` изменяет тип `DateTime('UTC')` в `DateTime('Asia/Yekaterinburg')`. Значение (unix-время) 1546300800 остается неизменным, но текстовое отображение (результат функции toString()) меняется `time_utc:   2019-01-01 00:00:00` в `time_yekat: 2019-01-01 05:00:00`.
+
+## timeZoneOf {#timezoneof}
+
+Возвращает название часового пояса для значений типа [DateTime](../../sql-reference/data-types/datetime.md) и [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Синтаксис** 
+
+``` sql
+timeZoneOf(value)
+```
+
+Псевдоним: `timezoneOf`. 
+
+**Аргументы**
+
+-   `value` — Дата с временем. [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md). 
+
+**Возвращаемое значение**
+
+-   Название часового пояса. 
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+``` sql
+SELECT timezoneOf(now());
+```
+
+Результат:
+``` text
+┌─timezoneOf(now())─┐
+│ Etc/UTC           │
+└───────────────────┘
+```
+
+## timeZoneOffset {#timezoneoffset}
+
+Возвращает смещение часового пояса в секундах от [UTC](https://ru.wikipedia.org/wiki/Всемирное_координированное_время). Функция учитывает [летнее время](https://ru.wikipedia.org/wiki/Летнее_время) и исторические изменения часовых поясов, которые действовали на указанную дату.
+Для вычисления смещения используется информация из [базы данных IANA](https://www.iana.org/time-zones).
+
+**Синтаксис**
+
+``` sql
+timeZoneOffset(value)
+```
+
+Псевдоним: `timezoneOffset`. 
+
+**Аргументы**
+
+-   `value` — Дата с временем. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+
+**Возвращаемое значение**
+
+-   Смещение в секундах от UTC. 
+
+Тип: [Int32](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDateTime('2021-04-21 10:20:30', 'Europe/Moscow') AS Time, toTypeName(Time) AS Type,
+       timeZoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
+```
+
+Результат:
+
+``` text
+┌────────────────Time─┬─Type──────────────────────┬─Offset_in_seconds─┬─Offset_in_hours─┐
+│ 2021-04-21 10:20:30 │ DateTime('Europe/Moscow') │             10800 │               3 │
+└─────────────────────┴───────────────────────────┴───────────────────┴─────────────────┘
+```
 
 ## toYear {#toyear}
 
@@ -943,4 +1060,3 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
 ```
-

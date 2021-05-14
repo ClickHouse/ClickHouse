@@ -52,7 +52,7 @@ public:
     Cluster & operator=(const Cluster &) = delete;
 
     /// is used to set a limit on the size of the timeout
-    static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
+    static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
 public:
     using SlotToShard = std::vector<UInt64>;

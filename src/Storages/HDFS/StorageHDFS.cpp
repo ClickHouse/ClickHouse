@@ -122,11 +122,10 @@ public:
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
-                auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
+                read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
                 auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
-                auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
-                reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+                reader = std::make_shared<InputStreamFromInputFormat>(input_format);
                 reader->readPrefix();
             }
 
@@ -156,10 +155,12 @@ public:
 
             reader->readSuffix();
             reader.reset();
+            read_buf.reset();
         }
     }
 
 private:
+    std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
     SourcesInfoPtr source_info;
     String uri;
