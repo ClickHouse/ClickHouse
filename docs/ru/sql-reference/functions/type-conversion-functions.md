@@ -440,7 +440,7 @@ reinterpret(x, type)
 
 **Возвращаемое значение**
 
--   Конечный тип данных.
+-   Значение конечного типа данных.
 
 **Примеры**
 
@@ -482,7 +482,7 @@ CAST(x, T)
 
 **Возвращаемое значение**
 
--   Конечный тип данных.
+- Значение конечного типа данных.
 
 **Примеры**
 
@@ -894,7 +894,7 @@ AS parseDateTimeBestEffortUS;
 ## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
 ## parseDateTime32BestEffortOrZero {#parsedatetime32besteffortorzero}
 
-Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает нулевую дату или нулевую дату и время в случае, если получает формат даты, который не может быть обработан.
+Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает нулевое значение, если формат даты не может быть обработан.
 
 ## parseDateTimeBestEffortUSOrNull {#parsedatetimebesteffortusornull}
 
@@ -1116,11 +1116,11 @@ FORMAT PrettyCompactMonoBlock;
 
 ## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
 
-Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL` в случае, если встречает формат даты, который не может обработать.
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL`, если формат даты не может быть обработан.
 
 ## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
 
-Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает нулевую дату и время в случае, если встречает формат даты, который не может обработать.
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
 
 ## toLowCardinality {#tolowcardinality}
 
