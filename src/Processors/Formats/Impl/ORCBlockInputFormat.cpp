@@ -42,7 +42,7 @@ Chunk ORCBlockInputFormat::generate()
         return res;
 
     std::shared_ptr<arrow::RecordBatch> batch_result;
-    arrow::Status batch_status = file_reader->ReadStripe(stripe_current, &batch_result);
+    arrow::Status batch_status = file_reader->ReadStripe(stripe_current, include_indices, &batch_result);
     if (!batch_status.ok())
         throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
                                "Error while reading batch of ORC data: {}", batch_status.ToString());
@@ -63,7 +63,16 @@ void ORCBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 
     file_reader.reset();
+    include_indices.clear();
     stripe_current = 0;
+}
+
+size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
+{
+    if (type->id() == arrow::Type::LIST)
+        return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type()) + 1;
+
+    return 1;
 }
 
 void ORCBlockInputFormat::prepareReader()
@@ -71,6 +80,22 @@ void ORCBlockInputFormat::prepareReader()
     THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
     stripe_total = file_reader->NumberOfStripes();
     stripe_current = 0;
+
+    std::shared_ptr<arrow::Schema> schema;
+    THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
+
+    int index = 0;
+    for (int i = 0; i < schema->num_fields(); ++i)
+    {
+        if (getPort().getHeader().has(schema->field(i)->name()))
+        {
+            /// LIST type require 2 indices, so we should recursively
+            /// count the number of indices we need for this type.
+            int indexes_count = countIndicesForType(schema->field(i)->type());
+            for (int j = 0; j != indexes_count; ++j)
+                include_indices.push_back(index++);
+        }
+    }
 }
 
 void registerInputFormatProcessorORC(FormatFactory &factory)
