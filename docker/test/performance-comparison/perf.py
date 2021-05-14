@@ -81,7 +81,10 @@ def substitute_parameters(query_templates, other_templates = []):
     query_results = []
     other_results = [[]] * (len(other_templates))
     for i, q in enumerate(query_templates):
-        keys = set(n for _, n, _, _ in string.Formatter().parse(q) if n)
+        # We need stable order of keys here, so that the order of substitutions
+        # is always the same, and the query indexes are consistent across test
+        # runs.
+        keys = sorted(set(n for _, n, _, _ in string.Formatter().parse(q) if n))
         values = [available_parameters[k] for k in keys]
         combos = itertools.product(*values)
         for c in combos:

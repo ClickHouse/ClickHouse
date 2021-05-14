@@ -213,10 +213,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt16::create();
             column->getData().resize(limit);
-
-            for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);
-
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt16), rng);
             return column;
         }
         case TypeIndex::UInt32: [[fallthrough]];
@@ -234,12 +231,26 @@ ColumnPtr fillColumnWithRandomData(
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt64), rng);
             return column;
         }
-        case TypeIndex::UInt128: [[fallthrough]];
-        case TypeIndex::UUID:
+        case TypeIndex::UInt128:
         {
             auto column = ColumnUInt128::create();
             column->getData().resize(limit);
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt128), rng);
+            return column;
+        }
+        case TypeIndex::UInt256:
+        {
+            auto column = ColumnUInt256::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt256), rng);
+            return column;
+        }
+        case TypeIndex::UUID:
+        {
+            auto column = ColumnUUID::create();
+            column->getData().resize(limit);
+            /// NOTE This is slightly incorrect as random UUIDs should have fixed version 4.
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UUID), rng);
             return column;
         }
         case TypeIndex::Int8:
@@ -268,6 +279,20 @@ ColumnPtr fillColumnWithRandomData(
             auto column = ColumnInt64::create();
             column->getData().resize(limit);
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int64), rng);
+            return column;
+        }
+        case TypeIndex::Int128:
+        {
+            auto column = ColumnInt128::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int128), rng);
+            return column;
+        }
+        case TypeIndex::Int256:
+        {
+            auto column = ColumnInt256::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int256), rng);
             return column;
         }
         case TypeIndex::Float32:
@@ -306,6 +331,14 @@ ColumnPtr fillColumnWithRandomData(
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal128> &>(*column);
             column_concrete.getData().resize(limit);
             fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal128), rng);
+            return column;
+        }
+        case TypeIndex::Decimal256:
+        {
+            auto column = type->createColumn();
+            auto & column_concrete = typeid_cast<ColumnDecimal<Decimal256> &>(*column);
+            column_concrete.getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal256), rng);
             return column;
         }
         case TypeIndex::FixedString:
