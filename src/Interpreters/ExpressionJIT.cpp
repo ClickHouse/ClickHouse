@@ -166,6 +166,8 @@ public:
         return dag.compile(builder, values);
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+
     String getName() const override { return name; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }

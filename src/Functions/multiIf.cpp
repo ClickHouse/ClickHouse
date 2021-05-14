@@ -111,7 +111,8 @@ public:
 
     void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override
     {
-        if (!checkArgumentsForColumnFunction(arguments))
+        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
+        if (last_short_circuit_argument_index < 0)
             return;
 
         executeColumnIfNeeded(arguments[0]);
@@ -119,24 +120,19 @@ public:
         IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
 
         UInt8 default_value_for_mask_expanding = 0;
-        size_t i = 1;
-        while (i < arguments.size())
+        int i = 1;
+        while (i <= last_short_circuit_argument_index)
         {
             getMaskFromColumn(arguments[i - 1].column, current_mask);
-            disjunctionMasks(mask_disjunctions, current_mask);
-            if (isColumnFunction(*arguments[i].column))
-                maskedExecute(arguments[i], current_mask);
+            maskedExecute(arguments[i], current_mask);
 
             ++i;
+            if (i > last_short_circuit_argument_index)
+                break;
 
-            if (isColumnFunction(*arguments[i].column))
-            {
-                if (i < arguments.size() - 1)
-                    maskedExecute(arguments[i], mask_disjunctions, true, &default_value_for_mask_expanding);
-                else
-                    maskedExecute(arguments[i], mask_disjunctions, true);
-            }
-
+            disjunctionMasks(mask_disjunctions, current_mask);
+            UInt8 * default_value_ptr = i + 1 == int(arguments.size()) ? nullptr: &default_value_for_mask_expanding;
+            maskedExecute(arguments[i], mask_disjunctions, true, default_value_ptr);
             ++i;
         }
     }

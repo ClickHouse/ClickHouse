@@ -133,7 +133,7 @@ private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions();
-    bool rewriteShortCircuitArguments(
+    void rewriteShortCircuitArguments(
         const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_rewrite);
 
     void rewriteArgumentsForShortCircuitFunctions(

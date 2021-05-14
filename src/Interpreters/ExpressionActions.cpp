@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -69,38 +70,26 @@ ExpressionActionsPtr ExpressionActions::clone() const
     return std::make_shared<ExpressionActions>(*this);
 }
 
-bool ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_rewrite)
+void ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_rewrite)
 {
-    bool have_rewritten_child = false;
     for (const auto * child : children)
     {
-        if (!need_outside.contains(child) || need_outside.at(child))
+        if (!need_outside.contains(child) || need_outside.at(child) || child->lazy_execution != ActionsDAG::LazyExecution::DISABLED)
             continue;
-
-        if (child->is_lazy_executed)
-        {
-            have_rewritten_child = true;
-            continue;
-        }
 
         switch (child->type)
         {
             case ActionsDAG::ActionType::FUNCTION:
-                if (rewriteShortCircuitArguments(child->children, need_outside, force_rewrite) || child->function_base->isSuitableForShortCircuitArgumentsExecution() || force_rewrite)
-                {
-                    const_cast<ActionsDAG::Node *>(child)->is_lazy_executed = true;
-                    have_rewritten_child = true;
-                }
+                rewriteShortCircuitArguments(child->children, need_outside, force_rewrite);
+                const_cast<ActionsDAG::Node *>(child)->lazy_execution = force_rewrite ? ActionsDAG::LazyExecution::FORCE_ENABLED : ActionsDAG::LazyExecution::ENABLED;
                 break;
             case ActionsDAG::ActionType::ALIAS:
-                have_rewritten_child |= rewriteShortCircuitArguments(child->children, need_outside, force_rewrite);
+                rewriteShortCircuitArguments(child->children, need_outside, force_rewrite);
                 break;
             default:
                 break;
         }
     }
-
-    return have_rewritten_child;
 }
 
 
@@ -426,7 +415,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     arguments[i] = columns[action.arguments[i].pos];
             }
 
-            if (action.node->is_lazy_executed)
+            if (action.node->lazy_execution == ActionsDAG::LazyExecution::FORCE_ENABLED
+                || (action.node->lazy_execution == ActionsDAG::LazyExecution::ENABLED
+                    && (action.node->function_base->isSuitableForShortCircuitArgumentsExecution() || checkShirtCircuitArguments(arguments) >= 0)))
                 res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true);
             else
             {

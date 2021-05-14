@@ -23,6 +23,6 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
 
 void executeColumnIfNeeded(ColumnWithTypeAndName & column);
 
-bool checkArgumentsForColumnFunction(const ColumnsWithTypeAndName & arguments);
+int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments);
 
 }

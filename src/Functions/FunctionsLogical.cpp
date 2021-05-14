@@ -514,22 +514,20 @@ void FunctionAnyArityLogical<Impl, Name>::executeShortCircuitArguments(ColumnsWi
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    if (!checkArgumentsForColumnFunction(arguments))
+    int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
+    if (last_short_circuit_argument_index < 0)
         return;
 
     bool reverse = Name::name != NameAnd::name;
     UInt8 null_value = Name::name == NameAnd::name ? 1 : 0;
     UInt8 value_for_mask_expanding = Name::name == NameAnd::name ? 0 : 1;
     executeColumnIfNeeded(arguments[0]);
+
     IColumn::Filter mask;
-    getMaskFromColumn(arguments[0].column, mask, reverse, nullptr, null_value);
-
-    for (size_t i = 1; i < arguments.size(); ++i)
+    for (int i = 1; i <= last_short_circuit_argument_index; ++i)
     {
-        if (isColumnFunction(*arguments[i].column))
-            maskedExecute(arguments[i], mask, false, &value_for_mask_expanding);
-
-        getMaskFromColumn(arguments[i].column, mask, reverse, nullptr, null_value);
+        getMaskFromColumn(arguments[i - 1].column, mask, reverse, nullptr, null_value);
+        maskedExecute(arguments[i], mask, false, &value_for_mask_expanding);
     }
 }
 
