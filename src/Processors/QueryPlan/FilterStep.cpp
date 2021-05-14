@@ -4,6 +4,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -33,7 +34,7 @@ FilterStep::FilterStep(
         input_stream_,
         FilterTransform::transformHeader(
             input_stream_.header,
-            std::make_shared<ExpressionActions>(actions_dag_, ExpressionActionsSettings{}),
+            *actions_dag_,
             filter_column_name_,
             remove_filter_column_),
         getTraits(actions_dag_))
@@ -51,7 +52,7 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
     if (keep_header)
         out_header = FilterTransform::transformHeader(
             input_stream.header,
-            std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{}),
+            *actions_dag,
             filter_column_name,
             remove_filter_column);
 
@@ -111,6 +112,15 @@ void FilterStep::describeActions(FormatSettings & settings) const
     for (const auto & pos : expression->getResultPositions())
         settings.out << ' ' << pos;
     settings.out << '\n';
+}
+
+void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Filter Column", filter_column_name);
+    map.add("Removes Filter", remove_filter_column);
+
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    map.add("Expression", expression->toTree());
 }
 
 }

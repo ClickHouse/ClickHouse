@@ -15,8 +15,9 @@ using ColumnRawPtrs = std::vector<const IColumn *>;
 
 namespace JoinCommon
 {
-
-void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability = false);
+bool canBecomeNullable(const DataTypePtr & type);
+DataTypePtr convertTypeToNullable(const DataTypePtr & type);
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_card = false);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
 void removeColumnNullability(ColumnWithTypeAndName & column);
 void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_column);

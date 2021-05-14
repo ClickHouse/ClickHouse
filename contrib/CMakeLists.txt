@@ -1,4 +1,3 @@
-# Third-party libraries may have substandard code.
 
 # Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
@@ -11,8 +10,10 @@ else ()
 endif ()
 unset (_current_dir_name)
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+# Third-party libraries may have substandard code.
+# Also remove a possible source of nondeterminism.
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
 
 if (WITH_COVERAGE)
   set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
@@ -47,6 +48,7 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
+add_subdirectory (nanodbc-cmake)
 
 if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz)
@@ -318,10 +320,6 @@ endif()
 if (USE_LIBPQXX)
     add_subdirectory (libpq-cmake)
     add_subdirectory (libpqxx-cmake)
-endif()
-
-if (USE_NANODBC)
-    add_subdirectory (nanodbc-cmake)
 endif()
 
 if (USE_NURAFT)

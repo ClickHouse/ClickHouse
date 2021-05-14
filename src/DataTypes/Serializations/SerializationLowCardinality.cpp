@@ -160,7 +160,7 @@ struct IndexesSerializationType
             return std::make_shared<DataTypeUInt16>();
         if (type == TUInt32)
             return std::make_shared<DataTypeUInt32>();
-        if (type == TUInt64)
+        if (type == TUInt64) //-V547
             return std::make_shared<DataTypeUInt64>();
 
         throw Exception("Can't create DataType from IndexesSerializationType.", ErrorCodes::LOGICAL_ERROR);

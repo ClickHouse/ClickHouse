@@ -105,6 +105,11 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     }
 }
 
+BlockInputStreamPtr ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
+{
+    return createStreamForQuery(load_all_query, result_size_hint);
+}
+
 BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
@@ -152,19 +157,32 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::createStreamForQuery(const String & query)
+BlockInputStreamPtr ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
 {
+    BlockInputStreamPtr stream;
+
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
 
     if (configuration.is_local)
     {
-        auto stream = executeQuery(query, context, true).getInputStream();
+        stream = executeQuery(query, context, true).getInputStream();
         stream = std::make_shared<ConvertingBlockInputStream>(stream, empty_sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
-        return stream;
+    }
+    else
+    {
+        stream = std::make_shared<RemoteBlockInputStream>(pool, query, empty_sample_block, context);
     }
 
-    return std::make_shared<RemoteBlockInputStream>(pool, query, empty_sample_block, context);
+    if (result_size_hint)
+    {
+        stream->setProgressCallback([result_size_hint](const Progress & progress)
+        {
+            *result_size_hint += progress.total_rows_to_read;
+        });
+    }
+
+    return stream;
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
