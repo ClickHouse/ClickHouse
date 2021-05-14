@@ -366,9 +366,9 @@ Returns a list of clusters. All available clusters are listed in the [system.clu
 
 ``` sql
 SHOW CLUSTER '<name>'
-SWOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
+SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
 ```
-### Examples 
+### Examples {#show-cluster-examples}
 
 Query:
 
