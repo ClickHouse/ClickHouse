@@ -1,16 +1,49 @@
-DROP TABLE IF EXISTS some_test_view;
+DROP TABLE IF EXISTS view_no_nulls;
+DROP TABLE IF EXISTS view_no_nulls_set;
+DROP TABLE IF EXISTS view_nulls_set;
+DROP TABLE IF EXISTS view_nulls;
 
 SET join_use_nulls = 0;
 
-CREATE OR REPLACE VIEW some_test_view
-AS
-SELECT * FROM ( SELECT arrayJoin([1, 2]) AS a, arrayJoin([11, 12]) AS b ) AS t1
-FULL JOIN ( SELECT arrayJoin([2, 3]) AS a, arrayJoin([22, 23]) AS c ) AS t2
-USING a
-ORDER BY a;
+CREATE OR REPLACE VIEW view_no_nulls AS
+SELECT * FROM ( SELECT number + 1 AS a, number + 11 AS b FROM numbers(2) ) AS t1
+FULL JOIN ( SELECT number + 2 AS a, number + 22 AS c FROM numbers(2) ) AS t2
+USING a ORDER BY a;
+
+CREATE OR REPLACE VIEW view_nulls_set AS
+SELECT * FROM ( SELECT number + 1 AS a, number + 11 AS b FROM numbers(2) ) AS t1
+FULL JOIN ( SELECT number + 2 AS a, number + 22 AS c FROM numbers(2) ) AS t2
+USING a ORDER BY a
+SETTINGS join_use_nulls = 1;
 
 SET join_use_nulls = 1;
 
-SELECT * from some_test_view;
+CREATE OR REPLACE VIEW view_nulls AS
+SELECT * FROM ( SELECT number + 1 AS a, number + 11 AS b FROM numbers(2) ) AS t1
+FULL JOIN ( SELECT number + 2 AS a, number + 22 AS c FROM numbers(2) ) AS t2
+USING a ORDER BY a;
 
-DROP TABLE some_test_view;
+CREATE OR REPLACE VIEW view_no_nulls_set AS
+SELECT * FROM ( SELECT number + 1 AS a, number + 11 AS b FROM numbers(2) ) AS t1
+FULL JOIN ( SELECT number + 2 AS a, number + 22 AS c FROM numbers(2) ) AS t2
+USING a ORDER BY a
+SETTINGS join_use_nulls = 0;
+
+SET join_use_nulls = 1;
+
+SELECT * from view_no_nulls;
+SELECT * from view_no_nulls_set;
+SELECT * from view_nulls_set;
+SELECT * from view_nulls;
+
+SET join_use_nulls = 0;
+
+SELECT * from view_no_nulls;
+SELECT * from view_no_nulls_set;
+SELECT * from view_nulls_set;
+SELECT * from view_nulls;
+
+DROP TABLE IF EXISTS view_no_nulls;
+DROP TABLE IF EXISTS view_no_nulls_set;
+DROP TABLE IF EXISTS view_nulls_set;
+DROP TABLE IF EXISTS view_nulls;
