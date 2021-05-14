@@ -70,10 +70,10 @@ namespace ZeroTraits
 {
 
 template <typename T>
-bool check(const T x) { return x == 0; }
+bool check(const T x) { return x == T{}; }
 
 template <typename T>
-void set(T & x) { x = 0; }
+void set(T & x) { x = {}; }
 
 }
 
@@ -305,7 +305,7 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell>
+struct ZeroValueStorage<true, Cell> //-V730
 {
 private:
     bool has_zero = false;

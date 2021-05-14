@@ -63,7 +63,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
-            insert_context->setSetting("insert_deduplicate", false);
+            insert_context->setSetting("insert_deduplicate", Field{false});
 
         // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
         if (insert_settings.min_insert_block_size_rows_for_materialized_views)

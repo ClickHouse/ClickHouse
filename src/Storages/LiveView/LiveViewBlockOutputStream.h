@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include <Common/hex.h>
 
 
 namespace DB
@@ -25,8 +26,8 @@ public:
         UInt128 key;
         String key_str;
 
-        new_hash->get128(key.low, key.high);
-        key_str = key.toHexString();
+        new_hash->get128(key);
+        key_str = getHexUIntLowercase(key);
 
         std::lock_guard lock(storage.mutex);
 

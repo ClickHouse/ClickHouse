@@ -459,10 +459,12 @@ StorageDistributed::StorageDistributed(
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
-    ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     ClusterPtr cluster = getCluster();
     query_info.cluster = cluster;

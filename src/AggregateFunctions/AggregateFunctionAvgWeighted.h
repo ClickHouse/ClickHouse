@@ -5,18 +5,18 @@
 
 namespace DB
 {
-template <class T>
+template <typename T>
 using AvgWeightedFieldType = std::conditional_t<IsDecimalNumber<T>,
     std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
     std::conditional_t<DecimalOrExtendedInt<T>,
         Float64, // no way to do UInt128 * UInt128, better cast to Float64
         NearestFieldType<T>>>;
 
-template <class T, class U>
+template <typename T, typename U>
 using MaxFieldType = std::conditional_t<(sizeof(AvgWeightedFieldType<T>) > sizeof(AvgWeightedFieldType<U>)),
     AvgWeightedFieldType<T>, AvgWeightedFieldType<U>>;
 
-template <class Value, class Weight>
+template <typename Value, typename Weight>
 class AggregateFunctionAvgWeighted final :
     public AggregateFunctionAvgBase<
         MaxFieldType<Value, Weight>, AvgWeightedFieldType<Weight>, AggregateFunctionAvgWeighted<Value, Weight>>
