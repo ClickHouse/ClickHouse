@@ -12,6 +12,7 @@ import csv
 
 
 MAX_RETRY = 2
+NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
@@ -254,7 +255,7 @@ class ClickhouseIntegrationTestsRunner:
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
-        cmd = "cd {}/tests/integration && ./runner {} ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' > all_tests.txt".format(repo_path, image_cmd)
+        cmd = "cd {}/tests/integration && ./runner {} ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' | sort -u  > all_tests.txt".format(repo_path, image_cmd)
         logging.info("Getting all tests with cmd '%s'", cmd)
         subprocess.check_call(cmd, shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
@@ -330,7 +331,7 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Cannot run with custom docker image version :(")
         return image_cmd
 
-    def run_test_group(self, repo_path, test_group, tests_in_group, num_tries):
+    def run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
         counters = {
             "ERROR": [],
             "PASSED": [],
@@ -370,8 +371,8 @@ class ClickhouseIntegrationTestsRunner:
                         test_names.add(test_name)
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
-            cmd = "cd {}/tests/integration && ./runner {} --tmpfs -t {} --parallel 10 '-ss -rfEp --color=no --durations=0 {}' | tee {}".format(
-                repo_path, image_cmd, test_cmd, _get_deselect_option(self.should_skip_tests()), output_path)
+            cmd = "cd {}/tests/integration && ./runner {} --tmpfs -t {} --parallel {} '-ss -rfEp --color=no --durations=0 {}' | tee {}".format(
+                repo_path, image_cmd, test_cmd, num_workers, _get_deselect_option(self.should_skip_tests()), output_path)
 
             with open(log_path, 'w') as log:
                 logging.info("Executing cmd: %s", cmd)
@@ -423,7 +424,7 @@ class ClickhouseIntegrationTestsRunner:
         for i in range(TRIES_COUNT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run, 1)
+            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
             logs += log_paths
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", ' '.join(counters["FAILED"]))
@@ -505,7 +506,7 @@ class ClickhouseIntegrationTestsRunner:
 
         for group, tests in items_to_run:
             logging.info("Running test group %s countaining %s tests", group, len(tests))
-            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests, MAX_RETRY)
+            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info("Tests from group %s stats, %s count %s", group, counter, len(value))
