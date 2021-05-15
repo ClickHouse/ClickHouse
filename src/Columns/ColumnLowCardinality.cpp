@@ -307,29 +307,6 @@ int ColumnLowCardinality::compareAtWithCollation(size_t n, size_t m, const IColu
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
-int ColumnLowCardinality::compareAtGeneric(size_t n, size_t m, const IColumn & lhs, const IColumn & rhs, int nan_direction_hint)
-{
-    const auto * left_lc = typeid_cast<const ColumnLowCardinality *>(&lhs);
-    const auto * right_lc = typeid_cast<const ColumnLowCardinality *>(&rhs);
-
-    if (left_lc && right_lc)
-        return left_lc->compareAt(n, m, rhs, nan_direction_hint);
-
-    if (left_lc)
-    {
-        size_t n_lc_index = left_lc->getIndexes().getUInt(n);
-        return left_lc->getDictionary().compareAt(n_lc_index, m, rhs, nan_direction_hint);
-    }
-
-    if (right_lc)
-    {
-        size_t m_lc_index = right_lc->getIndexes().getUInt(n);
-        return -right_lc->getDictionary().compareAt(n, m_lc_index, lhs, -nan_direction_hint);
-    }
-
-    throw DB::Exception("One column should have low cardinality type", ErrorCodes::LOGICAL_ERROR);
-}
-
 void ColumnLowCardinality::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                          PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                                          int direction, int nan_direction_hint) const
