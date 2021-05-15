@@ -1,16 +1,12 @@
 #pragma once
 
 #include <type_traits>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnVector.h>
-#include <Core/AccurateComparison.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnUInt8.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
@@ -21,12 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
-#include <boost/tti/has_member_function.hpp>
-#include <Common/CpuId.h>
-#include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
 #include <ext/range.h>
-//#include <IO/Operators.h>
 #include <sstream>
 
 #if !defined(ARCADIA_BUILD)
@@ -37,11 +28,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+extern const int BAD_ARGUMENTS;
 }
 
 class FunctionSQLJSONHelpers
@@ -141,6 +132,7 @@ public:
 
             /// Parse JSON for every row
             Impl<JSONParser> impl;
+
             for (const auto i : ext::range(0, input_rows_count))
             {
                 std::string_view json{
@@ -205,45 +197,58 @@ private:
     const Context & context;
 };
 
-struct NameSQLJSONTest
+struct NameJSONExists
 {
-    static constexpr auto name{"SQLJSONTest"};
+    static constexpr auto name{"JSON_EXISTS"};
 };
 
-struct NameSQLJSONMemberAccess
+struct NameJSONValue
 {
-    static constexpr auto name{"SQLJSONMemberAccess"};
+    static constexpr auto name{"JSON_VALUE"};
 };
 
-/**
- * Function to test logic before function calling, will be removed in final PR
- * @tparam JSONParser parser
- */
+struct NameJSONQuery
+{
+    static constexpr auto name{"JSON_QUERY"};
+};
+
 template <typename JSONParser>
-class SQLJSONTestImpl
+class JSONExistsImpl
 {
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeString>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element &, ASTPtr &)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr)
     {
-        String str = "I am working:-)";
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        col_str.insertData(str.data(), str.size());
+        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
+        Element current_element = root;
+        VisitorStatus status;
+        while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
+        {
+            if (status == VisitorStatus::Ok) {
+                break;
+            }
+            current_element = root;
+        }
+
+        /// insert result, status can be either Ok (if we found the item)
+        /// or Exhausted (if we never found the item)
+        ColumnUInt8 & col_bool = assert_cast<ColumnUInt8 &>(dest);
+        if (status == VisitorStatus::Ok) {
+            col_bool.insert(0);
+        } else {
+            col_bool.insert(1);
+        }
         return true;
     }
 };
 
-/**
- * Function to test jsonpath member access, will be removed in final PR
- * @tparam JSONParser parser
- */
 template <typename JSONParser>
-class SQLJSONMemberAccessImpl
+class JSONValueImpl
 {
 public:
     using Element = typename JSONParser::Element;
@@ -257,18 +262,74 @@ public:
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
-        while ((status = generator_json_path.getNextItem(current_element)) == VisitorStatus::Ok)
+        Element res;
+        while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
-            /// No-op
+            if (status == VisitorStatus::Ok) {
+                if (!(current_element.isArray() || current_element.isObject())) {
+                    break;
+                }
+            } else if (status == VisitorStatus::Error) {
+                /// ON ERROR
+            }
+            current_element = root;
         }
-        if (status == VisitorStatus::Error)
+
+        if (status == VisitorStatus::Exhausted) {
+            return false;
+        }
+
+        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        out << current_element.getElement();
+        auto output_str = out.str();
+        ColumnString & col_str = assert_cast<ColumnString &>(dest);
+        col_str.insertData(output_str.data(), output_str.size());
+        return true;
+    }
+};
+
+/**
+ * Function to test jsonpath member access, will be removed in final PR
+ * @tparam JSONParser parser
+ */
+template <typename JSONParser>
+class JSONQueryImpl
+{
+public:
+    using Element = typename JSONParser::Element;
+
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeString>(); }
+
+    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
+
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr)
+    {
+        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
+        Element current_element = root;
+        VisitorStatus status;
+        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        /// Create json array of results: [res1, res2, ...]
+        out << "[";
+        bool success = false;
+        while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
+            if (status == VisitorStatus::Ok) {
+                if (success) {
+                    out << ", ";
+                }
+                success = true;
+                out << current_element.getElement();
+            } else if (status == VisitorStatus::Error) {
+                /// ON ERROR
+            }
+            current_element = root;
+        }
+        out << "]";
+        if (!success) {
             return false;
         }
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        std::stringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        ostr << current_element.getElement();
-        auto output_str = ostr.str();
+        auto output_str = out.str();
         col_str.insertData(output_str.data(), output_str.size());
         return true;
     }

@@ -7,6 +7,9 @@ namespace DB {
 template <typename JSONParser>
 class IVisitor {
 public:
+
+    virtual const char * getName() const = 0;
+
     /**
      * Applies this visitor to document and mutates its state
      * @param element simdjson element
@@ -23,6 +26,8 @@ public:
      * Restores visitor's initial state for later use
      */
     virtual void reinitialize() = 0;
+
+    virtual void updateState() = 0;
 
     bool isExhausted() {
         return is_exhausted;

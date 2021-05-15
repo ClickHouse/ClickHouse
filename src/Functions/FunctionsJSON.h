@@ -80,6 +80,8 @@ public:
             const ColumnString::Chars & chars = col_json_string->getChars();
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
+            size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
+            std::vector<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;

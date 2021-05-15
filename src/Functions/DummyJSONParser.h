@@ -39,6 +39,8 @@ struct DummyJSONParser
         std::string_view getString() const { return {}; }
         Array getArray() const { return {}; }
         Object getObject() const { return {}; }
+
+        Element getElement() {return {}; }
     };
 
     /// References an array in a JSON document.
