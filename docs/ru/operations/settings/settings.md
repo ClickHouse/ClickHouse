@@ -2881,7 +2881,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ## http_receive_timeout {#http_receive_timeout}
 
-Тайм-аут приема HTTP (в секундах).
+Тайм-аут для получения HTTP-запроса (в секундах).
 
 Возможные значения:
 
