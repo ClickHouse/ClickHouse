@@ -878,7 +878,7 @@ public:
         Block intermediate_header;
 
         /// What to count.
-        const ColumnNumbers keys;
+        ColumnNumbers keys;
         const ColumnNumbersTwoDimension keys_vector;
         const AggregateDescriptions aggregates;
         const size_t keys_size;
