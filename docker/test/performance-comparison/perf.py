@@ -273,7 +273,6 @@ for query_index in queries_to_run:
             prewarm_id = f'{query_prefix}.prewarm0'
 
             try:
-                # Will also detect too long queries during warmup stage
                 # During the warmup runs, we will also:
                 # * detect queries that are exceedingly long, to fail fast,
                 # * collect profiler traces, which might be helpful for analyzing
