@@ -2859,7 +2859,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 ```
 ## http_connection_timeout {#http_connection_timeout}
 
-Тайм-аут HTTP-соединения (в секундах).
+Тайм-аут для HTTP-соединения (в секундах).
 
 Возможные значения:
 
