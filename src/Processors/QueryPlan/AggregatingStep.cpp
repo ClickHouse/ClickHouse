@@ -3,6 +3,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/ForkProcessor.h>
 
 namespace DB
 {
@@ -54,7 +55,33 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
 
     if (!params.keys_vector.empty())
     {
+        /// GROUPING SETS presents
+        /** List of thing to do
+         * + 1. add ForkProcessor
+         * + 2. add AggregatingTransform for each output of ForkProcessor
+         * - 3. add ExpressionTransform for each output of AggregationTransform
+         * + 4. union outputs with ResizeProcessor
+         */
 
+        /// ensure we have one input stream into fork processor
+        size_t grouping_sets_number = params.keys_vector.size();
+        pipeline.resize(1);
+        pipeline.addTransform(std::make_shared<ForkProcessor>(pipeline.getHeader(), grouping_sets_number));
+
+        Processors aggregating_transforms;
+        std::shared_ptr<AggregatingTransformParams> transform_params;
+        for (size_t i = 0; i < grouping_sets_number; ++i)
+        {
+            params.keys = params.keys_vector[i];
+            transform_params = std::make_shared<AggregatingTransformParams>(params, final);
+            aggregating_transforms.push_back(std::make_shared<AggregatingTransform>(pipeline.getHeader(), transform_params));
+        }
+        pipeline.addParallelTransforms(aggregating_transforms);
+
+        /// expr transforms
+
+        /// merge all aggregating transforms outputs with ResizeProcessor
+        pipeline.resize(1);
     }
     else
     {
