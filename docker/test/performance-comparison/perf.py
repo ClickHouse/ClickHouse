@@ -274,7 +274,14 @@ for query_index in queries_to_run:
 
             try:
                 # Will also detect too long queries during warmup stage
-                res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': args.max_query_seconds})
+                # During the warmup runs, we will also:
+                # * detect queries that are exceedingly long, to fail fast,
+                # * collect profiler traces, which might be helpful for analyzing
+                #   test coverage. We disable profiler for normal runs because
+                #   it makes the results unstable.
+                res = c.execute(q, query_id = prewarm_id,
+                    settings = {'max_execution_time': args.max_query_seconds,
+                        'query_profiler_real_time_period_ns': 10000000})
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (prewarm_id, *e.args)
