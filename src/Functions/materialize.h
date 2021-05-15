@@ -1,6 +1,8 @@
 #pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {

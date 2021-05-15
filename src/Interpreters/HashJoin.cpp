@@ -160,7 +160,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 {
     if (nullable)
     {
-        JoinCommon::convertColumnToNullable(column, true);
+        JoinCommon::convertColumnToNullable(column, false);
         if (column.type->isNullable() && !negative_null_map.empty())
         {
             MutableColumnPtr mutable_column = IColumn::mutate(std::move(column.column));
@@ -1081,7 +1081,11 @@ void HashJoin::joinBlockImpl(
 
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
-            block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
+
+            ColumnWithTypeAndName right_col(col.column, col.type, right_key.name);
+            if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
+                JoinCommon::changeLowCardinalityInplace(right_col);
+            block.insert(correctNullability(std::move(right_col), is_nullable));
         }
     }
     else if (has_required_right_keys)
@@ -1106,7 +1110,11 @@ void HashJoin::joinBlockImpl(
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
 
             ColumnPtr thin_column = filterWithBlanks(col.column, filter);
-            block.insert(correctNullability({thin_column, col.type, right_key.name}, is_nullable, null_map_filter));
+
+            ColumnWithTypeAndName right_col(thin_column, col.type, right_key.name);
+            if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
+                JoinCommon::changeLowCardinalityInplace(right_col);
+            block.insert(correctNullability(std::move(right_col), is_nullable, null_map_filter));
 
             if constexpr (need_replication)
                 right_keys_to_replicate.push_back(block.getPositionByName(right_key.name));
