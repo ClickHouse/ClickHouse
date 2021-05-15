@@ -2870,7 +2870,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ## http_send_timeout {#replicated_fetches_http_send_timeout}
 
-Тайм-аут отправки HTTP (в секундах).
+Тайм-аут для отправки HTTP-запросов (в секундах).
 
 Возможные значения:
 
