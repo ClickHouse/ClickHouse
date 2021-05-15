@@ -278,7 +278,8 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     ConstraintsDescription constraints_,
     const ASTCreateQuery & query,
     ContextPtr context_)
-    : IStorage(table_id_)
+    : IStorage(table_id_),
+      log(&Poco::Logger::get("StorageAggregatingMemory"))
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -400,6 +401,18 @@ void StorageAggregatingMemory::lazy_initialize()
     is_initialized = true;
 }
 
+void StorageAggregatingMemory::startup()
+{
+    try
+    {
+        lazy_initialize();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("Failed to initialize AggregatingMemory on startup");
+        LOG_ERROR(log, "{}", getCurrentExceptionMessage(true));
+    }
+}
 
 Pipe StorageAggregatingMemory::read(
     const Names & column_names,

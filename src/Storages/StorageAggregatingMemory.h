@@ -31,6 +31,8 @@ public:
 
     void lazy_initialize();
 
+    void startup() override;
+
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
@@ -56,6 +58,8 @@ public:
     // std::optional<UInt64> totalBytes(const Settings &) const override;
 
 private:
+    Poco::Logger * log;
+
     mutable std::mutex mutex;
     std::atomic<bool> is_initialized{false};
 
