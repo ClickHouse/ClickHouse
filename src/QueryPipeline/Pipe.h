@@ -63,6 +63,7 @@ public:
     /// Output ports should have same headers.
     /// If totals or extremes are not empty, transform shouldn't change header.
     void addTransform(ProcessorPtr transform);
+    void addParallelTransforms(Processors transform);
     void addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
