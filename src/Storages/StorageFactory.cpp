@@ -192,8 +192,7 @@ StoragePtr StorageFactory::get(
     }
 
     String comment;
-
-    if (storage_def && storage_def->comment)
+    if (storage_def->comment)
     {
         comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
     }
