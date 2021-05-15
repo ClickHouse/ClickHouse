@@ -547,7 +547,7 @@ struct KeeperStorageCloseRequest final : public KeeperStorageRequest
     }
 };
 
-/// Dummy implementation TODO: impelement simple ACL
+/// Dummy implementation TODO: implement simple ACL
 struct KeeperStorageAuthRequest final : public KeeperStorageRequest
 {
     using KeeperStorageRequest::KeeperStorageRequest;
