@@ -134,7 +134,16 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
     auto file = openForReading(disk, partition_file_path);
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
+    {
+        if (partition_key_sample.getByPosition(i).name.starts_with("modulo"))
+        {
+            SerializationNumber<Int8>().deserializeBinary(value[i], *file);
+        }
+        else
+        {
+            partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
+        }
+    }
 }
 
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
@@ -152,29 +161,75 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     auto out = disk->writeFile(part_path + "partition.dat");
     HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing);
+    {
+        if (partition_key_sample.getByPosition(i).name.starts_with("modulo"))
+        {
+            SerializationNumber<Int8>().serializeBinary(value[i], out_hashing);
+        }
+        else
+        {
+            partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing);
+        }
+    }
+
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
     out->finalize();
 }
 
-void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row)
+void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context)
 {
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    partition_key.expression->execute(block);
-    size_t partition_columns_num = partition_key.sample_block.columns();
+    auto partition_key_sample_block = executePartitionByExpression(metadata_snapshot, block, context);
+    size_t partition_columns_num = partition_key_sample_block.columns();
     value.resize(partition_columns_num);
 
     for (size_t i = 0; i < partition_columns_num; ++i)
     {
-        const auto & column_name = partition_key.sample_block.getByPosition(i).name;
+        const auto & column_name = partition_key_sample_block.getByPosition(i).name;
         const auto & partition_column = block.getByName(column_name).column;
         partition_column->get(row, value[i]);
     }
 }
 
+Block MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
+{
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    bool adjusted_expression = false;
+    auto modulo_to_modulo_legacy = [&](ASTFunction * function_ast)
+    {
+        if (function_ast->name == "modulo")
+        {
+            function_ast->name = "moduloLegacy";
+            adjusted_expression = true;
+        }
+    };
+    ASTPtr new_ast = partition_key.definition_ast->clone();
+    if (auto * function_ast = typeid_cast<ASTFunction *>(new_ast.get()))
+    {
+        if (function_ast->name == "tuple")
+        {
+            auto children = function_ast->arguments->children;
+            for (auto child : children)
+            {
+                if (auto * child_function_ast = typeid_cast<ASTFunction *>(child.get()))
+                    modulo_to_modulo_legacy(child_function_ast);
+            }
+        }
+        else
+            modulo_to_modulo_legacy(function_ast);
+
+        if (adjusted_expression)
+        {
+            auto adjusted_partition_key = KeyDescription::getKeyFromAST(new_ast, metadata_snapshot->columns, context);
+            adjusted_partition_key.expression->execute(block);
+            return adjusted_partition_key.sample_block;
+        }
+    }
+    partition_key.expression->execute(block);
+    return partition_key.sample_block;
+}
 }

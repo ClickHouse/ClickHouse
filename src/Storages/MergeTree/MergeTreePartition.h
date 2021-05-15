@@ -40,7 +40,10 @@ public:
 
     void assign(const MergeTreePartition & other) { value.assign(other.value); }
 
-    void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row);
+    void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context);
+
+    /// Adjust partition key and execute its expression on block. Return sample block according to used expression.
+    static Block executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context);
 };
 
 }

@@ -140,7 +140,7 @@ void registerFunctionModulo(FunctionFactory & factory)
 }
 
 struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
-using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloUnsigned, false>;
+using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
 
 void registerFunctionModuloLegacy(FunctionFactory & factory)
 {
