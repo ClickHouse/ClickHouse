@@ -2278,7 +2278,7 @@ private:
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
             std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                      << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                      << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
         else
             std::cout << ". ";
     }
