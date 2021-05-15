@@ -4,8 +4,10 @@ import shutil
 import sys
 import os
 import os.path
+import signal
 import re
 import json
+import copy
 import traceback
 
 from argparse import ArgumentParser
@@ -30,11 +32,24 @@ from contextlib import closing
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
+    "DB::Exception: Connection loss",
+    "Coordination::Exception: Session expired",
     "Coordination::Exception: Connection loss",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
 ]
 
+class Terminated(KeyboardInterrupt):
+    pass
+def signal_handler(sig, frame):
+    raise Terminated(f'Terminated with {sig} signal')
+
+def stop_tests():
+    # send signal to all processes in group to avoid hung check triggering
+    # (to avoid terminating clickhouse-test itself, the signal should be ignored)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 def json_minify(string):
     """
@@ -113,14 +128,14 @@ def get_db_engine(args, database_name):
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
 
-def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir):
-    # print(client_options)
+def configure_testcase_args(args, case_file, suite_tmp_dir):
+    testcase_args = copy.deepcopy(args)
 
-    client = f"{args.client} --log_comment='{case_file}'"
+    testcase_args.testcase_start_time = datetime.now()
+    testcase_args.testcase_client = f"{testcase_args.client} --log_comment='{case_file}'"
 
-    start_time = datetime.now()
-    if args.database:
-        database = args.database
+    if testcase_args.database:
+        database = testcase_args.database
         os.environ.setdefault("CLICKHOUSE_DATABASE", database)
         os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
 
@@ -132,20 +147,29 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(testcase_args.testcase_client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
         try:
-            clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args, database)), timeout=args.timeout)
+            clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(testcase_args, database)), timeout=testcase_args.timeout)
         except TimeoutExpired:
-            total_time = (datetime.now() - start_time).total_seconds()
+            total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
             return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
 
         os.environ["CLICKHOUSE_DATABASE"] = database
         # Set temporary directory to match the randomly generated database,
         # because .sh tests also use it for temporary files and we want to avoid
         # collisions.
-        test_tmp_dir = os.path.join(suite_tmp_dir, database)
-        os.mkdir(test_tmp_dir)
-        os.environ.setdefault("CLICKHOUSE_TMP", test_tmp_dir)
+        testcase_args.test_tmp_dir = os.path.join(suite_tmp_dir, database)
+        os.mkdir(testcase_args.test_tmp_dir)
+        os.environ.setdefault("CLICKHOUSE_TMP", testcase_args.test_tmp_dir)
+
+    testcase_args.testcase_database = database
+
+    return testcase_args
+
+def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
+    client = args.client
+    start_time = args.testcase_start_time
+    database = args.testcase_database
 
     # This is for .sh tests
     os.environ["CLICKHOUSE_LOG_COMMENT"] = case_file
@@ -179,7 +203,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         need_drop_database = not maybe_passed
 
     if need_drop_database:
-        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
             drop_database_query = "DROP DATABASE " + database
@@ -198,7 +222,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             total_time = (datetime.now() - start_time).total_seconds()
             return clickhouse_proc_create, "", "Timeout dropping database {} after test".format(database), total_time
 
-        shutil.rmtree(test_tmp_dir)
+        shutil.rmtree(args.test_tmp_dir)
 
     total_time = (datetime.now() - start_time).total_seconds()
 
@@ -324,10 +348,12 @@ def run_tests_array(all_tests_with_params):
 
     for case in all_tests:
         if SERVER_DIED:
+            stop_tests()
             break
 
         if stop_time and time() > stop_time:
             print("\nStop tests run because global time limit is exceeded.\n")
+            stop_tests()
             break
 
         case_file = os.path.join(suite_dir, case)
@@ -384,6 +410,7 @@ def run_tests_array(all_tests_with_params):
                             failures += 1
                             print("Server does not respond to health check")
                             SERVER_DIED = True
+                            stop_tests()
                             break
 
                     file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
@@ -391,7 +418,10 @@ def run_tests_array(all_tests_with_params):
                     stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
 
-                    proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
+
+                    testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir)
+
+                    proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
 
                     if proc.returncode is None:
                         try:
@@ -406,10 +436,12 @@ def run_tests_array(all_tests_with_params):
                         status += " - Timeout!\n"
                         if stderr:
                             status += stderr
+                        status += 'Database: ' + testcase_args.testcase_database
                     else:
                         counter = 1
                         while need_retry(stderr):
-                            proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
+                            testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir)
+                            proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                             sleep(2**counter)
                             counter += 1
                             if counter > 6:
@@ -429,7 +461,7 @@ def run_tests_array(all_tests_with_params):
                             if ' <Fatal> ' in stderr:
                                 SERVER_DIED = True
 
-                            if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
+                            if testcase_args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
 
                             if os.path.isfile(stdout_file):
@@ -438,6 +470,8 @@ def run_tests_array(all_tests_with_params):
                                     open(stdout_file).read().split('\n')[:100])
                                 status += '\n'
 
+                            status += 'Database: ' + testcase_args.testcase_database
+
                         elif stderr:
                             failures += 1
                             failures_chain += 1
@@ -445,6 +479,7 @@ def run_tests_array(all_tests_with_params):
                             status += print_test_time(total_time)
                             status += " - having stderror:\n{}\n".format(
                                 '\n'.join(stderr.split('\n')[:100]))
+                            status += 'Database: ' + testcase_args.testcase_database
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
@@ -452,27 +487,31 @@ def run_tests_array(all_tests_with_params):
                             status += print_test_time(total_time)
                             status += " - having exception:\n{}\n".format(
                                 '\n'.join(stdout.split('\n')[:100]))
+                            status += 'Database: ' + testcase_args.testcase_database
                         elif not os.path.isfile(reference_file):
                             status += MSG_UNKNOWN
                             status += print_test_time(total_time)
                             status += " - no reference file\n"
+                            status += 'Database: ' + testcase_args.testcase_database
                         else:
                             result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout=PIPE)
 
                             if result_is_different:
-                                diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout=PIPE, universal_newlines=True).communicate()[0]
+                                diff = Popen(['diff', '-U', str(testcase_args.unified), reference_file, stdout_file], stdout=PIPE, universal_newlines=True).communicate()[0]
                                 failures += 1
                                 status += MSG_FAIL
                                 status += print_test_time(total_time)
                                 status += " - result differs with reference:\n{}\n".format(diff)
+                                status += 'Database: ' + testcase_args.testcase_database
                             else:
-                                if args.test_runs > 1 and total_time > 30 and 'long' not in name:
+                                if testcase_args.test_runs > 1 and total_time > 30 and 'long' not in name:
                                     # We're in Flaky Check mode, check the run time as well while we're at it.
                                     failures += 1
                                     failures_chain += 1
                                     status += MSG_FAIL
                                     status += print_test_time(total_time)
-                                    status += " - Test runs too long (> 30s). Make it faster."
+                                    status += " - Test runs too long (> 30s). Make it faster.\n"
+                                    status += 'Database: ' + testcase_args.testcase_database
                                 else:
                                     passed_total += 1
                                     failures_chain = 0
@@ -491,6 +530,7 @@ def run_tests_array(all_tests_with_params):
             sys.stdout.flush()
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
+            stop_tests()
             raise e
         except:
             exc_type, exc_value, tb = sys.exc_info()
@@ -498,6 +538,7 @@ def run_tests_array(all_tests_with_params):
             print("{0} - Test internal error: {1}\n{2}\n{3}".format(MSG_FAIL, exc_type.__name__, exc_value, "\n".join(traceback.format_tb(tb, 10))))
 
         if failures_chain >= 20:
+            stop_tests()
             break
 
     failures_total = failures_total + failures
@@ -706,10 +747,10 @@ def main(args):
             args.shard = False
 
     if args.database and args.database != "test":
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
         clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args, args.database)))
 
-    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
     clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args, 'test')))
 
     def is_test_from_dir(suite_dir, case):
@@ -782,7 +823,7 @@ def main(args):
             all_tests = os.listdir(suite_dir)
             all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case)]
             if args.test:
-                all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
+                all_tests = [t for t in all_tests if any(re.search(r, t) for r in args.test)]
             all_tests = all_tests * args.test_runs
             all_tests.sort(key=key_func)
 
@@ -938,6 +979,14 @@ def collect_sequential_list(skip_list_path):
 
 
 if __name__ == '__main__':
+    # Move to a new process group and kill it at exit so that we don't have any
+    # infinite tests processes left
+    # (new process group is required to avoid killing some parent processes)
+    os.setpgid(0, 0)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGHUP, signal_handler)
+
     parser=ArgumentParser(description='ClickHouse functional tests')
     parser.add_argument('-q', '--queries', help='Path to queries dir')
     parser.add_argument('--tmp', help='Path to tmp dir')

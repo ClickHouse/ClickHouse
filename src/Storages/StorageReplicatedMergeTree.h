@@ -208,6 +208,10 @@ public:
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
 
+    /// Removes table from ZooKeeper after the last replica was dropped
+    static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
+                                              const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
+
     /// Get job to execute in background pool (merge, mutate, drop range and so on)
     std::optional<JobAndPool> getDataProcessingJob() override;
 
@@ -465,6 +469,9 @@ private:
       */
     void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
 
+    /// Repairs metadata of staled replica. Called from cloneReplica(...)
+    void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
+
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
@@ -522,8 +529,11 @@ private:
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
+    static String findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_);
 
     bool checkReplicaHavePart(const String & replica, const String & part_name);
+    bool checkIfDetachedPartExists(const String & part_name);
+    bool checkIfDetachedPartitionExists(const String & partition_name);
 
     /** Find replica having specified part or any part that covers it.
       * If active = true, consider only active replicas.
@@ -626,7 +636,12 @@ private:
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
-    void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, ContextPtr query_context) override;
+    void fetchPartition(
+        const ASTPtr & partition,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & from,
+        bool fetch_part,
+        ContextPtr query_context) override;
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed

@@ -7,21 +7,22 @@ toc_title: "Функции для работы с внешними словар�
 
 Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-## dictGet {#dictget}
+## dictGet, dictGetOrDefault, dictGetOrNull {#dictget}
 
 Извлекает значение из внешнего словаря.
 
 ``` sql
-dictGet('dict_name', 'attr_name', id_expr)
-dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
+dictGet('dict_name', attr_names, id_expr)
+dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
+dictGetOrNull('dict_name', attr_name, id_expr)
 ```
 
 **Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
--   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
+-   `attr_names` — имя столбца словаря, [Строковый литерал](../syntax.md#syntax-string-literal), или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких имен.
+-   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
+-   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_names`, или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких выражений.
 
 **Возвращаемое значение**
 
@@ -31,10 +32,11 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
     -   `dictGet` возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
     -   `dictGetOrDefault` возвращает атрибут `default_value_expr`.
+    -   `dictGetOrNull` возвращает `NULL` в случае, если ключ не найден в словаре.
 
 Если значение атрибута не удалось обработать или оно не соответствует типу данных атрибута, то ClickHouse генерирует исключение.
 
-**Пример**
+**Пример с единственным атрибутом**
 
 Создадим текстовый файл `ext-dict-text.csv` со следующим содержимым:
 
@@ -91,6 +93,130 @@ LIMIT 3
 │   2 │ UInt32 │
 │  20 │ UInt32 │
 └─────┴────────┘
+```
+
+**Пример с несколькими атрибутами**
+
+Создадим текстовый файл `ext-dict-mult.csv` со следующим содержимым:
+
+``` text
+1,1,'1'
+2,2,'2'
+3,3,'3'
+```
+
+Первый столбец — `id`, второй столбец — `c1`, третий столбец — `c2`.
+
+Настройка внешнего словаря:
+
+``` xml
+<yandex>
+    <dictionary>
+        <name>ext-dict-mult</name>
+        <source>
+            <file>
+                <path>/path-to/ext-dict-mult.csv</path>
+                <format>CSV</format>
+            </file>
+        </source>
+        <layout>
+            <flat />
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>c1</name>
+                <type>UInt32</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>c2</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>            
+        </structure>
+        <lifetime>0</lifetime>
+    </dictionary>
+</yandex>
+```
+
+Выполним запрос:
+
+``` sql
+SELECT
+    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
+    toTypeName(val) AS type
+FROM system.numbers
+LIMIT 3;
+```
+
+``` text
+┌─val─────┬─type──────────────────┐
+│ (1,'1') │ Tuple(UInt8, String)  │
+│ (2,'2') │ Tuple(UInt8, String)  │
+│ (3,'3') │ Tuple(UInt8, String)  │
+└─────────┴───────────────────────┘
+```
+
+**Пример для словаря с диапазоном ключей**
+
+Создадим таблицу:
+
+```sql
+CREATE TABLE range_key_dictionary_source_table
+(
+    key UInt64,
+    start_date Date,
+    end_date Date,
+    value String,
+    value_nullable Nullable(String)
+)
+ENGINE = TinyLog();
+
+INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
+INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
+INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
+```
+
+Создадим внешний словарь:
+
+```sql
+CREATE DICTIONARY range_key_dictionary
+(
+    key UInt64,
+    start_date Date,
+    end_date Date,
+    value String,
+    value_nullable Nullable(String)
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'range_key_dictionary_source_table'))
+LIFETIME(MIN 1 MAX 1000)
+LAYOUT(RANGE_HASHED())
+RANGE(MIN start_date MAX end_date);
+```
+
+Выполним запрос:
+
+``` sql
+SELECT
+    (number, toDate('2019-05-20')),
+    dictHas('range_key_dictionary', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', 'value_nullable', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', ('value', 'value_nullable'), number, toDate('2019-05-20'))
+FROM system.numbers LIMIT 5 FORMAT TabSeparated;
+```
+Результат:
+
+``` text
+(0,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(1,'2019-05-20')        1       First   First   ('First','First')
+(2,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(3,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(4,'2019-05-20')        0       \N      \N      (NULL,NULL)
 ```
 
 **Смотрите также**
@@ -197,4 +323,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
     -   `dictGet[Type]OrDefault` возвращает аргумент `default_value_expr`.
 
 Если значение атрибута не удалось обработать или оно не соответствует типу данных атрибута, то ClickHouse генерирует исключение.
-

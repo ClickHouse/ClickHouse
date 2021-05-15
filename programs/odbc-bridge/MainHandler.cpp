@@ -18,12 +18,9 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-#include "ODBCConnectionFactory.h"
 
 #include <mutex>
 #include <memory>
-
-#include <nanodbc/nanodbc.h>
 
 
 namespace DB
@@ -54,9 +51,10 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     HTMLForm params(request);
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
+
     if (mode == "read")
         params.read(request.getStream());
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (mode == "read" && !params.has("query"))
     {
@@ -64,17 +62,22 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         return;
     }
 
-    if (!params.has("columns"))
-    {
-        processError(response, "No 'columns' in request URL");
-        return;
-    }
 
     if (!params.has("connection_string"))
     {
         processError(response, "No 'connection_string' in request URL");
         return;
     }
+
+    if (!params.has("sample_block"))
+    {
+        processError(response, "No 'sample_block' in request URL");
+        return;
+    }
+
+    std::string format = params.get("format", "RowBinary");
+    std::string connection_string = params.get("connection_string");
+    LOG_TRACE(log, "Connection string: '{}'", connection_string);
 
     UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
     if (params.has("max_block_size"))
@@ -88,23 +91,18 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         max_block_size = parse<size_t>(max_block_size_str);
     }
 
-    std::string columns = params.get("columns");
+    std::string sample_block_string = params.get("sample_block");
     std::unique_ptr<Block> sample_block;
     try
     {
-        sample_block = parseColumns(std::move(columns));
+        sample_block = parseColumns(std::move(sample_block_string));
     }
     catch (const Exception & ex)
     {
-        processError(response, "Invalid 'columns' parameter in request body '" + ex.message() + "'");
-        LOG_WARNING(log, ex.getStackTraceString());
+        processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
+        LOG_ERROR(log, ex.getStackTraceString());
         return;
     }
-
-    std::string format = params.get("format", "RowBinary");
-
-    std::string connection_string = params.get("connection_string");
-    LOG_TRACE(log, "Connection string: '{}'", connection_string);
 
     WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
@@ -132,12 +130,12 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
             auto quoting_style = IdentifierQuotingStyle::None;
 #if USE_ODBC
-            quoting_style = getQuotingStyle(*connection);
+            quoting_style = getQuotingStyle(connection->get());
 #endif
             auto & read_buf = request.getStream();
             auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, getContext(), max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
-            ODBCBlockOutputStream output_stream(*connection, db_name, table_name, *sample_block, getContext(), quoting_style);
+            ODBCBlockOutputStream output_stream(std::move(connection), db_name, table_name, *sample_block, getContext(), quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
@@ -147,7 +145,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             LOG_TRACE(log, "Query: {}", query);
 
             BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, getContext());
-            ODBCBlockInputStream inp(*connection, query, *sample_block, max_block_size);
+            ODBCBlockInputStream inp(std::move(connection), query, *sample_block, max_block_size);
             copyData(inp, *writer);
         }
     }

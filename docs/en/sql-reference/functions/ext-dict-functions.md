@@ -10,21 +10,22 @@ toc_title: External Dictionaries
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-## dictGet {#dictget}
+## dictGet, dictGetOrDefault, dictGetOrNull {#dictget}
 
-Retrieves a value from an external dictionary.
+Retrieves values from an external dictionary. 
 
 ``` sql
-dictGet('dict_name', 'attr_name', id_expr)
-dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
+dictGet('dict_name', attr_names, id_expr)
+dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
+dictGetOrNull('dict_name', attr_name, id_expr)
 ```
 
 **Arguments**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+-   `attr_names` — Name of the column of the dictionary, [String literal](../../sql-reference/syntax.md#syntax-string-literal), or tuple of column names, [Tuple](../../sql-reference/data-types/tuple.md)([String literal](../../sql-reference/syntax.md#syntax-string-literal)).
 -   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
--   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
+-   `default_value_expr` — Values returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
 
 **Returned value**
 
@@ -34,12 +35,13 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
         - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
         - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
+        - `dictGetOrNull` returns `NULL` in case key was not found in dictionary.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
 
-**Example**
+**Example for simple key dictionary**
 
-Create a text file `ext-dict-text.csv` containing the following:
+Create a text file `ext-dict-test.csv` containing the following:
 
 ``` text
 1,1
@@ -94,6 +96,130 @@ LIMIT 3
 │   2 │ UInt32 │
 │  20 │ UInt32 │
 └─────┴────────┘
+```
+
+**Example for complex key dictionary**
+
+Create a text file `ext-dict-mult.csv` containing the following:
+
+``` text
+1,1,'1'
+2,2,'2'
+3,3,'3'
+```
+
+The first column is `id`, the second is `c1`, the third is `c2`.
+
+Configure the external dictionary:
+
+``` xml
+<yandex>
+    <dictionary>
+        <name>ext-dict-mult</name>
+        <source>
+            <file>
+                <path>/path-to/ext-dict-mult.csv</path>
+                <format>CSV</format>
+            </file>
+        </source>
+        <layout>
+            <flat />
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>c1</name>
+                <type>UInt32</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>c2</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>            
+        </structure>
+        <lifetime>0</lifetime>
+    </dictionary>
+</yandex>
+```
+
+Perform the query:
+
+``` sql
+SELECT
+    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
+    toTypeName(val) AS type
+FROM system.numbers
+LIMIT 3;
+```
+
+``` text
+┌─val─────┬─type──────────────────┐
+│ (1,'1') │ Tuple(UInt8, String)  │
+│ (2,'2') │ Tuple(UInt8, String)  │
+│ (3,'3') │ Tuple(UInt8, String)  │
+└─────────┴───────────────────────┘
+```
+
+**Example for range key dictionary**
+
+Input table:
+
+```sql
+CREATE TABLE range_key_dictionary_source_table
+(
+    key UInt64,
+    start_date Date,
+    end_date Date,
+    value String,
+    value_nullable Nullable(String)
+)
+ENGINE = TinyLog();
+
+INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
+INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
+INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
+```
+
+Create the external dictionary:
+
+```sql
+CREATE DICTIONARY range_key_dictionary
+(
+    key UInt64,
+    start_date Date,
+    end_date Date,
+    value String,
+    value_nullable Nullable(String)
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'range_key_dictionary_source_table'))
+LIFETIME(MIN 1 MAX 1000)
+LAYOUT(RANGE_HASHED())
+RANGE(MIN start_date MAX end_date);
+```
+
+Perform the query:
+
+``` sql
+SELECT
+    (number, toDate('2019-05-20')),
+    dictHas('range_key_dictionary', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', 'value_nullable', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', ('value', 'value_nullable'), number, toDate('2019-05-20'))
+FROM system.numbers LIMIT 5 FORMAT TabSeparated;
+```
+Result:
+
+``` text
+(0,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(1,'2019-05-20')        1       First   First   ('First','First')
+(2,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(3,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(4,'2019-05-20')        0       \N      \N      (NULL,NULL)
 ```
 
 **See Also**
@@ -202,4 +328,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
         - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
-
