@@ -82,7 +82,9 @@ TEST(ReadBufferAIOTest, TestReadAfterAIO)
 
     if (file_path[0] != '/')
     {
-        std::filesystem::remove_all(file_path.substr(0, file_path.size() - 4));
+        const size_t last_slash = file_path.rfind('/');
+        const std::string temp_dir = file_path.substr(0, last_slash);
+        std::filesystem::remove_all(temp_dir);
     }
 }
 
