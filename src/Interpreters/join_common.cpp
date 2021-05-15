@@ -122,6 +122,20 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
 /// @warning It assumes that every NULL has default value in nested column (or it does not matter)
 void removeColumnNullability(ColumnWithTypeAndName & column)
 {
+    if (column.type->lowCardinality())
+    {
+        /// LowCardinality(Nullable(T)) case
+        ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(column.column->assumeMutable().get());
+        if (col_as_lc->nestedIsNullable())
+        {
+            col_as_lc->nestedRemoveNullable();
+            const auto & dict_type = typeid_cast<const DataTypeLowCardinality *>(column.type.get())->getDictionaryType();
+            column.type = std::make_shared<DataTypeLowCardinality>(removeNullable(dict_type));
+        }
+
+        return;
+    }
+
     if (!column.type->isNullable())
         return;
 
