@@ -6,7 +6,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Common/Exception.h>
 #include <common/DateLUTImpl.h>
 
