@@ -49,6 +49,21 @@ ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_s
 namespace JoinCommon
 {
 
+void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
+{
+    if (column.type->lowCardinality())
+    {
+        column.type = recursiveRemoveLowCardinality(column.type);
+        column.column = column.column->convertToFullColumnIfLowCardinality();
+    }
+    else
+    {
+        column.type = std::make_shared<DataTypeLowCardinality>(column.type);
+        MutableColumnPtr lc = column.type->createColumn();
+        typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column.column, 0, column.column->size());
+        column.column = std::move(lc);
+    }
+}
 
 bool canBecomeNullable(const DataTypePtr & type)
 {
