@@ -10,13 +10,14 @@ toc_title: External Dictionaries
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-## dictGet, dictGetOrDefault {#dictget}
+## dictGet, dictGetOrDefault, dictGetOrNull {#dictget}
 
 Retrieves values from an external dictionary. 
 
 ``` sql
 dictGet('dict_name', attr_names, id_expr)
 dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
+dictGetOrNull('dict_name', attr_name, id_expr)
 ```
 
 **Arguments**
@@ -34,12 +35,13 @@ dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
 
         - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
         - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
+        - `dictGetOrNull` returns `NULL` in case key was not found in dictionary.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
 
-**Example for single attribute**
+**Example for simple key dictionary**
 
-Create a text file `ext-dict-text.csv` containing the following:
+Create a text file `ext-dict-test.csv` containing the following:
 
 ``` text
 1,1
@@ -96,7 +98,7 @@ LIMIT 3
 └─────┴────────┘
 ```
 
-**Example for multiple attributes**
+**Example for complex key dictionary**
 
 Create a text file `ext-dict-mult.csv` containing the following:
 
@@ -159,6 +161,65 @@ LIMIT 3;
 │ (2,'2') │ Tuple(UInt8, String)  │
 │ (3,'3') │ Tuple(UInt8, String)  │
 └─────────┴───────────────────────┘
+```
+
+**Example for range key dictionary**
+
+Input table:
+
+```sql
+CREATE TABLE range_key_dictionary_source_table
+(
+    key UInt64,
+    start_date Date,
+    end_date Date,
+    value String,
+    value_nullable Nullable(String)
+)
+ENGINE = TinyLog();
+
+INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
+INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
+INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
+```
+
+Create the external dictionary:
+
+```sql
+CREATE DICTIONARY range_key_dictionary
+(
+    key UInt64,
+    start_date Date,
+    end_date Date,
+    value String,
+    value_nullable Nullable(String)
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'range_key_dictionary_source_table'))
+LIFETIME(MIN 1 MAX 1000)
+LAYOUT(RANGE_HASHED())
+RANGE(MIN start_date MAX end_date);
+```
+
+Perform the query:
+
+``` sql
+SELECT
+    (number, toDate('2019-05-20')),
+    dictHas('range_key_dictionary', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', 'value_nullable', number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', ('value', 'value_nullable'), number, toDate('2019-05-20'))
+FROM system.numbers LIMIT 5 FORMAT TabSeparated;
+```
+Result:
+
+``` text
+(0,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(1,'2019-05-20')        1       First   First   ('First','First')
+(2,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(3,'2019-05-20')        0       \N      \N      (NULL,NULL)
+(4,'2019-05-20')        0       \N      \N      (NULL,NULL)
 ```
 
 **See Also**

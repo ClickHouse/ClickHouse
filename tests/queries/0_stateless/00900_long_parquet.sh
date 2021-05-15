@@ -127,6 +127,7 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types1 ORDER BY int8 FORMAT 
 echo dest from null:
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types6 ORDER BY int8"
 
+
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_types5"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_types6"
 
@@ -135,3 +136,33 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_types1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_types2"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_types3"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_types4"
+
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_arrays"
+
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_arrays (id UInt32, a1 Array(Int8), a2 Array(UInt8), a3 Array(Int16), a4 Array(UInt16), a5 Array(Int32), a6 Array(UInt32), a7 Array(Int64), a8 Array(UInt64), a9 Array(String), a10 Array(FixedString(4)), a11 Array(Float32), a12 Array(Float64), a13 Array(Date), a14 Array(Datetime), a15 Array(Decimal(4, 2)), a16 Array(Decimal(10, 2)), a17 Array(Decimal(25, 2))) engine=Memory()"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_arrays VALUES (1, [1,-2,3], [1,2,3], [100, -200, 300], [100, 200, 300], [10000000, -20000000, 30000000], [10000000, 2000000, 3000000], [100000000000000, -200000000000, 3000000000000], [100000000000000, 20000000000000, 3000000000000], ['Some string', 'Some string', 'Some string'], ['0000', '1111', '2222'], [42.42, 424.2, 0.4242], [424242.424242, 4242042420.242424, 42], ['2000-01-01', '2001-01-01', '2002-01-01'], ['2000-01-01', '2001-01-01', '2002-01-01'], [0.2, 10.003, 4.002], [4.000000001, 10000.10000, 10000.100001], [1000000000.000000001123, 90.0000000010010101, 0101001.0112341001])"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_arrays VALUES (2, [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [])"
+
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_arrays FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_arrays FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_arrays ORDER BY id"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_arrays"
+
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_nullable_arrays"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_nullable_arrays (id UInt32, a1 Array(Nullable(UInt32)), a2 Array(Nullable(String)), a3 Array(Nullable(Decimal(4, 2)))) engine=Memory()"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_nullable_arrays VALUES (1, [1, Null, 2], [Null, 'Some string', Null], [0.001, Null, 42.42]), (2, [Null], [Null], [Null]), (3, [], [], [])"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_nullable_arrays FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_nullable_arrays FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_nullable_arrays ORDER BY id"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_nullable_arrays"
+
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_nested_arrays"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_nested_arrays (a1 Array(Array(Array(UInt32))), a2 Array(Array(Array(String))), a3 Array(Array(Nullable(UInt32))), a4 Array(Array(Nullable(String)))) engine=Memory() "
+${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_nested_arrays VALUES ([[[1,2,3], [1,2,3]], [[1,2,3]], [[], [1,2,3]]], [[['Some string', 'Some string'], []], [['Some string']], [[]]], [[Null, 1, 2], [Null], [1, 2], []], [['Some string', Null, 'Some string'], [Null], []])"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_nested_arrays FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_nested_arrays FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_nested_arrays"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_nested_arrays"
