@@ -55,7 +55,7 @@ SRCS(
     ExpressionAnalyzer.cpp
     ExternalDictionariesLoader.cpp
     ExternalLoader.cpp
-    ExternalLoaderDatabaseConfigRepository.cpp
+    ExternalLoaderDictionaryStorageConfigRepository.cpp
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
