@@ -161,7 +161,6 @@ private:
     };
 
     void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);
-    void executeGroupingSets(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *
