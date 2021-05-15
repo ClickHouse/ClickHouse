@@ -84,6 +84,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
+    if (select_query->group_by_with_grouping_sets)
+        return;
+
     if (!select_query->groupBy())
         return;
 
@@ -213,7 +216,7 @@ GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
 ///eliminate functions of other GROUP BY keys
 void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 {
-    if (!select_query->groupBy())
+    if (!select_query->groupBy() || select_query->group_by_with_grouping_sets)
         return;
 
     auto group_by = select_query->groupBy();
@@ -243,7 +246,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
 void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, ASTPtr & node)
 {
-    if (!select_query->groupBy())
+    if (!select_query->groupBy() || select_query->group_by_with_grouping_sets)
         return;
 
     const auto & group_by_keys = select_query->groupBy()->children;
@@ -413,7 +416,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
                                           const TreeRewriterResult & result)
 {
     auto order_by = select_query->orderBy();
-    if (!order_by)
+    if (!order_by || select_query->group_by_with_grouping_sets)
         return;
 
     /// Do not apply optimization for Distributed and Merge storages,

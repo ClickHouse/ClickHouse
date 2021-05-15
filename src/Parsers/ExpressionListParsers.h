@@ -508,6 +508,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserGroupingSetsExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "grouping sets expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 
 /// Parser for key-value pair, where value can be list of pairs.
 class ParserKeyValuePair : public IParserBase

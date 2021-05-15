@@ -756,6 +756,12 @@ bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected &
         .parse(pos, node, expected);
 }
 
+bool ParserGroupingSetsExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserExpressionWithOptionalAlias>(false),
+        std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
 
 bool ParserTTLExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
