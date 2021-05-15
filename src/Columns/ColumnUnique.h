@@ -51,6 +51,7 @@ public:
     const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
     bool nestedColumnIsNullable() const override { return is_nullable; }
     void nestedToNullable() override;
+    void nestedRemoveNullable() override;
 
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
@@ -269,6 +270,14 @@ void ColumnUnique<ColumnType>::nestedToNullable()
 {
     is_nullable = true;
     createNullMask();
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::nestedRemoveNullable()
+{
+    is_nullable = false;
+    nested_null_mask = nullptr;
+    nested_column_nullable = nullptr;
 }
 
 template <typename ColumnType>
