@@ -14,7 +14,6 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
 #include <filesystem>
-#include <Poco/Path.h>
 #include "Poco/Util/AbstractConfiguration.h"
 
 namespace fs = std::filesystem;
@@ -315,7 +314,7 @@ inline String fileName(const String & path)
 /// Return directory path for the specified path.
 inline String directoryPath(const String & path)
 {
-    return Poco::Path(path).setFileName("").toString();
+    return fs::path(path).parent_path() / "";
 }
 
 }
