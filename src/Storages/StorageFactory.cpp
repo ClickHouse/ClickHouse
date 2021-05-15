@@ -65,7 +65,7 @@ StoragePtr StorageFactory::get(
     const ConstraintsDescription & constraints,
     bool has_force_restore_data_flag) const
 {
-    String name;
+    String name, comment;
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
@@ -145,6 +145,9 @@ StoragePtr StorageFactory::get(
                 else
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
+            
+            if (storage_def->comment)
+                comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
@@ -189,12 +192,6 @@ StoragePtr StorageFactory::get(
                     "projections",
                     [](StorageFeatures features) { return features.supports_projections; });
         }
-    }
-
-    String comment;
-    if (storage_def->comment)
-    {
-        comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
     }
 
     ASTs empty_engine_args;
