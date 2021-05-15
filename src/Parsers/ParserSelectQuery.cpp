@@ -66,6 +66,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
+    ParserGroupingSetsExpressionList grouping_sets_list;
 
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
@@ -192,8 +193,17 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             !open_bracket.ignore(pos, expected))
             return false;
 
-        if (!exp_list.parse(pos, group_expression_list, expected))
-            return false;
+        if (select_query->group_by_with_grouping_sets)
+        {
+            if (!grouping_sets_list.parse(pos, group_expression_list, expected))
+                return false;
+        }
+        else
+        {
+            if (!exp_list.parse(pos, group_expression_list, expected))
+                return false;
+        }
+
 
         if ((select_query->group_by_with_rollup || select_query->group_by_with_cube || select_query->group_by_with_grouping_sets) &&
             !close_bracket.ignore(pos, expected))
