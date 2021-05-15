@@ -432,6 +432,59 @@ void Pipe::addTransform(ProcessorPtr transform)
     addTransform(std::move(transform), static_cast<OutputPort *>(nullptr), static_cast<OutputPort *>(nullptr));
 }
 
+void Pipe::addParallelTransforms(Processors transforms)
+{
+    if (output_ports.empty())
+        throw Exception("Cannot add parallel transforms to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
+
+    std::vector<InputPort> inputs;
+    std::vector<OutputPort> outputs;
+    for (const auto & transform : transforms)
+    {
+        auto current_transform_inputs = transform->getInputs();
+        if (current_transform_inputs.size() != 1)
+            throw Exception("Each parallel transform should have one input port", ErrorCodes::LOGICAL_ERROR);
+
+        inputs.push_back(current_transform_inputs.front());
+
+        auto current_transform_outputs = transform->getOutputs();
+        if (current_transform_outputs.size() != 1)
+            throw Exception("Each parallel transform should have one output port", ErrorCodes::LOGICAL_ERROR);
+
+        outputs.push_back(current_transform_outputs.front());
+    }
+
+    if (inputs.size() != output_ports.size())
+        throw Exception("Cannot add parallel transforms to Pipes because " +
+                        std::to_string(transforms.size()) + " transforms were passed, "
+                        "but " + std::to_string(output_ports.size()) + " expected", ErrorCodes::LOGICAL_ERROR);
+
+    size_t next_output = 0;
+    for (auto & input : inputs)
+    {
+        connect(*output_ports[next_output], input);
+        ++next_output;
+    }
+
+    output_ports.clear();
+    output_ports.reserve(outputs.size());
+
+    for (auto & output : outputs)
+    {
+        output_ports.emplace_back(&output);
+    }
+
+    /// do not check output formats because they are different in case of parallel aggregations
+
+    if (collected_processors)
+        collected_processors->insert(collected_processors->end(), transforms.begin(), transforms.end());
+
+    processors.insert(processors.end(), transforms.begin(), transforms.end());
+
+    /// Should not change streams number, so maybe not need max_parallel_streams update
+    max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
+}
+
 void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes)
 {
     if (output_ports.empty())
@@ -497,7 +550,7 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     for (size_t i = 1; i < output_ports.size(); ++i)
         assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
 
-    // Temporarily skip this check. TotaslHavingTransform may return finalized totals but not finalized data.
+    // Temporarily skip this check. TotalsHavingTransform may return finalized totals but not finalized data.
     // if (totals_port)
     //     assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
 
