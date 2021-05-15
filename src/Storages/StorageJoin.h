@@ -81,9 +81,11 @@ protected:
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,
-        ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
+        ASTTableJoin::Kind kind_,
+        ASTTableJoin::Strictness strictness_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         bool overwrite,
         bool persistent_);
 };

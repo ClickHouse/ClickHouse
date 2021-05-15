@@ -112,14 +112,14 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     bool persistent_)
-    : IStorage(table_id_),
-    disk(disk_),
-    persistent(persistent_)
+    : IStorage(table_id_), disk(disk_), persistent(persistent_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
 
@@ -136,9 +136,10 @@ StorageSet::StorageSet(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     bool persistent_)
-    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, persistent_},
-    set(std::make_shared<Set>(SizeLimits(), false, true))
+    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
+    , set(std::make_shared<Set>(SizeLimits(), false, true))
 {
 
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
@@ -247,7 +248,8 @@ void registerStorageSet(StorageFactory & factory)
             set_settings.loadFromQuery(*args.storage_def);
 
         DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
-        return StorageSet::create(disk, args.relative_data_path, args.table_id, args.columns, args.constraints, set_settings.persistent);
+        return StorageSet::create(
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
