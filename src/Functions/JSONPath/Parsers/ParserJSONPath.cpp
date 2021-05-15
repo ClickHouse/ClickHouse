@@ -1,9 +1,6 @@
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
-
 #include <Functions/JSONPath/Parsers/ParserJSONPathQuery.h>
-
 #include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
-
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 
 namespace DB

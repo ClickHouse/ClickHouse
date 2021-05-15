@@ -5,7 +5,8 @@ namespace DB {
 enum VisitorStatus {
     Ok,
     Exhausted,
-    Error
+    Error,
+    Ignore
 };
 
 }

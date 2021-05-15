@@ -16,8 +16,7 @@ public:
     virtual const char * getName() const = 0;
 
     /**
-     * Used to yield next element in JSONPath query. Does so by recursively calling getNextItem
-     * on its children Generators one by one.
+     * Used to yield next non-ignored element describes by JSONPath query.
      *
      * @param element to be extracted into
      * @return true if generator is not exhausted

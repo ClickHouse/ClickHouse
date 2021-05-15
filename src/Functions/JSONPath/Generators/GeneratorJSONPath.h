@@ -1,10 +1,9 @@
 #include <Functions/JSONPath/Generators/IGenerator.h>
 #include <Functions/JSONPath/Generators/VisitorJSONPathMemberAccess.h>
+#include <Functions/JSONPath/Generators/VisitorJSONPathRange.h>
 #include <Functions/JSONPath/Generators/VisitorStatus.h>
 
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
-
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -26,20 +25,23 @@ public:
             throw Exception("Invalid path", ErrorCodes::LOGICAL_ERROR);
         }
         const auto * query = path->jsonpath_query;
-        if (!path || !query)
-        {
-            throw Exception("Something went terribly wrong", ErrorCodes::LOGICAL_ERROR);
-        }
 
         for (auto child_ast : query->children)
         {
             if (child_ast->getID() == "ASTJSONPathMemberAccess")
             {
-                auto member_access_generator = std::make_shared<VisitorJSONPathMemberAccess<JSONParser>>(child_ast);
-                if (member_access_generator) {
-                    visitors.push_back(member_access_generator);
+                auto member_access_visitor = std::make_shared<VisitorJSONPathMemberAccess<JSONParser>>(child_ast);
+                if (member_access_visitor) {
+                    visitors.push_back(member_access_visitor);
                 } else {
-                    throw Exception("member_access_generator could not be nullptr", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("member_access_visitor could not be nullptr", ErrorCodes::LOGICAL_ERROR);
+                }
+            } else if (child_ast->getID() == "ASTJSONPathRange") {
+                auto range_visitor = std::make_shared<VisitorJSONPathRange<JSONParser>>(child_ast);
+                if (range_visitor) {
+                    visitors.push_back(range_visitor);
+                } else {
+                    throw Exception("range_visitor could not be nullptr", ErrorCodes::LOGICAL_ERROR);
                 }
             }
         }
@@ -54,38 +56,41 @@ public:
      */
     VisitorStatus getNextItem(typename JSONParser::Element & element) override
     {
-        if (visitors[current_visitor]->isExhausted()) {
-            if (!backtrace()) {
+        while (true) {
+            auto root = element;
+            if (current_visitor < 0) {
                 return VisitorStatus::Exhausted;
             }
-        }
 
-        /// Apply all non-exhausted visitors
-        for (int i = 0; i < current_visitor; ++i) {
-            VisitorStatus status = visitors[i]->apply(element);
-            /// on fail return immediately
-            if (status == VisitorStatus::Error) {
+            for (int i = 0; i < current_visitor; ++i) {
+                visitors[i]->apply(root);
+            }
+
+            VisitorStatus status = VisitorStatus::Error;
+            for (size_t i = current_visitor; i < visitors.size(); ++i) {
+                status = visitors[i]->visit(root);
+                current_visitor = i;
+                if (status == VisitorStatus::Error || status == VisitorStatus::Ignore) {
+                    break;
+                }
+            }
+            updateVisitorsForNextRun();
+
+            if (status != VisitorStatus::Ignore) {
+                element = root;
                 return status;
             }
         }
-
-        /// Visit newly initialized (for the first time or through reinitialize) visitors
-        for (size_t i = current_visitor; i < visitors.size(); ++i) {
-            VisitorStatus status = visitors[i]->visit(element);
-            current_visitor = i;
-            /// on fail return immediately
-            if (status == VisitorStatus::Error) {
-                return status;
-            }
-        }
-        return VisitorStatus::Ok;
     }
 
 private:
-    bool backtrace() {
+    bool updateVisitorsForNextRun() {
         while (current_visitor >= 0 && visitors[current_visitor]->isExhausted()) {
             visitors[current_visitor]->reinitialize();
             current_visitor--;
+        }
+        if (current_visitor >= 0) {
+            visitors[current_visitor]->updateState();
         }
         return current_visitor >= 0;
     }

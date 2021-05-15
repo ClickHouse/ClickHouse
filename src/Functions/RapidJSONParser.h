@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 /// This class can be used as an argument for the template class FunctionJSON.
 /// It provides ability to parse JSONs using rapidjson library.
 struct RapidJSONParser
@@ -43,8 +44,6 @@ struct RapidJSONParser
         ALWAYS_INLINE std::string_view getString() const { return {ptr->GetString(), ptr->GetStringLength()}; }
         Array getArray() const;
         Object getObject() const;
-
-        ALWAYS_INLINE rapidjson::Value * getDom() const { return nullptr; }
 
     private:
         const rapidjson::Value * ptr = nullptr;
