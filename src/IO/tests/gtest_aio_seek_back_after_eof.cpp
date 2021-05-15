@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <IO/ReadBufferAIO.h>
 #include <Common/randomSeed.h>
+#include <filesystem>
 #include <fstream>
 #include <string>
 
@@ -14,7 +15,7 @@ namespace
 {
 std::string createTmpFileForEOFtest()
 {
-    char pattern[] = "/tmp/fileXXXXXX";
+    char pattern[] = "./EOFtestFolderXXXXXX";
     if (char * dir = ::mkdtemp(pattern); dir)
     {
         return std::string(dir) + "/foo";
@@ -78,6 +79,11 @@ TEST(ReadBufferAIOTest, TestReadAfterAIO)
     size_t read_after_eof_big = testbuf.read(repeatdata.data(), repeatdata.size());
     EXPECT_EQ(read_after_eof_big, data.length());
     EXPECT_TRUE(testbuf.eof());
+
+    if (file_path[0] != '/')
+    {
+        std::filesystem::remove_all(file_path.substr(0, file_path.size() - 4));
+    }
 }
 
 #endif
