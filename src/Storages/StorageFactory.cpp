@@ -145,7 +145,7 @@ StoragePtr StorageFactory::get(
                 else
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
-            
+
             if (storage_def->comment)
                 comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
 
