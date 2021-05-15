@@ -48,14 +48,14 @@ Field nowSubsecond(UInt32 scale)
 }
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow64 : public IExecutableFunctionImpl
+class ExecutableFunctionNow64 : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow64(Field time_) : time_value(time_) {}
 
     String getName() const override { return "now64"; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumnConst(input_rows_count, time_value);
     }
@@ -64,7 +64,7 @@ private:
     Field time_value;
 };
 
-class FunctionBaseNow64 : public IFunctionBaseImpl
+class FunctionBaseNow64 : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow64(Field time_, DataTypePtr return_type_) : time_value(time_), return_type(return_type_) {}
@@ -82,7 +82,7 @@ public:
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionNow64>(time_value);
     }
@@ -95,7 +95,7 @@ private:
     DataTypePtr return_type;
 };
 
-class Now64OverloadResolver : public IFunctionOverloadResolverImpl
+class Now64OverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now64";
@@ -107,9 +107,9 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverImplPtr create(ContextPtr) { return std::make_unique<Now64OverloadResolver>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<Now64OverloadResolver>(); }
 
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
         String timezone_name;
@@ -138,7 +138,7 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
     }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
         auto res_type = removeNullable(result_type);
