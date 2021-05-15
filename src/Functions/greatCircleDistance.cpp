@@ -187,8 +187,8 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
-        float k_lat;
-        float k_lon;
+        float k_lat{};
+        float k_lon{};
 
         if constexpr (method == Method::SPHERE_DEGREES)
         {

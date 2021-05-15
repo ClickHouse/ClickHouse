@@ -701,7 +701,7 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `gcc`. At this time (August 2020), the code is compiled using version 9.3. (It can also be compiled using `clang 8`.)
+**3.** Compiler: `clang`. At this time (April 2021), the code is compiled using clang version 11. (It can also be compiled using `gcc` version 10, but it's untested and not suitable for production usage).
 
 The standard library is used (`libc++`).
 
@@ -711,7 +711,7 @@ The standard library is used (`libc++`).
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
-**6.** Use `-Wall -Wextra -Werror` compilation flags.
+**6.** Use `-Wall -Wextra -Werror` compilation flags. Also `-Weverything` is used with few exceptions.
 
 **7.** Use static linking with all libraries except those that are difficult to connect to statically (see the output of the `ldd` command).
 

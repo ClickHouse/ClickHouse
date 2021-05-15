@@ -122,11 +122,10 @@ public:
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
-                auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path, getContext()->getGlobalContext()->getConfigRef()), compression);
+                read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
                 auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
-                auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
-                reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+                reader = std::make_shared<InputStreamFromInputFormat>(input_format);
                 reader->readPrefix();
             }
 
@@ -156,10 +155,12 @@ public:
 
             reader->readSuffix();
             reader.reset();
+            read_buf.reset();
         }
     }
 
 private:
+    std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
     SourcesInfoPtr source_info;
     String uri;
@@ -271,7 +272,15 @@ Pipe StorageHDFS::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+    size_t begin_of_path;
+    /// This uri is checked for correctness in constructor of StorageHDFS and never modified afterwards
+    auto two_slash = uri.find("//");
+
+    if (two_slash == std::string::npos)
+        begin_of_path = uri.find('/');
+    else
+        begin_of_path = uri.find('/', two_slash + 2);
+
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
 
@@ -280,6 +289,9 @@ Pipe StorageHDFS::read(
 
     auto sources_info = std::make_shared<HDFSSource::SourcesInfo>();
     sources_info->uris = LSWithRegexpMatching("/", fs, path_from_uri);
+
+    if (sources_info->uris.empty())
+        LOG_WARNING(log, "No file in HDFS matches the path: {}", uri);
 
     for (const auto & column : column_names)
     {

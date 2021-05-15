@@ -126,8 +126,8 @@ private:
     String cluster_name;
     ClusterPtr cluster;
     Cluster::Address address_in_cluster;
-    size_t host_shard_num;
-    size_t host_replica_num;
+    size_t host_shard_num = 0;
+    size_t host_replica_num = 0;
 };
 
 struct DatabaseReplicatedTask : public DDLTaskBase

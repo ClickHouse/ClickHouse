@@ -26,6 +26,7 @@ bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::UInt16:       return f(TypePair<T, UInt16>());
             case TypeIndex::UInt32:       return f(TypePair<T, UInt32>());
             case TypeIndex::UInt64:       return f(TypePair<T, UInt64>());
+            case TypeIndex::UInt128:      return f(TypePair<T, UInt128>());
             case TypeIndex::UInt256:      return f(TypePair<T, UInt256>());
 
             case TypeIndex::Int8:         return f(TypePair<T, Int8>());
@@ -94,6 +95,7 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
             case TypeIndex::UInt16: return callOnBasicType<UInt16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::UInt32: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::UInt64: return callOnBasicType<UInt64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::UInt128: return callOnBasicType<UInt128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::UInt256: return callOnBasicType<UInt256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
 
             case TypeIndex::Int8: return callOnBasicType<Int8, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
@@ -171,6 +173,7 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
         case TypeIndex::UInt16:         return f(TypePair<DataTypeNumber<UInt16>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::UInt32:         return f(TypePair<DataTypeNumber<UInt32>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::UInt64:         return f(TypePair<DataTypeNumber<UInt64>, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::UInt128:        return f(TypePair<DataTypeNumber<UInt128>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::UInt256:        return f(TypePair<DataTypeNumber<UInt256>, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::Int8:           return f(TypePair<DataTypeNumber<Int8>, T>(), std::forward<ExtraArgs>(args)...);

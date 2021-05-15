@@ -35,6 +35,7 @@ public:
 
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
+    static ASTPtr formatProjections(const ProjectionsDescription & projections);
 
     void setForceRestoreData(bool has_force_restore_data_flag_)
     {
@@ -53,7 +54,7 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool sanity_check_compression_codecs);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
@@ -66,11 +67,11 @@ private:
         ColumnsDescription columns;
         IndicesDescription indices;
         ConstraintsDescription constraints;
+        ProjectionsDescription projections;
     };
 
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
-    BlockIO createDictionary(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties setProperties(ASTCreateQuery & create) const;

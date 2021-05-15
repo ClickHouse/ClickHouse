@@ -205,7 +205,7 @@ def test_concurrent_queries(started_cluster):
     count =  node1.count_in_log('New connection to postgres1:5432')
     print(count, prev_count)
     # 16 is default size for connection pool
-    assert(int(count) == int(prev_count) + 16)
+    assert(int(count) <= int(prev_count) + 16)
 
     def node_insert(_):
         for i in range(5):
@@ -235,7 +235,7 @@ def test_concurrent_queries(started_cluster):
 
     count =  node1.count_in_log('New connection to postgres1:5432')
     print(count, prev_count)
-    assert(int(count) == int(prev_count) + 16)
+    assert(int(count) <= int(prev_count) + 16)
 
 
 def test_postgres_distributed(started_cluster):
