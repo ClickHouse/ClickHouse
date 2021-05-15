@@ -102,6 +102,7 @@ TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResul
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const String & comment,
     const String & source_database_,
     const Strings & source_tables_,
     ContextPtr context_)
@@ -112,12 +113,14 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const String & comment,
     const String & source_database_,
     const String & source_table_regexp_,
     ContextPtr context_)
@@ -128,6 +131,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -623,9 +627,7 @@ void registerStorageMerge(StorageFactory & factory)
         String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageMerge::create(
-            args.table_id, args.columns,
-            source_database, table_name_regexp, args.getContext());
+        return StorageMerge::create(args.table_id, args.columns, args.comment, source_database, table_name_regexp, args.getContext());
     });
 }
 

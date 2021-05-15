@@ -96,15 +96,14 @@ StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
     const String & dictionary_name_,
     const ColumnsDescription & columns_,
+    const String & comment,
     Location location_,
     ContextPtr context_)
-    : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
-    , dictionary_name(dictionary_name_)
-    , location(location_)
+    : IStorage(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -116,11 +115,7 @@ StorageDictionary::StorageDictionary(
     Location location_,
     ContextPtr context_)
     : StorageDictionary(
-        table_id_,
-        dictionary_name_,
-        ColumnsDescription{getNamesAndTypes(dictionary_structure_)},
-        location_,
-        context_)
+        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, String{}, location_, context_)
 {
 }
 
@@ -289,7 +284,8 @@ void registerStorageDictionary(StorageFactory & factory)
                 checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
             }
 
-            return StorageDictionary::create(args.table_id, dictionary_name, args.columns, StorageDictionary::Location::Custom, local_context);
+            return StorageDictionary::create(
+                args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
         }
     });
 }

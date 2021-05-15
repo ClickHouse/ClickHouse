@@ -43,6 +43,7 @@ protected:
         const std::optional<FormatSettings> & format_settings_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         const String & compression_method_);
 
     Poco::URI uri;
@@ -107,14 +108,16 @@ class StorageURL : public ext::shared_ptr_helper<StorageURL>, public IStorageURL
 {
     friend struct ext::shared_ptr_helper<StorageURL>;
 public:
-    StorageURL(const Poco::URI & uri_,
-            const StorageID & table_id_,
-            const String & format_name_,
-            const std::optional<FormatSettings> & format_settings_,
-            const ColumnsDescription & columns_,
-            const ConstraintsDescription & constraints_,
-            ContextPtr context_,
-            const String & compression_method_);
+    StorageURL(
+        const Poco::URI & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const std::optional<FormatSettings> & format_settings_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        const String & compression_method_);
 
     String getName() const override
     {

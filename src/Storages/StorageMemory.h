@@ -115,6 +115,7 @@ protected:
         const StorageID & table_id_,
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
+        const String & comment,
         bool compress_ = false);
 };
 
