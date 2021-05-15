@@ -1,4 +1,5 @@
 <test>
-    <query>SELECT sumIf(1, 0) FROM numbers(100000000)</query>
-    <query>SELECT sumIf(1, 1) FROM numbers(100000000)</query>
+    <!-- Shouldn't have been a perf test, but an EXPLAIN one. -->
+    <query>SELECT sumIf(1, 0) FROM numbers(1000000000)</query>
+    <query>SELECT sumIf(1, 1) FROM numbers(1000000000)</query>
 </test>
