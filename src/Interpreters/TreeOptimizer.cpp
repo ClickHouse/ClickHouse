@@ -82,6 +82,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
+    if (select_query->group_by_with_grouping_sets)
+        return;
+
     if (!select_query->groupBy())
     {
         // If there is a HAVING clause without GROUP BY, make sure we have some aggregation happen.
@@ -222,7 +225,7 @@ GroupByKeysInfo getGroupByKeysInfo(ASTs & group_keys)
 ///eliminate functions of other GROUP BY keys
 void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 {
-    if (!select_query->groupBy())
+    if (!select_query->groupBy() || select_query->group_by_with_grouping_sets)
         return;
 
     auto grp_by = select_query->groupBy();
@@ -271,7 +274,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
 void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
 {
-    if (!select_query->groupBy())
+    if (!select_query->groupBy() || select_query->group_by_with_grouping_sets)
         return;
 
     auto grp_by = select_query->groupBy();
@@ -443,7 +446,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
                                           const TablesWithColumns & tables_with_columns)
 {
     auto order_by = select_query->orderBy();
-    if (!order_by)
+    if (!order_by || select_query->group_by_with_grouping_sets)
         return;
 
     std::unordered_set<String> group_by_hashes;

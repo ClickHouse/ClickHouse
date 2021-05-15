@@ -216,18 +216,10 @@ void ExpressionAnalyzer::analyzeAggregation()
         {
             if (select_query->groupBy())
             {
-                if (select_query->group_by_with_grouping_sets)
-                {
-                    LOG_DEBUG(poco_log, "analyzeAggregation: detect group by with grouping sets");
-                    /// TODO
-                }
                 NameSet unique_keys;
                 ASTs & group_asts = select_query->groupBy()->children;
                 for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
                 {
-                    std::ostringstream os;
-                    group_asts[i]->dumpTree(os);
-                    LOG_DEBUG(poco_log, "Dump tree: " + os.str());
                     ssize_t size = group_asts.size();
                     getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
@@ -261,12 +253,15 @@ void ExpressionAnalyzer::analyzeAggregation()
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.count(key.name))
                     {
-                        if (select_query->group_by_with_grouping_sets)
-                        {
-                            aggregation_keys_list.push_back({key});
-                        }
                         unique_keys.insert(key.name);
-                        aggregation_keys.push_back(key);
+                        if (select_query->group_by_with_grouping_sets) {
+                            aggregation_keys_list.push_back({key});
+                            LOG_DEBUG(poco_log, "pushed grouping set of 1 column: " + key.name);
+                        }
+                        else
+                        {
+                            aggregation_keys.push_back(key);
+                        }
 
                         /// Key is no longer needed, therefore we can save a little by moving it.
                         aggregated_columns.push_back(std::move(key));
@@ -770,10 +765,23 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
     ASTs asts = select_query->groupBy()->children;
-    for (const auto & ast : asts)
+    if (select_query->group_by_with_grouping_sets)
     {
-        step.required_output.emplace_back(ast->getColumnName());
-        getRootActions(ast, only_types, step.actions());
+        for (const auto & inner_asts : asts) {
+            for (const auto & ast : inner_asts->children)
+            {
+                step.required_output.emplace_back(ast->getColumnName());
+                getRootActions(ast, only_types, step.actions());
+            }
+        }
+    }
+    else
+    {
+        for (const auto & ast : asts)
+        {
+            step.required_output.emplace_back(ast->getColumnName());
+            getRootActions(ast, only_types, step.actions());
+        }
     }
 
     if (optimize_aggregation_in_order)
@@ -1157,7 +1165,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             /// TODO correct conditions
             optimize_aggregation_in_order =
                     context.getSettingsRef().optimize_aggregation_in_order
-                    && storage && query.groupBy();
+                    && storage && query.groupBy() && !query.group_by_with_grouping_sets;
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
