@@ -1894,9 +1894,12 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
         res = place;
     }
 
-    /// Adding Values
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-        aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0], result.aggregates_pool);
+    if (block.rows() > 0)
+    {
+        /// Adding Values
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0], result.aggregates_pool);
+    }
 
     /// Early release memory.
     block.clear();
