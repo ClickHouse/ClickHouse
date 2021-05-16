@@ -118,8 +118,7 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, Conte
     /// to its nested ReplacingMergeTree table (in all other cases), the context of a query os modified.
     /// Also if materialzied_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
     /// replication_handler was shutdown.
-    if ((local_context->hasQueryContext() && local_context->getQueryContext()->getQueryFactoriesInfo().storages.count("ReplacingMergeTree"))
-        || materialized_tables.empty())
+    if (local_context->isInternalQuery() || materialized_tables.empty())
     {
         return DatabaseAtomic::tryGetTable(name, local_context);
     }
@@ -143,14 +142,10 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, Conte
 void DatabaseMaterializePostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
     /// Create table query can only be called from replication thread.
-    if (local_context->hasQueryContext())
+    if (local_context->isInternalQuery())
     {
-        auto storage_set = local_context->getQueryContext()->getQueryFactoriesInfo().storages;
-        if (storage_set.find("ReplacingMergeTree") != storage_set.end())
-        {
-            DatabaseAtomic::createTable(local_context, table_name, table, query);
-            return;
-        }
+        DatabaseAtomic::createTable(local_context, table_name, table, query);
+        return;
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

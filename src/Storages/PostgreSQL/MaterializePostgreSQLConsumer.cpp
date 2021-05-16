@@ -475,8 +475,7 @@ void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransact
                 insert->columns = buffer.columnsAST;
 
                 auto insert_context = Context::createCopy(context);
-                insert_context->makeQueryContext();
-                insert_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
+                insert_context->setInternalQuery(true);
 
                 InterpreterInsertQuery interpreter(insert, insert_context, true);
                 auto block_io = interpreter.execute();
