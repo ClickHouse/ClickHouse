@@ -434,6 +434,8 @@ void Pipe::addTransform(ProcessorPtr transform)
 
 void Pipe::addParallelTransforms(Processors transforms)
 {
+    LOG_DEBUG(log, "Begin addParallelTransforms, have {} transforms", transforms.size());
+
     if (output_ports.empty())
         throw Exception("Cannot add parallel transforms to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
 
@@ -452,6 +454,7 @@ void Pipe::addParallelTransforms(Processors transforms)
             throw Exception("Each parallel transform should have one output port", ErrorCodes::LOGICAL_ERROR);
 
         outputs.push_back(current_transform_outputs.front());
+        LOG_DEBUG(log, "addParallelTransforms, added inputs and outputs for processor {}", transform->getName());
     }
 
     if (inputs.size() != output_ports.size())
@@ -464,6 +467,7 @@ void Pipe::addParallelTransforms(Processors transforms)
     {
         connect(*output_ports[next_output], input);
         ++next_output;
+        LOG_DEBUG(log, "addParallelTransforms connect current output to new input {}", next_output);
     }
 
     output_ports.clear();
@@ -471,15 +475,22 @@ void Pipe::addParallelTransforms(Processors transforms)
 
     for (auto & output : outputs)
     {
+        LOG_DEBUG(log, "addParallelTransforms change outputs to new output");
+        LOG_DEBUG(log, "addParallelTransforms is output connected: {}", output.isConnected());
         output_ports.emplace_back(&output);
     }
 
     /// do not check output formats because they are different in case of parallel aggregations
+    LOG_DEBUG(log, "addParallelTransforms do not check format");
 
     if (collected_processors)
         collected_processors->insert(collected_processors->end(), transforms.begin(), transforms.end());
 
-    processors.insert(processors.end(), transforms.begin(), transforms.end());
+    for (auto & transform_ptr : transforms)
+    {
+        processors.emplace_back(std::move(transform_ptr));
+    }
+    LOG_DEBUG(log, "addParallelTransforms inserted processors, now processors is of size {}", processors.size());
 
     /// Should not change streams number, so maybe not need max_parallel_streams update
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
@@ -512,6 +523,15 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     size_t next_output = 0;
     for (auto & input : inputs)
     {
+        LOG_DEBUG(log, "Pipe: is input connected {}", input.isConnected());
+        LOG_DEBUG(log, "Pipe: is output connected {}", output_ports[next_output]->isConnected());
+        if (output_ports[next_output]->isConnected())
+        {
+            if (output_ports[next_output]->getHeader())
+                LOG_DEBUG(log, "output header structure is: {}", output_ports[next_output]->getHeader().dumpStructure());
+            else
+                LOG_DEBUG(log, "could not retrieve info about output");
+        }
         connect(*output_ports[next_output], input);
         ++next_output;
     }
