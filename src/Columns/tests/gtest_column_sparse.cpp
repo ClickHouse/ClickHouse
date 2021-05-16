@@ -193,7 +193,7 @@ TEST(ColumnSparse, Permute)
     {
         auto [sparse_src, full_src] = createColumns(n, k);
 
-        IColumn::Permutation perm;
+        IColumn::Permutation perm(n);
         std::iota(perm.begin(), perm.end(), 0);
         std::shuffle(perm.begin(), perm.end(), rng);
 
