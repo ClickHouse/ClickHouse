@@ -5,7 +5,8 @@
 #include <memory>
 
 #include <Core/Block.h>
-#include <Common/LRUCache.h>
+// #include <Common/LRUCache.h>
+#include <Common/Cache/LRUCache.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -36,9 +37,17 @@ namespace ErrorCodes
 class QueryCacheValue 
 {
 public:
-    QueryCacheValue(BlocksList && blocks_, size_t bytes_size_, UInt64 cache_ttl_) : 
-            blocks(std::move(blocks_)), bytes_size(bytes_size_), cache_ttl(cache_ttl_) {}
+    QueryCacheValue(
+        BlocksList && blocks_, 
+        size_t bytes_size_, 
+        UInt64 cache_ttl_) : 
+        blocks(std::move(blocks_)), 
+        bytes_size(bytes_size_), 
+        cache_ttl(cache_ttl_) 
+        {}
+    
     const BlocksList& getBlocks() const { return blocks; }
+
     BlockInputStreamPtr getInputStream() 
     { 
         return std::make_shared<BlocksListBlockInputStream>(blocks.begin(), blocks.end()); 
@@ -70,17 +79,21 @@ struct QueryCacheWeightFunction
 };
 
 
-using QueryCacheBase = LRUCache<String, QueryCacheValue, std::hash<String>, QueryCacheWeightFunction>;
+using QueryCacheBase = ILRUCache<String, QueryCacheValue, std::hash<String>, QueryCacheWeightFunction>;
 
 
 class QueryCache : public QueryCacheBase
 {
-private:
-
 
 public:
+
     QueryCache(size_t max_size_in_bytes)
         : QueryCacheBase(max_size_in_bytes) {}
+
+    using Key = typename QueryCacheBase::Key;
+    using Mapped = typename QueryCacheBase::Mapped;
+    using MappedPtr = std::shared_ptr<Mapped>;
+
 
     /// Calculate key from serialized query AST and offset.
     static UInt128 hash_str(const ASTPtr & select_query)
@@ -91,7 +104,6 @@ public:
         SipHash hash;
         hash.update(serialized_ast.data(), serialized_ast.size() + 1);
         hash.get128(key);
-
         return key;
     }
 
@@ -103,7 +115,6 @@ public:
 
 
     BlockInputStreamPtr getOrSet(const Key & key, BlockInputStreamPtr stream, UInt64 cache_ttl)
-    //TODO
     {
         auto load_func = [this, &stream, cache_ttl]() { 
             auto cache_value = this->streamHandler(stream, cache_ttl);
@@ -161,7 +172,7 @@ public:
     }
 
 private: 
-    MappedPtr streamHandler(BlockInputStreamPtr & stream, UInt64 cache_ttl, size_t max_size=(1u << 20))
+    MappedPtr streamHandler(BlockInputStreamPtr & stream, UInt64 cache_ttl, size_t max_size_=(1u << 20))
     {
         Block block;
         BlocksList blocks;
@@ -171,10 +182,10 @@ private:
         {
             cur_size += block.bytes();
             blocks.push_back(std::move(block));
-            if (cur_size > max_size)
+            if (cur_size > max_size_)
                 break;
         }
-        if (cur_size <= max_size) 
+        if (cur_size <= max_size_) 
         {
             cache_value = std::make_shared<QueryCacheValue>(std::move(blocks), cur_size, cache_ttl);
             stream = cache_value->getInputStream();

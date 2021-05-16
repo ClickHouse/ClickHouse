@@ -561,7 +561,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     }
 }
 
-BlockIO InterpreterSelectQuery::execute_new()
+BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
     BlockInputStreamPtr stream;
@@ -599,7 +599,7 @@ BlockIO InterpreterSelectQuery::execute_new()
     return res;
 }
 
-BlockIO InterpreterSelectQuery::execute()
+BlockIO InterpreterSelectQuery::execute_new()
 {
     BlockIO res;
     QueryPlan query_plan;
