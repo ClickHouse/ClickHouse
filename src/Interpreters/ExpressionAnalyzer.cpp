@@ -154,6 +154,7 @@ void ExpressionAnalyzer::analyzeAggregation()
     auto * select_query = query->as<ASTSelectQuery>();
 
     auto temp_actions = std::make_shared<ActionsDAG>(sourceColumns());
+
     if (select_query)
     {
         NamesAndTypesList array_join_columns;
