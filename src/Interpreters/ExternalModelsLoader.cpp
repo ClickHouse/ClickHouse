@@ -11,10 +11,11 @@ namespace ErrorCodes
 }
 
 
-ExternalModelsLoader::ExternalModelsLoader(ContextPtr context_)
-    : ExternalLoader("external model", &Poco::Logger::get("ExternalModelsLoader")), WithContext(context_)
+ExternalModelsLoader::ExternalModelsLoader(Context & context_)
+    : ExternalLoader("external model", &Poco::Logger::get("ExternalModelsLoader"))
+    , context(context_)
 {
-    setConfigSettings({"model", "name", {}, {}});
+    setConfigSettings({"model", "name", {}});
     enablePeriodicUpdates(true);
 }
 
@@ -30,10 +31,10 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
     {
         return std::make_unique<CatBoostModel>(
                 name, config.getString(config_prefix + ".path"),
-                getContext()->getConfigRef().getString("catboost_dynamic_library_path"),
+                context.getConfigRef().getString("catboost_dynamic_library_path"),
                 lifetime
         );
-    } 
+    }
     else if (type == "tensorflow")
     {
         int32_t num_threads = 1;
@@ -42,7 +43,7 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
 
         return std::make_unique<TensorFlowModel>(
                 name, config.getString(config_prefix + ".path"),
-                getContext()->getConfigRef().getString("tensorflow_lite_dynamic_library_path"),
+                context.getConfigRef().getString("tensorflow_lite_dynamic_library_path"),
                 lifetime, num_threads
         );
     }
