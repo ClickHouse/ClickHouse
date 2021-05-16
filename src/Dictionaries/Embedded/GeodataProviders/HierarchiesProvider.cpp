@@ -30,13 +30,12 @@ RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string
 void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
 {
     std::string basename = fs::path(path).stem();
+    fs::path dir_path = fs::absolute(path).parent_path();
 
-    Poco::Path dir_path = Poco::Path(path).absolute().parent();
-
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(dir_path); dir_it != dir_end; ++dir_it)
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator dir_it(dir_path); dir_it != dir_end; ++dir_it)
     {
-        std::string candidate_basename = dir_it.path().getBaseName();
+        std::string candidate_basename = dir_it->path().stem();
 
         if (candidate_basename.starts_with(basename)
             && (candidate_basename.size() > basename.size() + 1)
