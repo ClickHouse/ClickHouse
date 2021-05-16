@@ -11,6 +11,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 
@@ -23,7 +24,7 @@ namespace detail
 {
 namespace
 {
-inline auto getInstanceAndInitGlobalCounters()
+inline decltype(SymbolIndex::instance()) getInstanceAndInitGlobalCounters()
 {
     /**
      * Writer is a singleton, so it initializes statically.
@@ -44,16 +45,17 @@ inline auto getInstanceAndInitGlobalCounters()
     return SymbolIndex::instance();
 }
 
-inline auto valueOr(auto& container, auto key,
-    std::remove_cvref_t<decltype(container.at(key))> default_value)
+template <class T>
+inline typename T::mapped_type valueOr(
+    const T& container, typename T::key_type key, typename T::mapped_type default_value)
 {
     if (auto it = container.find(key); it != container.end())
         return it->second;
     return default_value;
 }
 
-inline void setOrIncrement(auto& container, auto key,
-    std::remove_cvref_t<decltype(container.at(key))> value)
+template <class T>
+inline void setOrIncrement(T& container, typename T::key_type key, typename T::mapped_type value)
 {
     if (auto it = container.find(key); it != container.end())
         it->second += value;
@@ -110,15 +112,23 @@ Writer::Writer()
     : hardware_concurrency(std::thread::hardware_concurrency()),
       base_log(nullptr),
       // TODO works only in docker
-      clickhouse_src_dir_abs_path("/build/src"),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
+      clickhouse_src_dir_abs_path("/build/src"),
       functions_count(0),
       addrs_count(0),
       edges_count(0),
       // Set the initial pool size to all threads as we'll need all resources to symbolize fast.
       tasks_queue(hardware_concurrency),
-      test_index(0) { }
+      test_index(0),
+      ccr_header_buffer() { }
+
+Writer& Writer::instance()
+{
+    /// Meyer's singleton.
+    static Writer w;
+    return w;
+}
 
 void Writer::initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_array_end)
 {
@@ -182,24 +192,18 @@ void Writer::onServerInitialized()
     // Before server initialization we couldn't log data to Poco.
     base_log = &Poco::Logger::get(std::string{logger_base_name});
 
-    // Also we couldn't call fwrite in Writer() (fails with errno=9 "Bad file descriptor") because it should be called
-    // after fopen internal structs initialization, and the callback that initializes Writer gets called earlier.
-    report_file.set(renameOldReportAndGetName(), "w");
-
     symbolizeInstrumentedData();
 }
 
 void Writer::hit(EdgeIndex edge_index)
 {
     /**
-     * If we are not copying data: it's like multithreaded value increment -- will probably get less hits, but
-     * it's still good approximation.
-     *
      * If we are copying data: the only place where edges_hit is used is pointer swap with a temporary vector.
      * In -O3 this code will surely be optimized to something like https://godbolt.org/z/8rerbshzT,
-     * where only lines 32-36 swap the pointers, so we'll just probably count some new hits for old test.
+     * where only lines 32-36 swap the pointers, so we'll just probably count some old hits for new test.
+     *
      */
-    ++edges_hit[edge_index];
+    __atomic_add_fetch(&edges_hit[edge_index], 1, __ATOMIC_RELAXED);
 }
 
 namespace /// Symbolized data
@@ -294,9 +298,9 @@ void Writer::symbolizeInstrumentedData()
 
     LOG_INFO(base_log, "Symbolized all addresses");
 
-    writeCCRHeader();
+    writeCCRHeaderToInternalBuffer();
 
-    LOG_INFO(base_log, "Wrote report header");
+    LOG_INFO(base_log, "Wrote report header to internal buffer");
 }
 
 void Writer::onChangedTestName(std::string old_test_name)
@@ -356,15 +360,10 @@ void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
     writeCCREntry(test_data);
 }
 
-void Writer::writeCCRHeader()
+void Writer::writeCCRHeaderToInternalBuffer()
 {
-    /// Report is written directly to file as docker container checks if any contribs were instrumented.
-    /// In that case the check is failed.
-
     fmt::memory_buffer mb;
-
-    constexpr size_t header_size_hint = 10 * 1025 * 1024;
-    mb.reserve(header_size_hint);
+    mb.reserve(10 * 1024 * 1024); //small speedup
 
     /**
      * /absolute/path/to/ch/src/directory <- e.g.  /home/user/ch/src
@@ -396,7 +395,7 @@ void Writer::writeCCRHeader()
             fmt::format_to(mb, "{}\n", fmt::join(file.instrumented_lines, "\n"));
     }
 
-    report_file.write(mb);
+    ccr_header_buffer = std::move(mb);
 }
 
 void Writer::writeCCREntry(const Writer::TestData& test_data)

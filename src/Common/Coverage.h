@@ -12,6 +12,8 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <queue>
+#include <list>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -25,7 +27,6 @@
 
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
-#include <Common/ThreadPool.h>
 
 namespace detail
 {
@@ -38,7 +39,9 @@ using CallCount = size_t;
 using Line = size_t;
 
 /**
- * Simplified FreeThreadPool. Not intended for general use (some invariants broken).
+ * Simplified FreeThreadPool from Common/ThreadPool.h .
+ * Not intended for general use (some invariants broken).
+ *
  * - Does not use job priorities.
  * - Does not throw.
  * - Does not use metrics.
@@ -46,6 +49,9 @@ using Line = size_t;
  * - Spawns max_threads on startup.
  * - Invokes job with job index.
  * - Some operations are not thread-safe.
+ *
+ * Own implementation needed as Writer does not use most FreeThreadPool features (and we can save ~20 minutes by
+ * using this class instead of the former).
  */
 class TaskQueue
 {
@@ -117,6 +123,7 @@ private:
     }
 };
 
+/// RAII wrapper for FILE *
 class FileWrapper
 {
     FILE * handle;
@@ -128,35 +135,21 @@ public:
     inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), 1, mb.size(), handle); }
 };
 
-static constexpr std::string_view report_name = "report.ccr";
-
-inline std::string renameOldReportAndGetName()
-{
-    // TODO creates a report in same folder as binary
-    const auto src_path = std::filesystem::current_path();
-    auto report_pathname = (src_path / report_name).lexically_normal();
-
-    if (std::filesystem::exists(report_pathname))
-    {
-        auto new_name = report_pathname;
-        new_name += ".old";
-        std::filesystem::rename(report_pathname, new_name);
-    }
-
-    return report_pathname.string();
-}
-
+/**
+ * Custom code coverage runtime for -WITH_COVERAGE=1 build.
+ *
+ * On startup, symbolizes all instrumented addresses in binary (information provided by clang).
+ * During testing, handles calls from sanitizer callbacks (Common/CoverageCallbacks.h).
+ * Writes a report in CCR format (docs/development/coverage.md) after testing.
+ */
 class Writer
 {
 public:
-    static constexpr std::string_view coverage_test_name_setting_name = "coverage_test_name";
-    static constexpr std::string_view coverage_tests_count_setting_name = "coverage_tests_count";
+    static constexpr std::string_view setting_test_name = "coverage_test_name";
+    static constexpr std::string_view setting_tests_count = "coverage_tests_count";
+    static constexpr std::string_view setting_report_path = "coverage_report_path";
 
-    static inline Writer& instance()
-    {
-        static Writer w;
-        return w;
-    }
+    static Writer& instance();
 
     void initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_array_end);
 
@@ -166,8 +159,19 @@ public:
 
     inline void setTestsCount(size_t tests_count)
     {
-        /// Note: this is an upper bound (as we don't know which tests will be skipped before running them).
+        // This is an upper bound (as we don't know which tests will be skipped before running them).
         tests.resize(tests_count);
+    }
+
+    inline void setReportPath(const std::string& report_path_)
+    {
+        report_path = report_path_;
+        report_file.set(report_path, "w");
+
+        LOG_INFO(base_log, "Set report file path to {}, writing CCR header, {}b",
+                report_path_, ccr_header_buffer.size());
+
+        writeCCRHeaderToFile();
     }
 
     void onChangedTestName(std::string old_test_name); // String is passed by value as it's swapped with _test_.
@@ -176,14 +180,21 @@ private:
     Writer();
 
     static constexpr std::string_view logger_base_name = "Coverage";
+
+    /// Each test duration is longer than coverage test processing pipeline (converting and dumping to disk), so no
+    /// more than 1 thread is needed
     static constexpr size_t thread_pool_size_for_tests = 1;
+
     static constexpr size_t total_source_files_hint = 5000; // each LocalCache pre-allocates this / pool_size.
 
     const size_t hardware_concurrency;
     const Poco::Logger * base_log;
-    const std::filesystem::path clickhouse_src_dir_abs_path;
+
     const MultiVersion<SymbolIndex>::Version symbol_index;
     const Dwarf dwarf;
+
+    const std::filesystem::path clickhouse_src_dir_abs_path;
+    std::filesystem::path report_path;
 
     size_t functions_count;
     size_t addrs_count;
@@ -250,7 +261,16 @@ private:
 
     // CCR (ClickHouse coverage report) is a format for storing large coverage reports while preserving per-test data.
 
-    void writeCCRHeader();
+    fmt::memory_buffer ccr_header_buffer; // Report header may be formatted before report file path is specified.
+
+    inline void writeCCRHeaderToFile()
+    {
+        report_file.write(ccr_header_buffer);
+        // do not free buffer memory to save a bit of time.
+        fflush(report_file.file());
+    }
+
+    void writeCCRHeaderToInternalBuffer();
     void writeCCREntry(const TestData& test_data);
     void writeCCRFooter();
 

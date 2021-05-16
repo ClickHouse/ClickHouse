@@ -1,4 +1,4 @@
-fiximport sys
+import sys
 from typing import TextIO
 from time import time
 from collections import Counter
@@ -98,10 +98,6 @@ def main():
 
     parser.add_argument('--genhtml-slim-report', nargs=1,
         help="Merges all tests data into a single .info report. Per-test data is not preserved")
-
-    # parser.add_argument('--get-reordered-tests', nargs=1,
-    #     help="Diven a diff, returns all tests from TESTS section. All tests that may fail after applying the diff "
-    #          "are reordered to the top, other tests stay in their places")
 
     args = parser.parse_args()
 

@@ -22,7 +22,7 @@ kill_clickhouse () {
 }
 
 start_clickhouse () {
-    LLVM_PROFILE_FILE='server_%h_%p_%m.profraw' sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml &
+    sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml &
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
@@ -37,6 +37,30 @@ start_clickhouse () {
         sleep 0.5
         counter=$((counter + 1))
     done
+}
+
+wail_till_ready () {
+    echo "Waiting for server to symbolize all addresses"
+
+    func_time=$(time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all functions/ q' > /dev/null)
+
+    echo "Symbolized functions"
+    echo $func_time
+
+    addr_time=$(time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null)
+
+    echo "Symbolized addresses"
+    echo $addr_time
+
+    instrumented_contribs=$(grep "contrib/" < report.ccr)
+    has_contribs=$(echo "$instrumented_contribs" | wc -l)
+
+    if ((has_contribs > 0)); then
+        echo "Warning: found instrumented files from contrib/. Please remove them explicitly via cmake"
+        echo "$instrumented_contribs"
+    fi
+
+    echo "Starting tests"
 }
 
 
@@ -63,50 +87,54 @@ if ! /s3downloader --dataset-names $DATASETS; then
     exit 1
 fi
 
-
 chmod 777 -R /var/lib/clickhouse
 
+wail_till_ready
 
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "SHOW DATABASES"
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "CREATE DATABASE test"
+clickhouse-client --query "SET coverage_report_path='/report.ccr'"
+
+# clickhouse-client --query "SET coverage_tests_count=2"
+# clickhouse-client --query "SET coverage_test_name='client_initial_1'"
+# TODO Is not tracked as for now
+clickhouse-client --query "SHOW DATABASES"
+clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
+clickhouse-client --query "CREATE DATABASE test"
+
+# clickhouse-client --query "SET coverage_test_name='client_initial_2'"
+
+clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM test"
+clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
+clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
+clickhouse-client --query "SHOW TABLES FROM test"
+
+# clickhouse-client --query "SET coverage_test_name=''"
+# kill_clickhouse
+#
+# cp report.ccr ${OUTPUT_DIR}/client_report.ccr
+#
+# start_clickhouse
+# wail_till_ready
+
+clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --coverage \
+    2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
 kill_clickhouse
-start_clickhouse
 
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "SHOW TABLES FROM datasets"
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
+# no support for failed tests
+# TODO use baseline for incremental coverage
+# --baseline, --highlight, --diff
 
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-test -j 8 --testname --shard --zookeeper --print-time --use-skip-list 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
+cp /usr/bin/report.ccr report.ccr
+cp report.ccr "${OUTPUT_DIR}"/report.ccr
+python3 ccr_converter.py report.ccr --genhtml-slim-report report.info
+cp report.info "${OUTPUT_DIR}"/report.info
 
-readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "/test_result.txt")
-
-kill_clickhouse
-
-sleep 3
-
-if [[ -n "${FAILED_TESTS[*]}" ]]
-then
-    # Clean the data so that there is no interference from the previous test run.
-    rm -rf /var/lib/clickhouse/{{meta,}data,user_files} ||:
-
-    start_clickhouse
-
-    echo "Going to run again: ${FAILED_TESTS[*]}"
-
-    LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-test --order=random --testname --shard --zookeeper --use-skip-list "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_result.txt
-else
-    echo "No failed tests"
-fi
-
-mkdir -p "$COVERAGE_DIR"
-mv /*.profraw "$COVERAGE_DIR"
-
-mkdir -p "$SOURCE_DIR"/obj-x86_64-linux-gnu
-cd "$SOURCE_DIR"/obj-x86_64-linux-gnu && CC=clang-11 CXX=clang++-11 cmake .. && cd /
-llvm-profdata-11 merge -sparse "${COVERAGE_DIR}"/* -o clickhouse.profdata
-llvm-cov-11 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -j=16 -format=lcov -skip-functions -ignore-filename-regex "$IGNORE" > output.lcov
-genhtml output.lcov --ignore-errors source --output-directory "${OUTPUT_DIR}"
+# Demangling names by c++filt here is cheaper than demangling names in binary
+time genhtml \
+  --ignore-errors source \
+  --output-directory "${GENHTML_REPORT_DIR}" \
+  --num-spaces 4 \
+  --legend \
+  --demangle-cpp \
+  report.info
