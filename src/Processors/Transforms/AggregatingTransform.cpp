@@ -501,6 +501,7 @@ void AggregatingTransform::work()
 
 Processors AggregatingTransform::expandPipeline()
 {
+    LOG_DEBUG(log, "in AggregatingTransform::expandPipeline");
     auto & out = processors.back()->getOutputs().front();
     inputs.emplace_back(out.getHeader(), this);
     connect(out, inputs.back());

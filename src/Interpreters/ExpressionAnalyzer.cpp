@@ -384,6 +384,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                     if (select_query->group_by_with_grouping_sets)
                     {
                         aggregation_keys_list.push_back({key});
+                        aggregation_keys.push_back(key);
                         LOG_DEBUG(poco_log, "pushed grouping set of 1 column: " + key.name);
                     }
                     else

@@ -4,6 +4,7 @@
 #include <QueryPipeline/PipelineResourcesHolder.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -136,6 +137,8 @@ private:
     /// If is set, all newly created processors will be added to this too.
     /// It is needed for debug. See QueryPipelineProcessorsCollector.
     Processors * collected_processors = nullptr;
+
+    Poco::Logger * log = &Poco::Logger::get("Pipe");
 
     /// This methods are for QueryPipeline. It is allowed to complete graph only there.
     /// So, we may be sure that Pipe always has output port if not empty.
