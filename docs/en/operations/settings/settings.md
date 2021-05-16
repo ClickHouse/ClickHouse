@@ -2874,7 +2874,7 @@ Possible values:
 
 Default value: 1.
 
-## http_send_timeout {#replicated_fetches_http_send_timeout}
+## http_send_timeout {#http_send_timeout}
 
 HTTP send timeout (in seconds).
 
