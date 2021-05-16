@@ -26,6 +26,7 @@ public:
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_,
         const std::string & remote_table_schema_ = "");
 
