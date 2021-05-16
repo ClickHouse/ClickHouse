@@ -54,6 +54,9 @@ bool checkEquals(const IColumn & lhs, const IColumn & rhs)
     return true;
 }
 
+// Can't use ErrorCodes, because of 'using namespace DB'.
+constexpr int error_code = 12345;
+
 constexpr size_t T = 5000;
 constexpr size_t MAX_ROWS = 10000;
 constexpr size_t sparse_ratios[] = {1, 2, 5, 10, 32, 50, 64, 100, 256, 500, 1000, 5000, 10000};
@@ -79,7 +82,7 @@ TEST(ColumnSparse, InsertRangeFrom)
             DUMP_COLUMN(sparse_dst);
             DUMP_COLUMN(full_dst);
             DUMP_NON_DEFAULTS(full_dst);
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns are unequal");
+            throw Exception(error_code, "Columns are unequal");
         }
     };
 
@@ -102,7 +105,7 @@ TEST(ColumnSparse, InsertRangeFrom)
             test_case(n1, k1, n2, k2, from, to - from);
         }
     }
-    catch(const Exception & e)
+    catch (const Exception & e)
     {
         FAIL() << e.displayText();
     }
@@ -122,7 +125,7 @@ TEST(ColumnSparse, PopBack)
             DUMP_COLUMN(sparse_dst);
             DUMP_COLUMN(full_dst);
             DUMP_NON_DEFAULTS(full_dst);
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns are unequal");
+            throw Exception(error_code, "Columns are unequal");
         }
     };
 
@@ -137,7 +140,7 @@ TEST(ColumnSparse, PopBack)
             test_case(n, k, m);
         }
     }
-    catch(const Exception & e)
+    catch (const Exception & e)
     {
         FAIL() << e.displayText();
     }
@@ -163,7 +166,7 @@ TEST(ColumnSparse, Filter)
             DUMP_COLUMN(sparse_dst);
             DUMP_COLUMN(full_dst);
             DUMP_NON_DEFAULTS(full_dst);
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns are unequal");
+            throw Exception(error_code, "Columns are unequal");
         }
     };
 
@@ -178,7 +181,7 @@ TEST(ColumnSparse, Filter)
             test_case(n, k, m);
         }
     }
-    catch(const Exception & e)
+    catch (const Exception & e)
     {
         FAIL() << e.displayText();
     }
@@ -190,7 +193,7 @@ TEST(ColumnSparse, Permute)
     {
         auto [sparse_src, full_src] = createColumns(n, k);
 
-        PaddedPODArray<UInt64> perm(n);
+        IColumn::Permutation perm;
         std::iota(perm.begin(), perm.end(), 0);
         std::shuffle(perm.begin(), perm.end(), rng);
 
@@ -210,7 +213,7 @@ TEST(ColumnSparse, Permute)
             DUMP_COLUMN(sparse_dst);
             DUMP_COLUMN(full_dst);
             DUMP_NON_DEFAULTS(full_dst);
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns are unequal");
+            throw Exception(error_code, "Columns are unequal");
         }
     };
 
@@ -225,7 +228,7 @@ TEST(ColumnSparse, Permute)
             test_case(n, k, limit);
         }
     }
-    catch(const Exception & e)
+    catch (const Exception & e)
     {
         FAIL() << e.displayText();
     }
@@ -250,7 +253,7 @@ TEST(ColumnSparse, CompareColumn)
             DUMP_COLUMN(full_src1);
             DUMP_COLUMN(sparse_src2);
             DUMP_COLUMN(full_src2);
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Compare results are unequal");
+            throw Exception(error_code, "Compare results are unequal");
         }
     };
 
@@ -269,7 +272,7 @@ TEST(ColumnSparse, CompareColumn)
             test_case(n1, k1, n2, k2, row_num);
         }
     }
-    catch(const Exception & e)
+    catch (const Exception & e)
     {
         FAIL() << e.displayText();
     }
@@ -281,8 +284,8 @@ TEST(ColumnSparse, GetPermutation)
     {
         auto [sparse_src, full_src] = createColumns(n, k);
 
-        PaddedPODArray<UInt64> perm_sparse;
-        PaddedPODArray<UInt64> perm_full;
+        IColumn::Permutation perm_sparse;
+        IColumn::Permutation perm_full;
 
         sparse_src->getPermutation(reverse, limit, 1, perm_sparse);
         full_src->getPermutation(reverse, limit, 1, perm_full);
@@ -303,7 +306,7 @@ TEST(ColumnSparse, GetPermutation)
             DUMP_COLUMN(sparse_sorted);
             DUMP_COLUMN(full_sorted);
             DUMP_NON_DEFAULTS(full_sorted);
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorted columns are unequal");
+            throw Exception(error_code, "Sorted columns are unequal");
         }
     };
 
@@ -320,7 +323,7 @@ TEST(ColumnSparse, GetPermutation)
             test_case(n, k, limit, reverse);
         }
     }
-    catch(const Exception & e)
+    catch (const Exception & e)
     {
         FAIL() << e.displayText();
     }

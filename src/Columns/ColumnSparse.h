@@ -11,11 +11,6 @@ class Collator;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class ColumnSparse final : public COWHelper<IColumn, ColumnSparse>
 {
 private:

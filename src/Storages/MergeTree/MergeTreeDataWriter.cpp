@@ -564,9 +564,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const IMergeTreeDataPart * parent_part,
     size_t block_num)
 {
-
-
-
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 

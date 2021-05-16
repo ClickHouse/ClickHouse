@@ -35,7 +35,7 @@ private:
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
     ColumnPtr executeWithoutSparseColumns(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 };
 
 class FunctionBaseAdaptor final : public IFunctionBase

@@ -24,6 +24,8 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
+
+    __builtin_unreachable();
 }
 
 void ISerialization::Kinds::writeBinary(WriteBuffer & ostr) const
