@@ -37,8 +37,6 @@ DEFAULT_ENV_NAME = 'env_file'
 
 SANITIZER_SIGN = "=================="
 
-USE_KEEPER = True
-
 def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
     full_path = os.path.join(path, fname)
     with open(full_path, 'w') as f:
@@ -200,6 +198,7 @@ class ClickHouseCluster:
         self.schema_registry_port = 8081
 
         self.zookeeper_use_tmpfs = True
+        self.use_keeper = True
 
         self.docker_client = None
         self.is_up = False
@@ -220,7 +219,7 @@ class ClickHouseCluster:
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None):
+                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None, use_keeper=True):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -240,6 +239,8 @@ class ClickHouseCluster:
             tag = self.docker_base_tag
         if not env_variables:
             env_variables = {}
+
+        self.use_keeper = use_keeper
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
@@ -293,7 +294,7 @@ class ClickHouseCluster:
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
             if not zookeeper_docker_compose_path:
-                if USE_KEEPER:
+                if self.use_keeper:
                     zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_keeper.yml')
                 else:
                     zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper.yml')
@@ -686,7 +687,7 @@ class ClickHouseCluster:
             common_opts = ['up', '-d']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
-                if USE_KEEPER:
+                if self.use_keeper:
                     print('Setup Keeper')
                     binary_path = self.server_bin_path
                     if binary_path.endswith('-server'):
