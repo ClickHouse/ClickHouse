@@ -174,7 +174,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal)
             comment,
             joinLines(query));
 
-        if (client_info.client_trace_context.trace_id)
+        if (client_info.client_trace_context.trace_id != UUID())
         {
             LOG_TRACE(&Poco::Logger::get("executeQuery"),
                 "OpenTelemetry traceparent '{}'",
@@ -289,7 +289,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
             query_log->add(elem);
 
     if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-        context->query_trace_context.trace_id
+        context->query_trace_context.trace_id != UUID()
             && opentelemetry_span_log)
     {
         OpenTelemetrySpanLogElement span;
@@ -656,6 +656,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_databases = info.databases;
                     elem.query_tables = info.tables;
                     elem.query_columns = info.columns;
+                    elem.query_projections = info.projections;
                 }
 
                 interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
@@ -792,7 +793,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-                    context->query_trace_context.trace_id
+                    context->query_trace_context.trace_id != UUID()
                         && opentelemetry_span_log)
                 {
                     OpenTelemetrySpanLogElement span;

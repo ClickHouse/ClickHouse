@@ -85,7 +85,8 @@ private:
             const auto & db_name = tab.table.database;
             database->attachTable(
                 table_name,
-                StorageMemory::create(StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}));
+                StorageMemory::create(
+                    StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
         context->setCurrentDatabase("test");

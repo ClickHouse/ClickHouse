@@ -223,7 +223,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (strcmp(name.c_str(), func[0]) != 0)
+                if (strcasecmp(name.c_str(), func[0]) != 0)
                 {
                     continue;
                 }
@@ -415,7 +415,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 // them, and we want to have consistent formatting.
                 if (tuple_arguments_valid && lit_right)
                 {
-                    if (isInt64FieldType(lit_right->value.getType())
+                    if (isInt64OrUInt64FieldType(lit_right->value.getType())
                         && lit_right->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
