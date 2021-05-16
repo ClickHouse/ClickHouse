@@ -3,7 +3,7 @@ import time
 import helpers.client as client
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
@@ -392,11 +392,13 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     
     time.sleep(5) # Wait for TTL
 
-    node_right.query("OPTIMIZE TABLE test_ttl_delete FINAL")
+    # after restart table can be in readonly mode
+    exec_query_with_retry(node_right, "OPTIMIZE TABLE test_ttl_delete FINAL")
+
     node_right.query("OPTIMIZE TABLE test_ttl_group_by FINAL")
     node_right.query("OPTIMIZE TABLE test_ttl_where FINAL")
+    exec_query_with_retry(node_left, "SYSTEM SYNC REPLICA test_ttl_delete")
 
-    node_left.query("SYSTEM SYNC REPLICA test_ttl_delete", timeout=20)
     node_left.query("SYSTEM SYNC REPLICA test_ttl_group_by", timeout=20)
     node_left.query("SYSTEM SYNC REPLICA test_ttl_where", timeout=20)
 
