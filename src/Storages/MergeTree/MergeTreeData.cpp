@@ -3415,8 +3415,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 
             if (!containing_part.empty() && containing_part != name)
                 // TODO maybe use PartsTemporaryRename here?
-                disk->moveDirectory(relative_data_path + source_dir + name,
-                    relative_data_path + source_dir + "inactive_" + name);
+                disk->moveDirectory(fs::path(relative_data_path) / source_dir / name,
+                    fs::path(relative_data_path) / source_dir / ("inactive_" + name));
             else
                 renamed_parts.addPart(name, "attaching_" + name);
         }
