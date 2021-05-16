@@ -75,7 +75,11 @@ Block UserDefinedFunction::executeCore(const ColumnsWithTypeAndName & arguments)
             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
         lambda_arguments.emplace_back(*opt_arg_name, arguments[j].type);
-        block.insert({arguments[j].column, arguments[j].type, *opt_arg_name});
+        std::cerr << "***Arguments: " << *opt_arg_name << " " << arguments[j].type << " " << arguments[j].column << std::endl;
+        auto column_ptr = arguments[j].column;
+        if (!column_ptr)
+            column_ptr = arguments[j].type->createColumnConstWithDefaultValue(1);
+        block.insert({column_ptr, arguments[j].type, *opt_arg_name});
     }
 
     ASTPtr lambda_body = function_core->as<ASTFunction>()->children.at(0)->children.at(1);
