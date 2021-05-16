@@ -7,7 +7,7 @@ INSERT INTO table1 SELECT number-205, number FROM numbers(10);
 INSERT INTO table1 SELECT number-205, number FROM numbers(400, 10);
 SELECT toInt64(partition) as p FROM system.parts WHERE table='table1' ORDER BY p;
 
-SELECT 'complex partition key:';
+SELECT 'tuple as partition key:';
 DROP TABLE IF EXISTS table2;
 CREATE TABLE table2 (id Int64, v UInt64)
 ENGINE = MergeTree()
@@ -16,6 +16,17 @@ INSERT INTO table2 SELECT number-205, number FROM numbers(10);
 INSERT INTO table2 SELECT number-205, number FROM numbers(400, 10);
 SELECT partition as p FROM system.parts WHERE table='table2' ORDER BY p;
 
+SELECT 'recursive modulo partition key:';
+DROP TABLE IF EXISTS table3;
+CREATE TABLE table3 (id Int64, v UInt64)
+ENGINE = MergeTree()
+PARTITION BY (id % 200, (id % 200) % 10, toInt32(round((id % 200) / 2, 0))) ORDER BY id;
+INSERT INTO table3 SELECT number-205, number FROM numbers(10);
+INSERT INTO table3 SELECT number-205, number FROM numbers(400, 10);
+SELECT partition as p FROM system.parts WHERE table='table3' ORDER BY p;
+DETACH TABLE table3;
+ATTACH TABLE table3;
+
 SELECT 'comparison:';
-SELECT v, v-205 as vv, moduloLegacy(vv, 200), modulo(vv, 200) FROM table1 ORDER BY v;
+SELECT v, v-205 as vv, modulo(vv, 200), moduloLegacy(vv, 200) FROM table1 ORDER BY v;
 
