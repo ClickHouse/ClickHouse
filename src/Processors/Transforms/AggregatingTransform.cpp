@@ -339,7 +339,7 @@ private:
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
-                    *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
+                *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
             setCurrentChunk(convertToChunk(block));
         }
@@ -381,8 +381,7 @@ private:
         {
             /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksSource>(
-                    params, data, shared_data, arena);
+            auto source = std::make_shared<ConvertingAggregatedToChunksSource>(params, data, shared_data, arena);
 
             processors.emplace_back(std::move(source));
         }
@@ -614,7 +613,12 @@ void AggregatingTransform::initGenerate()
             pipe = Pipe::unitePipes(std::move(pipes));
         }
 
-        LOG_DEBUG(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
+        LOG_DEBUG(
+            log,
+            "Will merge {} temporary files of size {} compressed, {} uncompressed.",
+            files.files.size(),
+            ReadableSize(files.sum_size_compressed),
+            ReadableSize(files.sum_size_uncompressed));
 
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 
