@@ -27,6 +27,7 @@ MergeTreeIndexMergedCondition::MergeTreeIndexMergedCondition(
 {
     const auto & select = query_.query->as<ASTSelectQuery &>();
 
+    expression_ast = nullptr;
     if (select.where() && select.prewhere())
         expression_ast = makeASTFunction(
             "and",
@@ -37,7 +38,10 @@ MergeTreeIndexMergedCondition::MergeTreeIndexMergedCondition(
     else if (select.prewhere())
         expression_ast = select.prewhere()->clone();
 
-    expression_cnf = std::make_unique<CNFQuery>(TreeCNFConverter::toCNF(expression_ast));
+    if (expression_ast)
+        expression_cnf = std::make_unique<CNFQuery>(TreeCNFConverter::toCNF(expression_ast));
+    else
+        expression_cnf = std::make_unique<CNFQuery>(CNFQuery::AndGroup{});
 }
 
 void MergeTreeIndexMergedCondition::addIndex(const MergeTreeIndexPtr & index)
@@ -175,7 +179,7 @@ bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrueGraph() const
 
 bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrueSMT() const
 {
-    return true;
+    return false;
 }
 
 bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const
@@ -197,7 +201,6 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
 
 std::unique_ptr<TreeSMTSolver> MergeTreeIndexMergedCondition::buildSolver(const std::vector<bool> & values) const
 {
-    Poco::Logger::get("MergeTreeIndexMergedCondition").information("New solver");
     std::vector<ASTPtr> active_formulas(all_constraints);
     for (size_t i = 0; i < values.size(); ++i)
     {
@@ -263,7 +266,6 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranuleUsingGraph(const std::vect
 
 std::unique_ptr<ComparisonGraph> MergeTreeIndexMergedCondition::buildGraph(const std::vector<bool> & values) const
 {
-    Poco::Logger::get("MergeTreeIndexMergedCondition").information("New graph");
     std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
     for (size_t i = 0; i < values.size(); ++i)
     {

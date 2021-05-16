@@ -23,13 +23,11 @@ TreeSMTSolver::TreeSMTSolver(
     const NamesAndTypesList & source_columns_)
     : strictness(strictness_)
 {
-    Poco::Logger::get("TreeSMTSolver").information("RUN");
     try {
         (void)strictness;
         context = std::make_unique<z3::context>();
         for (const auto & column : source_columns_)
         {
-            Poco::Logger::get("TreeSMTSolver").information(column.name + " " + column.type->getName());
             /// TODO: add < 0
             if (column.getTypeInStorage()->isNullable())
             {
@@ -85,7 +83,6 @@ TreeSMTSolver::TreeSMTSolver(
     }
     catch (const z3::exception & e)
     {
-        Poco::Logger::get("CONSTRUCTOR").information(e.msg());
         throw Exception(e.msg(), ErrorCodes::LOGICAL_ERROR);
     }
 }
@@ -107,34 +104,30 @@ const z3::expr & TreeSMTSolver::getColumn(const String & name) const
 
 void TreeSMTSolver::addConstraint(const ASTPtr & ast)
 {
-    Poco::Logger::get("addCONSTR").information("RUN");
     try
     {
         constraints.push_back(transformToLogicExpression(ast));
     }
     catch (const z3::exception & e)
     {
-        Poco::Logger::get("addCONSTR").information(e.msg());
         throw Exception(e.msg(), ErrorCodes::LOGICAL_ERROR);
     }
 }
 
 bool TreeSMTSolver::alwaysTrue(const ASTPtr & ast)
 {
-    Poco::Logger::get("alwaysTrue").information("RUN");
     try
     {
         z3::solver solver(*context);
         for (const auto & constraint : constraints)
             solver.add(constraint);
         solver.add(!transformToLogicExpression(ast));
-        Poco::Logger::get("alwaysTrue").information(solver.to_smt2());
-        Poco::Logger::get("alwaysTrue").information(std::to_string(solver.check() == z3::check_result::unsat));
+        //Poco::Logger::get("alwaysTrue").information(solver.to_smt2());
+        //Poco::Logger::get("alwaysTrue").information(std::to_string(solver.check() == z3::check_result::unsat));
         return solver.check() == z3::check_result::unsat;
     }
     catch (const z3::exception & e)
     {
-        Poco::Logger::get("alwaysTrue").information(e.msg());
         throw Exception(e.msg(), ErrorCodes::LOGICAL_ERROR);
     }
 }
@@ -148,13 +141,12 @@ bool TreeSMTSolver::alwaysFalse(const ASTPtr & ast)
         for (const auto & constraint : constraints)
             solver.add(constraint);
         solver.add(transformToLogicExpression(ast));
-        Poco::Logger::get("alwaysFalse").information(solver.to_smt2());
-        Poco::Logger::get("alwaysFalse").information(std::to_string(solver.check() == z3::check_result::unsat));
+        //Poco::Logger::get("alwaysFalse").information(solver.to_smt2());
+        //Poco::Logger::get("alwaysFalse").information(std::to_string(solver.check() == z3::check_result::unsat));
         return solver.check() == z3::check_result::unsat;
     }
     catch (const z3::exception & e)
     {
-        Poco::Logger::get("alwaysFalse").information(e.msg());
         throw Exception(e.msg(), ErrorCodes::LOGICAL_ERROR);
     }
 }
@@ -224,13 +216,10 @@ std::optional<z3::expr> TreeSMTSolver::transformToLogicExpressionImpl(const ASTP
 {
     if (const auto * ident = ast->as<ASTIdentifier>(); ident)
     {
-        Poco::Logger::get("SMT IDENT").information(ast->dumpTree());
         return getOrCreateColumn(ident->name());
     }
     else if (const auto * lit = ast->as<ASTLiteral>(); lit)
     {
-        Poco::Logger::get("SMT LITERAL").information(ast->dumpTree());
-        Poco::Logger::get("SMT LITERAL :").information(lit->value.dump());
         switch (lit->value.getType())
         {
             case Field::Types::Which::UInt64:
@@ -264,12 +253,9 @@ std::optional<z3::expr> TreeSMTSolver::transformToLogicExpressionImpl(const ASTP
     }
     else if (const auto * func = ast->as<ASTFunction>(); func)
     {
-        Poco::Logger::get("SMT FUNCTION").information(ast->dumpTree());
         std::vector<std::optional<z3::expr>> raw_arguments;
         for (const ASTPtr & child : func->arguments->children)
             raw_arguments.push_back(transformToLogicExpressionImpl(child));
-        Poco::Logger::get("SMT FUNC").information("args " + std::to_string(raw_arguments.size()));
-        Poco::Logger::get("SMT FUNC").information("name " + (func->name));
 
         if (raw_arguments.size() == 1 && !raw_arguments.front())
             return std::nullopt;
@@ -361,7 +347,6 @@ std::optional<z3::expr> TreeSMTSolver::transformToLogicExpressionImpl(const ASTP
                 if (argument.is_int())
                     argument = (argument > 0);
             }
-            Poco::Logger::get("FIND").information(func->name);
             if (func->name == "or")
             {
                 z3::expr result = arguments[0];
@@ -396,13 +381,10 @@ std::optional<z3::expr> TreeSMTSolver::transformToLogicExpressionImpl(const ASTP
         }
         /// not function but variable with uninterpreted type
         return std::nullopt;
-        //return getOrCreateColumn(
-        //    "FUNCTION_" + std::to_string(ast->getTreeHash().first) + "_" + std::to_string(ast->getTreeHash().second));
     }
     else
     {
-        Poco::Logger::get("BAD AST").information(ast->dumpTree());
-        throw Exception("Bad AST", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Bad AST " + ast->dumpTree(), ErrorCodes::LOGICAL_ERROR);
     }
 }
 

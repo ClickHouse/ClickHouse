@@ -148,15 +148,11 @@ public:
         if (identifier && data.name_to_component_id.contains(identifier->name()))
         {
             const String & name = identifier->name();
-            //Poco::Logger::get("NAME").information(name);
             const auto component_id = data.name_to_component_id.at(name);
-            //Poco::Logger::get("COMP").information(std::to_string(component_id));
             auto new_ast = data.id_to_expression_map.at(component_id)->clone();
-            //Poco::Logger::get("NEW_AST").information(new_ast->dumpTree());
             if (data.is_select)
             {
                 new_ast->setAlias(data.old_name.at(name));
-                //Poco::Logger::get("OLD").information(data.old_name.at(name));
             }
             ast = new_ast;
         }
@@ -197,7 +193,6 @@ void bruteforce(
         {
             min_price = current_price;
             min_expressions = expressions_stack;
-            //Poco::Logger::get("PRICE").information("UPDATE");
         }
     }
     else
@@ -252,7 +247,7 @@ void SubstituteColumnOptimizer::perform()
     const auto column_sizes = storage->getColumnSizes();
     if (column_sizes.empty())
     {
-        Poco::Logger::get("SubstituteColumnOptimizer").information("skip: column sizes not available");
+        Poco::Logger::get("SubstituteColumnOptimizer").information("Column sizes can not be found. Skip.");
         return;
     }
 
@@ -358,8 +353,6 @@ void SubstituteColumnOptimizer::perform()
                 {
                     if (column_flags.contains(used_column))
                         expr = expr && (column_flags.at(used_column) == 1);
-                    else
-                        Poco::Logger::get("SubstituteColumnOptimizer").warning("Unknown column");
                 }
 
                 expression_flags.emplace(ast->getTreeHash(), expr);

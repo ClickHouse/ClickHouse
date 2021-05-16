@@ -113,7 +113,6 @@ namespace
         CNFQuery::OrGroup result;
         for (const auto & atom : group)
         {
-            Poco::Logger::get("INDEX_HINT_CREATE").information("CHECK");
             const auto * func = atom.ast->as<ASTFunction>();
             if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
             {
@@ -132,7 +131,6 @@ namespace
 
                         if (canBeSequence(need_result, actual_result))
                         {
-                            Poco::Logger::get("INDEX_HINT_CREATE").information(func->arguments->children[index]->getColumnName() + " " + primary_key_ast->getColumnName());
                             ASTPtr helper_ast = func->clone();
                             auto * helper_func = helper_ast->as<ASTFunction>();
                             helper_func->name = getReverseRelationMap().at(mostStrict(need_result, actual_result));
@@ -162,7 +160,6 @@ namespace
         {
             if (atom.ast->as<ASTFunction>() && atom.ast->as<ASTFunction>()->name == "indexHint")
                 return {};
-            Poco::Logger::get("INDEX_HINT_CREATE").information("CHECK");
             // TODO : push/pop
             TreeSMTSolver solver(TreeSMTSolver::STRICTNESS::FULL, metadata_snapshot.getColumns().getAll());
             for (const auto & constraint : metadata_snapshot.getConstraints().getConstraints())
@@ -267,7 +264,7 @@ void AddIndexConstraintsOptimizer::perform(CNFQuery & cnf_query)
         const auto query = TreeCNFConverter::fromCNF(cnf_query);
         if (!query)
             return;
-        Poco::Logger::get("QUERY").information(query->dumpTree());
+        //Poco::Logger::get("QUERY").information(query->dumpTree());
 
         CNFQuery::AndGroup and_group;
         cnf_query.iterateGroups([this, &and_group, &primary_key](const auto & or_group)

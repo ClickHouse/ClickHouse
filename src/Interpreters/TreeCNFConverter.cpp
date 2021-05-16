@@ -32,7 +32,6 @@ void splitMultiLogic(ASTPtr & node)
         }
 
         auto * new_func = node->as<ASTFunction>();
-        Poco::Logger::get("new_func_children").information(std::to_string(new_func->arguments->children.size()));
         for (auto & child : new_func->arguments->children)
             splitMultiLogic(child);
     }
@@ -123,8 +122,6 @@ void pushOr(ASTPtr & query)
         const auto * and_func = or_func->arguments->children[and_node_id]->as<ASTFunction>();
         if (and_func->arguments->children.size() != 2)
         {
-            Poco::Logger::get("$$$$$").information(and_func->name);
-            Poco::Logger::get("CHILDREN: ").information(std::to_string(and_func->arguments->children.size()));
             throw Exception("Bad AND function", ErrorCodes::LOGICAL_ERROR);
         }
 
@@ -199,7 +196,6 @@ CNFQuery TreeCNFConverter::toCNF(const ASTPtr & query)
 
     CNFQuery result{std::move(and_group)};
 
-    Poco::Logger::get("CNF CONVERSION").information("DONE: " + result.dump());
     return result;
 }
 

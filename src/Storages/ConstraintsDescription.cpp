@@ -42,6 +42,7 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
 
     for (const auto & constraint : list->children)
         res.constraints.push_back(constraint);
+    res.update();
 
     return res;
 }
@@ -78,7 +79,7 @@ std::vector<std::vector<CNFQuery::AtomicFormula>> ConstraintsDescription::buildC
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
-            .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
+            .pullNotOutFunctions().reduce();
         for (const auto & group : cnf.getStatements())
             constraint_data.emplace_back(std::begin(group), std::end(group));
     }

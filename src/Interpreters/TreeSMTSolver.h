@@ -45,8 +45,6 @@ private:
     std::unordered_map<String, z3::expr> name_to_column;
     std::unique_ptr<z3::context> context;
     std::vector<z3::expr> constraints;
-
-    // TODO: std::unique_ptr<z3::solver> solver; + check assumptions
 };
 
 }
