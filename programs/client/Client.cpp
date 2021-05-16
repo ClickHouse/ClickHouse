@@ -87,6 +87,8 @@
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/ProgressBar.h>
+#include <filesystem>
+#include <Common/createFile.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -96,6 +98,7 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -276,7 +279,7 @@ private:
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
-            context->setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
+            context->setFormatSchemaPath(config().getString("format_schema_path"));
 
         /// Initialize query_id_formats if any
         if (config().has("query_id_formats"))
@@ -633,8 +636,8 @@ private:
                     history_file = home_path + "/.clickhouse-client-history";
             }
 
-            if (!history_file.empty() && !Poco::File(history_file).exists())
-                Poco::File(history_file).createFile();
+            if (!history_file.empty() && !fs::exists(history_file))
+                fs::createFile(history_file);
 
             LineReader::Patterns query_extenders = {"\\"};
             LineReader::Patterns query_delimiters = {";", "\\G"};
