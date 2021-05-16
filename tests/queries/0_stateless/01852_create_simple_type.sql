@@ -8,6 +8,8 @@ insert into TestTable values(10, 'test');
 
 select * from TestTable;
 
+drop table TestTable;
+
 drop type MyType1;
 
 drop type MyType2;
