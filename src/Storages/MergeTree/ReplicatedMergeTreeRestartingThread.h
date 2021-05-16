@@ -37,7 +37,7 @@ private:
     std::atomic<bool> need_stop {false};
 
     // We need it besides `storage.is_readonly`, because `shutdown()` may be called many times, that way `storage.is_readonly` will not change.
-    bool incr_readonly = false;
+    bool readonly_mode_was_set = false;
 
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
@@ -62,6 +62,9 @@ private:
     void updateQuorumIfWeHavePart();
 
     void partialShutdown();
+
+    /// Set readonly mode for table
+    void setReadonly();
 };
 
 

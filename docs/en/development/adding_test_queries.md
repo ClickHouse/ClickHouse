@@ -1,6 +1,6 @@
 # How to add test queries to ClickHouse CI
 
-ClickHouse has hundreds (or even thousands) of features. Every commit get checked by a complex set of tests containing many thousands of test cases.
+ClickHouse has hundreds (or even thousands) of features. Every commit gets checked by a complex set of tests containing many thousands of test cases.
 
 The core functionality is very well tested, but some corner-cases and different combinations of features can be uncovered with ClickHouse CI.
 
@@ -105,13 +105,13 @@ clickhouse-client -nmT < tests/queries/0_stateless/01521_dummy_test.sql | tee te
 
 5) ensure everything is correct, if the test output is incorrect (due to some bug for example), adjust the reference file using text editor.
 
-####  How create good test
+####  How to create good test
 
 - test should be
 	- minimal - create only tables related to tested functionality, remove unrelated columns and parts of query
 	- fast - should not take longer than few seconds (better subseconds)
 	- correct - fails then feature is not working
-        - deteministic
+        - deterministic
 	- isolated / stateless 
 		- don't rely on some environment things
 		- don't rely on timing when possible 
@@ -124,7 +124,7 @@ clickhouse-client -nmT < tests/queries/0_stateless/01521_dummy_test.sql | tee te
 - clean up the created objects after test and before the test (DROP IF EXISTS) - in case of some dirty state 
 - prefer sync mode of operations (mutations, merges, etc.)
 - use other SQL files in the `0_stateless` folder as an example
-- ensure the feature / feature combination you want to tests is not covered yet with existsing tests
+- ensure the feature / feature combination you want to tests is not covered yet with existing tests
 
 #### Commit / push / create PR.
 
