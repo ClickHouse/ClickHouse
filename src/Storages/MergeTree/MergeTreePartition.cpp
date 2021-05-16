@@ -137,7 +137,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
     {
         if (partition_key_sample.getByPosition(i).name.starts_with("modulo"))
         {
-            SerializationNumber<Int8>().deserializeBinary(value[i], *file);
+            SerializationNumber<UInt8>().deserializeBinary(value[i], *file);
         }
         else
         {
@@ -164,7 +164,7 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     {
         if (partition_key_sample.getByPosition(i).name.starts_with("modulo"))
         {
-            SerializationNumber<Int8>().serializeBinary(value[i], out_hashing);
+            SerializationNumber<UInt8>().serializeBinary(value[i], out_hashing);
         }
         else
         {
