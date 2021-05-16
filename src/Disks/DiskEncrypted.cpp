@@ -9,8 +9,6 @@
 #include <IO/ReadEncryptedBuffer.h>
 #include <IO/WriteEncryptedBuffer.h>
 
-#include <limits>
-
 namespace DB
 {
 
@@ -20,8 +18,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-constexpr size_t kIVSize = 128 / CHAR_BIT;
 using DiskEncryptedPtr = std::shared_ptr<DiskEncrypted>;
+using namespace FileEncryption;
 
 class DiskEncryptedReservation : public IReservation
 {
@@ -64,16 +62,21 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     size_t mmap_threshold,
     MMappedFileCache * mmap_cache) const
 {
+    using namespace FileEncryption;
+
     auto wrapped_path = wrappedPath(path);
     auto buffer = delegate->readFile(wrapped_path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
-    InitVector iv = GetRandomIV(kIVSize);
+
+    auto iv = GetRandomString(kIVSize);
     size_t offset = 0;
+
     if (delegate->getFileSize(wrapped_path))
     {
         iv = ReadIV(kIVSize, *buffer);
         offset = kIVSize;
     }
-    return std::make_unique<ReadEncryptedBuffer>(buf_size, std::move(buffer), EVP_aes_128_gcm(), iv, key, offset);
+
+    return std::make_unique<ReadEncryptedBuffer>(buf_size, std::move(buffer), iv, key, offset);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(
@@ -81,15 +84,19 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(
     size_t buf_size,
     WriteMode mode)
 {
+    using namespace FileEncryption;
+
     auto wrapped_path = wrappedPath(path);
-    InitVector iv = GetRandomIV(kIVSize);
+    auto iv = GetRandomString(kIVSize);
+
     try {
         auto read_buffer = delegate->readFile(wrapped_path, kIVSize);
         iv = ReadIV(kIVSize, *read_buffer);
     }
     catch ( ... ) { }
+
     auto buffer = delegate->writeFile(wrapped_path, buf_size, mode);
-    return std::make_unique<WriteEncryptedBuffer>(buf_size, std::move(buffer), EVP_aes_128_gcm(), iv, key,
+    return std::make_unique<WriteEncryptedBuffer>(buf_size, std::move(buffer), iv, key,
                                                   mode == WriteMode::Append ? delegate->getFileSize(wrapped_path) : 0);
 }
 

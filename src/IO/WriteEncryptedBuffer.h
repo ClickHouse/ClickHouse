@@ -8,26 +8,26 @@
 namespace DB
 {
 
+using namespace FileEncryption;
+
 class WriteEncryptedBuffer : public WriteBufferFromFileBase
 {
 public:
     WriteEncryptedBuffer(
         size_t buf_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
-        const EVP_CIPHER * evp_cipher_,
-        const InitVector & init_vector_,
+        const String & init_vector_,
         const EncryptionKey & key_,
         const size_t & file_size)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
         , out(std::move(out_))
         , flush_iv(!file_size)
         , iv(init_vector_)
-        , encryptor(Encryptor(init_vector_, key_, evp_cipher_, file_size))
+        , encryptor(Encryptor(init_vector_, key_, file_size))
     { }
 
     ~WriteEncryptedBuffer() override
     {
-        LOG_WARNING(log, "~WriteEncryptedBuffer()");
         try
         {
             finalize();
@@ -40,13 +40,10 @@ public:
 
     void finalize() override
     {
-        LOG_WARNING(log, "WriteEncryptedBuffer::finalize()");
         if (finalized)
 	    return;
 
-        LOG_WARNING(log, "WriteEncryptedBuffer::next()");
         next();
-        LOG_WARNING(log, "WriteEncryptedBuffer::out::finalize()");
         out->finalize();
 
 	finalized = true;
@@ -54,7 +51,6 @@ public:
 
     void sync() override
     {
-        LOG_WARNING(log, "WriteEncryptedBuffer::sync()");
         out->sync();
     }
 
@@ -63,13 +59,11 @@ public:
 private:
     void nextImpl() override
     {
-        LOG_WARNING(log, "WriteEncryptedBuffer::nextImpl()");
         if (!offset())
             return;
         if (flush_iv)
         {
-            LOG_WARNING(log, "flush_iv == true");
-            WriteIV(iv, *out);
+            writeText(iv.data(), *out);
             flush_iv = false;
         }
 
@@ -80,9 +74,8 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> out;
 
     bool flush_iv;
-    InitVector iv;
+    String iv;
     Encryptor encryptor;
-    Poco::Logger * log = &Poco::Logger::get("WriteEncryptedBuffer");
 };
 
 }
