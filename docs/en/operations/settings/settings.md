@@ -2894,7 +2894,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled.
 
-Default value: 0.
+Default value: 1800.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
