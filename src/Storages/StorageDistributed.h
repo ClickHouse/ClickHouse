@@ -124,6 +124,7 @@ private:
         const StorageID & id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,
