@@ -6,6 +6,7 @@
 
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/sparse_hash_map>
+#include <absl/container/flat_hash_map.h>
 
 #include <Common/Stopwatch.h>
 
@@ -332,6 +333,7 @@ static void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
     testForEachHash<std::unordered_map>(data, size, nothing);
     testForEachHash<::google::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
     testForEachHash<::google::sparse_hash_map>(data, size, nothing);
+    testForEachHash<::absl::flat_hash_map>(data, size, nothing);
 }
 
 

@@ -3,6 +3,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Common/assert_cast.h>
@@ -111,12 +112,13 @@ public:
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
+        String timezone_name;
 
-        if (arguments.size() > 1)
+        if (arguments.size() > 2)
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("Arguments size of function " + getName() + " should be 0, or 1, or 2", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
-        if (arguments.size() == 1)
+        if (!arguments.empty())
         {
             const auto & argument = arguments[0];
             if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
@@ -128,8 +130,12 @@ public:
 
             scale = argument.column->get64(0);
         }
+        if (arguments.size() == 2)
+        {
+            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+        }
 
-        return std::make_shared<DataTypeDateTime64>(scale);
+        return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
     }
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override

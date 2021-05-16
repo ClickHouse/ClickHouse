@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
@@ -437,6 +438,164 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
     auto it = std::remove_if(inputs.begin(), inputs.end(), [&](const Node * node) { return visited_nodes.count(node) == 0; });
     inputs.erase(it, inputs.end());
+}
+
+static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments)
+{
+    ColumnWithTypeAndName res_column;
+    res_column.type = node->result_type;
+    res_column.name = node->result_name;
+
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            // bool all_args_are_const = true;
+
+            // for (const auto & argument : arguments)
+            //     if (typeid_cast<const ColumnConst *>(argument.column.get()) == nullptr)
+            //         all_args_are_const = false;
+
+            res_column.column = node->function->execute(arguments, res_column.type, 0, true);
+
+            // if (!all_args_are_const)
+            //     res_column.column = res_column.column->convertToFullColumnIfConst();
+
+            break;
+        }
+
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+        {
+            auto key = arguments.at(0);
+            key.column = key.column->convertToFullColumnIfConst();
+
+            const ColumnArray * array = typeid_cast<const ColumnArray *>(key.column.get());
+            if (!array)
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                                "ARRAY JOIN of not array: {}", node->result_name);
+
+            res_column.column = array->getDataPtr()->cloneEmpty();
+            break;
+        }
+
+        case ActionsDAG::ActionType::COLUMN:
+        {
+            res_column.column = node->column->cloneResized(0);
+            break;
+        }
+
+        case ActionsDAG::ActionType::ALIAS:
+        {
+            res_column.column = arguments.at(0).column;
+            break;
+        }
+
+        case ActionsDAG::ActionType::INPUT:
+        {
+            break;
+        }
+    }
+
+    return res_column;
+}
+
+Block ActionsDAG::updateHeader(Block header) const
+{
+    std::unordered_map<const Node *, ColumnWithTypeAndName> node_to_column;
+    std::set<size_t> pos_to_remove;
+
+    {
+        std::unordered_map<std::string_view, std::list<size_t>> input_positions;
+
+        for (size_t pos = 0; pos < inputs.size(); ++pos)
+            input_positions[inputs[pos]->result_name].emplace_back(pos);
+
+        for (size_t pos = 0; pos < header.columns(); ++pos)
+        {
+            const auto & col = header.getByPosition(pos);
+            auto it = input_positions.find(col.name);
+            if (it != input_positions.end() && !it->second.empty())
+            {
+                auto & list = it->second;
+                pos_to_remove.insert(pos);
+                node_to_column[inputs[list.front()]] = std::move(col);
+                list.pop_front();
+            }
+        }
+    }
+
+    ColumnsWithTypeAndName result_columns;
+    result_columns.reserve(index.size());
+
+    struct Frame
+    {
+        const Node * node;
+        size_t next_child = 0;
+    };
+
+    {
+        for (const auto * output : index)
+        {
+            if (node_to_column.count(output) == 0)
+            {
+                std::stack<Frame> stack;
+                stack.push({.node = output});
+
+                while (!stack.empty())
+                {
+                    auto & frame = stack.top();
+                    const auto * node = frame.node;
+
+                    while (frame.next_child < node->children.size())
+                    {
+                        const auto * child = node->children[frame.next_child];
+                        if (node_to_column.count(child) == 0)
+                        {
+                            stack.push({.node = child});
+                            break;
+                        }
+
+                        ++frame.next_child;
+                    }
+
+                    if (frame.next_child < node->children.size())
+                        continue;
+
+                    stack.pop();
+
+                    ColumnsWithTypeAndName arguments(node->children.size());
+                    for (size_t i = 0; i < arguments.size(); ++i)
+                    {
+                        arguments[i] = node_to_column[node->children[i]];
+                        if (!arguments[i].column)
+                            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                                            "Not found column {} in block", node->children[i]->result_name);
+                    }
+
+                    node_to_column[node] = executeActionForHeader(node, std::move(arguments));
+                }
+            }
+
+            auto & column = node_to_column[output];
+            if (column.column)
+                result_columns.push_back(node_to_column[output]);
+        }
+    }
+
+    if (isInputProjected())
+        header.clear();
+    else
+        header.erase(pos_to_remove);
+
+    Block res;
+
+    for (auto & col : result_columns)
+        res.insert(std::move(col));
+
+    for (const auto & item : header)
+        res.insert(std::move(item));
+
+    return res;
 }
 
 NameSet ActionsDAG::foldActionsByProjection(
