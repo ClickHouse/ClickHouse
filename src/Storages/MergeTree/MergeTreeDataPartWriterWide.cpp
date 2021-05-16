@@ -403,7 +403,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 {
     const auto & serialization = serializations[name];
 
-    if (!type.isValueRepresentedByNumber() || type.haveSubtypes() || serialization->getKind() != ISerialization::Kind::SPARSE)
+    if (!type.isValueRepresentedByNumber() || type.haveSubtypes() || serialization->getKind() != ISerialization::Kind::DEFAULT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type.getName());
 
     auto disk = data_part->volume->getDisk();

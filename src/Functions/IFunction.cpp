@@ -467,7 +467,7 @@ ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & argu
         {
             const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
             /// In rare case, when sparse column doesn't have default values,
-            /// it's more convinient to convert it to full before execution of function.
+            /// it's more convenient to convert it to full before execution of function.
             if (column_sparse && column_sparse->getNumberOfDefaults())
             {
                 sparse_column_position = i;

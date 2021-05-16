@@ -192,7 +192,7 @@ SerializationPtr IDataType::getSerialization(const ISerialization::Kinds & kinds
 {
     if (!kinds.subcolumns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,"Data type {} doesn't support "
-            "custom kinds of serialization for subcolumns ot doesn't have subcolumns at all.", getName());
+            "custom kinds of serialization for subcolumns or doesn't have subcolumns at all.", getName());
 
     if (kinds.main == ISerialization::Kind::SPARSE)
         return getSparseSerialization();

@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+    extern const int ILLEGAL_COLUMN;
 }
 
 SerializationIPv4::SerializationIPv4(const SerializationPtr & nested_)

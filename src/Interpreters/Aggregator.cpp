@@ -613,7 +613,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (inst->offsets)
             inst->batch_that->addBatchSinglePlace(
                 inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
-        else if(inst->has_sparse_arguments)
+        else if (inst->has_sparse_arguments)
             inst->batch_that->addBatchSparseSinglePlace(res + inst->state_offset, inst->batch_arguments, arena);
         else
             inst->batch_that->addBatchSinglePlace(rows, res + inst->state_offset, inst->batch_arguments, arena);

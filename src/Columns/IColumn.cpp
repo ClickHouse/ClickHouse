@@ -56,7 +56,7 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows)
     }
 
     ssize_t offsets_diff = static_cast<ssize_t>(total_rows) - current_offset;
-    if(offsets_diff > 1)
+    if (offsets_diff > 1)
         res->insertManyFrom(*this, 0, offsets_diff - 1);
 
     return res;
