@@ -106,6 +106,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         on_duplicate_clause,
         columns,
         ConstraintsDescription{},
+        String{},
         context);
 
     pool.reset();
