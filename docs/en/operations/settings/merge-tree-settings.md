@@ -142,7 +142,7 @@ HTTP connection timeout (in seconds) for part fetch requests. Inherited from def
 Possible values:
 
 -   Any positive integer.
--   0 - Disabled.
+-   0 - Use value of `http_connection_timeout`
 
 Default value: 0.
 
