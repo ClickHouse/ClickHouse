@@ -92,7 +92,6 @@ private:
     size_t num_queues;
     String queue_base;
     Names queue_settings_list;
-    const String deadletter_exchange;
 
     /// For insert query. Mark messages as durable.
     const bool persistent;
