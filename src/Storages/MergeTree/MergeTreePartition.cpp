@@ -183,6 +183,8 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
+    /// FIXME: Executing partition expression on block adds column with expression name to block, but here it is not a copy of
+    /// initial block. Looks like this name needs to be adjusted to be `modulo` instead of `moduloLegacy`, because it is actually used in some places.
     auto partition_key_sample_block = executePartitionByExpression(metadata_snapshot, block, context);
     size_t partition_columns_num = partition_key_sample_block.columns();
     value.resize(partition_columns_num);
@@ -195,41 +197,42 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     }
 }
 
+static bool moduloToModuloLegacyRecursive(ASTPtr node_expr)
+{
+    if (!node_expr)
+        return false;
+
+    auto * function_expr = node_expr->as<ASTFunction>();
+    bool modulo_in_partition_key = false;
+    if (function_expr)
+    {
+        if (function_expr->name == "modulo")
+        {
+            function_expr->name = "moduloLegacy";
+            modulo_in_partition_key = true;
+        }
+        if (function_expr->arguments)
+        {
+            auto children = function_expr->arguments->children;
+            for (auto child : children)
+                modulo_in_partition_key |= moduloToModuloLegacyRecursive(child);
+        }
+    }
+    return modulo_in_partition_key;
+}
+
 Block MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    bool adjusted_expression = false;
-    auto modulo_to_modulo_legacy = [&](ASTFunction * function_ast)
+    ASTPtr ast_copy = partition_key.definition_ast->clone();
+    if (moduloToModuloLegacyRecursive(ast_copy))
     {
-        if (function_ast->name == "modulo")
-        {
-            function_ast->name = "moduloLegacy";
-            adjusted_expression = true;
-        }
-    };
-    ASTPtr new_ast = partition_key.definition_ast->clone();
-    if (auto * function_ast = typeid_cast<ASTFunction *>(new_ast.get()))
-    {
-        if (function_ast->name == "tuple")
-        {
-            auto children = function_ast->arguments->children;
-            for (auto child : children)
-            {
-                if (auto * child_function_ast = typeid_cast<ASTFunction *>(child.get()))
-                    modulo_to_modulo_legacy(child_function_ast);
-            }
-        }
-        else
-            modulo_to_modulo_legacy(function_ast);
-
-        if (adjusted_expression)
-        {
-            auto adjusted_partition_key = KeyDescription::getKeyFromAST(new_ast, metadata_snapshot->columns, context);
-            adjusted_partition_key.expression->execute(block);
-            return adjusted_partition_key.sample_block;
-        }
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
+        adjusted_partition_key.expression->execute(block);
+        return adjusted_partition_key.sample_block;
     }
     partition_key.expression->execute(block);
     return partition_key.sample_block;
 }
+
 }
