@@ -593,6 +593,9 @@ include_directories(${ConfigIncludePath})
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
 
+# Check if needed compiler flags are supported
+include (cmake/check_flags.cmake)
+
 add_subdirectory (base)
 add_subdirectory (src)
 add_subdirectory (programs)

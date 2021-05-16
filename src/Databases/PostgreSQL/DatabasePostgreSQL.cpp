@@ -157,7 +157,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 
         auto storage = StoragePostgreSQL::create(
                 StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{*columns}, ConstraintsDescription{}, local_context);
+                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, local_context);
 
         if (cache_tables)
             cached_tables[table_name] = storage;
