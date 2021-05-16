@@ -2872,7 +2872,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 0.
+Default value: 1.
 
 ## http_send_timeout {#replicated_fetches_http_send_timeout}
 
