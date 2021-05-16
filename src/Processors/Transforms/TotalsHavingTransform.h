@@ -2,8 +2,6 @@
 
 #include <Processors/ISimpleTransform.h>
 #include <Common/Arena.h>
-#include <base/logger_useful.h>  // to be removed
-// #include <Poco/Util/Application.h>
 
 namespace DB
 {
@@ -76,8 +74,6 @@ private:
 
     /// Here, total values are accumulated. After the work is finished, they will be placed in totals.
     MutableColumns current_totals;
-
-    Poco::Logger * log = &Poco::Logger::get("TotalsHavingTransform");
 };
 
 void finalizeChunk(Chunk & chunk);
