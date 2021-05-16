@@ -153,7 +153,7 @@ HTTP send timeout (in seconds) for part fetch requests. Inherited from default p
 Possible values:
 
 -   Any positive integer.
--   0 - Disabled.
+-   0 - Use value of `http_send_timeout`
 
 Default value: 0.
 
