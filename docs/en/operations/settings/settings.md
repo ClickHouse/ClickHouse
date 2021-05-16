@@ -2883,7 +2883,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled.
 
-Default value: 0.
+Default value: 1800.
 
 ## http_receive_timeout {#http_receive_timeout}
 
