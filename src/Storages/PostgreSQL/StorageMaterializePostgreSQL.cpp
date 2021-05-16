@@ -173,9 +173,7 @@ void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructure
 std::shared_ptr<Context> StorageMaterializePostgreSQL::makeNestedTableContext(ContextPtr from_context)
 {
     auto new_context = Context::createCopy(from_context);
-    new_context->makeQueryContext();
-    new_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
-
+    new_context->setInternalQuery(true);
     return new_context;
 }
 
