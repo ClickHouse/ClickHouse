@@ -214,7 +214,7 @@ static bool moduloToModuloLegacyRecursive(ASTPtr node_expr)
         if (function_expr->arguments)
         {
             auto children = function_expr->arguments->children;
-            for (auto child : children)
+            for (const auto & child : children)
                 modulo_in_partition_key |= moduloToModuloLegacyRecursive(child);
         }
     }
