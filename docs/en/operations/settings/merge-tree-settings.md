@@ -142,7 +142,7 @@ HTTP connection timeout (in seconds) for part fetch requests. Inherited from def
 Possible values:
 
 -   Any positive integer.
--   0 - Use value of `http_connection_timeout`
+-   0 - Use value of `http_connection_timeout`.
 
 Default value: 0.
 
@@ -153,7 +153,7 @@ HTTP send timeout (in seconds) for part fetch requests. Inherited from default p
 Possible values:
 
 -   Any positive integer.
--   0 - Use value of `http_send_timeout`
+-   0 - Use value of `http_send_timeout`.
 
 Default value: 0.
 
@@ -164,7 +164,7 @@ HTTP receive timeout (in seconds) for fetch part requests. Inherited from defaul
 Possible values:
 
 -   Any positive integer.
--   0 - Disabled.
+-   0 - Use value of `http_receive_timeout`.
 
 Default value: 0.
 
