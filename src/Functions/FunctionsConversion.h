@@ -1289,29 +1289,29 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
+    static DataTypePtr getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments, const DefaultReturnTypeGetter & getter)
     {
-        DataTypePtr res;
-
         NullPresence null_presence = getNullPresense(arguments);
 
         if (null_presence.has_null_constant)
         {
-            res = makeNullable(std::make_shared<DataTypeNothing>());
+            return makeNullable(std::make_shared<DataTypeNothing>());
         }
-
         if (null_presence.has_nullable)
         {
             auto nested_columns = Block(createBlockWithNestedColumns(arguments));
-            auto return_type = getReturnTypeImplRemovedNullable(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
-            res = makeNullable(return_type);
+            auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
+            return makeNullable(return_type);
         }
 
-        if (!res)
-        {
-            res = getReturnTypeImplRemovedNullable(ColumnsWithTypeAndName(arguments.begin(), arguments.end()));
-        }
+        return getter(arguments);
+    }
 
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto getter = [&] (const auto & args) { return getReturnTypeImplRemovedNullable(args); };
+        auto res = getReturnTypeDefaultImplementationForNulls(arguments, getter);
         to_nullable = res->isNullable();
         checked_return_type = true;
         return res;
