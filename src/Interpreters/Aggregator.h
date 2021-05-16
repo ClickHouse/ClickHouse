@@ -881,7 +881,7 @@ public:
         ColumnNumbers keys;
         const ColumnNumbersTwoDimension keys_vector;
         const AggregateDescriptions aggregates;
-        const size_t keys_size;
+        size_t keys_size;
         const size_t aggregates_size;
 
         /// The settings of approximate calculation of GROUP BY.
@@ -942,6 +942,7 @@ public:
         /// two dimensional vector of aggregating keys in params
         Params(
             const Block & src_header_,
+            const ColumnNumbers & keys_,
             const ColumnNumbersTwoDimension & keys_vector_, const AggregateDescriptions & aggregates_,
             bool overflow_row_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
@@ -954,6 +955,7 @@ public:
             const Block & intermediate_header_ = {})
             : src_header(src_header_),
               intermediate_header(intermediate_header_),
+              keys(keys_),
               keys_vector(keys_vector_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
               overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
               group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
