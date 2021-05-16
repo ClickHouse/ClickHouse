@@ -17,8 +17,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
 {
     // For `file` table function, we are going to use format settings from the
     // query context.
-    StorageFile::CommonArguments args
-    {
+    StorageFile::CommonArguments args{
         WithContext(global_context),
         StorageID(getDatabaseName(), table_name),
         format_,
@@ -26,6 +25,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         compression_method_,
         columns,
         ConstraintsDescription{},
+        String{},
     };
 
     return StorageFile::create(source, global_context->getUserFilesPath(), args);
