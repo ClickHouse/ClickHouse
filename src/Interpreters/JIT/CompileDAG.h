@@ -9,7 +9,6 @@
 #include <vector>
 
 #include <Core/Types.h>
-#include <Common/UInt128.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>

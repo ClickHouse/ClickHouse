@@ -33,7 +33,8 @@ MergeTreeIndexMergedCondition::MergeTreeIndexMergedCondition(
     else if (select.prewhere())
         expression_ast = select.prewhere()->clone();
 
-    expression_cnf = std::make_unique<CNFQuery>(TreeCNFConverter::toCNF(expression_ast));
+    expression_cnf = std::make_unique<CNFQuery>(
+        expression_ast ? TreeCNFConverter::toCNF(expression_ast) : CNFQuery::AndGroup{});
 }
 
 void MergeTreeIndexMergedCondition::addIndex(const MergeTreeIndexPtr & index)

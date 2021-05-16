@@ -140,9 +140,7 @@ private:
     }
 };
 
-// thread_local is disabled in Arcadia, so we have to use a dummy implementation
-// there.
-#if defined(__linux__) && !defined(ARCADIA_BUILD)
+#if defined(__linux__)
 
 struct PerfEventInfo
 {
@@ -199,7 +197,7 @@ extern thread_local PerfEventsCounters current_thread_counters;
 
 #else
 
-// Not on Linux, or in Arcadia: the functionality is disabled.
+// the functionality is disabled when we are not running on Linux.
 struct PerfEventsCounters
 {
     void initializeProfileEvents(const std::string & /* events_list */) {}
@@ -207,7 +205,6 @@ struct PerfEventsCounters
     void closeEventDescriptors() {}
 };
 
-// thread_local is disabled in Arcadia, so we are going to use a static dummy.
 extern PerfEventsCounters current_thread_counters;
 
 #endif

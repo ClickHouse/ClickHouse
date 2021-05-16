@@ -41,16 +41,14 @@ IStorageURLBase::IStorageURLBase(
     const std::optional<FormatSettings> & format_settings_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     const String & compression_method_)
-    : IStorage(table_id_)
-    , uri(uri_)
-    , compression_method(compression_method_)
-    , format_name(format_name_)
-    , format_settings(format_settings_)
+    : IStorage(table_id_), uri(uri_), compression_method(compression_method_), format_name(format_name_), format_settings(format_settings_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -79,7 +77,7 @@ namespace
             if (CurrentThread::isInitialized())
             {
                 const auto & thread_trace_context = CurrentThread::get().thread_trace_context;
-                if (thread_trace_context.trace_id)
+                if (thread_trace_context.trace_id != UUID())
                 {
                     header.emplace_back("traceparent",
                         thread_trace_context.composeTraceparentHeader());
@@ -299,31 +297,32 @@ BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Stor
         chooseCompressionMethod(uri.toString(), compression_method));
 }
 
-StorageURL::StorageURL(const Poco::URI & uri_,
-           const StorageID & table_id_,
-           const String & format_name_,
-           const std::optional<FormatSettings> & format_settings_,
-           const ColumnsDescription & columns_,
-           const ConstraintsDescription & constraints_,
-           ContextPtr context_,
-           const String & compression_method_)
-    : IStorageURLBase(uri_, context_, table_id_, format_name_,
-                      format_settings_, columns_, constraints_, compression_method_)
+StorageURL::StorageURL(
+    const Poco::URI & uri_,
+    const StorageID & table_id_,
+    const String & format_name_,
+    const std::optional<FormatSettings> & format_settings_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    const String & comment,
+    ContextPtr context_,
+    const String & compression_method_)
+    : IStorageURLBase(uri_, context_, table_id_, format_name_, format_settings_, columns_, constraints_, comment, compression_method_)
 {
     context_->getRemoteHostFilter().checkURL(uri);
 }
 
 
 StorageURLWithFailover::StorageURLWithFailover(
-        const std::vector<String> & uri_options_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const std::optional<FormatSettings> & format_settings_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ContextPtr context_,
-        const String & compression_method_)
-    : StorageURL(Poco::URI(), table_id_, format_name_, format_settings_, columns_, constraints_, context_, compression_method_)
+    const std::vector<String> & uri_options_,
+    const StorageID & table_id_,
+    const String & format_name_,
+    const std::optional<FormatSettings> & format_settings_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    ContextPtr context_,
+    const String & compression_method_)
+    : StorageURL(Poco::URI(), table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_)
 {
     for (const auto & uri_option : uri_options_)
     {
@@ -404,7 +403,10 @@ void registerStorageURL(StorageFactory & factory)
             args.table_id,
             format_name,
             format_settings,
-            args.columns, args.constraints, args.getContext(),
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.getContext(),
             compression_method);
     },
     {

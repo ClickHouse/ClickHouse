@@ -84,21 +84,18 @@ TemporaryTableHolder::TemporaryTableHolder(
     const ConstraintsDescription & constraints,
     const ASTPtr & query,
     bool create_for_global_subquery)
-    : TemporaryTableHolder
-      (
-          context_,
-          [&](const StorageID & table_id)
-          {
-              auto storage = StorageMemory::create(
-                      table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
+    : TemporaryTableHolder(
+        context_,
+        [&](const StorageID & table_id)
+        {
+            auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
-              if (create_for_global_subquery)
-                  storage->delayReadForGlobalSubqueries();
+            if (create_for_global_subquery)
+                storage->delayReadForGlobalSubqueries();
 
-              return storage;
-          },
-          query
-      )
+            return storage;
+        },
+        query)
 {
 }
 
@@ -135,13 +132,16 @@ StoragePtr TemporaryTableHolder::getTable() const
 }
 
 
-void DatabaseCatalog::loadDatabases()
+void DatabaseCatalog::loadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
+}
 
+void DatabaseCatalog::loadDatabases()
+{
     loadMarkedAsDroppedTables();
     auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));

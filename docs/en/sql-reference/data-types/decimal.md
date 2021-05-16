@@ -31,7 +31,7 @@ For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 wit
 
 Internally data is represented as normal signed integers with respective bit width. Real value ranges that can be stored in memory are a bit larger than specified above, which are checked only on conversion from a string.
 
-Because modern CPU’s do not support 128-bit integers natively, operations on Decimal128 are emulated. Because of this Decimal128 works significantly slower than Decimal32/Decimal64.
+Because modern CPUs do not support 128-bit integers natively, operations on Decimal128 are emulated. Because of this Decimal128 works significantly slower than Decimal32/Decimal64.
 
 ## Operations and Result Type {#operations-and-result-type}
 

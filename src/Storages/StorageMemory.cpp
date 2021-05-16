@@ -164,12 +164,14 @@ StorageMemory::StorageMemory(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
+    const String & comment,
     bool compress_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -349,7 +351,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
     },
     {
         .supports_settings = true,

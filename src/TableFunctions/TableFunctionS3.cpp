@@ -89,19 +89,20 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     UInt64 max_connections = context->getSettingsRef().s3_max_connections;
 
     StoragePtr storage = StorageS3::create(
-            s3_uri,
-            access_key_id,
-            secret_access_key,
-            StorageID(getDatabaseName(), table_name),
-            format,
-            s3_max_single_read_retries,
-            min_upload_part_size,
-            max_single_part_upload_size,
-            max_connections,
-            getActualTableStructure(context),
-            ConstraintsDescription{},
-            context,
-            compression_method);
+        s3_uri,
+        access_key_id,
+        secret_access_key,
+        StorageID(getDatabaseName(), table_name),
+        format,
+        s3_max_single_read_retries,
+        min_upload_part_size,
+        max_single_part_upload_size,
+        max_connections,
+        getActualTableStructure(context),
+        ConstraintsDescription{},
+        String{},
+        context,
+        compression_method);
 
     storage->startup();
 

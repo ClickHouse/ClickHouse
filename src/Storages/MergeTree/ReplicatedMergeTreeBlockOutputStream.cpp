@@ -41,7 +41,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
-    bool optimize_on_insert_,
+    ContextPtr context_,
     bool is_attach_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -52,7 +52,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
-    , optimize_on_insert(optimize_on_insert_)
+    , context(context_)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -144,7 +144,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.

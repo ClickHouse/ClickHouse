@@ -5,7 +5,7 @@
 // sanitizer/asan_interface.h
 #include <memory>
 #include <type_traits>
-#include <Common/Arena.h>
+#include <common/wide_integer_to_string.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -29,6 +29,7 @@
 #include "DivisionUtils.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
+#include <Common/Arena.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitors.h>
@@ -86,6 +87,7 @@ template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
 template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
 
 template <typename DataType> constexpr bool IsExtended = false;
+template <> inline constexpr bool IsExtended<DataTypeUInt128> = true;
 template <> inline constexpr bool IsExtended<DataTypeUInt256> = true;
 template <> inline constexpr bool IsExtended<DataTypeInt128> = true;
 template <> inline constexpr bool IsExtended<DataTypeInt256> = true;
@@ -523,6 +525,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
+            DataTypeUInt128,
             DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
@@ -550,6 +553,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
+            DataTypeUInt128,
             DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
@@ -782,7 +786,7 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
-    template <class T, class ResultDataType, class CC, class C>
+    template <typename T, typename ResultDataType, typename CC, typename C>
     static auto helperGetOrConvert(const CC & col_const, const C & col)
     {
         using ResultType = typename ResultDataType::FieldType;
@@ -790,12 +794,14 @@ class FunctionBinaryArithmetic : public IFunction
 
         if constexpr (IsFloatingPoint<ResultDataType> && IsDecimalNumber<T>)
             return DecimalUtils::convertTo<NativeResultType>(col_const->template getValue<T>(), col.getScale());
+        else if constexpr (IsDecimalNumber<T>)
+            return col_const->template getValue<T>().value;
         else
             return col_const->template getValue<T>();
     }
 
-    template <OpCase op_case, bool left_decimal, bool right_decimal, class OpImpl, class OpImplCheck,
-              class L, class R, class VR, class SA, class SB>
+    template <OpCase op_case, bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck,
+              typename L, typename R, typename VR, typename SA, typename SB>
     void helperInvokeEither(const L& left, const R& right, VR& vec_res, SA scale_a, SB scale_b) const
     {
         if (check_decimal_overflow)

@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.210129.1222545.
+# document by TestFlows v1.6.210505.1133630.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Specification
@@ -488,6 +488,105 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_BindDN_ConflictWith_AuthDN = Re
     level=4,
     num='4.7.1.2')
 
+RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection = Requirement(
+    name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support the `user_dn_detection` sub-section in the `<ldap_servers><server_name>` section\n'
+        'of the `config.xml` that SHALL be used to enable detecting the actual user DN of the bound user. \n'
+        '\n'
+        ),
+    link=None,
+    level=4,
+    num='4.7.2.1')
+
+RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_BaseDN = Requirement(
+    name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.BaseDN',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support `base_dn` parameter in the `user_dn_detection` sub-section in the \n'
+        '`<ldap_servers><server_name>` section of the `config.xml` that SHALL specify how \n'
+        'to construct the base DN for the LDAP search to detect the actual user DN.\n'
+        '\n'
+        'For example,\n'
+        '\n'
+        '```xml\n'
+        '<user_dn_detection>\n'
+        ' ...\n'
+        ' <base_dn>CN=Users,DC=example,DC=com</base_dn>\n'
+        '</user_dn_detection>\n'
+        '```\n'
+        '\n'
+        ),
+    link=None,
+    level=4,
+    num='4.7.2.2')
+
+RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_Scope = Requirement(
+    name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.Scope',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support `scope` parameter in the `user_dn_detection` sub-section in the \n'
+        '`<ldap_servers><server_name>` section of the `config.xml` that SHALL the scope of the \n'
+        'LDAP search to detect the actual user DN. The `scope` parameter SHALL support the following values\n'
+        '\n'
+        '* `base`\n'
+        '* `one_level`\n'
+        '* `children`\n'
+        '* `subtree`\n'
+        '\n'
+        'For example,\n'
+        '\n'
+        '```xml\n'
+        '<user_dn_detection>\n'
+        ' ...\n'
+        ' <scope>one_level</scope>\n'
+        '</user_dn_detection>\n'
+        '```\n'
+        '\n'
+        ),
+    link=None,
+    level=4,
+    num='4.7.2.3')
+
+RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_SearchFilter = Requirement(
+    name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.SearchFilter',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support `search_filter` parameter in the `user_dn_detection` sub-section in the \n'
+        '`<ldap_servers><server_name>` section of the `config.xml` that SHALL specify the LDAP search\n'
+        'filter used to detect the actual user DN.\n'
+        '\n'
+        'For example,\n'
+        '\n'
+        '```xml\n'
+        '<user_dn_detection>\n'
+        ' ...\n'
+        ' <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>\n'
+        '</user_dn_detection>\n'
+        '```\n'
+        '\n'
+        ),
+    link=None,
+    level=4,
+    num='4.7.2.4')
+
 RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Syntax = Requirement(
     name='RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Syntax',
     version='1.0',
@@ -587,7 +686,7 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_BaseDN = Req
         '[ClickHouse] SHALL support the `<base_dn>` parameter in the `<user_directories><ldap><role_mapping>` section \n'
         'of the `config.xml` that SHALL specify the template to be used to construct the base `DN` for the [LDAP] search.\n'
         '\n'
-        'The resulting `DN` SHALL be constructed by replacing all the `{user_name}` and `{bind_dn}` substrings of \n'
+        'The resulting `DN` SHALL be constructed by replacing all the `{user_name}`, `{bind_dn}`, and `user_dn` substrings of \n'
         'the template with the actual user name and bind `DN` during each [LDAP] search.\n'
         '\n'
         ),
@@ -724,7 +823,7 @@ RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_SearchFilter
         'section of the `config.xml` that SHALL specify the template used to construct \n'
         'the [LDAP filter](https://ldap.com/ldap-filters/) for the search.\n'
         '\n'
-        'The resulting filter SHALL be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings \n'
+        'The resulting filter SHALL be constructed by replacing all `{user_name}`, `{bind_dn}`, `{base_dn}`, and `{user_dn}` substrings \n'
         'of the template with the actual user name, bind `DN`, and base `DN` during each the [LDAP] search.\n'
         ' \n'
         ),
@@ -872,6 +971,11 @@ SRS_014_ClickHouse_LDAP_Role_Mapping = Specification(
         Heading(name='BindDN Parameter', level=3, num='4.7.1'),
         Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN', level=4, num='4.7.1.1'),
         Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN.ConflictWith.AuthDN', level=4, num='4.7.1.2'),
+        Heading(name='User DN Detection', level=3, num='4.7.2'),
+        Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection', level=4, num='4.7.2.1'),
+        Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.BaseDN', level=4, num='4.7.2.2'),
+        Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.Scope', level=4, num='4.7.2.3'),
+        Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.SearchFilter', level=4, num='4.7.2.4'),
         Heading(name='External User Directory Configuration', level=2, num='4.8'),
         Heading(name='Syntax', level=3, num='4.8.1'),
         Heading(name='RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Syntax', level=4, num='4.8.1.1'),
@@ -930,6 +1034,10 @@ SRS_014_ClickHouse_LDAP_Role_Mapping = Specification(
         RQ_SRS_014_LDAP_RoleMapping_Authentication_Parallel_SameUser,
         RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_BindDN,
         RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_BindDN_ConflictWith_AuthDN,
+        RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection,
+        RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_BaseDN,
+        RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_Scope,
+        RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_SearchFilter,
         RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_Syntax,
         RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_SpecialCharactersEscaping,
         RQ_SRS_014_LDAP_RoleMapping_Configuration_UserDirectory_RoleMapping_MultipleSections,
@@ -996,6 +1104,11 @@ SRS_014_ClickHouse_LDAP_Role_Mapping = Specification(
     * 4.7.1 [BindDN Parameter](#binddn-parameter)
       * 4.7.1.1 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN](#rqsrs-014ldaprolemappingconfigurationserverbinddn)
       * 4.7.1.2 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN.ConflictWith.AuthDN](#rqsrs-014ldaprolemappingconfigurationserverbinddnconflictwithauthdn)
+    * 4.7.2 [User DN Detection](#user-dn-detection)
+      * 4.7.2.1 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection](#rqsrs-014ldaprolemappingconfigurationserveruserdndetection)
+      * 4.7.2.2 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.BaseDN](#rqsrs-014ldaprolemappingconfigurationserveruserdndetectionbasedn)
+      * 4.7.2.3 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.Scope](#rqsrs-014ldaprolemappingconfigurationserveruserdndetectionscope)
+      * 4.7.2.4 [RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.SearchFilter](#rqsrs-014ldaprolemappingconfigurationserveruserdndetectionsearchfilter)
   * 4.8 [External User Directory Configuration](#external-user-directory-configuration)
     * 4.8.1 [Syntax](#syntax)
       * 4.8.1.1 [RQ.SRS-014.LDAP.RoleMapping.Configuration.UserDirectory.RoleMapping.Syntax](#rqsrs-014ldaprolemappingconfigurationuserdirectoryrolemappingsyntax)
@@ -1270,6 +1383,67 @@ version: 1.0
 [ClickHouse] SHALL return an error if both `<bind_dn>` and `<auth_dn_prefix>` or `<auth_dn_suffix>` parameters
 are specified as part of [LDAP] server description in the `<ldap_servers>` section of the `config.xml`.
 
+#### User DN Detection
+
+##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection
+version: 1.0
+
+[ClickHouse] SHALL support the `user_dn_detection` sub-section in the `<ldap_servers><server_name>` section
+of the `config.xml` that SHALL be used to enable detecting the actual user DN of the bound user. 
+
+##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.BaseDN
+version: 1.0
+
+[ClickHouse] SHALL support `base_dn` parameter in the `user_dn_detection` sub-section in the 
+`<ldap_servers><server_name>` section of the `config.xml` that SHALL specify how 
+to construct the base DN for the LDAP search to detect the actual user DN.
+
+For example,
+
+```xml
+<user_dn_detection>
+ ...
+ <base_dn>CN=Users,DC=example,DC=com</base_dn>
+</user_dn_detection>
+```
+
+##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.Scope
+version: 1.0
+
+[ClickHouse] SHALL support `scope` parameter in the `user_dn_detection` sub-section in the 
+`<ldap_servers><server_name>` section of the `config.xml` that SHALL the scope of the 
+LDAP search to detect the actual user DN. The `scope` parameter SHALL support the following values
+
+* `base`
+* `one_level`
+* `children`
+* `subtree`
+
+For example,
+
+```xml
+<user_dn_detection>
+ ...
+ <scope>one_level</scope>
+</user_dn_detection>
+```
+
+##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.UserDNDetection.SearchFilter
+version: 1.0
+
+[ClickHouse] SHALL support `search_filter` parameter in the `user_dn_detection` sub-section in the 
+`<ldap_servers><server_name>` section of the `config.xml` that SHALL specify the LDAP search
+filter used to detect the actual user DN.
+
+For example,
+
+```xml
+<user_dn_detection>
+ ...
+ <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+</user_dn_detection>
+```
+
 ### External User Directory Configuration
 
 #### Syntax
@@ -1334,7 +1508,7 @@ version: 1.0
 [ClickHouse] SHALL support the `<base_dn>` parameter in the `<user_directories><ldap><role_mapping>` section 
 of the `config.xml` that SHALL specify the template to be used to construct the base `DN` for the [LDAP] search.
 
-The resulting `DN` SHALL be constructed by replacing all the `{user_name}` and `{bind_dn}` substrings of 
+The resulting `DN` SHALL be constructed by replacing all the `{user_name}`, `{bind_dn}`, and `user_dn` substrings of 
 the template with the actual user name and bind `DN` during each [LDAP] search.
 
 #### Attribute Parameter
@@ -1397,7 +1571,7 @@ version: 1.0
 section of the `config.xml` that SHALL specify the template used to construct 
 the [LDAP filter](https://ldap.com/ldap-filters/) for the search.
 
-The resulting filter SHALL be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings 
+The resulting filter SHALL be constructed by replacing all `{user_name}`, `{bind_dn}`, `{base_dn}`, and `{user_dn}` substrings 
 of the template with the actual user name, bind `DN`, and base `DN` during each the [LDAP] search.
  
 #### Prefix Parameter

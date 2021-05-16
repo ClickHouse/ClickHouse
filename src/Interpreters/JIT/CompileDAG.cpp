@@ -139,7 +139,10 @@ UInt128 CompileDAG::hash() const
     for (const auto & node : nodes)
     {
         hash.update(node.type);
-        hash.update(node.result_type->getName());
+
+        const auto & result_type_name = node.result_type->getName();
+        hash.update(result_type_name.size());
+        hash.update(result_type_name);
 
         switch (node.type)
         {
@@ -150,7 +153,11 @@ UInt128 CompileDAG::hash() const
             }
             case CompileType::FUNCTION:
             {
-                hash.update(node.function->getName());
+                const auto & function_name = node.function->getName();
+
+                hash.update(function_name.size());
+                hash.update(function_name);
+
                 for (size_t arg : node.arguments)
                     hash.update(arg);
 
@@ -164,7 +171,7 @@ UInt128 CompileDAG::hash() const
     }
 
     UInt128 result;
-    hash.get128(result.low, result.high);
+    hash.get128(result);
     return result;
 }
 

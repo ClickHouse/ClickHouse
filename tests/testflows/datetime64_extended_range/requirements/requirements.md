@@ -1,4 +1,4 @@
-# QA-SRS010 ClickHouse DateTime64 Extended Range
+# SRS-010 ClickHouse DateTime64 Extended Range
 # Software Requirements Specification
 
 ## Table of Contents
