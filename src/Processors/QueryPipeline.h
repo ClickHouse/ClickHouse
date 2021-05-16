@@ -53,7 +53,7 @@ public:
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
-    /// Add transform and connects it to outputs[stream_index] stream
+    /// Add transforms and connect it to outputs streams
     void addParallelTransforms(Processors transform);
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);

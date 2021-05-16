@@ -4,6 +4,7 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/ForkProcessor.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -69,17 +70,31 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
         pipeline.addTransform(std::make_shared<ForkProcessor>(pipeline.getHeader(), grouping_sets_number));
 
         Processors aggregating_transforms;
-        std::shared_ptr<AggregatingTransformParams> transform_params;
+        AggregatingTransformParamsPtr transform_params_ptr;
         for (size_t i = 0; i < grouping_sets_number; ++i)
         {
             params.keys = params.keys_vector[i];
-            transform_params = std::make_shared<AggregatingTransformParams>(params, final);
-            aggregating_transforms.push_back(std::make_shared<AggregatingTransform>(pipeline.getHeader(), transform_params));
+            params.keys_size = params.keys.size();
+            transform_params_ptr = std::make_shared<AggregatingTransformParams>(params, final);
+            aggregating_transforms.push_back(std::make_shared<AggregatingTransform>(pipeline.getHeader(), transform_params_ptr));
         }
-        pipeline.addParallelTransforms(aggregating_transforms);
+        pipeline.addParallelTransforms(std::move(aggregating_transforms));
+/*
+        Processors expression_transforms;
+        ExpressionActionsPtr expression_actions_ptr;
+        for (size_t i = 0; i < grouping_sets_number; ++i)
+        {
+            params.keys = params.keys_vector[i];
+            params.keys_size = params.keys.size();
 
-        /// expr transforms
-
+            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            getRootActions(child, only_types, actions_dag);
+            expression_actions_ptr = actions_dag->buildExpressions(context);
+            expression_actions_ptr = std::make_shared<ExpressionActions>(pipeline.getHeader().getNamesAndTypesList());
+            aggregating_transforms.push_back(std::make_shared<AggregatingTransform>(pipeline.getHeader(), transform_params_ptr));
+        }
+        pipeline.addParallelTransforms(expression_transforms);
+*/
         /// merge all aggregating transforms outputs with ResizeProcessor
         pipeline.resize(1);
     }

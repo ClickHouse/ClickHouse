@@ -835,8 +835,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
               *  but there is an ORDER or LIMIT,
               *  then we will perform the preliminary sorting and LIMIT on the remote server.
               */
+            LOG_DEBUG(log, "in preliminary_sort()");
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving())
             {
+                LOG_DEBUG(log, "in if in preliminary_sort()");
                 if (expressions.has_order_by)
                     executeOrder(query_plan, query_info.input_order_info);
 
@@ -956,6 +958,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
             }
+            LOG_DEBUG(log, "ran executeAggregation, before preliminary_sort()");
 
             preliminary_sort();
 
@@ -1027,6 +1030,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
                 !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
+                LOG_DEBUG(log, "before prelimit");
                 executePreLimit(query_plan, false);
                 has_prelimit = true;
             }
@@ -1039,16 +1043,19 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             if (expressions.hasLimitBy())
             {
+                LOG_DEBUG(log, "before limit by");
                 executeExpression(query_plan, expressions.before_limit_by, "Before LIMIT BY");
                 executeLimitBy(query_plan);
             }
 
+            LOG_DEBUG(log, "before with fill");
             executeWithFill(query_plan);
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
             if (query.limit_with_ties)
             {
+                LOG_DEBUG(log, "before limit");
                 executeLimit(query_plan);
                 has_prelimit = true;
             }
@@ -1058,10 +1065,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (!to_aggregation_stage)
             {
                 /// We must do projection after DISTINCT because projection may remove some columns.
+                LOG_DEBUG(log, "before projection");
                 executeProjection(query_plan, expressions.final_projection);
             }
 
             /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
+            LOG_DEBUG(log, "before extremes");
             executeExtremes(query_plan);
 
             /// Limit is no longer needed if there is prelimit.
@@ -1499,6 +1508,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ex
 
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
     ColumnNumbers keys;
+    ColumnNumbers all_keys;
     ColumnNumbersTwoDimension keys_vector;
     auto & query = getSelectQuery();
     if (query.group_by_with_grouping_sets)
@@ -1509,6 +1519,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ex
             for (const auto & key : aggregation_keys)
             {
                 keys.push_back(header_before_aggregation.getPositionByName(key.name));
+                all_keys.push_back(header_before_aggregation.getPositionByName(key.name));
                 LOG_DEBUG(
                     log,
                     "GroupingSets add key with name {} and number {}",
@@ -1531,19 +1542,22 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ex
         }
     }
 
+    LOG_DEBUG(log, "GroupingSets debug 1");
     AggregateDescriptions aggregates = query_analyzer->aggregates();
     for (auto & descr : aggregates)
         if (descr.arguments.empty())
             for (const auto & name : descr.argument_names)
                 descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
-
+    LOG_DEBUG(log, "GroupingSets debug 2");
     const Settings & settings = context->getSettingsRef();
-
+    LOG_DEBUG(log, "GroupingSets debug 3");
     std::shared_ptr<Aggregator::Params> params_ptr;
     if (query.group_by_with_grouping_sets)
     {
+        LOG_DEBUG(log, "GroupingSets debug 4");
         params_ptr = std::make_shared<Aggregator::Params>(
             header_before_aggregation,
+            all_keys,
             keys_vector,
             aggregates,
             overflow_row,
@@ -1574,7 +1588,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ex
             settings.max_threads,
             settings.min_free_disk_space_for_temporary_data);
     }
-
+    LOG_DEBUG(log, "GroupingSets debug 5");
     SortDescription group_by_sort_description;
 
     if (group_by_info && settings.optimize_aggregation_in_order && !query.group_by_with_grouping_sets)
@@ -1588,7 +1602,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ex
                                         : static_cast<size_t>(settings.max_threads);
 
     bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
-
+    LOG_DEBUG(log, "GroupingSets debug 6");
+    LOG_DEBUG(log, "GroupingSets step header structure: {}", query_plan.getCurrentDataStream().header.dumpStructure());
     auto aggregating_step = std::make_unique<AggregatingStep>(
             query_plan.getCurrentDataStream(),
             *params_ptr, final,
@@ -1598,8 +1613,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ex
             storage_has_evenly_distributed_read,
             std::move(group_by_info),
             std::move(group_by_sort_description));
-
+    LOG_DEBUG(log, "GroupingSets step header structure: {}", aggregating_step->getOutputStream().header.dumpStructure());
+    LOG_DEBUG(log, "GroupingSets debug 7");
     query_plan.addStep(std::move(aggregating_step));
+    LOG_DEBUG(log, "GroupingSets debug 8");
 }
 
 
