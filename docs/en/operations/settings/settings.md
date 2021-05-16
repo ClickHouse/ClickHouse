@@ -2881,7 +2881,7 @@ HTTP send timeout (in seconds).
 Possible values:
 
 -   Any positive integer.
--   0 - Disabled.
+-   0 - Disabled (infinite timeout).
 
 Default value: 1800.
 
@@ -2892,7 +2892,7 @@ HTTP receive timeout (in seconds).
 Possible values:
 
 -   Any positive integer.
--   0 - Disabled.
+-   0 - Disabled (infinite timeout).
 
 Default value: 1800.
 
