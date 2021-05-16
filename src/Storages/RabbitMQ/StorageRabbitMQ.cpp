@@ -87,7 +87,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         , num_queues(rabbitmq_settings->rabbitmq_num_queues.value)
         , queue_base(rabbitmq_settings->rabbitmq_queue_base.value)
         , queue_settings_list(parseSettings(rabbitmq_settings->rabbitmq_queue_settings_list.value))
-        , deadletter_exchange(rabbitmq_settings->rabbitmq_deadletter_exchange.value)
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
@@ -487,13 +486,8 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
     {
         queue_settings["x-max-length"] = queue_size;
     }
-    if (!queue_settings.contains("x-dead-letter-exchange") && !deadletter_exchange.empty())
+    if (!queue_settings.contains("x-overflow"))
     {
-        queue_settings["x-dead-letter-exchange"] = deadletter_exchange;
-    }
-    else if (!queue_settings.contains("x-overflow"))
-    {
-        /// Define x-overflow only if there is not x-dead-letter-exchange, because it will overwrite the expected behaviour.
         queue_settings["x-overflow"] = "reject-publish";
     }
 
@@ -1068,14 +1062,13 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(8, rabbitmq_num_consumers)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(9, rabbitmq_num_queues)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(10, rabbitmq_queue_base)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(11, rabbitmq_deadletter_exchange)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(12, rabbitmq_persistent)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_skip_broken_messages)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_max_block_size)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_flush_interval_ms)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_vhost)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(17, rabbitmq_queue_settings_list)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(18, rabbitmq_queue_consume)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(11, rabbitmq_persistent)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(12, rabbitmq_skip_broken_messages)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_max_block_size)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_flush_interval_ms)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_vhost)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_queue_settings_list)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(17, rabbitmq_queue_consume)
 
         #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 
