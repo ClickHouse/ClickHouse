@@ -52,7 +52,6 @@ OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (c
 Consider the table:
 
 ``` sql
-DROP TABLE IF EXISTS dup_example;
 
 CREATE TABLE dup_example (
     pk Int32, -- primary key
