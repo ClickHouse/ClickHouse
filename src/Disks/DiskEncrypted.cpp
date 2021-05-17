@@ -1,6 +1,5 @@
 #include <Common/config.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
 
 #include "Disks/DiskFactory.h"
 #include "DiskEncrypted.h"
@@ -8,6 +7,7 @@
 #include <Functions/FileEncryption.h>
 #include <IO/ReadEncryptedBuffer.h>
 #include <IO/WriteEncryptedBuffer.h>
+
 
 namespace DB
 {
