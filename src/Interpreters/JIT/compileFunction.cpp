@@ -56,7 +56,7 @@ ColumnData getColumnData(const IColumn * column)
     return result;
 }
 
-static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & function)
+static void compileFunction(llvm::Module & module, const IFunctionBase & function)
 {
     /** Algorithm is to create a loop that iterate over ColumnDataRowsSize size_t argument and
      * over ColumnData data and null_data. On each step compiled expression from function
@@ -166,7 +166,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & fun
     b.CreateRetVoid();
 }
 
-CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBaseImpl & function)
+CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBase & function)
 {
     Stopwatch watch;
 

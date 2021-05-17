@@ -332,6 +332,7 @@ StorageS3::StorageS3(
     UInt64 max_connections_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_,
     const String & compression_method_,
     bool distributed_processing_)
@@ -349,6 +350,7 @@ StorageS3::StorageS3(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     updateClientAndAuthSettings(context_, client_auth);
 }
@@ -522,9 +524,9 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             max_connections,
             args.columns,
             args.constraints,
+            args.comment,
             args.getContext(),
-            compression_method
-        );
+            compression_method);
     },
     {
         .source_access_type = AccessType::S3,

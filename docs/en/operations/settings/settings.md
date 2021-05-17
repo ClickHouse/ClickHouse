@@ -2863,6 +2863,39 @@ Sets the interval in seconds after which periodically refreshed [live view](../.
 
 Default value: `60`.
 
+## http_connection_timeout {#http_connection_timeout}
+
+HTTP connection timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1.
+
+## http_send_timeout {#http_send_timeout}
+
+HTTP send timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1800.
+
+## http_receive_timeout {#http_receive_timeout}
+
+HTTP receive timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1800.
+
 ## check_query_single_value_result {#check_query_single_value_result}
 
 Defines the level of detail for the [CHECK TABLE](../../sql-reference/statements/check-table.md#checking-mergetree-tables) query result for `MergeTree` family engines .

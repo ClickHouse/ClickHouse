@@ -217,6 +217,7 @@ StorageFile::StorageFile(CommonArguments args)
         storage_metadata.setColumns(args.columns);
 
     storage_metadata.setConstraints(args.constraints);
+    storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -683,6 +684,7 @@ void registerStorageFile(StorageFactory & factory)
                 {},
                 factory_args.columns,
                 factory_args.constraints,
+                factory_args.comment,
             };
 
             ASTs & engine_args_ast = factory_args.engine_args;
