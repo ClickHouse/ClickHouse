@@ -15,6 +15,7 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
     , log(&Poco::Logger::get(logger_name))
     , entries_znode_path(zookeeper_path + "/part_moves_shard")
 {
+    /// Schedule pool is not designed for long-running tasks. TODO replace with a separate thread?
     task = storage.getContext()->getSchedulePool().createTask(logger_name, [this]{ run(); });
 }
 
@@ -190,6 +191,9 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
+                /// This wait in background schedule pool is useless. It'd be
+                /// better to have some notification which will call `step`
+                /// function when all replicated will finish. TODO.
                 storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
             }
 
