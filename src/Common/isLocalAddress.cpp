@@ -55,6 +55,7 @@ struct NetworkInterfaces
                 default:
                     continue;
             }
+
             if (interface_address->length() == address.length()
                 && 0 == memcmp(interface_address->addr(), address.addr(), address.length()))
                 return true;
