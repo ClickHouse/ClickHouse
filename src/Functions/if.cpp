@@ -901,7 +901,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isShortCircuit() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.

@@ -955,7 +955,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return IsOperation<Op>::can_throw; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & arguments) const override
+    {
+
+        return (IsOperation<Op>::div_int || IsOperation<Op>::modulo) && !isColumnConst(*arguments[1].column);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1547,7 +1551,10 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isVariadic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return IsOperation<Op>::can_throw; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & arguments) const override
+    {
+        return (IsOperation<Op>::div_int || IsOperation<Op>::modulo) && !isColumnConst(*arguments[1].column);
+    }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {

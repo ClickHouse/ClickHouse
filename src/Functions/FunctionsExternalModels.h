@@ -25,7 +25,7 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     bool isDeterministic() const override { return false; }
 

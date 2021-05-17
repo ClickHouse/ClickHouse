@@ -417,8 +417,10 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             if (action.node->lazy_execution == ActionsDAG::LazyExecution::FORCE_ENABLED
                 || (action.node->lazy_execution == ActionsDAG::LazyExecution::ENABLED
-                    && (action.node->function_base->isSuitableForShortCircuitArgumentsExecution() || checkShirtCircuitArguments(arguments) >= 0)))
+                    && (action.node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments) || checkShirtCircuitArguments(arguments) >= 0)))
+            {
                 res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true);
+            }
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);

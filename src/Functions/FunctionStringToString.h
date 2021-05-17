@@ -43,7 +43,7 @@ public:
         return is_injective;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return true;
     }

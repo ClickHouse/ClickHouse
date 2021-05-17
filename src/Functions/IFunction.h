@@ -213,7 +213,7 @@ public:
 
     virtual bool isShortCircuit() const { return false; }
 
-    virtual bool isSuitableForShortCircuitArgumentsExecution() const = 0;
+    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
 
     virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
     {
@@ -279,7 +279,7 @@ public:
 
     virtual bool isShortCircuit() const { return false; }
 
-    virtual bool isSuitableForShortCircuitArgumentsExecution() const = 0;
+    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).

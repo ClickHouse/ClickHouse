@@ -112,7 +112,7 @@ public:
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isShortCircuit() const { return false; }
-    virtual bool isSuitableForShortCircuitArgumentsExecution() const = 0;
+    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
     virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
     {
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
@@ -165,7 +165,7 @@ public:
     virtual bool isStateful() const { return false; }
     virtual bool isVariadic() const { return false; }
     virtual bool isShortCircuit() const { return false; }
-    virtual bool isSuitableForShortCircuitArgumentsExecution() const = 0;
+    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
     {
@@ -254,7 +254,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }
     virtual bool isShortCircuit() const { return false; }
-    virtual bool isSuitableForShortCircuitArgumentsExecution() const = 0;
+    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
 
     virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
     {
