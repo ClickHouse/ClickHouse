@@ -62,15 +62,13 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     size_t mmap_threshold,
     MMappedFileCache * mmap_cache) const
 {
-    using namespace FileEncryption;
-
     auto wrapped_path = wrappedPath(path);
     auto buffer = delegate->readFile(wrapped_path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 
     auto iv = GetRandomString(kIVSize);
     size_t offset = 0;
 
-    if (delegate->getFileSize(wrapped_path))
+    if (exists(path) && getFileSize(path))
     {
         iv = ReadIV(kIVSize, *buffer);
         offset = kIVSize;
@@ -84,16 +82,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(
     size_t buf_size,
     WriteMode mode)
 {
-    using namespace FileEncryption;
-
     auto wrapped_path = wrappedPath(path);
     auto iv = GetRandomString(kIVSize);
 
-    try {
+    if (exists(path) && getFileSize(path))
+    {
         auto read_buffer = delegate->readFile(wrapped_path, kIVSize);
         iv = ReadIV(kIVSize, *read_buffer);
     }
-    catch ( ... ) { }
 
     auto buffer = delegate->writeFile(wrapped_path, buf_size, mode);
     return std::make_unique<WriteEncryptedBuffer>(buf_size, std::move(buffer), iv, key,
@@ -161,6 +157,9 @@ void registerDiskEncrypted(DiskFactory & factory)
         String key = config.getString(config_prefix + ".key", "");
         if (key.empty())
             throw Exception("Encrypted disk key can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+	if (key.size() != CipherKeyLength(DefaultCipher()))
+            throw Exception("Expected key with size " + std::to_string(CipherKeyLength(DefaultCipher())) + ", got key with size " + std::to_string(key.size()),
+			    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
         auto wrapped_disk = map.find(wrapped_disk_name);
         if (wrapped_disk == map.end())

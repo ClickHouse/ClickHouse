@@ -3,7 +3,6 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Functions/FileEncryption.h>
 
-#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -63,7 +62,7 @@ private:
             return;
         if (flush_iv)
         {
-            writeText(iv.data(), *out);
+            WriteIV(iv, *out);
             flush_iv = false;
         }
 
