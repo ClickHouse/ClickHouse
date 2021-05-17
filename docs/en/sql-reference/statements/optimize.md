@@ -64,12 +64,7 @@ CREATE TABLE dup_example (
 ORDER BY (pk, sk);
 ```
 
-The `MergeTree` engine does not have parameters.
-
-**Valid cases**
-
-In the case below all columns are taken into account, i.e. row is removed only if all values in all columns are equal to corresponding values in another row.
-Here and below we need to add `FINAL` to force deduplication in case of a small set of data.
+Columns for deduplication are not specified, so all of them are taken into account. Row is removed only if all values in all columns are equal to corresponding values in previous row:
 
 ``` sql
 OPTIMIZE TABLE dup_example FINAL DEDUPLICATE;
