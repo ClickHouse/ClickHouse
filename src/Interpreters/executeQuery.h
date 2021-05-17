@@ -20,6 +20,15 @@ void executeQuery(
     std::function<void(const String &, const String &, const String &, const String &)> set_result_details /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
 );
 
+/// Parse and execute a query.
+/// Technically identical to executeQuery, however using HTTP Server-Sent events require different executor
+void executeStreamQuery(
+    ReadBuffer & istr,                  /// Where to read query from (and data for INSERT, if present).
+    WriteBuffer & ostr,                 /// Where to write query output to.
+    bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
+    ContextPtr context,                 /// DB, tables, data types, storage engines, functions, aggregate functions...
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
+);
 
 /// More low-level function for server-to-server interaction.
 /// Prepares a query for execution but doesn't execute it.

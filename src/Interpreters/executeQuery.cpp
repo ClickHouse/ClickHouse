@@ -1112,4 +1112,169 @@ void executeQuery(
     streams.onFinish();
 }
 
+void executeStreamQuery(
+    ReadBuffer & istr,
+    WriteBuffer & ostr,
+    bool allow_into_outfile,
+    ContextPtr context,
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
+{
+    PODArray<char> parse_buf;
+    const char * begin;
+    const char * end;
+
+    /// If 'istr' is empty now, fetch next data into buffer.
+    if (!istr.hasPendingData())
+        istr.next();
+
+    size_t max_query_size = context->getSettingsRef().max_query_size;
+
+    bool may_have_tail;
+    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
+    {
+        /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
+        begin = istr.position();
+        end = istr.buffer().end();
+        istr.position() += end - begin;
+        /// Actually we don't know will query has additional data or not.
+        /// But we can't check istr.eof(), because begin and end pointers will become invalid
+        may_have_tail = true;
+    }
+    else
+    {
+        /// If not - copy enough data into 'parse_buf'.
+        WriteBufferFromVector<PODArray<char>> out(parse_buf);
+        LimitReadBuffer limit(istr, max_query_size + 1, false);
+        copyData(limit, out);
+        out.finalize();
+
+        begin = parse_buf.data();
+        end = begin + parse_buf.size();
+        /// Can check stream for eof, because we have copied data
+        may_have_tail = !istr.eof();
+    }
+
+    ASTPtr ast;
+    BlockIO streams;
+
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
+
+    auto & pipeline = streams.pipeline;
+
+    try
+    {
+        if (streams.out)
+        {
+            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
+            copyData(in, *streams.out);
+        }
+        else if (streams.in)
+        {
+            const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+
+            WriteBuffer * out_buf = &ostr;
+            std::optional<WriteBufferFromFile> out_file_buf;
+            if (ast_query_with_output && ast_query_with_output->out_file)
+            {
+                if (!allow_into_outfile)
+                    throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+
+                const auto & out_file = ast_query_with_output->out_file->as<ASTLiteral &>().value.safeGet<std::string>();
+                out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
+                out_buf = &*out_file_buf;
+            }
+
+            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+                ? getIdentifierName(ast_query_with_output->format)
+                : context->getDefaultFormat();
+
+            auto out = context->getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
+
+            /// Save previous progress callback if any. TODO Do it more conveniently.
+            auto previous_progress_callback = context->getProgressCallback();
+
+            /// NOTE Progress callback takes shared ownership of 'out'.
+            streams.in->setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+            {
+                if (previous_progress_callback)
+                    previous_progress_callback(progress);
+                out->onProgress(progress);
+            });
+
+            if (set_result_details)
+                set_result_details(
+                    context->getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
+
+            copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &)
+            {
+                out->flush(); 
+            });
+        }
+        else if (pipeline.initialized())
+        {
+            const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+
+            WriteBuffer * out_buf = &ostr;
+            std::optional<WriteBufferFromFile> out_file_buf;
+            if (ast_query_with_output && ast_query_with_output->out_file)
+            {
+                if (!allow_into_outfile)
+                    throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+
+                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+                out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
+                out_buf = &*out_file_buf;
+            }
+
+            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+                                 ? getIdentifierName(ast_query_with_output->format)
+                                 : context->getDefaultFormat();
+
+            if (!pipeline.isCompleted())
+            {
+                pipeline.addSimpleTransform([](const Block & header)
+                {
+                    return std::make_shared<MaterializingTransform>(header);
+                });
+
+                auto out = context->getOutputFormatParallelIfPossible(format_name, *out_buf, pipeline.getHeader());
+                out->setAutoFlush();
+
+                /// Save previous progress callback if any. TODO Do it more conveniently.
+                auto previous_progress_callback = context->getProgressCallback();
+
+                /// NOTE Progress callback takes shared ownership of 'out'.
+                pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+                {
+                    if (previous_progress_callback)
+                        previous_progress_callback(progress);
+                    out->onProgress(progress);
+                });
+
+                if (set_result_details)
+                    set_result_details(
+                        context->getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
+
+                pipeline.setOutputFormat(std::move(out));
+            }
+            else
+            {
+                pipeline.setProgressCallback(context->getProgressCallback());
+            }
+
+            {
+                auto executor = pipeline.execute();
+                executor->execute(pipeline.getNumThreads());
+            }
+        }
+    }
+    catch (...)
+    {
+        streams.onException();
+        throw;
+    }
+
+    streams.onFinish();
+}
+
 }

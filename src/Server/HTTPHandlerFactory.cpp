@@ -179,6 +179,11 @@ void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer 
 {
     addCommonDefaultHandlersFactory(factory, server);
 
+    auto query_stream_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<HTTPStreamHandler>>(server, "HTTPStreamQueryHandler", "query");
+    query_stream_handler->attachNonStrictPath("/stream");
+    query_stream_handler->allowPostAndGetParamsRequest();
+    factory.addHandler(query_stream_handler);
+
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
     query_handler->allowPostAndGetParamsRequest();
     factory.addHandler(query_handler);
