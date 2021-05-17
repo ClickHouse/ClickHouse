@@ -311,8 +311,8 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         rows += buffer.rows();
         bytes += buffer.bytes();
     }
-    total_size_bytes.store(rows, std::memory_order_relaxed);
-    total_size_rows.store(bytes, std::memory_order_relaxed);
+    total_size_bytes.store(bytes, std::memory_order_relaxed);
+    total_size_rows.store(rows, std::memory_order_relaxed);
     data.set(std::move(new_data));
 }
 
