@@ -26,6 +26,8 @@ public:
     ~WriteBufferFromHDFS() override;
 
     void sync() override;
+
+    void finalize() override;
 };
 }
 #endif
