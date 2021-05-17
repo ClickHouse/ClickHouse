@@ -524,10 +524,12 @@ void FunctionAnyArityLogical<Impl, Name>::executeShortCircuitArguments(ColumnsWi
     executeColumnIfNeeded(arguments[0]);
 
     IColumn::Filter mask;
+    IColumn::Filter * expanding_mask = nullptr;
     for (int i = 1; i <= last_short_circuit_argument_index; ++i)
     {
-        getMaskFromColumn(arguments[i - 1].column, mask, reverse, nullptr, null_value);
-        maskedExecute(arguments[i], mask, false, &value_for_mask_expanding);
+        getMaskFromColumn(arguments[i - 1].column, mask, reverse, expanding_mask, value_for_mask_expanding, false, nullptr, null_value);
+        maskedExecute(arguments[i], mask, false);
+        expanding_mask = &mask;
     }
 }
 

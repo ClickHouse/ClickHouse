@@ -119,11 +119,10 @@ public:
         IColumn::Filter current_mask;
         IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
 
-        UInt8 default_value_for_mask_expanding = 0;
         int i = 1;
         while (i <= last_short_circuit_argument_index)
         {
-            getMaskFromColumn(arguments[i - 1].column, current_mask);
+            getMaskFromColumn(arguments[i - 1].column, current_mask, false, &mask_disjunctions, 0, true);
             maskedExecute(arguments[i], current_mask);
 
             ++i;
@@ -131,8 +130,7 @@ public:
                 break;
 
             disjunctionMasks(mask_disjunctions, current_mask);
-            UInt8 * default_value_ptr = i + 1 == int(arguments.size()) ? nullptr: &default_value_for_mask_expanding;
-            maskedExecute(arguments[i], mask_disjunctions, true, default_value_ptr);
+            maskedExecute(arguments[i], mask_disjunctions, true);
             ++i;
         }
     }
