@@ -1,15 +1,11 @@
 #pragma once
 
-#include <fstream>
-
 #include <openssl/evp.h>
 #include <openssl/engine.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-
-#include <common/logger_useful.h>
 
 #include <sys/random.h>
 
@@ -19,10 +15,11 @@
 
 #include <Functions/FunctionsAES.h>
 
+
 namespace FileEncryption
 {
 
-constexpr size_t kIVSize = 128 / CHAR_BIT / 2;
+constexpr size_t kIVSize = sizeof(DB::UInt64);
 
 class InitVector
 {
@@ -59,7 +56,6 @@ private:
     mutable String modify;
 };
 
-
 class EncryptionKey
 {
 public:
@@ -87,6 +83,12 @@ String GetRandomString(size_t size)
     return iv;
 }
 
+void WriteIV(const String & iv, DB::WriteBuffer & out)
+{
+    for (auto i : iv)
+	DB::writeChar(i, out);
+}
+
 size_t CipherKeyLength(const EVP_CIPHER * evp_cipher)
 {
     return static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
@@ -97,12 +99,16 @@ size_t CipherIVLength(const EVP_CIPHER * evp_cipher)
     return static_cast<size_t>(EVP_CIPHER_iv_length(evp_cipher));
 }
 
+const EVP_CIPHER * DefaultCipher()
+{
+    return EVP_aes_128_ctr();
+}
 
 class Encryption
 {
 public:
     Encryption(const String & iv_, const EncryptionKey & key_, size_t offset_ = 0)
-        : evp_cipher(EVP_aes_128_ctr())
+        : evp_cipher(DefaultCipher())
         , init_vector(iv_)
         , key(key_)
         , block_size(CipherIVLength(evp_cipher))
@@ -127,12 +133,11 @@ protected:
     const EVP_CIPHER * get() const { return evp_cipher; }
 
     const EVP_CIPHER * evp_cipher;
-    const InitVector init_vector;
-    EncryptionKey key;
+    const String init_vector;
+    const EncryptionKey key;
     size_t block_size;
-    size_t offset = 0; // global offset
+    size_t offset = 0;
 };
-
 
 class Encryptor : public Encryption
 {
@@ -145,22 +150,24 @@ public:
         if (!size)
             return;
 
-        auto iv = init_vector;
+        auto iv = InitVector(init_vector);
 	iv.SetCounter(Blocks(offset));
-        size_t first_block_size = FirstBlockSize(size, offset);
 
+        size_t first_block_size = FirstBlockSize(size, offset);
         if (offset)
         {
             buf.write(EncryptPartialBlock(plaintext, first_block_size, iv, offset).data(), first_block_size);
+            offset = BlockOffset(offset + first_block_size);
             size -= first_block_size;
-	    offset += first_block_size;
             iv.Inc();
         }
 
         if (size)
         {
+            size_t blocks = Blocks(size);
             buf.write(EncryptNBytes(plaintext + first_block_size, size, iv).data(), size);
-	    offset += size;
+            iv.Inc(blocks);
+            offset = size - blocks * block_size;
         }
     }
 
@@ -169,7 +176,7 @@ private:
     {
         using namespace OpenSSLDetails;
         if (size > block_size)
-            onError("Expecter partial block, got block with size > block_size: size = " + std::to_string(size));
+            onError("Expecter partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off));
 
         String plaintext(block_size, '\0');
         for (size_t i = 0; i < size; ++i)
@@ -204,9 +211,6 @@ private:
 
         ciphertext_ref += output_len;
 
-
-	//* always do nothing for default cipher
-
         int final_output_len = 0;
         if (EVP_EncryptFinal_ex(evp_ctx,
             reinterpret_cast<unsigned char*>(ciphertext_ref), &final_output_len) != 1)
@@ -230,21 +234,24 @@ public:
         if (!size)
             return;
 
-        auto iv = init_vector;
-	iv.SetCounter(Blocks(off));
-	off = BlockOffset(off);
+        auto iv = InitVector(init_vector);
+        iv.SetCounter(Blocks(off));
+        off = BlockOffset(off);
 
         size_t first_block_size = FirstBlockSize(size, off);
         if (off)
         {
             DecryptPartialBlock(buf, ciphertext, first_block_size, iv, off);
             size -= first_block_size;
-            iv.Inc();
+            if (first_block_size + off == block_size)
+                iv.Inc();
         }
 
         if (size)
         {
+            size_t blocks = Blocks(size);
             DecryptNBytes(buf, ciphertext + first_block_size, size, iv);
+            iv.Inc(blocks);
         }
     }
 
@@ -275,7 +282,7 @@ private:
         auto * evp_ctx = evp_ctx_ptr.get();
 
         if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
-            onError("Failed to initialize decryption context with cipher");
+            onError("Failed to initialize encryption context with cipher");
 
         if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
             reinterpret_cast<const unsigned char*>(key.GetRef()),
@@ -290,10 +297,7 @@ private:
 
         to += output_len;
 
-
-	//* always do nothing for default cipher
-
-	int final_output_len = 0;
+        int final_output_len = 0;
         if (EVP_DecryptFinal_ex(evp_ctx,
             reinterpret_cast<unsigned char*>(to), &final_output_len) != 1)
             onError("Failed to fetch ciphertext");
