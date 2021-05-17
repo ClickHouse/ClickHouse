@@ -369,7 +369,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-Функция принимает шестнадцатибайтную строку и интерпретирует ее байты в network order (big-endian). Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количетсвом нулевых байт с конца. Если строка длиннее, чем шестнадцать байт, то игнорируются лишние байты с конца.
+Функция принимает строку из 16 байт и интерпретирует ее байты в порядок от старшего к младшему. Если строка имеет недостаточную длину, то функция работает так, как будто строка дополнена необходимым количеством нулевых байтов с конца. Если строка длиннее, чем 16 байтов, то лишние байты с конца игнорируются.
 
 **Синтаксис**
 
@@ -425,9 +425,27 @@ SELECT uuid = uuid2;
 
 ## reinterpret(x, T) {#type_conversion_function-reinterpret}
 
-Использует туже самую исходную последовательность байт в памяти для значения `x` и переинтерпретирует ее как конечный тип данных
+Использует ту же самую исходную последовательность байтов в памяти для значения `x` и интерпретирует ее как конечный тип данных `T`.
+
+**Синтаксис**
+
+``` sql
+reinterpret(x, type)
+```
+
+**Аргументы**
+
+-   `x` — любой тип данных. 
+-   `type` — конечный тип данных. [String](../../sql-reference/data-types/string.md). 
+
+**Возвращаемое значение**
+
+-   Значение конечного типа данных.
+
+**Примеры**
 
 Запрос:
+
 ```sql
 SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
     reinterpret(toInt8(1), 'Float32') as int_to_float,
@@ -448,7 +466,23 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 Поддерживается также синтаксис `CAST(x AS t)`.
 
-Обратите внимание, что если значение `x` не может быть преобразовано к типу `T`, возникает переполнение. Например, `CAST(-1, 'UInt8')` возвращает 255.
+!!! warning "Предупреждение"
+   Если значение `x` не может быть преобразовано к типу `T`, возникает переполнение. Например, `CAST(-1, 'UInt8')` возвращает 255.
+
+**Синтаксис**
+
+``` sql
+CAST(x, T)
+```
+
+**Аргументы**
+
+-   `x` — любой тип данных. 
+-   `T` — конечный тип данных. [String](../../sql-reference/data-types/string.md).  
+
+**Возвращаемое значение**
+
+- Значение конечного типа данных.
 
 **Примеры**
 
@@ -456,9 +490,9 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 ```sql
 SELECT
-    cast(toInt8(-1), 'UInt8') AS cast_int_to_uint,
-    cast(toInt8(1), 'Float32') AS cast_int_to_float,
-    cast('1', 'UInt32') AS cast_string_to_int
+    CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
+    CAST(toInt8(1), 'Float32') AS cast_int_to_float,
+    CAST('1', 'UInt32') AS cast_string_to_int
 ```
 
 Результат:
@@ -488,9 +522,9 @@ SELECT
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 ```
 
-Преобразование в FixedString(N) работает только для аргументов типа String или FixedString(N).
+Преобразование в FixedString(N) работает только для аргументов типа [String](../../sql-reference/data-types/string.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
 
-Поддержано преобразование к типу [Nullable](../../sql-reference/functions/type-conversion-functions.md) и обратно. 
+Поддерживается преобразование к типу [Nullable](../../sql-reference/functions/type-conversion-functions.md) и обратно. 
 
 **Примеры**
 
@@ -860,7 +894,7 @@ AS parseDateTimeBestEffortUS;
 ## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
 ## parseDateTime32BestEffortOrZero {#parsedatetime32besteffortorzero}
 
-Работает также как [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает нулевую дату или нулевую дату и время когда получает формат даты который не может быть обработан.
+Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но возвращает нулевое значение, если формат даты не может быть обработан.
 
 ## parseDateTimeBestEffortUSOrNull {#parsedatetimebesteffortusornull}
 
@@ -1036,19 +1070,23 @@ SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOr
 
 ## parseDateTime64BestEffort {#parsedatetime64besteffort}
 
-Работает также как функция [parseDateTimeBestEffort](#parsedatetimebesteffort) но также понимамет милисекунды и микросекунды и возвращает `DateTime64(3)` или `DateTime64(6)` типы данных в зависимости от заданной точности.
+Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но также принимает миллисекунды и микросекунды. Возвращает тип данных [DateTime](../../sql-reference/functions/type-conversion-functions.md#data_type-datetime).
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 ```
 
-**Parameters**
+**Аргументы**
 
--   `time_string` — String containing a date or date with time to convert. [String](../../sql-reference/data-types/string.md).
--   `precision` — `3` for milliseconds, `6` for microseconds. Default `3`. Optional [UInt8](../../sql-reference/data-types/int-uint.md).
--   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
+-   `time_string` — строка, содержащая дату или дату со временем, которые нужно преобразовать. [String](../../sql-reference/data-types/string.md).
+-   `precision` — требуемая точность: `3` — для миллисекунд, `6` — для микросекунд. По умолчанию — `3`. Необязательный. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Разбирает значение `time_string` в зависимости от часового пояса. Необязательный. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   `time_string`, преобразованная в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Примеры**
 
@@ -1062,7 +1100,7 @@ UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
 UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
-FORMAT PrettyCompactMonoBlcok
+FORMAT PrettyCompactMonoBlock;
 ```
 
 Результат:
@@ -1078,12 +1116,11 @@ FORMAT PrettyCompactMonoBlcok
 
 ## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
 
-Работает также как функция [parseDateTime64BestEffort](#parsedatetime64besteffort) но возвращает `NULL` когда встречает формат даты который не может обработать.
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL`, если формат даты не может быть обработан.
 
 ## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
 
-Работает также как функция [parseDateTime64BestEffort](#parsedatetimebesteffort) но возвращает "нулевую" дату и время когда встречает формат даты который не может обработать.
-
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
 
 ## toLowCardinality {#tolowcardinality}
 
@@ -1130,11 +1167,14 @@ SELECT toLowCardinality('1');
 ## toUnixTimestamp64Nano {#tounixtimestamp64nano}
 
 Преобразует значение `DateTime64` в значение `Int64` с фиксированной точностью менее одной секунды. 
-Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. Обратите внимание, что возвращаемое значение - это временная метка в UTC, а не в часовом поясе `DateTime64`.
+Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. 
+
+!!! info "Примечание"
+    Возвращаемое значение — это временная метка в UTC, а не в часовом поясе `DateTime64`.
 
 **Синтаксис**
 
-``` sql
+```sql
 toUnixTimestamp64Milli(value)
 ```
 
@@ -1150,7 +1190,7 @@ toUnixTimestamp64Milli(value)
 
 Запрос:
 
-``` sql
+```sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
 SELECT toUnixTimestamp64Milli(dt64);
 ```
@@ -1296,4 +1336,3 @@ FROM numbers(3);
 │ 2,"good"                                  │
 └───────────────────────────────────────────┘
 ```
-

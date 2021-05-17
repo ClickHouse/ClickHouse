@@ -30,10 +30,10 @@ static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V0;
 struct ChangelogRecordHeader
 {
     ChangelogVersion version = CURRENT_CHANGELOG_VERSION;
-    uint64_t index; /// entry log number
-    uint64_t term;
-    nuraft::log_val_type value_type;
-    uint64_t blob_size;
+    uint64_t index = 0; /// entry log number
+    uint64_t term = 0;
+    nuraft::log_val_type value_type{};
+    uint64_t blob_size = 0;
 };
 
 /// Changelog record on disk

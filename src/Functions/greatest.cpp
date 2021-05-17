@@ -26,10 +26,13 @@ struct GreatestBaseImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
-            /// XXX maxnum is basically fmax(), it may or may not match whatever apply() does
-            /// XXX CreateMaxNum is broken on LLVM 5.0 and 6.0 (generates minnum instead; fixed in 7)
-            return b.CreateBinaryIntrinsic(llvm::Intrinsic::maxnum, left, right);
-        return b.CreateSelect(is_signed ? b.CreateICmpSGT(left, right) : b.CreateICmpUGT(left, right), left, right);
+        {
+            /// Follows the IEEE-754 semantics for maxNum except for the handling of signaling NaNs. This matches the behavior of libc fmax.
+            return b.CreateMaxNum(left, right);
+        }
+
+        auto * compare_value = is_signed ? b.CreateICmpSGT(left, right) : b.CreateICmpUGT(left, right);
+        return b.CreateSelect(compare_value, left, right);
     }
 #endif
 };

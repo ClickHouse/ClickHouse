@@ -72,8 +72,6 @@ protected:
 
     void tryCreateMetadataSymlink();
 
-    void renameDictionaryInMemoryUnlocked(const StorageID & old_name, const StorageID & new_name);
-
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;
     NameToPathMap table_name_to_path;

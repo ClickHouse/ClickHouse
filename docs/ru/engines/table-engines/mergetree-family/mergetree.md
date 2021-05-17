@@ -727,6 +727,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
+            <region></region>
             <proxy>
                 <uri>http://proxy1</uri>
                 <uri>http://proxy2</uri>
@@ -753,6 +754,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 Необязательные параметры:   
 
+-   `region` — название региона S3.
 -   `use_environment_credentials` — признак, нужно ли считывать учетные данные AWS из сетевого окружения, а также из переменных окружения `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` и `AWS_SESSION_TOKEN`, если они есть. Значение по умолчанию: `false`.
 -   `use_insecure_imds_request` — признак, нужно ли использовать менее безопасное соединение при выполнении запроса к IMDS при получении учётных данных из метаданных Amazon EC2. Значение по умолчанию: `false`.
 -   `proxy` — конфигурация прокси-сервера для конечной точки S3. Каждый элемент `uri` внутри блока `proxy` должен содержать URL прокси-сервера. 
