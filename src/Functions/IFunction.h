@@ -398,6 +398,13 @@ public:
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }
+    virtual bool isShortCircuit() const { return false; }
+    virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
+    virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
+    {
+        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
     using Monotonicity = IFunctionBase::Monotonicity;
