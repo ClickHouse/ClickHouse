@@ -32,7 +32,6 @@ public:
         const std::string & on_duplicate_clause_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
         ContextPtr context_);
 
     std::string getName() const override { return "MySQL"; }

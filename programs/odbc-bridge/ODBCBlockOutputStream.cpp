@@ -1,6 +1,5 @@
 #include "ODBCBlockOutputStream.h"
 
-#include <Common/hex.h>
 #include <common/logger_useful.h>
 #include <Core/Field.h>
 #include <common/LocalDate.h>
@@ -38,16 +37,17 @@ namespace
         query.IAST::format(settings);
         return buf.str();
     }
+
 }
 
-ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::ConnectionHolderPtr connection_,
+ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::connection & connection_,
                                              const std::string & remote_database_name_,
                                              const std::string & remote_table_name_,
                                              const Block & sample_block_,
                                              ContextPtr local_context_,
                                              IdentifierQuotingStyle quoting_)
     : log(&Poco::Logger::get("ODBCBlockOutputStream"))
-    , connection(std::move(connection_))
+    , connection(connection_)
     , db_name(remote_database_name_)
     , table_name(remote_table_name_)
     , sample_block(sample_block_)
@@ -69,7 +69,7 @@ void ODBCBlockOutputStream::write(const Block & block)
     writer->write(block);
 
     std::string query = getInsertQuery(db_name, table_name, block.getColumnsWithTypeAndName(), quoting) + values_buf.str();
-    execute(connection->get(), query);
+    execute(connection, query);
 }
 
 }

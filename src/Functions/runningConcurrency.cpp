@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteBufferFromString.h>
 #include <common/defines.h>
 #include <set>
@@ -23,7 +23,7 @@ namespace DB
     }
 
     template <typename Name, typename ArgDataType, typename ConcurrencyDataType>
-    class ExecutableFunctionRunningConcurrency : public IExecutableFunction
+    class ExecutableFunctionRunningConcurrency : public IExecutableFunctionImpl
     {
     public:
         String getName() const override
@@ -31,7 +31,7 @@ namespace DB
             return Name::name;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             using ColVecArg = typename ArgDataType::ColumnType;
             const ColVecArg * col_begin = checkAndGetColumn<ColVecArg>(arguments[0].column.get());
@@ -87,7 +87,7 @@ namespace DB
     };
 
     template <typename Name, typename ArgDataType, typename ConcurrencyDataType>
-    class FunctionBaseRunningConcurrency : public IFunctionBase
+    class FunctionBaseRunningConcurrency : public IFunctionBaseImpl
     {
     public:
         explicit FunctionBaseRunningConcurrency(DataTypes argument_types_, DataTypePtr return_type_)
@@ -109,7 +109,7 @@ namespace DB
             return return_type;
         }
 
-        ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
+        ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
         {
             return std::make_unique<ExecutableFunctionRunningConcurrency<Name, ArgDataType, ConcurrencyDataType>>();
         }
@@ -125,7 +125,7 @@ namespace DB
     };
 
     template <typename Name, typename ConcurrencyDataType>
-    class RunningConcurrencyOverloadResolver : public IFunctionOverloadResolver
+    class RunningConcurrencyOverloadResolver : public IFunctionOverloadResolverImpl
     {
         template <typename T>
         struct TypeTag
@@ -154,7 +154,7 @@ namespace DB
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverPtr create(ContextPtr)
+        static FunctionOverloadResolverImplPtr create(ContextPtr)
         {
             return std::make_unique<RunningConcurrencyOverloadResolver<Name, ConcurrencyDataType>>();
         }
@@ -164,7 +164,7 @@ namespace DB
             return Name::name;
         }
 
-        FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+        FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
             // The type of the second argument must match with that of the first one.
             if (unlikely(!arguments[1].type->equals(*(arguments[0].type))))
@@ -175,7 +175,7 @@ namespace DB
             }
 
             DataTypes argument_types = { arguments[0].type, arguments[1].type };
-            FunctionBasePtr base;
+            FunctionBaseImplPtr base;
             dispatchForSourceType(*(arguments[0].type), [&](auto arg_type_tag) // Throws when the type is inappropriate.
             {
                 using Tag = decltype(arg_type_tag);
@@ -187,7 +187,7 @@ namespace DB
             return base;
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+        DataTypePtr getReturnType(const DataTypes &) const override
         {
             return std::make_shared<ConcurrencyDataType>();
         }

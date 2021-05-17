@@ -103,8 +103,7 @@ struct KeeperStorageSyncRequest final : public KeeperStorageRequest
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & /* container */, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         auto response = zk_request->makeResponse();
-        dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path
-            = dynamic_cast<Coordination::ZooKeeperSyncRequest &>(*zk_request).path;
+        dynamic_cast<Coordination::ZooKeeperSyncResponse *>(response.get())->path = dynamic_cast<Coordination::ZooKeeperSyncRequest *>(zk_request.get())->path;
         return {response, {}};
     }
 };
@@ -405,6 +404,8 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
             response.names.insert(response.names.end(), it->value.children.begin(), it->value.children.end());
+
+            std::sort(response.names.begin(), response.names.end());
 
             response.stat = it->value.stat;
             response.error = Coordination::Error::ZOK;

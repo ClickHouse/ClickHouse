@@ -2441,6 +2441,8 @@ def test_kafka_issue14202(kafka_cluster):
                      kafka_format = 'JSONEachRow';
         ''')
 
+    time.sleep(3)
+
     instance.query(
         'INSERT INTO test.kafka_q SELECT t, some_string  FROM ( SELECT dt AS t, some_string FROM test.empty_table )')
     # check instance is alive

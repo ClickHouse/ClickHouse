@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -74,6 +73,7 @@ KeeperServer::KeeperServer(
                         config.getString("keeper_server.snapshot_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/snapshots"),
                         coordination_settings))
     , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", config, coordination_settings))
+    , responses_queue(responses_queue_)
     , log(&Poco::Logger::get("KeeperServer"))
 {
     if (coordination_settings->quorum_reads)
@@ -110,9 +110,8 @@ void KeeperServer::startup()
     params.client_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds();
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
     params.auto_forwarding_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds() * 2;
-    params.max_append_size_ = coordination_settings->max_requests_batch_size;
 
-    params.return_method_ = nuraft::raft_params::async_handler;
+    params.return_method_ = nuraft::raft_params::blocking;
 
     nuraft::asio_service::options asio_opts{};
     if (state_manager->isSecure())
@@ -223,26 +222,75 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
 
 }
 
-
-void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & request_for_session)
+void KeeperServer::putRequest(const KeeperStorage::RequestForSession & request_for_session)
 {
-    if (!request_for_session.request->isReadRequest())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
-
-    state_machine->processReadRequest(request_for_session);
-}
-
-RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
-{
-
-    std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    for (const auto & [session_id, request] : requests_for_sessions)
+    auto [session_id, request] = request_for_session;
+    if (!coordination_settings->quorum_reads && isLeaderAlive() && request->isReadRequest())
+    {
+        state_machine->processReadRequest(request_for_session);
+    }
+    else
+    {
+        std::vector<nuraft::ptr<nuraft::buffer>> entries;
         entries.push_back(getZooKeeperLogEntry(session_id, request));
 
-    {
         std::lock_guard lock(append_entries_mutex);
-        return raft_instance->append_entries(entries);
+
+        auto result = raft_instance->append_entries(entries);
+        if (!result->get_accepted())
+        {
+            KeeperStorage::ResponsesForSessions responses;
+            auto response = request->makeResponse();
+            response->xid = request->xid;
+            response->zxid = 0;
+            response->error = Coordination::Error::ZOPERATIONTIMEOUT;
+            responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
+        }
+
+        if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+        {
+            KeeperStorage::ResponsesForSessions responses;
+            auto response = request->makeResponse();
+            response->xid = request->xid;
+            response->zxid = 0;
+            response->error = Coordination::Error::ZOPERATIONTIMEOUT;
+            responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
+        }
+        else if (result->get_result_code() != nuraft::cmd_result_code::OK)
+            throw Exception(ErrorCodes::RAFT_ERROR, "Requests result failed with code {} and message: '{}'", result->get_result_code(), result->get_result_str());
     }
+}
+
+int64_t KeeperServer::getSessionID(int64_t session_timeout_ms)
+{
+    /// Just some sanity check. We don't want to make a lot of clients wait with lock.
+    if (active_session_id_requests > 10)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Too many concurrent SessionID requests already in flight");
+
+    ++active_session_id_requests;
+    SCOPE_EXIT({ --active_session_id_requests; });
+
+    auto entry = nuraft::buffer::alloc(sizeof(int64_t));
+    /// Just special session request
+    nuraft::buffer_serializer bs(entry);
+    bs.put_i64(session_timeout_ms);
+
+    std::lock_guard lock(append_entries_mutex);
+
+    auto result = raft_instance->append_entries({entry});
+
+    if (!result->get_accepted())
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send session_id request to RAFT");
+
+    if (result->get_result_code() != nuraft::cmd_result_code::OK)
+        throw Exception(ErrorCodes::RAFT_ERROR, "session_id request failed to RAFT");
+
+    auto resp = result->get();
+    if (resp == nullptr)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Received nullptr as session_id");
+
+    nuraft::buffer_serializer bs_resp(resp);
+    return bs_resp.get_i64();
 }
 
 bool KeeperServer::isLeader() const

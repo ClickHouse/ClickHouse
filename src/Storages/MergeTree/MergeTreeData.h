@@ -51,7 +51,6 @@ struct EmergingPartInfo
 
 struct CurrentlySubmergingEmergingTagger;
 
-struct SelectQueryOptions;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
@@ -217,15 +216,15 @@ public:
     /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     /// Create part, that already exists on filesystem.
     /// After this methods 'loadColumnsChecksumsIndexes' must be called.
     MutableDataPartPtr createPart(const String & name,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
@@ -358,18 +357,6 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-    bool getQueryProcessingStageWithAggregateProjection(
-        ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
-
-    QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr query_context,
-        QueryProcessingStage::Enum to_stage,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & info) const override;
-
-    ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
-
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -401,11 +388,10 @@ public:
     DataParts getDataParts(const DataPartStates & affordable_states) const;
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
-    DataPartsVector getDataPartsVector(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
+    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
-    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
+    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
@@ -774,13 +760,6 @@ public:
 
     /// Remove current query id after query finished.
     void removeQueryId(const String & query_id) const;
-
-    /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
-    DataTypePtr getPartitionValueType() const;
-
-    /// Construct a block consisting only of possible virtual columns for part pruning.
-    /// If one_part is true, fill in at most one part.
-    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};

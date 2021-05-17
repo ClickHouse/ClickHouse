@@ -47,7 +47,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [SELECT clause](#select-clause)
 -   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
--   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)
 -   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 -   [FORMAT clause](../../../sql-reference/statements/select/format.md)

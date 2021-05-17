@@ -46,10 +46,9 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool overwrite_,
     bool persistent_)
-    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
+    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, persistent_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -264,7 +263,6 @@ void registerStorageJoin(StorageFactory & factory)
             strictness,
             args.columns,
             args.constraints,
-            args.comment,
             join_any_take_last_row,
             persistent);
     };
@@ -410,7 +408,7 @@ private:
 
         if (!position)
             position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
+                static_cast<void *>(new typename Map::const_iterator(map.begin())),
                 [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
 
         auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());

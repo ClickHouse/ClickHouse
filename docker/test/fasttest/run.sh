@@ -308,8 +308,6 @@ function run_tests
         01354_order_by_tuple_collate_const
         01355_ilike
         01411_bayesian_ab_testing
-        01798_uniq_theta_sketch
-        01799_long_uniq_theta_sketch
         collate
         collation
         _orc_
@@ -372,10 +370,6 @@ function run_tests
 
         # Depends on AWS
         01801_s3_cluster
-
-        # Depends on LLVM JIT
-        01852_jit_if
-        01865_jit_comparison_constant_result
     )
 
     (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"

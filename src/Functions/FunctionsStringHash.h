@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB

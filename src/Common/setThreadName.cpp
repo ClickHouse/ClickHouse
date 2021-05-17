@@ -1,6 +1,6 @@
 #include <pthread.h>
 
-#if defined(__APPLE__) || defined(OS_SUNOS)
+#if defined(__APPLE__)
 #elif defined(__FreeBSD__)
     #include <pthread_np.h>
 #else
@@ -34,8 +34,6 @@ void setThreadName(const char * name)
     if ((false))
 #elif defined(OS_DARWIN)
     if (0 != pthread_setname_np(name))
-#elif defined(OS_SUNOS)
-    if (0 != pthread_setname_np(pthread_self(), name))
 #else
     if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))
 #endif
@@ -46,7 +44,7 @@ std::string getThreadName()
 {
     std::string name(16, '\0');
 
-#if defined(__APPLE__) || defined(OS_SUNOS)
+#if defined(__APPLE__)
     if (pthread_getname_np(pthread_self(), name.data(), name.size()))
         throw DB::Exception("Cannot get thread name with pthread_getname_np()", DB::ErrorCodes::PTHREAD_ERROR);
 #elif defined(__FreeBSD__)

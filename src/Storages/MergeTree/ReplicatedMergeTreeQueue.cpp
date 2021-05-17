@@ -1953,7 +1953,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
         return false;
     }
 
-    return MergeTreeData::partsContainSameProjections(left, right);
+    return true;
 }
 
 bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(

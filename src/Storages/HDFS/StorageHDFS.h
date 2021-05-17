@@ -33,18 +33,16 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 protected:
-    StorageHDFS(
-        const String & uri_,
+    StorageHDFS(const String & uri_,
         const StorageID & table_id_,
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
         ContextPtr context_,
         const String & compression_method_);
 
 private:
-    const String uri;
+    String uri;
     String format_name;
     String compression_method;
 

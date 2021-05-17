@@ -7,7 +7,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 
 
 namespace DB

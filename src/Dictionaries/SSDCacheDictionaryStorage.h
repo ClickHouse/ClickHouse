@@ -744,9 +744,6 @@ private:
 
         FileDescriptor & operator=(FileDescriptor && rhs)
         {
-            if (this == &rhs)
-                return *this;
-
             close(fd);
 
             fd = rhs.fd;

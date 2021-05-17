@@ -3,6 +3,7 @@
 #if USE_ODBC
 
 #include <common/logger_useful.h>
+#include <nanodbc/nanodbc.h>
 #include <sql.h>
 #include <sqlext.h>
 
@@ -18,18 +19,7 @@ namespace ErrorCodes
 
 std::string getIdentifierQuote(nanodbc::connection & connection)
 {
-    std::string quote;
-    try
-    {
-        quote = connection.get_info<std::string>(SQL_IDENTIFIER_QUOTE_CHAR);
-    }
-    catch (...)
-    {
-        LOG_WARNING(&Poco::Logger::get("ODBCGetIdentifierQuote"), "Cannot fetch identifier quote. Default double quote is used. Reason: {}", getCurrentExceptionMessage(false));
-        return "\"";
-    }
-
-    return quote;
+    return connection.get_info<std::string>(SQL_IDENTIFIER_QUOTE_CHAR);
 }
 
 

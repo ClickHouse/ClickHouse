@@ -3,7 +3,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <common/arithmeticOverflow.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ExpressionActions.h>
@@ -68,9 +67,15 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
 
     bool is_overflow;
     if (offset_is_preceding)
-        is_overflow = common::subOverflow(reference_value, offset, reference_value);
+    {
+        is_overflow = __builtin_sub_overflow(reference_value, offset,
+            &reference_value);
+    }
     else
-        is_overflow = common::addOverflow(reference_value, offset, reference_value);
+    {
+        is_overflow = __builtin_add_overflow(reference_value, offset,
+            &reference_value);
+    }
 
 //    fmt::print(stderr,
 //        "compared [{}] = {}, old ref {}, shifted ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
@@ -970,14 +975,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
     // have it if it's end of data, though.
     if (!input_is_finished)
     {
-        if (!chunk.hasRows())
-        {
-            // Joins may generate empty input chunks when it's not yet end of
-            // input. Just ignore them. They probably shouldn't be sending empty
-            // chunks up the pipeline, but oh well.
-            return;
-        }
-
+        assert(chunk.hasRows());
         blocks.push_back({});
         auto & block = blocks.back();
         // Use the number of rows from the Chunk, because it is correct even in
@@ -1460,7 +1458,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
+        if (!isInt64FieldType(argument_types[1]->getDefault().getType()))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Offset must be an integer, '{}' given",
@@ -1500,7 +1498,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        int64_t offset = 1;
+        int offset = 1;
         if (argument_types.size() > 1)
         {
             offset = (*current_block.input_columns[

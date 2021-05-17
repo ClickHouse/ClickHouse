@@ -30,10 +30,10 @@ static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V0;
 struct ChangelogRecordHeader
 {
     ChangelogVersion version = CURRENT_CHANGELOG_VERSION;
-    uint64_t index = 0; /// entry log number
-    uint64_t term = 0;
-    nuraft::log_val_type value_type{};
-    uint64_t blob_size = 0;
+    uint64_t index; /// entry log number
+    uint64_t term;
+    nuraft::log_val_type value_type;
+    uint64_t blob_size;
 };
 
 /// Changelog record on disk
@@ -63,17 +63,17 @@ class Changelog
 {
 
 public:
-    Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_, bool force_sync_, Poco::Logger * log_);
+    Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_, Poco::Logger * log_);
 
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
     void readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep);
 
-    /// Add entry to log with index.
-    void appendEntry(uint64_t index, const LogEntryPtr & log_entry);
+    /// Add entry to log with index. Call fsync if force_sync true.
+    void appendEntry(uint64_t index, const LogEntryPtr & log_entry, bool force_sync);
 
     /// Write entry at index and truncate all subsequent entries.
-    void writeAt(uint64_t index, const LogEntryPtr & log_entry);
+    void writeAt(uint64_t index, const LogEntryPtr & log_entry, bool force_sync);
 
     /// Remove log files with to_log_index <= up_to_log_index.
     void compact(uint64_t up_to_log_index);
@@ -101,9 +101,9 @@ public:
     BufferPtr serializeEntriesToBuffer(uint64_t index, int32_t count);
 
     /// Apply entries from buffer overriding existing entries
-    void applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer);
+    void applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer, bool force_sync);
 
-    /// Fsync latest log to disk and flush buffer
+    /// Fsync log to disk
     void flush();
 
     uint64_t size() const
@@ -124,7 +124,6 @@ private:
 private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
-    const bool force_sync;
     Poco::Logger * log;
 
     std::map<uint64_t, ChangelogFileDescription> existing_changelogs;

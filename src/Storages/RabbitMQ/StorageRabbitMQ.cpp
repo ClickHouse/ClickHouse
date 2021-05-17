@@ -23,7 +23,6 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/config_version.h>
@@ -95,7 +94,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , login_password(std::make_pair(
                     getContext()->getConfigRef().getString("rabbitmq.username"),
                     getContext()->getConfigRef().getString("rabbitmq.password")))
-        , vhost(getContext()->getConfigRef().getString("rabbitmq.vhost", rabbitmq_settings->rabbitmq_vhost.value))
+        , vhost(getContext()->getConfigRef().getString("rabbitmq.vhost", "/"))
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
@@ -192,7 +191,7 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 std::shared_ptr<Context> StorageRabbitMQ::addSettings(ContextPtr local_context) const
 {
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("input_format_skip_unknown_fields", Field{true});
+    modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
 
@@ -402,7 +401,7 @@ void StorageRabbitMQ::bindExchange()
         }
     }
 
-    while (!binding_created) //-V776
+    while (!binding_created)
     {
         event_handler->iterateLoop();
     }
@@ -463,7 +462,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id)
     const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
     setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
 
-    while (!binding_created) //-V776
+    while (!binding_created)
     {
         event_handler->iterateLoop();
     }
@@ -988,8 +987,6 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_skip_broken_messages)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_max_block_size)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_flush_interval_ms)
-
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_vhost)
 
         #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 

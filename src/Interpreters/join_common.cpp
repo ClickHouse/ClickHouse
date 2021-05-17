@@ -49,53 +49,20 @@ ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_s
 namespace JoinCommon
 {
 
-
-bool canBecomeNullable(const DataTypePtr & type)
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
-    bool can_be_inside = type->canBeInsideNullable();
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        can_be_inside |= low_cardinality_type->getDictionaryType()->canBeInsideNullable();
-    return can_be_inside;
-}
-
-/// Add nullability to type.
-/// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
-DataTypePtr convertTypeToNullable(const DataTypePtr & type)
-{
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-    {
-        const auto & dict_type = low_cardinality_type->getDictionaryType();
-        if (dict_type->canBeInsideNullable())
-            return std::make_shared<DataTypeLowCardinality>(makeNullable(dict_type));
-    }
-    return makeNullable(type);
-}
-
-void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_card)
-{
-    if (remove_low_card && column.type->lowCardinality())
+    if (low_card_nullability && column.type->lowCardinality())
     {
         column.column = recursiveRemoveLowCardinality(column.column);
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 
-    if (column.type->isNullable() || !canBecomeNullable(column.type))
+    if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
-    column.type = convertTypeToNullable(column.type);
-
+    column.type = makeNullable(column.type);
     if (column.column)
-    {
-        if (column.column->lowCardinality())
-        {
-            /// Convert nested to nullable, not LowCardinality itself
-            ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(column.column->assumeMutable().get());
-            if (!col_as_lc->nestedIsNullable())
-                col_as_lc->nestedToNullable();
-        }
-        else
-            column.column = makeNullable(column.column);
-    }
+        column.column = makeNullable(column.column);
 }
 
 void convertColumnsToNullable(Block & block, size_t starting_pos)
@@ -129,7 +96,7 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
     ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst_column);
     bool lowcard_src = JoinCommon::emptyNotNullableClone(src_column)->lowCardinality();
     bool lowcard_dst = dst_not_null->lowCardinality();
-    bool change_lowcard = lowcard_src != lowcard_dst;
+    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
 
     if (nullable_src && !nullable_dst)
     {
@@ -281,7 +248,7 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column) //-V1051
+        if (!column.column)
             column.column = column.type->createColumn();
     }
 }
@@ -317,11 +284,6 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
         for (size_t i = 0; i < columns_to_add.columns(); ++i)
         {
             const auto & col = columns_to_add.getByPosition(i);
-            if (block.has(col.name))
-            {
-                /// For StorageJoin we discarded table qualifiers, so some names may clash
-                continue;
-            }
             block.insert({
                 col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
                 col.type,

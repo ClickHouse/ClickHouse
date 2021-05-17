@@ -16,6 +16,7 @@
 #include <Poco/File.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
+#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
 
 
 namespace DB
@@ -88,8 +89,8 @@ std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
     std::unordered_set<std::string> tables;
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
-    auto connection_holder = connection_pool->get();
-    pqxx::read_transaction tx(connection_holder->get());
+    auto connection = connection_pool->get();
+    pqxx::read_transaction tx(connection->conn());
 
     for (auto table_name : tx.stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
@@ -107,8 +108,8 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
     }
 
-    auto connection_holder = connection_pool->get();
-    pqxx::nontransaction tx(connection_holder->get());
+    auto connection = connection_pool->get();
+    pqxx::nontransaction tx(connection->conn());
 
     try
     {
@@ -169,13 +170,8 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-            StorageID(database_name, table_name),
-            connection_pool,
-            table_name,
-            ColumnsDescription{*columns},
-            ConstraintsDescription{},
-            String{},
-            local_context);
+                StorageID(database_name, table_name), *connection_pool, table_name,
+                ColumnsDescription{*columns}, ConstraintsDescription{}, local_context);
 
         if (cache_tables)
             cached_tables[table_name] = storage;

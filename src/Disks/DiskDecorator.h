@@ -65,33 +65,12 @@ public:
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DiskType::Type getType() const override { return delegate->getType(); }
+    Executor & getExecutor() override;
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
-    void shutdown() override;
-    void startup() override;
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context) override;
 
 protected:
-    Executor & getExecutor() override;
-
     DiskPtr delegate;
 };
-
-/// TODO: Current reservation mechanism leaks IDisk abstraction details.
-/// This hack is needed to return proper disk pointer (wrapper instead of implementation) from reservation object.
-class ReservationDelegate : public IReservation
-{
-public:
-    ReservationDelegate(ReservationPtr delegate_, DiskPtr wrapper_) : delegate(std::move(delegate_)), wrapper(wrapper_) { }
-    UInt64 getSize() const override { return delegate->getSize(); }
-    DiskPtr getDisk(size_t) const override { return wrapper; }
-    Disks getDisks() const override { return {wrapper}; }
-    void update(UInt64 new_size) override { delegate->update(new_size); }
-
-private:
-    ReservationPtr delegate;
-    DiskPtr wrapper;
-};
-
 
 }

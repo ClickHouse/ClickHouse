@@ -47,12 +47,8 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
-    ~ExpressionAnalyzerData();
-
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
-
-    std::unique_ptr<QueryPlan> joined_plan;
 
     /// Columns after ARRAY JOIN. If there is no ARRAY JOIN, it's source_columns.
     NamesAndTypesList columns_after_array_join;
@@ -102,8 +98,6 @@ public:
         ContextPtr context_)
     :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
     {}
-
-    ~ExpressionAnalyzer();
 
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
 
@@ -209,7 +203,6 @@ struct ExpressionAnalysisResult
     bool has_order_by   = false;
     bool has_window = false;
 
-    String where_column_name;
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
@@ -231,9 +224,6 @@ struct ExpressionAnalysisResult
     /// Columns from the SELECT list, before renaming them to aliases. Used to
     /// perform SELECT DISTINCT.
     Names selected_columns;
-
-    /// Columns to read from storage if any.
-    Names required_columns;
 
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
@@ -303,7 +293,6 @@ public:
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
-    std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }

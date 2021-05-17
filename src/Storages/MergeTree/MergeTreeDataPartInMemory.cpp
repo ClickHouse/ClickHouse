@@ -22,9 +22,8 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
+        const std::optional<String> & relative_path_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -34,9 +33,8 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
+        const std::optional<String> & relative_path_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -127,7 +125,7 @@ IMergeTreeDataPart::Checksum MergeTreeDataPartInMemory::calculateBlockChecksum()
         column.column->updateHashFast(hash);
 
     checksum.uncompressed_size = block.bytes();
-    hash.get128(checksum.uncompressed_hash);
+    hash.get128(checksum.uncompressed_hash.first, checksum.uncompressed_hash.second);
     return checksum;
 }
 

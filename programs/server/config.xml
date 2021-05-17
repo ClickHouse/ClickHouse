@@ -329,8 +329,6 @@
       -->
     <mmap_cache_size>1000</mmap_cache_size>
 
-    <!-- Cache size for compiled expressions.-->
-    <compiled_expression_cache_size>1073741824</compiled_expression_cache_size>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
@@ -520,33 +518,6 @@
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>
 
-    <![CDATA[
-         Uncomment below in order to use JDBC table engine and function.
-
-         To install and run JDBC bridge in background:
-         * [Debian/Ubuntu]
-           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
-           export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
-           wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
-           apt install --no-install-recommends -f ./clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
-           clickhouse-jdbc-bridge &
-
-         * [CentOS/RHEL]
-           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
-           export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
-           wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
-           yum localinstall -y clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
-           clickhouse-jdbc-bridge &
-
-         Please refer to https://github.com/ClickHouse/clickhouse-jdbc-bridge#usage for more information.
-    ]]>
-    <!--
-    <jdbc_bridge>
-        <host>127.0.0.1</host>
-        <port>9019</port>
-    </jdbc_bridge>
-    -->
-  
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->

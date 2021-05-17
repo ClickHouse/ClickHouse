@@ -40,6 +40,10 @@ public:
     void commitAlterTable(const StorageID & table_id,
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
+    void createDictionary(ContextPtr context,
+                          const String & dictionary_name,
+                          const ASTPtr & query) override;
+    void removeDictionary(ContextPtr context, const String & dictionary_name) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) const override;
 

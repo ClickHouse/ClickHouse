@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <bool or_null>
-ColumnPtr ExecutableFunctionJoinGet<or_null>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+ColumnPtr ExecutableFunctionJoinGet<or_null>::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     ColumnsWithTypeAndName keys;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -29,7 +29,7 @@ ColumnPtr ExecutableFunctionJoinGet<or_null>::executeImpl(const ColumnsWithTypeA
 }
 
 template <bool or_null>
-ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
+ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
 {
     Block result_columns {{return_type->createColumn(), return_type, attr_name}};
     return std::make_unique<ExecutableFunctionJoinGet<or_null>>(table_lock, storage_join, result_columns);
@@ -81,7 +81,7 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
 }
 
 template <bool or_null>
-FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+FunctionBaseImplPtr JoinGetOverloadResolver<or_null>::build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
 {
     if (arguments.size() < 3)
         throw Exception(

@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>

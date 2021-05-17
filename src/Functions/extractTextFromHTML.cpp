@@ -1,7 +1,7 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <common/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 

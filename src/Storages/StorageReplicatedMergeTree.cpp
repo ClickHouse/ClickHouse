@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 
+#include <Common/FieldVisitors.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>
@@ -982,9 +983,6 @@ void StorageReplicatedMergeTree::setTableStructure(
         if (metadata_diff.constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
 
-        if (metadata_diff.projections_changed)
-            new_metadata.projections = ProjectionsDescription::parse(metadata_diff.new_projections, new_columns, getContext());
-
         if (metadata_diff.ttl_table_changed)
         {
             if (!metadata_diff.new_ttl_table.empty())
@@ -1564,38 +1562,33 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     }
 
     DataPartsVector parts;
+    bool have_all_parts = true;
 
-    for (const String & source_part_name : entry.source_parts)
+    for (const String & name : entry.source_parts)
     {
-        DataPartPtr source_part_or_covering = getActiveContainingPart(source_part_name);
+        DataPartPtr part = getActiveContainingPart(name);
 
-        if (!source_part_or_covering)
+        if (!part)
         {
-            /// We do not have one of source parts locally, try to take some already merged part from someone.
-            LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
-            return false;
+            have_all_parts = false;
+            break;
         }
-
-        if (source_part_or_covering->name != source_part_name)
+        if (part->name != name)
         {
-            /// We do not have source part locally, but we have some covering part. Possible options:
-            /// 1. We already have merged part (source_part_or_covering->name == new_part_name)
-            /// 2. We have some larger merged part which covers new_part_name (and therefore it covers source_part_name too)
-            /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
-            /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
-            constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            LOG_WARNING(log, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
-            if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, format_version)))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
-            return false;
+            LOG_WARNING(log, "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.", name, part->name, entry.new_part_name);
+            have_all_parts = false;
+            break;
         }
-
-        parts.push_back(source_part_or_covering);
+        parts.push_back(part);
     }
 
-    /// All source parts are found locally, we can execute merge
-
-    if (entry.create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
+    if (!have_all_parts)
+    {
+        /// If you do not have all the necessary parts, try to take some already merged part from someone.
+        LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
+        return false;
+    }
+    else if (entry.create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
     {
         /// If entry is old enough, and have enough size, and part are exists in any replica,
         ///  then prefer fetching of merged part from replica.
@@ -1699,16 +1692,8 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part,
-            metadata_snapshot,
-            *merge_entry,
-            table_lock,
-            entry.create_time,
-            getContext(),
-            reserved_space,
-            entry.deduplicate,
-            entry.deduplicate_by_columns,
-            merging_params);
+            future_merged_part, metadata_snapshot, *merge_entry,
+            table_lock, entry.create_time, getContext(), reserved_space, entry.deduplicate, entry.deduplicate_by_columns);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 
@@ -3262,6 +3247,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.merge_type = merge_type;
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
+    entry.merge_type = merge_type;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -4273,7 +4259,7 @@ void StorageReplicatedMergeTree::read(
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned num_streams)
 {
@@ -4285,13 +4271,12 @@ void StorageReplicatedMergeTree::read(
     if (local_context->getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
-        if (auto plan = reader.read(
-                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, &max_added_blocks))
+        if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, &max_added_blocks))
             query_plan = std::move(*plan);
         return;
     }
 
-    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams))
         query_plan = std::move(*plan);
 }
 
@@ -4384,7 +4369,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
         deduplicate,
-        local_context);
+        local_context->getSettingsRef().optimize_on_insert);
 }
 
 
@@ -5006,7 +4991,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, query_context,
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false,
         /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
@@ -5365,7 +5350,11 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
         {
             auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
 
-            if (!log_entries.empty())
+            if (log_entries.empty())
+            {
+                res.log_max_index = 0;
+            }
+            else
             {
                 const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
                 res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
@@ -5377,6 +5366,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
             auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
             res.total_replicas = all_replicas.size();
 
+            res.active_replicas = 0;
             for (const String & replica : all_replicas)
                 if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
                     ++res.active_replicas;
@@ -5510,7 +5500,7 @@ void StorageReplicatedMergeTree::fetchPartition(
     ContextPtr query_context)
 {
     Macros::MacroExpansionInfo info;
-    info.expand_special_macros_only = false; //-V1048
+    info.expand_special_macros_only = false;
     info.table_id = getStorageID();
     info.table_id.uuid = UUIDHelpers::Nil;
     auto expand_from = query_context->getMacros()->expand(from_, info);
@@ -6458,7 +6448,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         entry_delete.type = LogEntry::DROP_RANGE;
         entry_delete.source_replica = replica_name;
         entry_delete.new_part_name = drop_range_fake_part_name;
-        entry_delete.detach = false; //-V1048
+        entry_delete.detach = false;
         entry_delete.create_time = time(nullptr);
     }
 

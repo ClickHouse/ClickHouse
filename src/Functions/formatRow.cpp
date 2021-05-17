@@ -5,7 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -80,11 +80,11 @@ private:
 };
 
 template <bool no_newline>
-class FormatRowOverloadResolver : public IFunctionOverloadResolver
+class FormatRowOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
+    static FunctionOverloadResolverImplPtr create(ContextPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
     explicit FormatRowOverloadResolver(ContextPtr context_) : context(context_) { }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -92,7 +92,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() < 2)
             throw Exception(
@@ -100,7 +100,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+            return std::make_unique<DefaultFunction>(
                 std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), context),
                 ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
@@ -108,7 +108,7 @@ public:
             throw Exception("First argument to " + getName() + " must be a format name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
+    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
 private:
     ContextPtr context;

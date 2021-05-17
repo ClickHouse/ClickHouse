@@ -1031,18 +1031,13 @@ class ClickHouseInstance:
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
 
-    def is_built_with_sanitizer(self, sanitizer_name=''):
-        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize={}".format(sanitizer_name) in build_opts
-
     def is_built_with_thread_sanitizer(self):
-        return self.is_built_with_sanitizer('thread')
+        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+        return "-fsanitize=thread" in build_opts
 
     def is_built_with_address_sanitizer(self):
-        return self.is_built_with_sanitizer('address')
-
-    def is_built_with_memory_sanitizer(self):
-        return self.is_built_with_sanitizer('memory')
+        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+        return "-fsanitize=address" in build_opts
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
@@ -1129,28 +1124,23 @@ class ClickHouseInstance:
         return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
                                expect_fail_and_get_error=True)
 
-    def stop_clickhouse(self, stop_wait_sec=30, kill=False):
+    def stop_clickhouse(self, start_wait_sec=5, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be stopped only with stay_alive=True instance")
 
         self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
-        deadline = time.time() + stop_wait_sec
-        while time.time() < deadline:
-            time.sleep(0.5)
-            if self.get_process_pid("clickhouse") is None:
-                break
-        assert self.get_process_pid("clickhouse") is None, "ClickHouse was not stopped"
+        time.sleep(start_wait_sec)
 
-    def start_clickhouse(self, start_wait_sec=30):
+    def start_clickhouse(self, stop_wait_sec=5):
         if not self.stay_alive:
             raise Exception("clickhouse can be started again only with stay_alive=True instance")
 
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
         # wait start
         from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
+        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_wait_sec / 0.5), sleep_time=0.5)
 
-    def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 

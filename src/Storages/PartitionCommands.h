@@ -20,8 +20,6 @@ struct PartitionCommand
 {
     enum Type
     {
-        UNKNOWN,
-
         ATTACH_PARTITION,
         MOVE_PARTITION,
         DROP_PARTITION,
@@ -34,7 +32,7 @@ struct PartitionCommand
         REPLACE_PARTITION,
     };
 
-    Type type = UNKNOWN;
+    Type type;
 
     ASTPtr partition;
 

@@ -75,7 +75,6 @@ SRCS(
     MergeTree/MergeTreePartInfo.cpp
     MergeTree/MergeTreePartition.cpp
     MergeTree/MergeTreePartsMover.cpp
-    MergeTree/MergeTreeProjections.cpp
     MergeTree/MergeTreeRangeReader.cpp
     MergeTree/MergeTreeReadPool.cpp
     MergeTree/MergeTreeReaderCompact.cpp
@@ -113,7 +112,6 @@ SRCS(
     MergeTree/registerStorageMergeTree.cpp
     MutationCommands.cpp
     PartitionCommands.cpp
-    ProjectionsDescription.cpp
     ReadInOrderOptimizer.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
@@ -181,8 +179,6 @@ SRCS(
     System/StorageSystemPartsColumns.cpp
     System/StorageSystemPrivileges.cpp
     System/StorageSystemProcesses.cpp
-    System/StorageSystemProjectionParts.cpp
-    System/StorageSystemProjectionPartsColumns.cpp
     System/StorageSystemQuotaLimits.cpp
     System/StorageSystemQuotaUsage.cpp
     System/StorageSystemQuotas.cpp

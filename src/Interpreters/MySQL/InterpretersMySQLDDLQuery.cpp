@@ -185,7 +185,7 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
                     {
                         const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
 
-                        if (prefix_limit && isInt64OrUInt64FieldType(prefix_limit->value.getType()))
+                        if (prefix_limit && isInt64FieldType(prefix_limit->value.getType()))
                             res->children.back() = std::make_shared<ASTIdentifier>(function->name);
                     }
                 }

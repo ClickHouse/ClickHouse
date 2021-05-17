@@ -1,6 +1,6 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/SymbolIndex.h>
