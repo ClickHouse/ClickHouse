@@ -89,7 +89,11 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
             throw Exception(
                 "Path in the 'format_schema' setting shouldn't go outside the 'format_schema_path' directory: " + path.string(),
                 ErrorCodes::BAD_ARGUMENTS);
-        path = Poco::Path(default_schema_directory()).resolve(Poco::Path(path.string())).toString();
+        fs::path default_schema_directory_path(default_schema_directory());
+        if (default_schema_directory_path.is_absolute())
+            path = default_schema_directory_path;
+        else
+            path /= default_schema_directory_path;
         schema_path = path.filename();
         schema_directory = path.parent_path() / "";
     }
