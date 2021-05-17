@@ -1,7 +1,6 @@
 #pragma once
 
 #include <openssl/evp.h>
-#include <openssl/engine.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -9,7 +8,6 @@
 
 #include <sys/random.h>
 
-#include <limits>
 #include <cassert>
 #include <cmath>
 
