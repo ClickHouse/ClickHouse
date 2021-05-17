@@ -93,6 +93,7 @@ public:
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
         bool merge_with_ttl_allowed,
+        const MergeTreeTransactionPtr & txn,
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
@@ -148,6 +149,7 @@ public:
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
+        const MergeTreeTransactionPtr & txn,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
 

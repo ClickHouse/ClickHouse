@@ -423,7 +423,7 @@ public:
     DataPartsVector getDataPartsVector() const;
 
     DataPartsVector getDataPartsVector(ContextPtr local_context) const;
-    DataPartsVector getVisibleDataPartsVector(const MergeTreeTransaction & txn) const;
+    DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name) const;

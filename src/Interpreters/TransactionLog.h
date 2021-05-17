@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 #include <boost/noncopyable.hpp>
 #include <mutex>
 #include <unordered_map>
