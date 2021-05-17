@@ -3,7 +3,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
 #include <functional>
