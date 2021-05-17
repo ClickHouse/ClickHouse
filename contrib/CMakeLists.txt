@@ -327,3 +327,6 @@ endif()
 
 add_subdirectory(fast_float)
 
+add_subdirectory(sqlite-cmake)
+include_directories(sqlite-cmake)
+

@@ -77,6 +77,8 @@ add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
+add_headers_and_sources(dbms Databases/SQLite)
+
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
@@ -475,6 +477,8 @@ if (USE_DATASKETCHES)
 endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
+
+dbms_target_link_libraries(PUBLIC sqlite)
 
 include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
 
