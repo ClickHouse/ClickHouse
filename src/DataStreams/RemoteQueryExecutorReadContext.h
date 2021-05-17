@@ -58,7 +58,7 @@ public:
     bool checkTimeout(bool blocking = false);
     bool checkTimeoutImpl(bool blocking);
 
-    void setConnectionFD(int fd, const Poco::Timespan & timeout = 0, const std::string & fd_description = "");
+    void setConnectionFD(int fd, Poco::Timespan timeout = 0, const std::string & fd_description = "");
     void setTimer() const;
 
     bool resumeRoutine();

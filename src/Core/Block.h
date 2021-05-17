@@ -125,6 +125,7 @@ public:
 
     Columns getColumns() const;
     void setColumns(const Columns & columns);
+    void setColumn(size_t position, ColumnWithTypeAndName && column);
     Block cloneWithColumns(const Columns & columns) const;
     Block cloneWithoutColumns() const;
     Block cloneWithCutColumns(size_t start, size_t length) const;

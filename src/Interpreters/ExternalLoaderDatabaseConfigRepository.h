@@ -14,7 +14,7 @@ class ExternalLoaderDatabaseConfigRepository : public IExternalLoaderConfigRepos
 public:
     ExternalLoaderDatabaseConfigRepository(IDatabase & database_, ContextPtr global_context_);
 
-    const std::string & getName() const override { return database_name; }
+    std::string getName() const override { return database_name; }
 
     std::set<std::string> getAllLoadablesDefinitionNames() override;
 

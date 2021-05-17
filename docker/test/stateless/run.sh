@@ -110,6 +110,23 @@ clickhouse-client --allow_introspection_functions=1 -q "
         arrayStringConcat(trace_array, '\n') AS trace_string
     SELECT * EXCEPT(trace), trace_string FROM system.trace_log FORMAT TSVWithNamesAndTypes
 " | pigz > /test_output/trace-log.tsv.gz &
+
+# Also export trace log in flamegraph-friendly format.
+for trace_type in CPU Memory Real
+do
+    clickhouse-client -q "
+            select
+                arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
+                count(*) AS samples
+            from system.trace_log
+            where trace_type = '$trace_type'
+            group by trace
+            order by samples desc
+            settings allow_introspection_functions = 1
+            format TabSeparated" \
+        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
+done
+
 wait ||:
 
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:

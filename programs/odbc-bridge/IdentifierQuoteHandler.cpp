@@ -46,7 +46,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
-        auto identifier = getIdentifierQuote(*connection);
+        auto identifier = getIdentifierQuote(connection->get());
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try
