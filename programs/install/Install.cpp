@@ -844,8 +844,8 @@ namespace
                 fmt::print("The pidof command returned unusual output.\n");
             }
 
-            WriteBufferFromFileDescriptor stderr(STDERR_FILENO);
-            copyData(sh->err, stderr);
+            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
+            copyData(sh->err, std_err);
 
             sh->tryWait();
         }
@@ -856,6 +856,13 @@ namespace
             {
                 fmt::print("The process with pid = {} is running.\n", pid);
             }
+            else if (errno == ESRCH)
+            {
+                fmt::print("The process with pid = {} does not exist.\n", pid);
+                return 0;
+            }
+            else
+                throwFromErrno(fmt::format("Cannot obtain the status of pid {} with `kill`", pid), ErrorCodes::CANNOT_KILL);
         }
 
         if (!pid)

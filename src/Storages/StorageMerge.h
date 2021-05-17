@@ -27,7 +27,8 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
@@ -70,6 +71,7 @@ protected:
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const String & comment,
         const String & source_database_,
         const Strings & source_tables_,
         ContextPtr context_);
@@ -77,6 +79,7 @@ protected:
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const String & comment,
         const String & source_database_,
         const String & source_table_regexp_,
         ContextPtr context_);

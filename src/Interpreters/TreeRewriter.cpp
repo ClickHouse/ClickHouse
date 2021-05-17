@@ -755,6 +755,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             partition_source_columns.push_back("_part");
             partition_source_columns.push_back("_partition_id");
             partition_source_columns.push_back("_part_uuid");
+            partition_source_columns.push_back("_partition_value");
             optimize_trivial_count = true;
             for (const auto & required_column : required)
             {
@@ -912,7 +913,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    normalize(query, result.aliases, all_source_columns_set, settings);
+    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -967,7 +968,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     TreeRewriterResult result(source_columns, storage, metadata_snapshot, false);
 
-    normalize(query, result.aliases, result.source_columns_set, settings);
+    normalize(query, result.aliases, result.source_columns_set, false, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
@@ -992,7 +993,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     return std::make_shared<const TreeRewriterResult>(result);
 }
 
-void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, const Settings & settings)
+void TreeRewriter::normalize(
+    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings)
 {
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
@@ -1052,7 +1054,7 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const NameSet & 
         FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, settings);
+    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings);
     QueryNormalizer(normalizer_data).visit(query);
 }
 

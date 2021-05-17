@@ -49,20 +49,53 @@ ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_s
 namespace JoinCommon
 {
 
-void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
+
+bool canBecomeNullable(const DataTypePtr & type)
 {
-    if (low_card_nullability && column.type->lowCardinality())
+    bool can_be_inside = type->canBeInsideNullable();
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        can_be_inside |= low_cardinality_type->getDictionaryType()->canBeInsideNullable();
+    return can_be_inside;
+}
+
+/// Add nullability to type.
+/// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
+DataTypePtr convertTypeToNullable(const DataTypePtr & type)
+{
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        const auto & dict_type = low_cardinality_type->getDictionaryType();
+        if (dict_type->canBeInsideNullable())
+            return std::make_shared<DataTypeLowCardinality>(makeNullable(dict_type));
+    }
+    return makeNullable(type);
+}
+
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_card)
+{
+    if (remove_low_card && column.type->lowCardinality())
     {
         column.column = recursiveRemoveLowCardinality(column.column);
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 
-    if (column.type->isNullable() || !column.type->canBeInsideNullable())
+    if (column.type->isNullable() || !canBecomeNullable(column.type))
         return;
 
-    column.type = makeNullable(column.type);
+    column.type = convertTypeToNullable(column.type);
+
     if (column.column)
-        column.column = makeNullable(column.column);
+    {
+        if (column.column->lowCardinality())
+        {
+            /// Convert nested to nullable, not LowCardinality itself
+            ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(column.column->assumeMutable().get());
+            if (!col_as_lc->nestedIsNullable())
+                col_as_lc->nestedToNullable();
+        }
+        else
+            column.column = makeNullable(column.column);
+    }
 }
 
 void convertColumnsToNullable(Block & block, size_t starting_pos)
@@ -248,7 +281,7 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column)
+        if (!column.column) //-V1051
             column.column = column.type->createColumn();
     }
 }

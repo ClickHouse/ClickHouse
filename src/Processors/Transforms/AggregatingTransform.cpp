@@ -4,7 +4,7 @@
 #include <Processors/ISource.h>
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-
+#include <DataStreams/materializeBlock.h>
 
 namespace ProfileEvents
 {
@@ -95,7 +95,7 @@ public:
     struct SharedData
     {
         std::atomic<UInt32> next_bucket_to_merge = 0;
-        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed;
+        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed{};
         std::atomic<bool> is_cancelled = false;
 
         SharedData()
@@ -339,7 +339,7 @@ private:
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
-                    *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
+                *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
             setCurrentChunk(convertToChunk(block));
         }
@@ -381,8 +381,7 @@ private:
         {
             /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksSource>(
-                    params, data, shared_data, arena);
+            auto source = std::make_shared<ConvertingAggregatedToChunksSource>(params, data, shared_data, arena);
 
             processors.emplace_back(std::move(source));
         }
@@ -522,8 +521,18 @@ void AggregatingTransform::consume(Chunk chunk)
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
-    if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
-        is_consume_finished = true;
+    if (params->only_merge)
+    {
+        auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
+        block = materializeBlock(block);
+        if (!params->aggregator.mergeBlock(block, variants, no_more_keys))
+            is_consume_finished = true;
+    }
+    else
+    {
+        if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
+            is_consume_finished = true;
+    }
 }
 
 void AggregatingTransform::initGenerate()
@@ -536,12 +545,17 @@ void AggregatingTransform::initGenerate()
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
-        params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+    {
+        if (params->only_merge)
+            params->aggregator.mergeBlock(getInputs().front().getHeader(), variants, no_more_keys);
+        else
+            params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+    }
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
 
-    LOG_DEBUG(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_DEBUG(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
         elapsed_seconds, src_rows / elapsed_seconds,
         ReadableSize(src_bytes / elapsed_seconds));
@@ -599,7 +613,12 @@ void AggregatingTransform::initGenerate()
             pipe = Pipe::unitePipes(std::move(pipes));
         }
 
-        LOG_DEBUG(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
+        LOG_DEBUG(
+            log,
+            "Will merge {} temporary files of size {} compressed, {} uncompressed.",
+            files.files.size(),
+            ReadableSize(files.sum_size_compressed),
+            ReadableSize(files.sum_size_uncompressed));
 
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 

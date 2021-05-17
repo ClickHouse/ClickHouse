@@ -241,6 +241,24 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_DROP_CONSTRAINT, database, table);
             break;
         }
+        case ASTAlterCommand::ADD_PROJECTION:
+        {
+            required_access.emplace_back(AccessType::ALTER_ADD_PROJECTION, database, table);
+            break;
+        }
+        case ASTAlterCommand::DROP_PROJECTION:
+        {
+            if (command.clear_projection)
+                required_access.emplace_back(AccessType::ALTER_CLEAR_PROJECTION, database, table);
+            else
+                required_access.emplace_back(AccessType::ALTER_DROP_PROJECTION, database, table);
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_PROJECTION:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_PROJECTION, database, table);
+            break;
+        }
         case ASTAlterCommand::MODIFY_TTL:
         case ASTAlterCommand::REMOVE_TTL:
         {

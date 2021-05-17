@@ -30,15 +30,15 @@ struct TupArg
     const IColumn::Offsets & val_offsets;
     bool is_const;
 };
-using TupleMaps = std::vector<struct TupArg>;
+using TupleMaps = std::vector<TupArg>;
 
-namespace OpTypes
+enum class OpTypes
 {
-    extern const int ADD = 0;
-    extern const int SUBTRACT = 1;
-}
+    ADD = 0,
+    SUBTRACT = 1
+};
 
-template <int op_type>
+template <OpTypes op_type>
 class FunctionMapOp : public IFunction
 {
 public:
@@ -160,7 +160,7 @@ private:
                     KeyType key;
                     if constexpr (is_str_key)
                     {
-                        // have to use Field structs to get strings
+                        // have to use Field to get strings
                         key = arg.key_column[offset + j].get<KeyType>();
                     }
                     else
@@ -209,7 +209,8 @@ private:
     {
         const auto & promoted_type = (assert_cast<const DataTypeArray *>(res_type.getElements()[1].get()))->getNestedType();
 #define MATCH_EXECUTE(is_str) \
-        switch (promoted_type->getTypeId()) { \
+        switch (promoted_type->getTypeId()) \
+        { \
             case TypeIndex::Int64: return execute2<KeyType, is_str, Int64>(row_count, args, res_type); \
             case TypeIndex::UInt64: return execute2<KeyType, is_str, UInt64>(row_count, args, res_type); \
             case TypeIndex::Float64: return execute2<KeyType, is_str, Float64>(row_count, args, res_type); \
@@ -290,6 +291,10 @@ private:
                 return execute1<Int32, false>(row_count, res_type, args);
             case TypeIndex::Int64:
                 return execute1<Int64, false>(row_count, res_type, args);
+            case TypeIndex::Int128:
+                return execute1<Int128, false>(row_count, res_type, args);
+            case TypeIndex::Int256:
+                return execute1<Int256, false>(row_count, res_type, args);
             case TypeIndex::UInt8:
                 return execute1<UInt8, false>(row_count, res_type, args);
             case TypeIndex::Date:
@@ -300,8 +305,12 @@ private:
                 return execute1<UInt32, false>(row_count, res_type, args);
             case TypeIndex::UInt64:
                 return execute1<UInt64, false>(row_count, res_type, args);
-            case TypeIndex::UUID:
+            case TypeIndex::UInt128:
                 return execute1<UInt128, false>(row_count, res_type, args);
+            case TypeIndex::UInt256:
+                return execute1<UInt256, false>(row_count, res_type, args);
+            case TypeIndex::UUID:
+                return execute1<UUID, false>(row_count, res_type, args);
             case TypeIndex::FixedString:
             case TypeIndex::String:
                 return execute1<String, true>(row_count, res_type, args);

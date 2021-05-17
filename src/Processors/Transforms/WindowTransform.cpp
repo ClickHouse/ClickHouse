@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <common/arithmeticOverflow.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ExpressionActions.h>
@@ -67,15 +68,9 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
 
     bool is_overflow;
     if (offset_is_preceding)
-    {
-        is_overflow = __builtin_sub_overflow(reference_value, offset,
-            &reference_value);
-    }
+        is_overflow = common::subOverflow(reference_value, offset, reference_value);
     else
-    {
-        is_overflow = __builtin_add_overflow(reference_value, offset,
-            &reference_value);
-    }
+        is_overflow = common::addOverflow(reference_value, offset, reference_value);
 
 //    fmt::print(stderr,
 //        "compared [{}] = {}, old ref {}, shifted ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
@@ -1465,7 +1460,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (!isInt64FieldType(argument_types[1]->getDefault().getType()))
+        if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Offset must be an integer, '{}' given",

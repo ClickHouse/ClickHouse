@@ -64,8 +64,6 @@ public:
     /// Receives response from the server after sending all data.
     void finalize() override;
 
-    ~WriteBufferFromS3() override;
-
 private:
     bool finalized = false;
 

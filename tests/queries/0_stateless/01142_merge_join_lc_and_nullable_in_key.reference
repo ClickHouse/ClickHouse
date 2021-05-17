@@ -14,16 +14,16 @@
 1	l	\N	Nullable(String)
 -
 1	l	\N	Nullable(String)
-2		\N	Nullable(String)
+2	\N	\N	Nullable(String)
 1	l	\N	Nullable(String)
-2		\N	Nullable(String)
+2	\N	\N	Nullable(String)
 -
 1	l	\N	Nullable(String)
-\N		\N	Nullable(String)
+\N	\N	\N	Nullable(String)
 1	l	\N	Nullable(String)
-\N		\N	Nullable(String)
+\N	\N	\N	Nullable(String)
 -
 1	l	\N	Nullable(String)
-\N		\N	Nullable(String)
+\N	\N	\N	Nullable(String)
 1	l	\N	Nullable(String)
-\N		\N	Nullable(String)
+\N	\N	\N	Nullable(String)

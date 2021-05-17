@@ -714,6 +714,8 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
     new_columns_list->set(new_columns_list->columns, new_columns);
     if (const auto * indices = query_ast->as<ASTCreateQuery>()->columns_list->indices)
         new_columns_list->set(new_columns_list->indices, indices->clone());
+    if (const auto * projections = query_ast->as<ASTCreateQuery>()->columns_list->projections)
+        new_columns_list->set(new_columns_list->projections, projections->clone());
 
     new_query.replace(new_query.columns_list, new_columns_list);
 

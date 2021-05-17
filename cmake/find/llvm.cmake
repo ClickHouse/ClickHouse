@@ -2,7 +2,7 @@ if (APPLE OR SPLIT_SHARED_LIBRARIES OR NOT ARCH_AMD64)
     set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
 endif()
 
-option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile_expressions' option for query execution" ${ENABLE_LIBRARIES})
+option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ON)
 # Broken in macos. TODO: update clang, re-test, enable on Apple
 if (ENABLE_EMBEDDED_COMPILER AND NOT SPLIT_SHARED_LIBRARIES AND ARCH_AMD64 AND NOT (SANITIZE STREQUAL "undefined"))
     option (USE_INTERNAL_LLVM_LIBRARY "Use bundled or system LLVM library." ${NOT_UNBUNDLED})
@@ -24,9 +24,9 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
 endif ()
 
 if (NOT USE_INTERNAL_LLVM_LIBRARY)
-    set (LLVM_PATHS "/usr/local/lib/llvm")
+    set (LLVM_PATHS "/usr/local/lib/llvm" "/usr/lib/llvm")
 
-    foreach(llvm_v 10 9 8)
+    foreach(llvm_v 11.1 11)
         if (NOT LLVM_FOUND)
             find_package (LLVM ${llvm_v} CONFIG PATHS ${LLVM_PATHS})
         endif ()
@@ -102,7 +102,6 @@ LLVMRuntimeDyld
 LLVMX86CodeGen
 LLVMX86Desc
 LLVMX86Info
-LLVMX86Utils
 LLVMAsmPrinter
 LLVMDebugInfoDWARF
 LLVMGlobalISel
