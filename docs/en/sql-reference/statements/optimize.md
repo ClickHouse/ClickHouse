@@ -31,7 +31,7 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engin
 If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](../../sql-reference/statements/select/index.md#asterisk), [`COLUMNS`](../../sql-reference/statements/select/index.md#columns-expression) or [`EXCEPT`](../../sql-reference/statements/select/index.md#except-modifier) expressions. The explictly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
 
 !!! note "Note"
-    Notice that `*` behaves just like in `SELECT`: [`MATERIALIZED`](../../sql-reference/statements/create/table.md#materialized) and [`ALIAS`](../../sql-reference/statements/create/table.md#alias) columns are not used for expansion.
+    Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) and [ALIAS](../../sql-reference/statements/create/table.md#alias) columns are not used for expansion.
     Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an `ALIAS` column.
 
 **Syntax**
