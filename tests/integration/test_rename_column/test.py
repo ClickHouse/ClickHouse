@@ -306,22 +306,25 @@ def test_rename_with_parallel_merges(started_cluster):
     drop_table(nodes, table_name)
     try:
         create_table(nodes, table_name)
-        for i in range(20):
+        for i in range(10):
             insert(node1, table_name, 100, ["num", "num2"], 1, False, False, True, offset=i * 100)
 
         def merge_parts(node, table_name, iterations=1):
-            for i in range(iterations):
-                node.query("OPTIMIZE TABLE %s FINAL" % table_name)
+            for _ in range(iterations):
+                try:
+                    node.query("OPTIMIZE TABLE %s FINAL" % table_name)
+                except Exception as ex:
+                    print("Got an exception while optimizing table", ex)
 
-        p = Pool(15)
+        p = Pool(6)
         tasks = []
         for i in range(1):
-            tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
-            tasks.append(p.apply_async(merge_parts, (node1, table_name, 5)))
-            tasks.append(p.apply_async(merge_parts, (node2, table_name, 5)))
-            tasks.append(p.apply_async(merge_parts, (node3, table_name, 5)))
+            tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 3, True)))
+            tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 3, True)))
+            tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 3, True)))
+            tasks.append(p.apply_async(merge_parts, (node1, table_name, 2)))
+            tasks.append(p.apply_async(merge_parts, (node2, table_name, 2)))
+            tasks.append(p.apply_async(merge_parts, (node3, table_name, 2)))
 
         for task in tasks:
             task.get(timeout=240)
@@ -331,9 +334,9 @@ def test_rename_with_parallel_merges(started_cluster):
         rename_column(node1, table_name, "foo2", "num2", 1, True)
 
         # check that select still works
-        select(node1, table_name, "num2", "1998\n")
-        select(node2, table_name, "num2", "1998\n")
-        select(node3, table_name, "num2", "1998\n")
+        select(node1, table_name, "num2", "999\n")
+        select(node2, table_name, "num2", "999\n")
+        select(node3, table_name, "num2", "999\n")
     finally:
         drop_table(nodes, table_name)
 

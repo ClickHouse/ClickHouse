@@ -39,6 +39,7 @@
 #    include <sys/syscall.h>
 #endif
 
+
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
     DB::Keeper app;
@@ -329,7 +330,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     const Settings & settings = global_context->getSettingsRef();
 
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 500));
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -405,11 +406,6 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         server.start();
 
     SCOPE_EXIT({
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
         LOG_INFO(log, "Shutting down.");
 
         global_context->shutdown();
