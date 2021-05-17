@@ -99,7 +99,7 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -229,7 +229,7 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -321,7 +321,7 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
@@ -481,7 +481,7 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
@@ -649,7 +649,7 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -823,7 +823,7 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -929,7 +929,7 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -1074,7 +1074,7 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

@@ -166,7 +166,14 @@ public:
         return dag.compile(builder, values);
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & arguments) const override
+    {
+        for (const auto & f : nested_functions)
+            if (name == f->getName() && f->isSuitableForShortCircuitArgumentsExecution(arguments))
+                return true;
+
+        return false;
+    }
 
     String getName() const override { return name; }
 

@@ -61,7 +61,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     template <typename LonAndLatType, typename PrecisionType>
     void execute(

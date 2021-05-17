@@ -39,7 +39,7 @@ public:
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

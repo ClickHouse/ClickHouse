@@ -57,7 +57,7 @@ public:
 
     bool isVariadic() const override { return Impl::supports_start_pos; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override
     {

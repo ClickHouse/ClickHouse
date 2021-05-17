@@ -138,7 +138,7 @@ namespace DB
             return return_type;
         }
 
-        bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+        bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
 
         ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
         {
@@ -220,7 +220,7 @@ namespace DB
             return true;
         }
 
-        bool isSuitableForShortCircuitArgumentsExecution() const override
+        bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override
         {
             return false;
         }

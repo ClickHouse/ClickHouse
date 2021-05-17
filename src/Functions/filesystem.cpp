@@ -39,7 +39,7 @@ public:
         return std::make_shared<FilesystemImpl<Impl>>(std::filesystem::space(context->getConfigRef().getString("path")));
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return false;
     }

@@ -156,7 +156,7 @@ public:
     bool isVariadic() const override { return true; }
     bool isShortCircuit() const override { return name == NameAnd::name || name == NameOr::name; }
     void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override;
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
@@ -229,7 +229,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 

@@ -141,41 +141,8 @@ void expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& m
     column->assumeMutable()->expand(mask, reverse);
 }
 
-template <typename ValueType>
-void copyMaskImpl(const PaddedPODArray<ValueType>& mask, PaddedPODArray<UInt8> & res, bool reverse, const PaddedPODArray<UInt8> * null_bytemap, UInt8 null_value)
-{
-    if (res.size() != mask.size())
-        res.resize(mask.size());
-
-    for (size_t i = 0; i != mask.size(); ++i)
-    {
-        if (null_bytemap && (*null_bytemap)[i])
-            res[i] = reverse ? !null_value : null_value;
-        else
-            res[i] = reverse ? !mask[i]: !!mask[i];
-    }
-}
-
-template <typename ValueType>
-bool tryGetMaskFromColumn(const ColumnPtr column, PaddedPODArray<UInt8> & res, bool reverse, const PaddedPODArray<UInt8> * null_bytemap, UInt8 null_value)
-{
-    if (const auto * col = checkAndGetColumn<ColumnVector<ValueType>>(*column))
-    {
-        copyMaskImpl(col->getData(), res, reverse, null_bytemap, null_value);
-        return true;
-    }
-
-    return false;
-}
-
 void getMaskFromColumn(const ColumnPtr & column, PaddedPODArray<UInt8> & res, bool reverse, const PaddedPODArray<UInt8> * null_bytemap, UInt8 null_value)
 {
-    if (const auto * col = checkAndGetColumn<ColumnConst>(*column))
-    {
-        getMaskFromColumn(col->convertToFullColumn(), res, reverse, null_bytemap, null_value);
-        return;
-    }
-
     if (const auto * col = checkAndGetColumn<ColumnNothing>(*column))
     {
         res.resize_fill(col->size(), reverse ? !null_value : null_value);
@@ -188,20 +155,23 @@ void getMaskFromColumn(const ColumnPtr & column, PaddedPODArray<UInt8> & res, bo
         return getMaskFromColumn(col->getNestedColumnPtr(), res, reverse, &null_map, null_value);
     }
 
-    if (const auto * col = checkAndGetColumn<ColumnLowCardinality>(*column))
-        return getMaskFromColumn(col->convertToFullColumn(), res, reverse, null_bytemap, null_value);
+    try
+    {
+        if (res.size() != column->size())
+            res.resize(column->size());
 
-    if (!tryGetMaskFromColumn<Int8>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<Int16>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<Int32>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<Int64>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<UInt8>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<UInt16>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<UInt32>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<UInt64>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<Float32>(column, res, reverse, null_bytemap, null_value) &&
-        !tryGetMaskFromColumn<Float64>(column, res, reverse, null_bytemap, null_value))
+        for (size_t i = 0; i != column->size(); ++i)
+        {
+            if (null_bytemap && (*null_bytemap)[i])
+                res[i] = reverse ? !null_value : null_value;
+            else
+                res[i] = reverse ? !column->getBool(i): column->getBool(i);
+        }
+    }
+    catch (...)
+    {
         throw Exception("Cannot convert column " + column.get()->getName() + " to mask", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
 }
 
 template <typename Op>

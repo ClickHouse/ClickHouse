@@ -82,7 +82,7 @@ public:
 
     bool isShortCircuit() const override { return function->isShortCircuit(); }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return function->isSuitableForShortCircuitArgumentsExecution(); }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 
     void executeShortCircuitArguments(ColumnsWithTypeAndName & args) const override
     {
@@ -117,7 +117,7 @@ public:
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isShortCircuit() const override { return function->isShortCircuit(); }
-    bool isSuitableForShortCircuitArgumentsExecution() const override { return function->isSuitableForShortCircuitArgumentsExecution(); }
+    bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName &  arguments) const override { return function->isSuitableForShortCircuitArgumentsExecution(arguments); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return function->getArgumentsThatAreAlwaysConstant(); }
