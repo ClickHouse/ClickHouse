@@ -52,128 +52,153 @@ OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (c
 Consider the table:
 
 ``` sql
-
-CREATE TABLE dup_example (
-    pk Int32, -- primary key
-    sk Int32, -- secondary key
+CREATE TABLE example (
+    primary_key Int32,
+    secondary_key Int32,
     value UInt32,
-    mat UInt32 MATERIALIZED rand(),  -- materialized value
-    alias UInt32 ALIAS 2, -- aliased value
-    PRIMARY KEY pk
-) ENGINE=MergeTree
-ORDER BY (pk, sk);
+    partition_key UInt32,
+    materialized_value UInt32 MATERIALIZED 12345,
+    aliased_value UInt32 ALIAS 2,
+    PRIMARY KEY primary_key
+) ENGINE=MergeTree　
+PARTITION BY partition_key
+ORDER BY (primary_key, secondary_key);
+```
+``` sql
+INSERT INTO example (primary_key, secondary_key, value, partition_key) 
+VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
+```
+``` sql
+SELECT * FROM example;
+```
+Result:
 ```
 
-Columns for deduplication are not specified, so all of them are taken into account. Row is removed only if all values in all columns are equal to corresponding values in previous row:
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+
+5 rows in set.
+```
+
+When columns for deduplication are not specified, all of them are taken into account. Row is removed only if all values in all columns are equal to corresponding values in previous row:
 
 ``` sql
-OPTIMIZE TABLE dup_example FINAL DEDUPLICATE;
+OPTIMIZE TABLE example FINAL DEDUPLICATE;
+```
+``` sql
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+
+4 rows in set.
 ```
 
-Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED`: in our case deduplicate by `pk`, `sk` and `value` columns.
+When columns are specified implicitly, the table is deduplicated by all columns that are not `ALIAS` or `MATERIALIZED`. Considering the table above, these are `primary_key`, `secondary_key`, `value`, and `partition_key` columns:
+```sql
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
+```
+``` sql
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+
+4 rows in set.
+```
+
+Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `value`: `primary_key`, `secondary_key`, and `partition_key` columns.
 
 ``` sql
-OPTIMIZE TABLE dup_example FINAL DEDUPLICATE BY *;
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
 ```
-
-Deduplicate explicitly by `pk`, `sk`, `value` and `mat` columns.
 ``` sql
-OPTIMIZE TABLE dup_example FINAL DEDUPLICATE BY pk, sk, value, mat;
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+
+3 rows in set.
 ```
 
-Deduplicate by columns matching a regex `'.*k'`: `pk` and `sk` columns.
-
+Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` columns:
+```sql
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
+```
 ``` sql
-OPTIMIZE TABLE dup_example FINAL DEDUPLICATE BY COLUMNS('.*k');
+SELECT * FROM example;
+```
+Result:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+
+3 rows in set.
 ```
 
-**Error cases**
-
-Note that **primary key** column should not be missed in any `BY` expression. These queries will face errors:
-
+Deduplicate by any column matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
+```sql
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
+```
 ``` sql
-OPTIMIZE TABLE dup_example DEDUPLICATE BY * EXCEPT(pk);
-OPTIMIZE TABLE dup_example DEDUPLICATE BY sk, value;
+SELECT * FROM example;
 ```
-
-Empty list cases:
-``` sql
-OPTIMIZE TABLE dup_example DEDUPLICATE BY * EXCEPT(pk, sk, value, mat, alias); -- server error
-OPTIMIZE TABLE dup_example DEDUPLICATE BY; -- syntax error
+Result:
 ```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
 
-2. Replicated example on a [`ReplicatedMergeTree`](../../engines/table-engines/mergetree-family/replication.md) table engine:
-
-```sql
-DROP TABLE IF EXISTS replicated_deduplicate_by_columns_r1;
-DROP TABLE IF EXISTS replicated_deduplicate_by_columns_r2;
-
-SET replication_alter_partitions_sync = 2;
-
-CREATE TABLE IF NOT EXISTS replicated_deduplicate_by_columns_r1 (
-    id Int32, 
-    value UInt32, 
-    insert_time_ns DateTime64(9) MATERIALIZED now64(9), 
-    insert_replica_id UInt8 MATERIALIZED randConstant()
-) ENGINE=ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'r1') 
-ORDER BY id;
-
-CREATE TABLE IF NOT EXISTS replicated_deduplicate_by_columns_r2 (
-    id Int32, 
-    value UInt32, 
-    insert_time_ns DateTime64(9) MATERIALIZED now64(9), 
-    insert_replica_id UInt8 MATERIALIZED randConstant()
-) ENGINE=ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'r2') 
-ORDER BY id;
+3 rows in set.
 ```
-
-For the `ReplicatedMergeTree` engine we give the path to the table and name of the replica in Zookeeper.
-
-Insert some data into both replicas and wait for them to sync:
-
-```sql
-SYSTEM SYNC REPLICA replicated_deduplicate_by_columns_r2;
-SYSTEM SYNC REPLICA replicated_deduplicate_by_columns_r1;
-```
-
-Check that we have data on replicas:
-
-```sql
-SELECT 'r1', id, value, count(), uniqExact(insert_time_ns), uniqExact(insert_replica_id) 
-FROM replicated_deduplicate_by_columns_r1 
-GROUP BY id, value 
-ORDER BY id, value;
-
-SELECT 'r2', id, value, count(), uniqExact(insert_time_ns), uniqExact(insert_replica_id) 
-FROM replicated_deduplicate_by_columns_r2 
-GROUP BY id, value 
-ORDER BY id, value;
-```
-
-Remove full duplicates from replica `r1` based on all columns:
-
-```sql
-OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE;
-```
-
-Remove duplicates from replica `r1` based on all columns that are not `ALIAS` or `MATERIALIZED`:
-
-```sql
-OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY *; -- except insert_time_ns, insert_replica_id
-```
-
-Deduplicate replica `r1` explicitly by `id` and `value` columns:
-
-```sql
-OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY id, value;
-```
-
-Deduplicate by columns matching a regex:
-
-```sql
-OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY COLUMNS('[id, value]');
-
-OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY COLUMNS('[i]') EXCEPT(insert_time_ns, insert_replica_id);
-```
-
-Don't forget to `DROP` tables and replicas `SYSTEM DROP REPLICA` afterwards.
