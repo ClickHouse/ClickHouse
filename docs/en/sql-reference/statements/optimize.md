@@ -49,7 +49,7 @@ OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (c
 
 **Examples**
 
-1. Local example on a [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) table engine:
+Consider the table:
 
 ``` sql
 DROP TABLE IF EXISTS dup_example;
