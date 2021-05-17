@@ -589,8 +589,12 @@ server_logs_level = "warning"
 
 def check_server_started(client, retry_count):
     print("Connecting to ClickHouse server...", end='')
+
     sys.stdout.flush()
+
     while retry_count > 0:
+        print(client)
+
         clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
         (stdout, stderr) = clickhouse_proc.communicate(b"SELECT 1")
 
