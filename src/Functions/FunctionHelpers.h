@@ -156,4 +156,17 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 /// Check if two types are equal
 bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs);
 
+/** Return ColumnNullable of src, with null map as OR-ed null maps of args columns.
+  * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
+  */
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count);
+
+struct NullPresence
+{
+    bool has_nullable = false;
+    bool has_null_constant = false;
+};
+
+NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
+
 }
