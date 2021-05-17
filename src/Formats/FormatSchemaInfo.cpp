@@ -1,9 +1,7 @@
 #include <Formats/FormatSchemaInfo.h>
-#include <Poco/Path.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <filesystem>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -83,7 +81,7 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
         schema_path = path.filename();
         schema_directory = path.parent_path() / "";
     }
-    else if (Poco::Path(path.string()).depth() >= 1 && Poco::Path(path.string()).directory(0) == "..")
+    else if (path.string().starts_with(".."))
     {
         if (is_server)
             throw Exception(
