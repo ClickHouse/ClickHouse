@@ -209,8 +209,13 @@ BlockIO InterpreterInsertQuery::execute()
 
                 new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
 
-                if (settings.min_insert_block_size_rows && table->prefersLargeBlocks())
-                    new_settings.max_block_size = settings.min_insert_block_size_rows;
+                if (table->prefersLargeBlocks())
+                {
+                    if (settings.min_insert_block_size_rows)
+                        new_settings.max_block_size = settings.min_insert_block_size_rows;
+                    if (settings.min_insert_block_size_bytes)
+                        new_settings.preferred_block_size_bytes = settings.min_insert_block_size_bytes;
+                }
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);

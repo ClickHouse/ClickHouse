@@ -68,6 +68,12 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
     MergeTreeData::DataPart::Checksums checksums;
     writer->finish(checksums, sync);
 
+    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+        checksums.addFile(
+            projection_name + ".proj",
+            projection_part->checksums.getTotalSizeOnDisk(),
+            projection_part->checksums.getTotalChecksumUInt128());
+
     auto columns = new_part->getColumns();
 
     auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);

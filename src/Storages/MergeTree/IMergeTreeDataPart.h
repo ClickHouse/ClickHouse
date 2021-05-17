@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeProjections.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -74,14 +75,16 @@ public:
         const MergeTreePartInfo & info_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
-        Type part_type_);
+        Type part_type_,
+        const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
-        Type part_type_);
+        Type part_type_,
+        const IMergeTreeDataPart * parent_part_);
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
@@ -132,6 +135,8 @@ public:
     void assertOnDisk() const;
 
     void remove(bool keep_s3 = false) const;
+
+    void projectionRemove(const String & parent_to) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -350,6 +355,23 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
+    bool isProjectionPart() const { return parent_part != nullptr; }
+
+    const IMergeTreeDataPart * getParentPart() const { return parent_part; }
+
+    const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
+
+    void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part)
+    {
+        projection_parts.emplace(projection_name, std::move(projection_part));
+    }
+
+    bool hasProjection(const String & projection_name) const
+    {
+        return projection_parts.find(projection_name) != projection_parts.end();
+    }
+
+    void loadProjections(bool require_columns_checksums, bool check_consistency);
 
     /// Return set of metadat file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -391,6 +413,11 @@ protected:
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
     const Type part_type;
+
+    /// Not null when it's a projection part.
+    const IMergeTreeDataPart * parent_part;
+
+    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
     void removeIfNeeded();
 

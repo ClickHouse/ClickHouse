@@ -127,6 +127,7 @@ public:
     static DatabaseCatalog & instance();
     static void shutdown();
 
+    void loadTemporaryDatabase();
     void loadDatabases();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.

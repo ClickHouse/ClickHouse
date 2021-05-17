@@ -40,14 +40,12 @@ HashedDictionary<dictionary_key_type, sparse>::HashedDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_,
+    const HashedDictionaryStorageConfiguration & configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
-    , dict_lifetime(dict_lifetime_)
-    , require_nonempty(require_nonempty_)
+    , configuration(configuration_)
     , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
@@ -359,6 +357,8 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::updateData()
 {
+    /// NOTE: updateData() does not preallocation since it may increase memory usage.
+
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         auto stream = source_ptr->loadUpdatedAll();
@@ -552,13 +552,30 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        auto stream = source_ptr->loadAll();
+        std::atomic<size_t> new_size = 0;
+
+        BlockInputStreamPtr stream;
+        if (configuration.preallocate)
+            stream = source_ptr->loadAllWithSizeHint(&new_size);
+        else
+            stream = source_ptr->loadAll();
 
         stream->readPrefix();
 
         while (const auto block = stream->read())
         {
-            resize(block.rows());
+            if (configuration.preallocate && new_size)
+            {
+                size_t current_new_size = new_size.exchange(0);
+                if (current_new_size)
+                {
+                    LOG_TRACE(&Poco::Logger::get("HashedDictionary"), "Preallocated {} elements", current_new_size);
+                    resize(current_new_size);
+                }
+            }
+            else
+                resize(block.rows());
+
             blockToAttributes(block);
         }
 
@@ -567,7 +584,7 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
     else
         updateData();
 
-    if (require_nonempty && 0 == element_count)
+    if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
             full_name);
@@ -710,19 +727,24 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
+        const std::string & layout_prefix = sparse ? ".layout.sparse_hashed" : ".layout.hashed";
+        const bool preallocate = config.getBool(config_prefix + layout_prefix + ".preallocate", false);
+
+        HashedDictionaryStorageConfiguration configuration{preallocate, require_nonempty, dict_lifetime};
+
         if (dictionary_key_type == DictionaryKeyType::simple)
         {
             if (sparse)
-                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, true>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             else
-                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, false>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
         else
         {
             if (sparse)
-                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, true>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             else
-                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, false>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
     };
 

@@ -224,16 +224,19 @@ public:
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
-      *  for example, the request can be partially processed on a remote server.)
+      *  for example, the request can be partially processed on a remote server, or an aggregate projection.)
       *
       * SelectQueryInfo is required since the stage can depends on the query
-      * (see Distributed() engine and optimize_skip_unused_shards).
+      * (see Distributed() engine and optimize_skip_unused_shards,
+      *  see also MergeTree engine and allow_experimental_projection_optimization).
       * And to store optimized cluster (after optimize_skip_unused_shards).
+      * It will also store needed stuff for projection query pipeline.
       *
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
+    virtual QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
@@ -493,7 +496,7 @@ public:
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
-    /// - Simple count() opimization
+    /// - Simple count() optimization
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
