@@ -295,8 +295,6 @@ set_source_files_properties(
     Common/Dwarf.cpp
     Common/SymbolIndex.cpp
 
-    Common/ThreadFuzzer.cpp
-
     PROPERTIES COMPILE_FLAGS "-O3 -ggdb -g3 -finline-functions ${WITHOUT_COVERAGE}")
 
 if (ENABLE_TESTS)

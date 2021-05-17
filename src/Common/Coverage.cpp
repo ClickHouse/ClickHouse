@@ -55,56 +55,31 @@ inline void setOrIncrement(T& container, typename T::key_type key, typename T::m
 }
 }
 
-TaskQueue::TaskQueue(size_t max_threads)
-{
-    spawnThreads(max_threads);
-}
-
-void TaskQueue::waitAndRespawnThreads(size_t new_threads_count)
-{
-    {
-        std::lock_guard lock(mutex);
-        shutdown = true;
-    }
-
-    new_job_or_shutdown.notify_all();
-
-    for (auto & thread : threads)
-        if (thread.joinable())
-            thread.join();
-
-    threads.clear();
-
-    shutdown = false; //no mutex needed as thread list is empty
-
-    spawnThreads(new_threads_count);
-}
-
-void TaskQueue::worker(size_t thread_id)
+void TaskQueue::workerThread()
 {
     while (true)
     {
-        Job job;
+        Task task;
         bool is_shutdown;
-        bool has_job;
+        bool has_task;
 
         {
             std::unique_lock lock(mutex);
 
-            new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
+            task_or_shutdown.wait(lock, [this] { return shutdown || !tasks.empty(); });
 
             is_shutdown = shutdown;
-            has_job = !jobs.empty();
+            has_task = !tasks.empty();
 
-            if (has_job)
+            if (has_task)
             {
-                job = std::move(jobs.front());
-                jobs.pop();
+                task = std::move(tasks.front());
+                tasks.pop();
             }
         }
 
-        if (has_job)
-            job(thread_id);
+        if (has_task)
+            task();
 
         if (is_shutdown)
             return;
@@ -127,10 +102,6 @@ Writer::Writer()
       functions_count(0),
       addrs_count(0),
       edges_count(0),
-
-      // Set the initial pool size to all threads as we'll need all resources to symbolize fast.
-      tasks_queue(hardware_concurrency),
-
       test_index(0) {}
 
 Writer& Writer::instance()
@@ -191,7 +162,6 @@ void Writer::initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_ar
 
 void Writer::deinitRuntime()
 {
-    tasks_queue.waitAndRespawnThreads(0);
     writeCCRFooter();
     report_file.close();
     LOG_INFO(base_log, "Shut down runtime");
@@ -265,12 +235,19 @@ struct FuncSym
 };
 
 template <bool is_func_cache>
-static inline auto& getInstrumented(auto& info)
+inline auto& getInstrumented(auto& info)
 {
     if constexpr (is_func_cache)
         return info.instrumented_functions;
     else
         return info.instrumented_lines;
+}
+
+inline void waitFor(Writer::Threads& threads)
+{
+    for (auto & thread : threads)
+        if (thread.joinable())
+            thread.join();
 }
 }
 
@@ -293,9 +270,9 @@ void Writer::symbolizeInstrumentedData()
         "Using thread pool of size {}. ",
         functions_count, addrs_count, edges_to_addrs.size(), hardware_concurrency);
 
-    scheduleSymbolizationJobs<true, FuncSym>(func_caches, function_indices);
-
-    tasks_queue.waitAndRespawnThreads(hardware_concurrency);
+    /// Schedule function symbolization jobs and wait for them to finish
+    Threads func_thread_pool = scheduleSymbolizationJobs<true, FuncSym>(func_caches, function_indices);
+    waitFor(func_thread_pool);
 
     LOG_INFO(base_log, "Symbolized all functions");
 
@@ -305,12 +282,11 @@ void Writer::symbolizeInstrumentedData()
             for (auto & local_addr_cache : addr_caches)
                 local_addr_cache[source_rel_path] = {};
 
-    scheduleSymbolizationJobs<false, AddrSym>(addr_caches, addr_indices);
+    Threads addr_thread_pool = scheduleSymbolizationJobs<false, AddrSym>(addr_caches, addr_indices);
 
-    /// Merge functions data while other threads process addresses.
+    /// Merge functions data in main thread while other threads process addresses.
     mergeDataToCaches<true, FuncSym>(func_caches);
-
-    tasks_queue.waitAndRespawnThreads(thread_pool_size_for_tests);
+    waitFor(addr_thread_pool);
 
     mergeDataToCaches<false, AddrSym>(addr_caches);
 
@@ -339,7 +315,7 @@ void Writer::onChangedTestName(std::string old_test_name)
 
     edges_hit.swap(edges_hit_swap);
 
-    tasks_queue.schedule([this, test_that_finished, edges = std::move(edges_hit_swap)] (auto) mutable
+    tasks_queue.schedule([this, test_that_finished, edges = std::move(edges_hit_swap)] () mutable
     {
         TestData & data = tests[test_that_finished];
         data.test_index = test_that_finished;
@@ -474,12 +450,15 @@ void Writer::writeCCRFooter()
 }
 
 template <bool is_func_cache, class CacheItem>
-void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
+Writer::Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
 {
+    Threads out;
+    out.reserve(hardware_concurrency);
+
     // Each worker symbolizes an address range. Ranges are uniformly distributed.
 
-    for (size_t k = 0; k < hardware_concurrency; ++k)
-        tasks_queue.schedule([this, &local_caches, &data](size_t thread_index)
+    for (size_t thread_index = 0; thread_index < hardware_concurrency; ++thread_index)
+        out.emplace_back([this, &local_caches, &data, thread_index]()
         {
             const size_t step = data.size() / hardware_concurrency;
             const size_t start_index = thread_index * step;
@@ -532,6 +511,7 @@ void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, con
         });
 
     LOG_INFO(base_log, "Scheduled symbolization jobs");
+    return out;
 }
 
 template<bool is_func_cache, class CacheItem>
@@ -586,6 +566,6 @@ void Writer::mergeDataToCaches(const LocalCaches<CacheItem>& data)
 
 template void Writer::mergeDataToCaches<true, FuncSym>(const LocalCaches<FuncSym>&);
 template void Writer::mergeDataToCaches<false, AddrSym>(const LocalCaches<AddrSym>&);
-template void Writer::scheduleSymbolizationJobs<true, FuncSym>(LocalCaches<FuncSym>&, const std::vector<EdgeIndex>&);
-template void Writer::scheduleSymbolizationJobs<false, AddrSym>(LocalCaches<AddrSym>&, const std::vector<EdgeIndex>&);
+template Writer::Threads Writer::scheduleSymbolizationJobs<true, FuncSym>(LocalCaches<FuncSym>&, const std::vector<EdgeIndex>&);
+template Writer::Threads Writer::scheduleSymbolizationJobs<false, AddrSym>(LocalCaches<AddrSym>&, const std::vector<EdgeIndex>&);
 }

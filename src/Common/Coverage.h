@@ -40,59 +40,58 @@ using CallCount = size_t;
 using Line = size_t;
 
 /**
- * Simplified FreeThreadPool from Common/ThreadPool.h .
+ * Simplified FreeThreadPool from Common/ThreadPool.h . Uses one external thread.
  * Not intended for general use (some invariants broken).
  *
- * - Does not use job priorities.
  * - Does not throw.
  * - Does not use metrics.
- * - Does not remove threads after job finish, max_threads run all the time.
- * - Spawns max_threads on startup.
- * - Invokes job with job index.
  * - Some operations are not thread-safe.
  *
  * Own implementation needed as Writer does not use most FreeThreadPool features (and we can save ~20 minutes by
  * using this class instead of the former).
+ *
+ * Each test duration is longer than coverage test processing pipeline (converting and dumping to disk), so no
+ * more than 1 thread is needed.
  */
 class TaskQueue
 {
 public:
-    explicit TaskQueue(size_t max_threads);
+    TaskQueue(): worker([this] { workerThread(); }) {} //NOLINT
 
     template <class J>
-    void schedule(J && job)
+    inline void schedule(J && job)
     {
         {
             std::lock_guard lock(mutex);
-            jobs.emplace(std::forward<J>(job));
+            tasks.emplace(std::forward<J>(job));
         }
 
-        new_job_or_shutdown.notify_one();
+        task_or_shutdown.notify_one();
     }
 
-    /// Wait for all active jobs to finish, remove all threads, spawn new threads
-    void waitAndRespawnThreads(size_t new_threads_count); // count can be zero
+    ~TaskQueue()
+    {
+        {
+            std::lock_guard lock(mutex);
+            shutdown = true;
+        }
 
-    ~TaskQueue() { waitAndRespawnThreads(0); }
+        if (worker.joinable())
+            worker.join();
+    }
 
 private:
-    using Job = std::function<void(size_t)>;
-    using Thread = std::thread;
+    using Task = std::function<void()>;
+
+    std::thread worker;
+    std::queue<Task> tasks;
 
     std::mutex mutex;
-    std::condition_variable new_job_or_shutdown;
+    std::condition_variable task_or_shutdown;
+
     bool shutdown = false;
 
-    std::queue<Job> jobs;
-    std::list<Thread> threads;
-
-    void worker(size_t thread_id);
-
-    inline void spawnThreads(size_t thread_count)
-    {
-        for (size_t i = 0; i < thread_count; ++i)
-            threads.emplace_front([this, i] { worker(i); });
-    }
+    void workerThread();
 };
 
 /**
@@ -128,10 +127,6 @@ private:
     Writer();
 
     static constexpr std::string_view logger_base_name = "Coverage";
-
-    /// Each test duration is longer than coverage test processing pipeline (converting and dumping to disk), so no
-    /// more than 1 thread is needed
-    static constexpr size_t thread_pool_size_for_tests = 1;
 
     static constexpr size_t total_source_files_hint = 5000; // each LocalCache pre-allocates this / pool_size.
 
@@ -234,9 +229,14 @@ private:
     template <class CacheItem>
     using LocalCaches = std::vector<LocalCache<CacheItem>>;
 
+public:
+    using Threads = std::vector<std::thread>;
+private:
+
     /// Spawn workers symbolizing addresses obtained from PC table to internal local caches.
+    /// Returns the thread pool.
     template <bool is_func_cache, class CacheItem>
-    void scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data);
+    Threads scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data);
 
     /// Merge local caches' symbolized data [obtained from multiple threads] into global caches.
     template<bool is_func_cache, class CacheItem>

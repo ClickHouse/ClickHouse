@@ -1067,7 +1067,7 @@ if __name__ == '__main__':
         help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
-    parser.add_argument('--coverage', action='store_false',
+    parser.add_argument('--coverage', action='store_true', default=False,
         help="Set* internal coverage test name setting before test run, similar to --testname. "
              "Note that setting is not actually set in server, it's just using settings pipeline, see "
              "Context.cpp :: setSetting()")
