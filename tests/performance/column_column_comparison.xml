@@ -1,3 +1,5 @@
+<!--
+-- TODO: Return this test after simplifying InterpreterSelectQuery
 <test>
     <tags>
         <tag>comparison</tag>
@@ -28,4 +30,4 @@
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < URL]]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < PageCharset]]></query>
 
-</test>
+</test> -->
