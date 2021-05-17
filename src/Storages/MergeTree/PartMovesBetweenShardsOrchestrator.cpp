@@ -366,9 +366,9 @@ std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrc
 {
     std::lock_guard lock(state_mutex);
 
-    auto res = std::vector<Entry>();
+    std::vector<Entry> res;
 
-    for (const auto& e : entries)
+    for (const auto & e : entries)
         res.push_back(e.second);
 
     return res;
