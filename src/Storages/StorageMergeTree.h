@@ -211,8 +211,9 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPart(const String & name) override;
-    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr context) override;
+    void dropPartNoWaitNoThrow(const String & part_name) override;
+    void dropPart(const String & part_name, bool detach, ContextPtr context) override;
+    void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
     void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 

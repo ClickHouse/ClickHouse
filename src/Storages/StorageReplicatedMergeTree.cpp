@@ -4927,7 +4927,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     return true;
 }
 
-void StorageReplicatedMergeTree::dropPart(const String & name)
+void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
     assertNotReadonly();
     if (!is_leader)
@@ -4936,48 +4936,52 @@ void StorageReplicatedMergeTree::dropPart(const String & name)
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
     LogEntry entry;
 
-    dropPart(zookeeper, name, entry, false, false);
+    dropPartImpl(zookeeper, part_name, entry, false, false);
 }
 
-void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr query_context)
+void StorageReplicatedMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
     assertNotReadonly();
     if (!is_leader)
-        throw Exception("DROP PART|PARTITION cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
+        throw Exception("DROP PART cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
-
     LogEntry entry;
-    bool did_drop;
 
-    if (drop_part)
-    {
-        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
-        did_drop = dropPart(zookeeper, part_name, entry, detach, true);
-    }
-    else
-    {
-        String partition_id = getPartitionIDFromQuery(partition, query_context);
-        did_drop = dropAllPartsInPartition(*zookeeper, partition_id, entry, query_context, detach);
-    }
+    bool did_drop = dropPartImpl(zookeeper, part_name, entry, detach, true);
 
     if (did_drop)
     {
         /// If necessary, wait until the operation is performed on itself or on all replicas.
-        if (query_context->getSettingsRef().replication_alter_partitions_sync != 0)
-        {
-            if (query_context->getSettingsRef().replication_alter_partitions_sync == 1)
-                waitForReplicaToProcessLogEntry(replica_name, entry);
-            else
-                waitForAllReplicasToProcessLogEntry(entry);
-        }
+        if (query_context->getSettingsRef().replication_alter_partitions_sync == 1)
+            waitForReplicaToProcessLogEntry(replica_name, entry);
+        else if (query_context->getSettingsRef().replication_alter_partitions_sync == 2)
+            waitForAllReplicasToProcessLogEntry(entry);
+    }
+}
+
+void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
+{
+    assertNotReadonly();
+    if (!is_leader)
+        throw Exception("DROP PARTITION cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
+
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    LogEntry entry;
+
+    String partition_id = getPartitionIDFromQuery(partition, query_context);
+    bool did_drop = dropAllPartsInPartition(*zookeeper, partition_id, entry, query_context, detach);
+
+    if (did_drop)
+    {
+        /// If necessary, wait until the operation is performed on itself or on all replicas.
+        if (query_context->getSettingsRef().replication_alter_partitions_sync == 1)
+            waitForReplicaToProcessLogEntry(replica_name, entry);
+        else if (query_context->getSettingsRef().replication_alter_partitions_sync == 2)
+            waitForAllReplicasToProcessLogEntry(entry);
     }
 
-    if (!drop_part)
-    {
-        String partition_id = getPartitionIDFromQuery(partition, query_context);
-        cleanLastPartNode(partition_id);
-    }
+    cleanLastPartNode(partition_id);
 }
 
 
@@ -6712,7 +6716,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     return true;
 }
 
-bool StorageReplicatedMergeTree::dropPart(
+bool StorageReplicatedMergeTree::dropPartImpl(
     zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop)
 {
     LOG_TRACE(log, "Will try to insert a log entry to DROP_RANGE for part: " + part_name);
