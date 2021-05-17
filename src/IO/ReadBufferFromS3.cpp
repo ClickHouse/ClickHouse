@@ -12,10 +12,12 @@
 
 #    include <utility>
 
+
 namespace ProfileEvents
 {
     extern const Event S3ReadMicroseconds;
     extern const Event S3ReadBytes;
+    extern const Event S3ReadRequestsErrors;
 }
 
 namespace DB
@@ -29,22 +31,58 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, size_t buffer_size_)
-    : SeekableReadBuffer(nullptr, 0), client_ptr(std::move(client_ptr_)), bucket(bucket_), key(key_), buffer_size(buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, UInt64 s3_max_single_read_retries_, size_t buffer_size_)
+    : SeekableReadBuffer(nullptr, 0)
+    , client_ptr(std::move(client_ptr_))
+    , bucket(bucket_)
+    , key(key_)
+    , s3_max_single_read_retries(s3_max_single_read_retries_)
+    , buffer_size(buffer_size_)
 {
 }
 
-
 bool ReadBufferFromS3::nextImpl()
 {
-    initialize();
+    /// Restoring valid value of `count()` during `nextImpl()`. See `ReadBuffer::next()`.
+    pos = working_buffer.begin();
+
+    if (!impl)
+        impl = initialize();
 
     Stopwatch watch;
-    auto res = impl->next();
+    bool next_result = false;
+
+    for (Int64 attempt = static_cast<Int64>(s3_max_single_read_retries); attempt >= 0; --attempt)
+    {
+        if (!impl)
+            impl = initialize();
+
+        try
+        {
+            next_result = impl->next();
+            /// FIXME. 1. Poco `istream` cannot read less than buffer_size or this state is being discarded during
+            ///           istream <-> iostream conversion. `gcount` always contains 0,
+            ///           that's why we always have error "Cannot read from istream at offset 0".
+
+            break;
+        }
+        catch (const Exception & e)
+        {
+            ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
+
+            LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Remaining attempts: {}, Message: {}",
+                    bucket, key, getPosition(), attempt, e.message());
+
+            impl.reset();
+
+            if (!attempt)
+                throw;
+        }
+    }
+
     watch.stop();
     ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
-
-    if (!res)
+    if (!next_result)
         return false;
     internal_buffer = impl->buffer();
 
@@ -56,7 +94,8 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    checkNotInitialized();
+    if (impl)
+        throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
@@ -69,39 +108,23 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
-
 off_t ReadBufferFromS3::getPosition()
 {
     return offset + count();
 }
 
-void ReadBufferFromS3::checkNotInitialized() const
-{
-    if (initialized)
-        throw Exception("Operation is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-}
-
-void ReadBufferFromS3::initialize()
-{
-    if (initialized)
-        return;
-
-    impl = createImpl();
-    initialized = true;
-}
-
-std::unique_ptr<ReadBuffer> ReadBufferFromS3::createImpl()
+std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
     LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}, Range End: {})",
-              bucket, key, offset, read_end);
+              bucket, key, getPosition(), read_end);
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
 
-    if (offset != 0 || read_end != 0)
+    if (getPosition() != 0 || read_end != 0)
     {
-        req.SetRange("bytes=" + std::to_string(offset)  + "-" + (read_end != 0 ? std::to_string(read_end) : ""));
+        req.SetRange("bytes=" + std::to_string(getPosition())  + "-" + (read_end != 0 ? std::to_string(read_end) : ""));
     }
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
@@ -117,7 +140,6 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::createImpl()
 
 void ReadBufferFromS3::setRange(size_t begin, size_t end)
 {
-    checkNotInitialized();
     offset = static_cast<off_t>(begin);
     read_end = static_cast<off_t>(end);
 }
@@ -132,7 +154,7 @@ ReadBufferPtr ReadBufferS3Factory::getReader()
     if (from_range >= object_size)
         return nullptr;
 
-    auto reader = std::make_shared<ReadBufferFromS3>(client_ptr, bucket, key);
+    auto reader = std::make_shared<ReadBufferFromS3>(client_ptr, bucket, key, s3_max_single_read_retries);
 
     size_t to_range = from_range + range_step;
     /// Round last segment

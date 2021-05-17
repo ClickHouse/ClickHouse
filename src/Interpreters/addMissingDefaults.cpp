@@ -19,7 +19,8 @@ ActionsDAGPtr addMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    ContextPtr context)
+    ContextPtr context,
+    bool null_as_default)
 {
     auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
     auto & index = actions->getIndex();
@@ -80,7 +81,7 @@ ActionsDAGPtr addMissingDefaults(
     }
 
     /// Computes explicitly specified values by default and materialized columns.
-    if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context))
+    if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context, true, null_as_default))
         actions = ActionsDAG::merge(std::move(*actions), std::move(*dag));
     else
         /// Removes unused columns and reorders result.

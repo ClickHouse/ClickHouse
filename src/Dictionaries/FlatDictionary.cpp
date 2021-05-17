@@ -30,14 +30,14 @@ FlatDictionary::FlatDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     Configuration configuration_,
-    BlockPtr previously_loaded_block_)
+    BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , configuration(configuration_)
     , loaded_keys(configuration.initial_array_size, false)
-    , previously_loaded_block(std::move(previously_loaded_block_))
+    , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
     loadData();
@@ -130,13 +130,17 @@ ColumnUInt8::Ptr FlatDictionary::hasKeys(const Columns & key_columns, const Data
     auto result = ColumnUInt8::create(keys_size);
     auto & out = result->getData();
 
+    size_t keys_found = 0;
+
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
         const auto key = keys[key_index];
         out[key_index] = key < loaded_keys.size() && loaded_keys[key];
+        keys_found += out[key_index];
     }
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -154,16 +158,20 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
 
+    size_t keys_found = 0;
+
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
         std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
+        keys_found += result.has_value();
         return result;
     };
 
     auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return dictionary_hierarchy_array;
 }
@@ -187,16 +195,20 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
 
+    size_t keys_found = 0;
+
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
         std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
+        keys_found += result.has_value();
         return result;
     };
 
     auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -223,9 +235,11 @@ ColumnPtr FlatDictionary::getDescendants(
             parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
-    auto result = getKeysDescendantsArray(keys, parent_to_child, level);
+    size_t keys_found;
+    auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -273,7 +287,7 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
 void FlatDictionary::updateData()
 {
-    if (!previously_loaded_block || previously_loaded_block->rows() == 0)
+    if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
@@ -281,13 +295,13 @@ void FlatDictionary::updateData()
         while (const auto block = stream->read())
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!previously_loaded_block)
-                previously_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+            if (!update_field_loaded_block)
+                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
 
             for (size_t column_index = 0; column_index < block.columns(); ++column_index)
             {
                 const IColumn & update_column = *block.getByPosition(column_index).column.get();
-                MutableColumnPtr saved_column = previously_loaded_block->getByPosition(column_index).column->assumeMutable();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(column_index).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
@@ -298,12 +312,12 @@ void FlatDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         mergeBlockWithStream<DictionaryKeyType::simple>(
             dict_struct.getKeysSize(),
-            *previously_loaded_block,
+            *update_field_loaded_block,
             stream);
     }
 
-    if (previously_loaded_block)
-        blockToAttributes(*previously_loaded_block.get());
+    if (update_field_loaded_block)
+        blockToAttributes(*update_field_loaded_block.get());
 }
 
 void FlatDictionary::loadData()
@@ -347,6 +361,9 @@ void FlatDictionary::calculateBytesAllocated()
 
         callOnDictionaryAttributeType(attribute.type, type_call);
     }
+
+    if (update_field_loaded_block)
+        bytes_allocated += update_field_loaded_block->allocatedBytes();
 }
 
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute, const Field & null_value)
@@ -389,17 +406,23 @@ void FlatDictionary::getItemsImpl(
     const auto & container = std::get<ContainerType<AttributeType>>(attribute.container);
     const auto rows = keys.size();
 
+    size_t keys_found = 0;
+
     for (size_t row = 0; row < rows; ++row)
     {
         const auto key = keys[row];
 
         if (key < loaded_keys.size() && loaded_keys[key])
+        {
             set_value(row, static_cast<OutputType>(container[key]));
+            ++keys_found;
+        }
         else
             set_value(row, default_value_extractor[row]);
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <typename T>

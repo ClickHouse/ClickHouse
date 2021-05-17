@@ -50,9 +50,11 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
-        bool use_environment_credentials);
+        bool use_environment_credentials,
+        bool use_insecure_imds_request);
 
     PocoHTTPClientConfiguration createClientConfiguration(
+        const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects);
 

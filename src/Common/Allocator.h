@@ -277,7 +277,7 @@ private:
   *  GCC 4.9 mistakenly assumes that we can call `free` from a pointer to the stack.
   * In fact, the combination of conditions inside AllocatorWithStackMemory does not allow this.
   */
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wfree-nonheap-object"
 #endif
@@ -359,6 +359,6 @@ extern template class Allocator<true, false>;
 extern template class Allocator<false, true>;
 extern template class Allocator<true, true>;
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif

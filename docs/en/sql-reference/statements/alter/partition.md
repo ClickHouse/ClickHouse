@@ -88,12 +88,10 @@ Read more about setting the partition expression in a section [How to specify th
 This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
 If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
-If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own 
-`detached` folder, it attaches the data without fetching it from other replicas.
+If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own `detached` folder, it attaches the data without fetching it from other replicas.
 If there is no part with the correct checksums, the data is downloaded from any replica having the part.
 
-You can put data to the `detached` directory on one replica and use the `ALTER ... ATTACH` query to add it to the 
-table on all replicas.
+You can put data to the `detached` directory on one replica and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
 
 ## ATTACH PARTITION FROM {#alter_attach-partition-from}
 
@@ -101,8 +99,8 @@ table on all replicas.
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2`.
-Note that data won't be deleted neither from `table1` nor from `table2`.
+This query copies the data partition from `table1` to `table2`.
+Note that data will be deleted neither from `table1` nor from `table2`.
 
 For the query to run successfully, the following conditions must be met:
 

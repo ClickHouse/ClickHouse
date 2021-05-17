@@ -42,6 +42,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rename_table("RENAME TABLE");
     ParserKeyword s_exchange_tables("EXCHANGE TABLES");
     ParserKeyword s_rename_dictionary("RENAME DICTIONARY");
+    ParserKeyword s_exchange_dictionaries("EXCHANGE DICTIONARIES");
     ParserKeyword s_rename_database("RENAME DATABASE");
     ParserKeyword s_to("TO");
     ParserKeyword s_and("AND");
@@ -56,6 +57,11 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         exchange = true;
     else if (s_rename_dictionary.ignore(pos, expected))
         dictionary = true;
+    else if (s_exchange_dictionaries.ignore(pos, expected))
+    {
+        exchange = true;
+        dictionary = true;
+    }
     else if (s_rename_database.ignore(pos, expected))
     {
         ASTPtr from_db;

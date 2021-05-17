@@ -158,6 +158,8 @@ void TCPHandler::runImpl()
     }
 
     Settings connection_settings = connection_context->getSettings();
+    UInt64 idle_connection_timeout = connection_settings.idle_connection_timeout;
+    UInt64 poll_interval = connection_settings.poll_interval;
 
     sendHello();
 
@@ -168,10 +170,10 @@ void TCPHandler::runImpl()
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
-            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(
-                std::min(connection_settings.poll_interval, connection_settings.idle_connection_timeout) * 1000000))
+            UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
+            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
             {
-                if (idle_time.elapsedSeconds() > connection_settings.idle_connection_timeout)
+                if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
                     LOG_TRACE(log, "Closing idle connection");
                     return;
@@ -211,6 +213,15 @@ void TCPHandler::runImpl()
              */
             if (!receivePacket())
                 continue;
+
+            /** If Query received, then settings in query_context has been updated
+             *  So, update some other connection settings, for flexibility.
+             */
+            {
+                const Settings & settings = query_context->getSettingsRef();
+                idle_connection_timeout = settings.idle_connection_timeout;
+                poll_interval = settings.poll_interval;
+            }
 
             /** If part_uuids got received in previous packet, trying to read again.
               */
@@ -274,10 +285,10 @@ void TCPHandler::runImpl()
                 if (context != query_context)
                     throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
 
-                size_t poll_interval;
+                size_t poll_interval_ms;
                 int receive_timeout;
-                std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
-                if (!readDataNext(poll_interval, receive_timeout))
+                std::tie(poll_interval_ms, receive_timeout) = getReadTimeouts(connection_settings);
+                if (!readDataNext(poll_interval_ms, receive_timeout))
                 {
                     state.block_in.reset();
                     state.maybe_compressed_in.reset();
@@ -299,6 +310,8 @@ void TCPHandler::runImpl()
             bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
+
+            unknown_packet_in_send_data = query_context->getSettingsRef().unknown_packet_in_send_data;
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -462,7 +475,7 @@ void TCPHandler::runImpl()
 }
 
 
-bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_timeout)
+bool TCPHandler::readDataNext(size_t poll_interval, time_t receive_timeout)
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
@@ -480,8 +493,8 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
          *  If we periodically poll, the receive_timeout of the socket itself does not work.
          *  Therefore, an additional check is added.
          */
-        double elapsed = watch.elapsedSeconds();
-        if (elapsed > receive_timeout)
+        Float64 elapsed = watch.elapsedSeconds();
+        if (elapsed > static_cast<Float64>(receive_timeout))
         {
             throw Exception(ErrorCodes::SOCKET_TIMEOUT,
                             "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
@@ -522,10 +535,7 @@ std::tuple<size_t, int> TCPHandler::getReadTimeouts(const Settings & connection_
 
 void TCPHandler::readData(const Settings & connection_settings)
 {
-    size_t poll_interval;
-    int receive_timeout;
-
-    std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
+    auto [poll_interval, receive_timeout] = getReadTimeouts(connection_settings);
     sendLogs();
 
     while (readDataNext(poll_interval, receive_timeout))
@@ -557,7 +567,16 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     /// Send block to the client - table structure.
     sendData(state.io.out->getHeader());
 
-    readData(connection_settings);
+    try
+    {
+        readData(connection_settings);
+    }
+    catch (...)
+    {
+        /// To avoid flushing from the destructor, that may lead to uncaught exception.
+        state.io.out->writeSuffix();
+        throw;
+    }
     state.io.out->writeSuffix();
 }
 
@@ -726,7 +745,7 @@ void TCPHandler::processTablesStatusRequest()
             status.absolute_delay = replicated_table->getAbsoluteDelay();
         }
         else
-            status.is_replicated = false;
+            status.is_replicated = false; //-V1048
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
@@ -985,8 +1004,6 @@ bool TCPHandler::receivePacket()
 
     switch (packet_type)
     {
-        case Protocol::Client::ReadTaskResponse:
-            throw Exception("ReadTaskResponse must be received only after requesting in callback", ErrorCodes::LOGICAL_ERROR);
         case Protocol::Client::IgnoredPartUUIDs:
             /// Part uuids packet if any comes before query.
             receiveIgnoredPartUUIDs();
@@ -1463,6 +1480,14 @@ void TCPHandler::sendData(const Block & block)
 
     try
     {
+        /// For testing hedged requests
+        if (unknown_packet_in_send_data)
+        {
+            --unknown_packet_in_send_data;
+            if (unknown_packet_in_send_data == 0)
+                writeVarUInt(UInt64(-1), *out);
+        }
+
         writeVarUInt(Protocol::Server::Data, *out);
         /// Send external table name (empty name is the main table)
         writeStringBinary("", *out);

@@ -29,6 +29,12 @@ class Pipe;
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
 
+namespace JSONBuilder
+{
+    class IItem;
+    using ItemPtr = std::unique_ptr<IItem>;
+}
+
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimizations.
@@ -66,6 +72,8 @@ public:
         bool description = true;
         /// Add detailed information about step actions.
         bool actions = false;
+        /// Add information about indexes actions.
+        bool indexes = false;
     };
 
     struct ExplainPipelineOptions
@@ -74,6 +82,7 @@ public:
         bool header = false;
     };
 
+    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
 

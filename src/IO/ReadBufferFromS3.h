@@ -28,8 +28,8 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
+    UInt64 s3_max_single_read_retries;
     size_t buffer_size;
-    bool initialized = false;
 
     off_t offset = 0;
     off_t read_end = 0;
@@ -44,6 +44,7 @@ public:
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
+        UInt64 s3_max_single_read_retries_,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;
@@ -54,9 +55,7 @@ public:
     void setRange(size_t begin, size_t end);
 
 private:
-    void initialize();
-    std::unique_ptr<ReadBuffer> createImpl();
-    void checkNotInitialized() const;
+    std::unique_ptr<ReadBuffer> initialize();
 };
 
 
@@ -69,13 +68,15 @@ public:
         const String & bucket_,
         const String & key_,
         size_t range_step_,
-        size_t object_size_)
+        size_t object_size_,
+        UInt64 s3_max_single_read_retries_)
         : client_ptr(client_ptr_)
         , bucket(bucket_)
         , key(key_)
         , from_range(0)
         , range_step(range_step_)
         , object_size(object_size_)
+        , s3_max_single_read_retries(s3_max_single_read_retries_)
     {
         assert(range_step > 0);
         assert(range_step < object_size);
@@ -93,6 +94,7 @@ private:
     size_t range_step;
     size_t object_size;
 
+    UInt64 s3_max_single_read_retries;
 };
 
 }

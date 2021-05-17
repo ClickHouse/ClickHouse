@@ -220,7 +220,7 @@ private:
     }
 
 public:
-    AggregateFunctionHistogramData()
+    AggregateFunctionHistogramData() //-V730
         : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())

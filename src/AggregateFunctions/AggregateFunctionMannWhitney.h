@@ -6,7 +6,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/PODArray_fwd.h>
 #include <common/types.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -21,7 +20,7 @@
 
 #include <Common/ArenaAllocator.h>
 
-#include <iostream>
+
 namespace DB
 {
 

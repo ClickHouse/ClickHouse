@@ -27,6 +27,40 @@ toc_title: "Комбинаторы агрегатных функций"
 
 Комбинаторы -If и -Array можно сочетать. При этом, должен сначала идти Array, а потом If. Примеры: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Из-за такого порядка получается, что аргумент cond не должен быть массивом.
 
+## -SimpleState {#agg-functions-combinator-simplestate}
+
+При использовании этого комбинатора агрегатная функция возвращает то же значение, но типа [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md). Текущее значение функции может храниться в таблице для последующей работы с таблицами семейства [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
+
+**Синтаксис**
+
+``` sql
+<aggFunction>SimpleState(x)
+```
+
+**Аргументы**
+
+-   `x` — параметры агрегатной функции.
+
+**Возвращаемое значение**
+
+Значение агрегатной функции типа `SimpleAggregateFunction(...)`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+Результат:
+
+``` text
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
+
 ## -State {#state}
 
 В случае применения этого комбинатора, агрегатная функция возвращает не готовое значение (например, в случае функции [uniq](reference/uniq.md#agg_function-uniq) — количество уникальных значений), а промежуточное состояние агрегации (например, в случае функции `uniq` — хэш-таблицу для расчёта количества уникальных значений), которое имеет тип `AggregateFunction(...)` и может использоваться для дальнейшей обработки или может быть сохранено в таблицу для последующей доагрегации.
@@ -247,4 +281,3 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
-
