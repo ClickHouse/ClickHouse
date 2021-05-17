@@ -364,7 +364,7 @@ void registerDiskLocal(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       ContextConstPtr context,
-		      const DisksMap & /*map*/) -> DiskPtr {
+                      const DisksMap & /*map*/) -> DiskPtr {
         String path = config.getString(config_prefix + ".path", "");
         if (name == "default")
         {

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Disks/IDisk.h>
+#include <Disks/DiskDecorator.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 
-#include <Disks/DiskDecorator.h>
 
 namespace DB
 {
