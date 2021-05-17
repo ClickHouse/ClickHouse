@@ -129,7 +129,9 @@ bool PartMovesBetweenShardsOrchestrator::step()
 
     try
     {
-        stepEntry(entry_to_process.value());
+        /// Use the same ZooKeeper connection. If we'd lost the lock then connection
+        /// will become expired and all consequent operations will fail.
+        stepEntry(entry_to_process.value(), zk);
     }
     catch (...)
     {
@@ -146,10 +148,8 @@ bool PartMovesBetweenShardsOrchestrator::step()
     return true;
 }
 
-void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry)
+void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk)
 {
-    auto zk = storage.getZooKeeper();
-
     switch (entry.state.value)
     {
         case EntryState::DONE:
