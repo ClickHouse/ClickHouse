@@ -179,6 +179,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,

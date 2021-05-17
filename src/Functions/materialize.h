@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>

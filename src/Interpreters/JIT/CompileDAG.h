@@ -12,7 +12,7 @@
 
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 
 namespace llvm
 {
