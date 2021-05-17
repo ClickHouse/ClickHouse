@@ -42,7 +42,7 @@ def started_cluster():
 def test_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
-            r.query("DROP TABLE IF EXISTS t")
+            r.query("DROP TABLE IF EXISTS t SYNC")
             r.query("""
             CREATE TABLE t(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/t', '{}')
