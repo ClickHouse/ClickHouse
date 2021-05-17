@@ -91,7 +91,7 @@ template <typename ToType, typename Name>
 class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
 {
 public:
-    explicit FunctionRandom(ContextPtr context) : selector(context)
+    explicit FunctionRandom(const Context & context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
@@ -107,7 +107,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionRandom<ToType, Name>>(context);
     }

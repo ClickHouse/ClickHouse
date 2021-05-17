@@ -56,7 +56,7 @@ private:
 protected:
     Poco::Logger * log;
 
-    ContextPtr connection_context;
+    Context connection_context;
 
     std::shared_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
 

@@ -20,3 +20,4 @@ toc_title: Set
 
 -   [persistent](../../../operations/settings/settings.md#persistent)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/set/) <!--hide-->

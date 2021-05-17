@@ -30,7 +30,7 @@ class FunctionLeastGreatestGeneric : public IFunction
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionLeastGreatestGeneric<kind>>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionLeastGreatestGeneric<kind>>(); }
 
 private:
     String getName() const override { return name; }
@@ -92,12 +92,12 @@ class LeastGreatestOverloadResolver : public IFunctionOverloadResolverImpl
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
 
-    static FunctionOverloadResolverImplPtr create(ContextPtr context)
+    static FunctionOverloadResolverImplPtr create(const Context & context)
     {
         return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context);
     }
 
-    explicit LeastGreatestOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit LeastGreatestOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -127,7 +127,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    const Context & context;
 };
 
 }

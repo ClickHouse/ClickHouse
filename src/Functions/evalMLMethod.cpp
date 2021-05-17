@@ -28,11 +28,11 @@ class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
+    explicit FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
 
     String getName() const override
@@ -81,7 +81,7 @@ public:
         return agg_function->predictValues(arguments, context);
     }
 
-    ContextPtr context;
+    const Context & context;
 };
 
 }

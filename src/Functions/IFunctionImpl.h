@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Functions/IFunction.h>
 
 /// This file contains developer interface for functions.
@@ -96,7 +95,7 @@ public:
 
     virtual bool isCompilable() const { return false; }
 
-    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, Values /*values*/) const
+    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const
     {
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -237,6 +236,20 @@ public:
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
+#if USE_EMBEDDED_COMPILER
+
+    virtual bool isCompilable() const
+    {
+        throw Exception("isCompilable without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const
+    {
+        throw Exception("compile without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+#endif
+
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
@@ -284,7 +297,7 @@ public:
 
     bool isCompilable(const DataTypes & arguments) const;
 
-    llvm::Value * compile(llvm::IRBuilderBase &, const DataTypes & arguments, Values values) const;
+    llvm::Value * compile(llvm::IRBuilderBase &, const DataTypes & arguments, ValuePlaceholders values) const;
 
 #endif
 
@@ -294,7 +307,7 @@ protected:
 
     virtual bool isCompilableImpl(const DataTypes &) const { return false; }
 
-    virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, Values) const
+    virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, ValuePlaceholders) const
     {
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }

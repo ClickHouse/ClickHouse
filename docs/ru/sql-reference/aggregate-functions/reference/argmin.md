@@ -20,7 +20,7 @@ argMin(arg, val)
 argMin(tuple(arg, val))
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `arg` — аргумент.
 -   `val` — значение.
@@ -63,3 +63,4 @@ SELECT argMin(user, salary), argMin(tuple(user, salary)) FROM salary;
 └──────────────────────┴─────────────────────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/argmin/) <!--hide-->

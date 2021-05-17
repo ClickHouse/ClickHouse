@@ -1,11 +1,9 @@
 #pragma once
-
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -23,7 +21,7 @@ class FunctionStringToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionStringToString>();
     }

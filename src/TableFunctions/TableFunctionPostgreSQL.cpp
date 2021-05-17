@@ -10,9 +10,7 @@
 #include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Common/quoteString.h>
-#include <Common/parseRemoteDescription.h>
-#include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 
 
 namespace DB
@@ -26,38 +24,28 @@ namespace ErrorCodes
 
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+        const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
-        StorageID(getDatabaseName(), table_name),
-        connection_pool,
-        remote_table_name,
-        columns,
-        ConstraintsDescription{},
-        String{},
-        context,
-        remote_table_schema);
+            StorageID(getDatabaseName(), table_name), remote_table_name,
+            connection, columns, ConstraintsDescription{}, context);
 
     result->startup();
     return result;
 }
 
 
-ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Context & context) const
 {
-    const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
-    auto columns = fetchPostgreSQLTableStructure(
-            connection_pool->get(),
-            remote_table_schema.empty() ? doubleQuoteString(remote_table_name)
-                                        : doubleQuoteString(remote_table_schema) + '.' + doubleQuoteString(remote_table_name),
-            use_nulls);
+    const bool use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
+    auto columns = fetchPostgreSQLTableStructure(connection->conn(), remote_table_name, use_nulls);
 
     return ColumnsDescription{*columns};
 }
 
 
-void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
 
@@ -66,27 +54,21 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 
     ASTs & args = func_args.arguments->children;
 
-    if (args.size() < 5 || args.size() > 6)
-        throw Exception("Table function 'PostgreSQL' requires from 5 to 6 parameters: "
-                        "PostgreSQL('host:port', 'database', 'table', 'user', 'password', [, 'schema']).",
+    if (args.size() != 5)
+        throw Exception("Table function 'PostgreSQL' requires 5 parameters: "
+                        "PostgreSQL('host:port', 'database', 'table', 'user', 'password').",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    /// Split into replicas if needed. 5432 is a default postgresql port.
-    const auto & host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-    auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-
+    auto parsed_host_port = parseAddress(args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (args.size() == 6)
-        remote_table_schema = args[5]->as<ASTLiteral &>().value.safeGet<String>();
-
-    connection_pool = std::make_shared<postgres::PoolWithFailover>(
+    connection = std::make_shared<PostgreSQLConnection>(
         args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-        addresses,
+        parsed_host_port.first,
+        parsed_host_port.second,
         args[3]->as<ASTLiteral &>().value.safeGet<String>(),
         args[4]->as<ASTLiteral &>().value.safeGet<String>());
 }

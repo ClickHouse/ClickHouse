@@ -12,7 +12,7 @@ class IServer;
 class ReplicasStatusHandler : public HTTPRequestHandler
 {
 private:
-    ContextPtr context;
+    Context & context;
 
 public:
     explicit ReplicasStatusHandler(IServer & server_);
