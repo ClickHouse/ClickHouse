@@ -64,11 +64,13 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const DataPartPtr & new_pa
 
 void MergeTreeTransaction::addNewPart(const DataPartPtr & new_part)
 {
+    assert(csn == Tx::UnknownCSN);
     creating_parts.push_back(new_part);
 }
 
 void MergeTreeTransaction::removeOldPart(const DataPartPtr & part_to_remove)
 {
+    assert(csn == Tx::UnknownCSN);
     removing_parts.push_back(part_to_remove);
 }
 

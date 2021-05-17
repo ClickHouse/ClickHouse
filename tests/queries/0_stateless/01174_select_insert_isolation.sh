@@ -8,7 +8,7 @@ set -e
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mt";
 $CLICKHOUSE_CLIENT --query "CREATE TABLE mt (n Int8, m Int8) ENGINE=MergeTree ORDER BY n PARTITION BY 0 < n";
-$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES mt"; #FIXME
+#$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES mt"; #FIXME
 
 function thread_insert_commit()
 {
@@ -35,13 +35,15 @@ function thread_select()
 {
     trap "exit 0" INT
     while true; do
+        # Result of `uniq | wc -l` must be 1 if the first and the last queries got the same result
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        SELECT arraySort(groupArray(n)), arraySort(groupArray(m)) FROM mt;
+        SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt;
         SELECT throwIf((SELECT sum(n) FROM mt) != 0) FORMAT Null;
         SELECT throwIf((SELECT count() FROM mt) % 2 != 0) FORMAT Null;
-        SELECT arraySort(groupArray(n)), arraySort(groupArray(m)) FROM mt;
-        COMMIT;" | uniq | wc -l | grep -v "^1$" ||:; # Must be 1 if the first and the last queries got the same result
+        SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt;
+        COMMIT;" | tee -a ./wtf.log | uniq | wc -l | grep -v "^1$" && $CLICKHOUSE_CLIENT -q "SELECT * FROM system.parts
+        WHERE database='$CLICKHOUSE_DATABASE' AND table='mt'" ||:;
     done
 }
 
@@ -57,4 +59,4 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;
 SELECT count(), sum(n), sum(m=1), sum(m=2), sum(m=3) FROM mt;";
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE mt";
+#$CLICKHOUSE_CLIENT --query "DROP TABLE mt";

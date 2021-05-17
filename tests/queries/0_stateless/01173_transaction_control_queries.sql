@@ -3,8 +3,8 @@ drop table if exists mt2;
 
 create table mt1 (n Int64) engine=MergeTree order by n;
 create table mt2 (n Int64) engine=MergeTree order by n;
-system stop merges mt1; --FIXME
-system stop merges mt2; --FIXME
+--system stop merges mt1; --FIXME
+--system stop merges mt2; --FIXME
 
 commit; -- { serverError 585 }
 rollback; -- { serverError 585 }
@@ -45,10 +45,9 @@ select 'on exception while processing', arraySort(groupArray(n)) from (select n 
 select throwIf(100 < number) from numbers(1000); -- { serverError 395 }
 -- cannot commit after exception
 commit; -- { serverError 585 }
--- FIXME Transactions: do not allow queries after exception
-insert into mt1 values (5);
-insert into mt2 values (50);
-select 1;
+insert into mt1 values (5); -- { serverError 585 }
+insert into mt2 values (50); -- { serverError 585 }
+select 1; -- { serverError 585 }
 rollback;
 
 begin transaction;

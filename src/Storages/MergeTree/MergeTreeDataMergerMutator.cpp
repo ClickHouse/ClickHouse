@@ -213,9 +213,13 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
     bool merge_with_ttl_allowed,
+    const MergeTreeTransactionPtr & txn,
     String * out_disable_reason)
 {
-    MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
+
+    MergeTreeData::DataPartsVector data_parts = data.getVisibleDataPartsVector(txn);
+    //FIXME get rid of sorting
+    std::sort(data_parts.begin(), data_parts.end(), MergeTreeData::LessDataPart());
     const auto data_settings = data.getSettings();
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
@@ -1461,10 +1465,18 @@ MergeAlgorithm MergeTreeDataMergerMutator::chooseMergeAlgorithm(
 MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart(
     MergeTreeData::MutableDataPartPtr & new_data_part,
     const MergeTreeData::DataPartsVector & parts,
+    const MergeTreeTransactionPtr & txn,
     MergeTreeData::Transaction * out_transaction)
 {
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, nullptr, out_transaction);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, txn.get(), nullptr, out_transaction);
+    //String parts_str;
+    //for (const auto & p : parts)
+    //    parts_str += "\t" + p->name;
+    //String parts_str2;
+    //for (const auto & p : replaced_parts)
+    //    parts_str2 += "\t" + p->name;
+    //LOG_ERROR(log, "WTF {}: source {}, replaced {}", new_data_part->name, parts_str, parts_str2);
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())

@@ -25,6 +25,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/ASTTransactionControl.h>
 #include <Parsers/Lexer.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -78,6 +79,7 @@ namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INVALID_TRANSACTION;
 }
 
 
@@ -395,6 +397,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO: parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 #endif
+
+        if (auto txn = context->getCurrentTransaction())
+        {
+            assert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>())
+                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
+        }
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.

@@ -16,11 +16,13 @@ public:
     MergeTreeTransactionHolder & operator=(MergeTreeTransactionHolder && rhs) noexcept;
     ~MergeTreeTransactionHolder();
 
-    /// NOTE: We cannot make it noncopyable, because we use it as a filed of Context.
+    /// NOTE: We cannot make it noncopyable, because we use it as a field of Context.
     /// So the following copy constructor and operator does not copy anything,
     /// they just leave txn nullptr.
     MergeTreeTransactionHolder(const MergeTreeTransactionHolder & rhs);
     MergeTreeTransactionHolder & operator=(const MergeTreeTransactionHolder & rhs);
+
+    MergeTreeTransactionPtr getTransaction() const { return txn; }
 
 private:
     void onDestroy() noexcept;
