@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 
 
