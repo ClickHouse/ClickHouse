@@ -2610,7 +2610,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
 
         part = get_part();
 
-        ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false);
+        ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, getContext(), false);
         output.writeExistingPart(part, "clone_part_from_shard_" + entry.block_id);
     }
 }

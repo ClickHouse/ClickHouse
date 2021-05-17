@@ -439,6 +439,14 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
         return res;
     }
 
+    /// Doesn't produce any part.
+    if (type == SYNC_PINNED_PART_UUIDS)
+        return {};
+
+    /// Doesn't produce any part by itself.
+    if (type == CLONE_PART_FROM_SHARD)
+        return {};
+
     return {new_part_name};
 }
 

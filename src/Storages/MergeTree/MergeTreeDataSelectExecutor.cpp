@@ -528,6 +528,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             selectPartsToReadWithUUIDFilter(
                 parts,
                 part_values,
+                data.getPinnedPartUUIDs(),
                 minmax_idx_condition,
                 minmax_columns_types,
                 partition_pruner,
