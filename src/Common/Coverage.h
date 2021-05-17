@@ -76,6 +76,8 @@ public:
             shutdown = true;
         }
 
+        task_or_shutdown.notify_all();
+
         if (worker.joinable())
             worker.join();
     }
