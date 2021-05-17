@@ -36,7 +36,6 @@ public:
         public:
             DisclosedGlobIterator(Aws::S3::S3Client &, const S3::URI &);
             String next();
-            size_t totalObjectsEstimate() const;
         private:
             class Impl;
             /// shared_ptr to have copy constructor
