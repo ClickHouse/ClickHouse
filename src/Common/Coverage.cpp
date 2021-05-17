@@ -55,6 +55,19 @@ inline void setOrIncrement(T& container, typename T::key_type key, typename T::m
 }
 }
 
+TaskQueue::~TaskQueue()
+{
+    {
+        std::lock_guard lock(mutex);
+        shutdown = true;
+    }
+
+    task_or_shutdown.notify_all();
+
+    if (worker.joinable())
+        worker.join();
+}
+
 void TaskQueue::workerThread()
 {
     while (true)
@@ -87,7 +100,7 @@ void TaskQueue::workerThread()
 }
 
 constexpr const std::string_view docker_ch_src = "/build/src";
-constexpr const std::string_view docker_report_path = "/home/myrrc/report.ccr";
+constexpr const std::string_view docker_report_path = "/report.ccr";
 
 Writer::Writer()
     : hardware_concurrency(std::thread::hardware_concurrency()),
@@ -95,7 +108,6 @@ Writer::Writer()
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
 
-      // TODO works only in docker
       clickhouse_src_dir_abs_path(docker_ch_src),
       report_path(docker_report_path),
 

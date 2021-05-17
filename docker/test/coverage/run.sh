@@ -22,13 +22,10 @@ kill_clickhouse () {
 }
 
 start_clickhouse () {
-    #sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml &
-    /usr/bin/clickhouse server --config /etc/clickhouse-server/config.xml &
+    sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml &
     counter=0
 
-    # TODO
-    # until clickhouse-client --query "SELECT 1"
-    until /usr/bin/clickhouse client --query "SELECT 1"
+    until clickhouse-client --query "SELECT 1"
     do
         if [ "$counter" -gt 120 ]
         then
@@ -56,7 +53,7 @@ wail_till_ready () {
     echo "Symbolized addresses"
     echo "$addr_time"
 
-    instrumented_contribs=$(grep "contrib/" < report.ccr)
+    instrumented_contribs=$(grep "contrib/" < /report.ccr)
     has_contribs=$(echo "$instrumented_contribs" | wc -l)
 
     if ((has_contribs > 0)); then
@@ -70,26 +67,18 @@ wail_till_ready () {
 
 chmod 777 /
 
-# TODO
-# dpkg -i package_folder/clickhouse-common-static_*.deb; \
-#     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
-#     dpkg -i package_folder/clickhouse-server_*.deb;  \
-#     dpkg -i package_folder/clickhouse-client_*.deb; \
-#     dpkg -i package_folder/clickhouse-test_*.deb
-
-cp build/san_full/programs/clickhouse /usr/bin/clickhouse
-cp build/tests/clickhouse-test /usr/bin/clickhouse-test
-mkdir /etc/clickhouse-server
-cp build/programs/server/config.xml /etc/clickhouse-server/config.xml
-cp build/programs/server/users.xml /etc/clickhouse-server/users.xml
-mkdir /home/myrrc
+dpkg -i package_folder/clickhouse-common-static_*.deb; \
+    dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
+    dpkg -i package_folder/clickhouse-server_*.deb;  \
+    dpkg -i package_folder/clickhouse-client_*.deb; \
+    dpkg -i package_folder/clickhouse-test_*.deb
 
 mkdir -p /var/lib/clickhouse
 mkdir -p /var/log/clickhouse-server
 chmod 777 -R /var/log/clickhouse-server/
 
 # install test configs
-# TODO /usr/share/clickhouse-test/config/install.sh
+/usr/share/clickhouse-test/config/install.sh
 
 start_clickhouse
 

@@ -5,8 +5,6 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             clang-tools-11 \
             cmake \
-# TODO
-            lldb-11 \
             c++filt
 
 COPY s3downloader /s3downloader

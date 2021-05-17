@@ -69,18 +69,7 @@ public:
         task_or_shutdown.notify_one();
     }
 
-    ~TaskQueue()
-    {
-        {
-            std::lock_guard lock(mutex);
-            shutdown = true;
-        }
-
-        task_or_shutdown.notify_all();
-
-        if (worker.joinable())
-            worker.join();
-    }
+    ~TaskQueue();
 
 private:
     using Task = std::function<void()>;
