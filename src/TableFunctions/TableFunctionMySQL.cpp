@@ -38,7 +38,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Context & context)
+void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -61,7 +61,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Conte
     password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
     /// Split into replicas if needed. 3306 is the default MySQL port number
-    size_t max_addresses = context.getSettingsRef().glob_expansion_max_elements;
+    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
     auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
     pool.emplace(remote_database_name, addresses, user_name, password);
 
@@ -76,19 +76,24 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Conte
             ErrorCodes::BAD_ARGUMENTS);
 }
 
-ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context) const
 {
-    const auto & settings = context.getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
+    const auto & settings = context->getSettingsRef();
+    const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings, settings.mysql_datatypes_support_level);
 
     const auto columns = tables_and_columns.find(remote_table_name);
     if (columns == tables_and_columns.end())
-        throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("MySQL table " + (remote_database_name.empty() ? "" : (backQuote(remote_database_name) + "."))
+            + backQuote(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     return ColumnsDescription{columns->second};
 }
 
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionMySQL::executeImpl(
+    const ASTPtr & /*ast_function*/,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
 
@@ -101,6 +106,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, cons
         on_duplicate_clause,
         columns,
         ConstraintsDescription{},
+        String{},
         context);
 
     pool.reset();

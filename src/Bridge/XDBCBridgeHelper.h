@@ -35,7 +35,9 @@ class IXDBCBridgeHelper : public IBridgeHelper
 {
 
 public:
-    virtual std::vector<std::pair<std::string, std::string>> getURLParams(const std::string & cols, UInt64 max_block_size) const = 0;
+    explicit IXDBCBridgeHelper(ContextPtr context_) : IBridgeHelper(context_) {}
+
+    virtual std::vector<std::pair<std::string, std::string>> getURLParams(UInt64 max_block_size) const = 0;
 
     virtual Poco::URI getColumnsInfoURI() const = 0;
 
@@ -43,7 +45,7 @@ public:
 
     virtual bool isSchemaAllowed() = 0;
 
-    virtual const String getName() const = 0;
+    virtual String getName() const = 0;
 };
 
 using BridgeHelperPtr = std::shared_ptr<IXDBCBridgeHelper>;
@@ -60,37 +62,34 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
 
     XDBCBridgeHelper(
-            const Context & global_context_,
-            const Poco::Timespan & http_timeout_,
-            const std::string & connection_string_)
-    : log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
+        ContextPtr context_,
+        Poco::Timespan http_timeout_,
+        const std::string & connection_string_)
+    : IXDBCBridgeHelper(context_->getGlobalContext())
+    , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
     , connection_string(connection_string_)
     , http_timeout(http_timeout_)
-    , context(global_context_)
-    , config(context.getConfigRef())
+    , config(context_->getGlobalContext()->getConfigRef())
 {
     bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
     bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
 }
 
-
 protected:
     auto getConnectionString() const { return connection_string; }
 
-    const String getName() const override { return BridgeHelperMixin::getName(); }
+    String getName() const override { return BridgeHelperMixin::getName(); }
 
     size_t getDefaultPort() const override { return DEFAULT_PORT; }
 
-    const String serviceAlias() const override { return BridgeHelperMixin::serviceAlias(); }
+    String serviceAlias() const override { return BridgeHelperMixin::serviceAlias(); }
 
     /// Same for odbc and jdbc
-    const String serviceFileName() const override { return "clickhouse-odbc-bridge"; }
+    String serviceFileName() const override { return "clickhouse-odbc-bridge"; }
 
-    const String configPrefix() const override { return BridgeHelperMixin::configPrefix(); }
+    String configPrefix() const override { return BridgeHelperMixin::configPrefix(); }
 
-    const Context & getContext() const override { return context; }
-
-    const Poco::Timespan & getHTTPTimeout() const override { return http_timeout; }
+    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
     const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
@@ -109,7 +108,7 @@ protected:
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-        context.addBridgeCommand(std::move(cmd));
+        getContext()->addBridgeCommand(std::move(cmd));
     }
 
 
@@ -118,11 +117,10 @@ private:
 
     Poco::Logger * log;
     std::string connection_string;
-    const Poco::Timespan & http_timeout;
+    Poco::Timespan http_timeout;
     std::string bridge_host;
     size_t bridge_port;
 
-    const Context & context;
     const Configuration & config;
 
     std::optional<IdentifierQuotingStyle> quote_style;
@@ -139,12 +137,11 @@ protected:
         return uri;
     }
 
-    URLParams getURLParams(const std::string & cols, UInt64 max_block_size) const override
+    URLParams getURLParams(UInt64 max_block_size) const override
     {
         std::vector<std::pair<std::string, std::string>> result;
 
         result.emplace_back("connection_string", connection_string); /// already validated
-        result.emplace_back("columns", cols);
         result.emplace_back("max_block_size", std::to_string(max_block_size));
 
         return result;
@@ -160,8 +157,7 @@ protected:
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(
-                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
 
             bool res;
             readBoolText(res, buf);
@@ -181,12 +177,14 @@ protected:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(
-                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+
             std::string character;
             readStringBinary(character, buf);
             if (character.length() > 1)
-                throw Exception("Failed to parse quoting style from '" + character + "' for service " + BridgeHelperMixin::serviceAlias(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(
+                    "Failed to parse quoting style from '" + character + "' for service " + BridgeHelperMixin::serviceAlias(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else if (character.length() == 0)
                 quote_style = IdentifierQuotingStyle::None;
             else if (character[0] == '`')
@@ -206,17 +204,17 @@ struct JDBCBridgeMixin
 {
     static constexpr inline auto DEFAULT_PORT = 9019;
 
-    static const String configPrefix()
+    static String configPrefix()
     {
         return "jdbc_bridge";
     }
 
-    static const String serviceAlias()
+    static String serviceAlias()
     {
         return "clickhouse-jdbc-bridge";
     }
 
-    static const String getName()
+    static String getName()
     {
         return "JDBC";
     }
@@ -237,17 +235,17 @@ struct ODBCBridgeMixin
 {
     static constexpr inline auto DEFAULT_PORT = 9018;
 
-    static const String configPrefix()
+    static String configPrefix()
     {
         return "odbc_bridge";
     }
 
-    static const String serviceAlias()
+    static String serviceAlias()
     {
         return "clickhouse-odbc-bridge";
     }
 
-    static const String getName()
+    static String getName()
     {
         return "ODBC";
     }

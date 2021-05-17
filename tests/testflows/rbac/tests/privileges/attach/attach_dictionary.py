@@ -59,7 +59,7 @@ def privilege_check(grant_target_name, user_name, node=None):
 
             with Then("I attempt to attach a dictionary"):
                 node.query(f"ATTACH DICTIONARY {dict_name}", settings = [("user", user_name)],
-                    exitcode=231, message=f"DB::Exception: Dictionary `{dict_name}` doesn't exist.")
+                    exitcode=134, message=f"DB::Exception: Table `{dict_name}` doesn't exist.")
 
         finally:
             with Finally("I drop the dictionary"):
@@ -110,7 +110,7 @@ def privilege_check(grant_target_name, user_name, node=None):
 
             with Then("I attempt to attach a dictionary"):
                 node.query(f"ATTACH DICTIONARY {dict_name}", settings = [("user", user_name)],
-                    exitcode=231, message=f"DB::Exception: Dictionary `{dict_name}` doesn't exist.")
+                    exitcode=134, message=f"DB::Exception: Table `{dict_name}` doesn't exist.")
 
         finally:
             with Finally("I drop the dictionary"):

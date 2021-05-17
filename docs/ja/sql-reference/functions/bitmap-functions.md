@@ -35,7 +35,7 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
 
 ``` text
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
-│     │ AggregateFunction(groupBitmap, UInt8)    │
+│     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
 ```
 

@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 
@@ -13,7 +13,7 @@ class FunctionDefaultValueOfArgumentType : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfArgumentType";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionDefaultValueOfArgumentType>();
     }

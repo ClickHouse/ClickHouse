@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <ext/range.h>
 
 
@@ -24,7 +24,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
     }

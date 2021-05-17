@@ -21,12 +21,12 @@ namespace ErrorCodes
 }
 
 /// A function to read file as a string.
-class FunctionFile : public IFunction
+class FunctionFile : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(const Context &context) { return std::make_shared<FunctionFile>(context); }
-    explicit FunctionFile(const Context &context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionFile>(context_); }
+    explicit FunctionFile(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -68,7 +68,7 @@ public:
         {
             const char * filename = reinterpret_cast<const char *>(&chars[source_offset]);
 
-            const String user_files_path = context.getUserFilesPath();
+            const String user_files_path = getContext()->getUserFilesPath();
             String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
             Poco::Path poco_filepath = Poco::Path(filename);
             if (poco_filepath.isRelative())
@@ -113,7 +113,7 @@ private:
     void checkReadIsAllowedOrThrow(const std::string & user_files_absolute_path, const std::string & file_absolute_path) const
     {
         // If run in Local mode, no need for path checking.
-        if (context.getApplicationType() != Context::ApplicationType::LOCAL)
+        if (getContext()->getApplicationType() != Context::ApplicationType::LOCAL)
             if (file_absolute_path.find(user_files_absolute_path) != 0)
                 throw Exception("File is not inside " + user_files_absolute_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
@@ -121,8 +121,6 @@ private:
         if (path_poco_file.exists() && path_poco_file.isDirectory())
             throw Exception("File can't be a directory", ErrorCodes::INCORRECT_FILE_NAME);
     }
-
-    const Context & context;
 };
 
 

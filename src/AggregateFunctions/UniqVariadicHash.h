@@ -3,7 +3,6 @@
 #include <city.h>
 #include <Core/Defines.h>
 #include <Common/SipHash.h>
-#include <Common/UInt128.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnTuple.h>
 
@@ -107,7 +106,7 @@ struct UniqVariadicHash<true, false>
         }
 
         UInt128 key;
-        hash.get128(key.low, key.high);
+        hash.get128(key);
         return key;
     }
 };
@@ -131,7 +130,7 @@ struct UniqVariadicHash<true, true>
         }
 
         UInt128 key;
-        hash.get128(key.low, key.high);
+        hash.get128(key);
         return key;
     }
 };

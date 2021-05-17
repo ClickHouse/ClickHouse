@@ -9,6 +9,7 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_mysql_cluster=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'], user_configs=['configs/users.xml'], with_mysql=True)
 
 create_table_sql_template = """
     CREATE TABLE `clickhouse`.`{}` (
@@ -258,6 +259,25 @@ def test_mysql_distributed(started_cluster):
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
     started_cluster.unpause_container('mysql1')
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
+
+
+def test_external_settings(started_cluster):
+    table_name = 'test_external_settings'
+    conn = get_mysql_conn()
+    create_mysql_table(conn, table_name)
+
+    node3.query('''
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+'''.format(table_name, table_name))
+    node3.query(
+        "INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(100) ".format(
+            table_name))
+    assert node3.query("SELECT count() FROM {}".format(table_name)).rstrip() == '100'
+    assert node3.query("SELECT sum(money) FROM {}".format(table_name)).rstrip() == '300'
+    node3.query("select value from system.settings where name = 'max_block_size' FORMAT TSV") == "2\n"
+    node3.query("select value from system.settings where name = 'external_storage_max_read_rows' FORMAT TSV") == "0\n"
+    assert node3.query("SELECT COUNT(DISTINCT blockNumber()) FROM {} FORMAT TSV".format(table_name)) == '50\n'
+    conn.close()
 
 
 if __name__ == '__main__':

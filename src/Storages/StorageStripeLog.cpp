@@ -258,6 +258,7 @@ StorageStripeLog::StorageStripeLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -270,6 +271,7 @@ StorageStripeLog::StorageStripeLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -307,9 +309,9 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 }
 
 
-static std::chrono::seconds getLockTimeout(const Context & context)
+static std::chrono::seconds getLockTimeout(ContextPtr context)
 {
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
     if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
         lock_timeout = settings.max_execution_time.totalSeconds();
@@ -321,7 +323,7 @@ Pipe StorageStripeLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     unsigned num_streams)
@@ -358,7 +360,7 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, metadata_snapshot, column_names, context.getSettingsRef().max_read_buffer_size, index, begin, end));
+            *this, metadata_snapshot, column_names, context->getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -367,7 +369,7 @@ Pipe StorageStripeLog::read(
 }
 
 
-BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
+BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::unique_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
@@ -377,7 +379,7 @@ BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const Sto
 }
 
 
-CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Context & context)
+CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr context)
 {
     std::shared_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
@@ -386,7 +388,7 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Conte
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     disk->clearDirectory(table_path);
     file_checker = FileChecker{disk, table_path + "sizes.json"};
@@ -407,11 +409,17 @@ void registerStorageStripeLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         String disk_name = getDiskName(*args.storage_def);
-        DiskPtr disk = args.context.getDisk(disk_name);
+        DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return StorageStripeLog::create(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
-            args.attach, args.context.getSettings().max_compress_block_size);
+            disk,
+            args.relative_data_path,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.attach,
+            args.getContext()->getSettings().max_compress_block_size);
     }, features);
 }
 

@@ -3,7 +3,6 @@
 #include <type_traits>
 
 #include <Core/Types.h>
-#include <Common/UInt128.h>
 
 
 namespace DB
@@ -47,7 +46,7 @@ template <> struct Construct<false, false, 1> { using Type = UInt8; };
 template <> struct Construct<false, false, 2> { using Type = UInt16; };
 template <> struct Construct<false, false, 4> { using Type = UInt32; };
 template <> struct Construct<false, false, 8> { using Type = UInt64; };
-template <> struct Construct<false, false, 16> { using Type = UInt256; }; /// TODO: we cannot use our UInt128 here
+template <> struct Construct<false, false, 16> { using Type = UInt128; };
 template <> struct Construct<false, false, 32> { using Type = UInt256; };
 template <> struct Construct<false, true, 1> { using Type = Float32; };
 template <> struct Construct<false, true, 2> { using Type = Float32; };
@@ -183,11 +182,12 @@ struct ResultOfIf
                 ? max(sizeof(A), sizeof(B)) * 2
                 : max(sizeof(A), sizeof(B))>::Type;
 
-    using ConstructedTypeWithoutUUID = std::conditional_t<std::is_same_v<A, UInt128> || std::is_same_v<B, UInt128>, Error, ConstructedType>;
-    using ConstructedWithUUID = std::conditional_t<std::is_same_v<A, UInt128> && std::is_same_v<B, UInt128>, A, ConstructedTypeWithoutUUID>;
-
-    using Type = std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>, ConstructedWithUUID,
-        std::conditional_t<IsDecimalNumber<A> && IsDecimalNumber<B>, std::conditional_t<(sizeof(A) > sizeof(B)), A, B>, Error>>;
+    using Type =
+        std::conditional_t<std::is_same_v<A, B>, A,
+        std::conditional_t<IsDecimalNumber<A> && IsDecimalNumber<B>,
+            std::conditional_t<(sizeof(A) > sizeof(B)), A, B>,
+        std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>,
+            ConstructedType, Error>>>;
 };
 
 /** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */

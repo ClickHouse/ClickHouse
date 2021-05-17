@@ -6,7 +6,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Common/FieldVisitors.h>
 #include <Core/Block.h>
 #include <common/find_symbols.h>
 #include <Common/typeid_cast.h>
@@ -358,7 +357,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 TokenIterator(tokens),
                 token_iterator,
                 ast,
-                *context,
+                context,
                 &found_in_cache,
                 delimiter);
             templates[column_idx].emplace(structure);
@@ -400,7 +399,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf.position() = const_cast<char *>(token_iterator->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
+    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
 
     Field & expression_value = value_raw.first;
 

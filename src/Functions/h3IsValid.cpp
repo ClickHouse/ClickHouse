@@ -29,7 +29,7 @@ class FunctionH3IsValid : public IFunction
 public:
     static constexpr auto name = "h3IsValid";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3IsValid>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IsValid>(); }
 
     std::string getName() const override { return name; }
 

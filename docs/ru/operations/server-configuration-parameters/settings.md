@@ -291,7 +291,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## interserver_http_host {#interserver-http-host}
 
-Имя хоста, которое могут использовать другие серверы для обращения к этому.
+Имя хоста, которое могут использовать другие серверы для обращения к этому хосту.
 
 Если не указано, то определяется аналогично команде `hostname -f`.
 
@@ -303,10 +303,35 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
+## interserver_https_port {#interserver-https-port}
+
+Порт для обмена данными между репликами ClickHouse по протоколу `HTTPS`.
+
+**Пример**
+
+``` xml
+<interserver_https_port>9010</interserver_https_port>
+```
+
+## interserver_https_host {#interserver-https-host}
+
+Имя хоста, которое могут использовать другие реплики для обращения к нему по протоколу `HTTPS`.
+
+**Пример**
+
+``` xml
+<interserver_https_host>example.yandex.ru</interserver_https_host>
+```
+
+
+
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
 Имя пользователя и пароль, использующиеся для аутентификации при [репликации](../../operations/server-configuration-parameters/settings.md) движками Replicated\*. Это имя пользователя и пароль используются только для взаимодействия между репликами кластера и никак не связаны с аутентификацией клиентов ClickHouse. Сервер проверяет совпадение имени и пароля для соединяющихся с ним реплик, а также использует это же имя и пароль для соединения с другими репликами. Соответственно, эти имя и пароль должны быть прописаны одинаковыми для всех реплик кластера.
 По умолчанию аутентификация не используется.
+
+!!! note "Примечание"
+    Эти учетные данные являются общими для обмена данными по протоколам `HTTP` и `HTTPS`.
 
 Раздел содержит следующие параметры:
 
@@ -390,7 +415,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
     Значения по умолчанию: при указанном `address` - `LOG_USER`, иначе - `LOG_DAEMON`
 -   format - формат сообщений. Возможные значения - `bsd` и `syslog`
 
-## send_crash_reports {#server_configuration_parameters-logger}
+## send_crash_reports {#server_configuration_parameters-send_crash_reports}
 
 Настройки для отправки сообщений о сбоях в команду разработчиков ядра ClickHouse через [Sentry](https://sentry.io).
 Включение этих настроек, особенно в pre-production среде, может дать очень ценную информацию и поможет развитию ClickHouse.

@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -20,7 +20,7 @@ class FunctionGetSizeOfEnumType : public IFunction
 {
 public:
     static constexpr auto name = "getSizeOfEnumType";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionGetSizeOfEnumType>();
     }

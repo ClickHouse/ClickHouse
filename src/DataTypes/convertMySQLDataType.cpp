@@ -105,9 +105,9 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     {
         if (precision <= DecimalUtils::max_precision<Decimal32>)
             res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal64>)
+        else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
             res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal128>)
+        else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
     }
 

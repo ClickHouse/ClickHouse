@@ -16,7 +16,7 @@ namespace DB
             return std::make_unique<PingHandler>(keep_alive_timeout);
 
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-            return std::make_unique<LibraryRequestHandler>(keep_alive_timeout, context);
+            return std::make_unique<LibraryRequestHandler>(keep_alive_timeout, getContext());
 
         return nullptr;
     }

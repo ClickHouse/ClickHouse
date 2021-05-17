@@ -32,6 +32,14 @@ struct SelectQueryOptions
     bool remove_duplicates = false;
     bool ignore_quota = false;
     bool ignore_limits = false;
+    /// This is a temporary flag to avoid adding aggregating step. Used for projections.
+    /// TODO: we need more stages for InterpreterSelectQuery
+    bool ignore_aggregation = false;
+    /// This flag is needed to analyze query ignoring table projections.
+    /// It is needed because we build another one InterpreterSelectQuery while analyzing projections.
+    /// It helps to avoid infinite recursion.
+    bool ignore_projections = false;
+    bool ignore_alias = false;
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
 
@@ -80,6 +88,24 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreLimits(bool value = true)
     {
         ignore_limits = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreProjections(bool value = true)
+    {
+        ignore_projections = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreAggregation(bool value = true)
+    {
+        ignore_aggregation = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreAlias(bool value = true)
+    {
+        ignore_alias = value;
         return *this;
     }
 
