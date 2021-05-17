@@ -84,7 +84,7 @@ def get_counters(output):
             else:
                 logging.info("Strange line %s", line)
         else:
-            logging.info("Strange line %s")
+            logging.info("Strange line %s", line)
     return {k: list(v) for k, v in counters.items()}
 
 
