@@ -145,3 +145,4 @@ column_marks_bytes:                    48
 
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/operations/system_tables/parts_columns) <!--hide-->

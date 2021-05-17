@@ -1,6 +1,4 @@
-#include <vector>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-
 
 namespace DB
 {

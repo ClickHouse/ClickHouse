@@ -234,7 +234,7 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 
 static std::string layerFromHost()
 {
-    struct utsname buf;
+    utsname buf;
     if (uname(&buf))
         throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
 

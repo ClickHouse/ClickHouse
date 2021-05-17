@@ -38,7 +38,6 @@ SRCS(
     SettingsFields.cpp
     SettingsQuirks.cpp
     SortDescription.cpp
-    UUID.cpp
     iostream_debug_helpers.cpp
 
 )

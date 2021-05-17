@@ -11,7 +11,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -58,7 +58,7 @@ class FunctionTransform : public IFunction
 {
 public:
     static constexpr auto name = "transform";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTransform>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTransform>(); }
 
     String getName() const override
     {
@@ -194,7 +194,8 @@ private:
         ColumnsWithTypeAndName args = arguments;
         args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-        auto impl = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionTransform>()).build(args);
+        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
+                    .build(args);
 
         return impl->execute(args, result_type, input_rows_count);
     }

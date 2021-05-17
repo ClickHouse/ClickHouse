@@ -66,3 +66,4 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/replacingmergetree/) <!--hide-->

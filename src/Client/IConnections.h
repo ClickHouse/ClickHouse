@@ -24,8 +24,6 @@ public:
         const ClientInfo & client_info,
         bool with_pending_data) = 0;
 
-    virtual void sendReadTaskResponse(const String &) = 0;
-
     /// Get packet from any replica.
     virtual Packet receivePacket() = 0;
 

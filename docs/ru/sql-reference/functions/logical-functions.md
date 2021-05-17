@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: "Логические функции"
+toc_title: "\u041b\u043e\u0433\u0438\u0447\u0435\u0441\u043a\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
 ---
 
 # Логические функции {#logicheskie-funktsii}
@@ -17,3 +17,4 @@ toc_title: "Логические функции"
 
 ## xor {#xor}
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/logical_functions/) <!--hide-->

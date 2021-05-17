@@ -3,7 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <ext/range.h>
@@ -39,7 +39,7 @@ class FunctionPointInEllipses : public IFunction
 {
 public:
     static constexpr auto name = "pointInEllipses";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPointInEllipses>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPointInEllipses>(); }
 
 private:
 

@@ -1,10 +1,10 @@
 #pragma once
-
-#include <Functions/IFunctionOld.h>
-#include <Interpreters/Context_fwd.h>
+#include <Functions/IFunctionImpl.h>
 
 namespace DB
 {
+
+class Context;
 
 /// Creates an array, multiplying the column (the first argument) by the number of elements in the array (the second argument).
 /// Function may accept more then two arguments. If so, the first array with non-empty offsets is chosen.
@@ -13,7 +13,7 @@ class FunctionReplicate : public IFunction
 public:
     static constexpr auto name = "replicate";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionReplicate>();
     }

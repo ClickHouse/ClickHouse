@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -51,7 +51,7 @@ class FunctionsStringSearch : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringSearch>(); }
 
     String getName() const override { return name; }
 

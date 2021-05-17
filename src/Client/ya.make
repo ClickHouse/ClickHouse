@@ -16,6 +16,7 @@ SRCS(
     HedgedConnections.cpp
     HedgedConnectionsFactory.cpp
     MultiplexedConnections.cpp
+    TimeoutSetter.cpp
 
 )
 

@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -93,7 +93,7 @@ class FunctionBitmapBuildImpl : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapBuildImpl>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapBuildImpl>(); }
 
     String getName() const override { return name; }
 
@@ -221,7 +221,7 @@ class FunctionBitmapToArrayImpl : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapToArrayImpl>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapToArrayImpl>(); }
 
     String getName() const override { return name; }
 
@@ -311,7 +311,7 @@ class FunctionBitmapSubset : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapSubset<Impl>>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSubset<Impl>>(); }
 
     String getName() const override { return name; }
 
@@ -469,7 +469,7 @@ class FunctionBitmapTransform : public IFunction
 public:
     static constexpr auto name = "bitmapTransform";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapTransform>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapTransform>(); }
 
     String getName() const override { return name; }
 
@@ -635,7 +635,7 @@ class FunctionBitmapSelfCardinalityImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapSelfCardinalityImpl<Impl>>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSelfCardinalityImpl<Impl>>(); }
 
     String getName() const override { return name; }
 
@@ -807,7 +807,7 @@ class FunctionBitmapContains : public IFunction
 public:
     static constexpr auto name = "bitmapContains";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapContains>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapContains>(); }
 
     String getName() const override { return name; }
 
@@ -911,7 +911,7 @@ class FunctionBitmapCardinality : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmapCardinality>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapCardinality>(); }
 
     String getName() const override { return name; }
 
@@ -1054,7 +1054,7 @@ class FunctionBitmap : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmap>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmap>(); }
 
     String getName() const override { return name; }
 
