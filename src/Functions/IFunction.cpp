@@ -15,7 +15,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 
 namespace DB
 {
