@@ -35,6 +35,7 @@ public:
 
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
+    static ASTPtr formatProjections(const ProjectionsDescription & projections);
 
     void setForceRestoreData(bool has_force_restore_data_flag_)
     {
@@ -66,6 +67,7 @@ private:
         ColumnsDescription columns;
         IndicesDescription indices;
         ConstraintsDescription constraints;
+        ProjectionsDescription projections;
     };
 
     BlockIO createDatabase(ASTCreateQuery & create);

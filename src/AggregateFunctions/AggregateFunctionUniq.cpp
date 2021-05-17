@@ -134,8 +134,8 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
         {createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>, properties});
 
 #if USE_DATASKETCHES
-    factory.registerFunction("uniqThetaSketch",
-        {createAggregateFunctionUniq<AggregateFunctionUniqThetaSketchData, AggregateFunctionUniqThetaSketchData>, properties});
+    factory.registerFunction("uniqTheta",
+        {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaData>, properties});
 #endif
 
 }

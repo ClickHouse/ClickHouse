@@ -43,6 +43,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_add_constraint("ADD CONSTRAINT");
     ParserKeyword s_drop_constraint("DROP CONSTRAINT");
 
+    ParserKeyword s_add_projection("ADD PROJECTION");
+    ParserKeyword s_drop_projection("DROP PROJECTION");
+    ParserKeyword s_clear_projection("CLEAR PROJECTION");
+    ParserKeyword s_materialize_projection("MATERIALIZE PROJECTION");
+
     ParserKeyword s_add("ADD");
     ParserKeyword s_drop("DROP");
     ParserKeyword s_suspend("SUSPEND");
@@ -102,6 +107,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
     ParserConstraintDeclaration parser_constraint_decl;
+    ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
     ParserPartition parser_partition;
     ParserExpression parser_exp_elem;
@@ -256,10 +262,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->clear_index = true;
             command->detach = false;
 
-            if (!s_in_partition.ignore(pos, expected))
-                return false;
-            if (!parser_partition.parse(pos, command->partition, expected))
-                return false;
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
         }
         else if (s_materialize_index.ignore(pos, expected))
         {
@@ -270,6 +277,70 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->type = ASTAlterCommand::MATERIALIZE_INDEX;
+            command->detach = false;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
+        }
+        else if (s_add_projection.ignore(pos, expected))
+        {
+            if (s_if_not_exists.ignore(pos, expected))
+                command->if_not_exists = true;
+
+            if (!parser_projection_decl.parse(pos, command->projection_decl, expected))
+                return false;
+
+            if (s_first.ignore(pos, expected))
+                command->first = true;
+            else if (s_after.ignore(pos, expected))
+            {
+                if (!parser_name.parse(pos, command->projection, expected))
+                    return false;
+            }
+
+            command->type = ASTAlterCommand::ADD_PROJECTION;
+        }
+        else if (s_drop_projection.ignore(pos, expected))
+        {
+            if (s_if_exists.ignore(pos, expected))
+                command->if_exists = true;
+
+            if (!parser_name.parse(pos, command->projection, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_PROJECTION;
+            command->detach = false;
+        }
+        else if (s_clear_projection.ignore(pos, expected))
+        {
+            if (s_if_exists.ignore(pos, expected))
+                command->if_exists = true;
+
+            if (!parser_name.parse(pos, command->projection, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_PROJECTION;
+            command->clear_projection = true;
+            command->detach = false;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
+        }
+        else if (s_materialize_projection.ignore(pos, expected))
+        {
+            if (s_if_exists.ignore(pos, expected))
+                command->if_exists = true;
+
+            if (!parser_name.parse(pos, command->projection, expected))
+                return false;
+
+            command->type = ASTAlterCommand::MATERIALIZE_PROJECTION;
             command->detach = false;
 
             if (s_in_partition.ignore(pos, expected))
