@@ -161,16 +161,7 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     auto out = disk->writeFile(part_path + "partition.dat");
     HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
-    {
-        if (partition_key_sample.getByPosition(i).name.starts_with("modulo"))
-        {
-            SerializationNumber<UInt8>().serializeBinary(value[i], out_hashing);
-        }
-        else
-        {
-            partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing);
-        }
-    }
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing);
 
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
@@ -183,17 +174,23 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    /// FIXME: Executing partition expression on block adds column with expression name to block, but here it is not a copy of
-    /// initial block. Looks like this name needs to be adjusted to be `modulo` instead of `moduloLegacy`, because it is actually used in some places.
     auto partition_key_sample_block = executePartitionByExpression(metadata_snapshot, block, context);
     size_t partition_columns_num = partition_key_sample_block.columns();
     value.resize(partition_columns_num);
+    const String modulo_legacy_function_name = "moduloLegacy";
 
     for (size_t i = 0; i < partition_columns_num; ++i)
     {
         const auto & column_name = partition_key_sample_block.getByPosition(i).name;
-        const auto & partition_column = block.getByName(column_name).column;
-        partition_column->get(row, value[i]);
+        auto & partition_column = block.getByName(column_name);
+
+        /// Executing partition_by expression adds new columns to passed block according to partition functions.
+        /// The block is passed by reference and is used afterwards. `moduloLegacy` needs to be substituted back
+        /// with just `modulo`, because it was a temporary substitution.
+        if (column_name.starts_with(modulo_legacy_function_name))
+            partition_column.name = "modulo" + partition_column.name.substr(modulo_legacy_function_name.size());
+
+        partition_column.column->get(row, value[i]);
     }
 }
 
@@ -225,12 +222,16 @@ Block MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr 
 {
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     ASTPtr ast_copy = partition_key.definition_ast->clone();
+
+    /// Implementation of modulo function was changed from 8bit result type to 16bit. For backward compatibility partition by expression is always
+    /// calculated according to previous version - `moduloLegacy`.
     if (moduloToModuloLegacyRecursive(ast_copy))
     {
         auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
         adjusted_partition_key.expression->execute(block);
         return adjusted_partition_key.sample_block;
     }
+
     partition_key.expression->execute(block);
     return partition_key.sample_block;
 }
