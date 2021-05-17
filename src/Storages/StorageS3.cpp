@@ -199,12 +199,11 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
 {
     size_t object_size = DB::S3::getObjectSize(client, bucket, key, false);
 
-    bool use_parallel_download = download_buffer_size > 0 && max_download_threads >= 1;
+    bool use_parallel_download = download_buffer_size > 0 && max_download_threads > 1;
     bool object_too_small = object_size < max_download_threads * download_buffer_size;
     if (!use_parallel_download || object_too_small)
     {
-        LOG_TRACE(&Poco::Logger::get("StorageS3Source"),
-                  "Downloading object of size {} from S3 in single thread", object_size);
+        LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Downloading object of size {} from S3 in single thread", object_size);
         download_buffer_size = std::max<size_t>(download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
         return std::make_unique<ReadBufferFromS3>(client, bucket, key, s3_max_single_read_retries, download_buffer_size);
     }
@@ -213,8 +212,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
 
     if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
     {
-        LOG_WARNING(&Poco::Logger::get("StorageS3Source"),
-                    "Downloading buffer {} bytes too small, set at least {} bytes",
+        LOG_WARNING(&Poco::Logger::get("StorageS3Source"), "Downloading buffer {} bytes too small, set at least {} bytes",
                     download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
         download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     }
@@ -432,9 +430,13 @@ Pipe StorageS3::read(
         });
     }
 
-    LOG_TRACE(&Poco::Logger::get("StorageS3"),
-              "Will use up to {} thread with buffer {} bytes to download each object from S3",
+    LOG_TRACE(&Poco::Logger::get("StorageS3"), "Will use up to {} thread with buffer {} bytes to download each object from S3",
               max_download_threads, max_download_buffer_size);
+    /* Maximal memory consumption for downloading objects is `num_streams * max_download_threads * max_download_buffer_size`.
+     * Potentially we can do not parallelize file downloading if there are many files, it will be parallelized in pipeline.
+     * But it's difficult to estimate number of objects because of
+     * 1) distributed processing; 2) listing can contain lots of entries and we need to pass through it and filter it according to globs
+     */
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)
     {
