@@ -33,7 +33,7 @@ show create table tp_2;
 
 alter table tp_1 drop projection pp;
 system sync replica tp_2;
-select count() from system.projection_parts where table = 'tp_2' and name = 'pp' and active;
+select * from system.projection_parts where table = 'tp_2' and name = 'pp' and active;
 show create table tp_2;
 
 drop table if exists tp_1;
