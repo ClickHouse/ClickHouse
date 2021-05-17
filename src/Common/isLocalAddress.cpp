@@ -4,8 +4,6 @@
 #include <cstring>
 #include <common/types.h>
 #include <Common/Exception.h>
-#include <Poco/Util/Application.h>
-#include <Poco/Net/NetworkInterface.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 
@@ -37,19 +35,19 @@ struct NetworkInterfaces
         ifaddrs * iface;
         for (iface = ifaddr; iface != nullptr; iface = iface->ifa_next)
         {
-			auto family = iface->ifa_addr->sa_family;
+            auto family = iface->ifa_addr->sa_family;
             std::optional<Poco::Net::IPAddress> interface_address;
             switch (family)
             {
                 /// We interested only in IP-adresses
                 case AF_INET:
                 {
-				    interface_address.emplace(*(iface->ifa_addr));
+                    interface_address.emplace(*(iface->ifa_addr));
                     break;
                 }
                 case AF_INET6:
                 {
-				    interface_address.emplace(&reinterpret_cast<const struct sockaddr_in6*>(iface->ifa_addr)->sin6_addr, sizeof(struct in6_addr));
+                    interface_address.emplace(&reinterpret_cast<const struct sockaddr_in6*>(iface->ifa_addr)->sin6_addr, sizeof(struct in6_addr));
                     break;
                 }
                 default:
