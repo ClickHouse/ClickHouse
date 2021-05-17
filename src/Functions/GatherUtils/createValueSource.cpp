@@ -58,7 +58,7 @@ struct ValueSourceCreator<>
 
 std::unique_ptr<IValueSource> createValueSource(const IColumn & col, bool is_const, size_t total_rows)
 {
-    using Creator = typename ApplyTypeListForClass<ValueSourceCreator, TypeListNumbersAndUInt128>::Type;
+    using Creator = typename ApplyTypeListForClass<ValueSourceCreator, TypeListNumbersAndUUID>::Type;
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&col))
     {
         return Creator::create(column_nullable->getNestedColumn(), &column_nullable->getNullMapData(), is_const, total_rows);

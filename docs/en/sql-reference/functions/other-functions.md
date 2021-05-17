@@ -696,10 +696,6 @@ Returns the server’s uptime in seconds.
 
 Returns the version of the server as a string.
 
-## timezone() {#timezone}
-
-Returns the timezone of the server.
-
 ## blockNumber {#blocknumber}
 
 Returns the sequence number of the data block where the row is located.

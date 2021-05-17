@@ -103,7 +103,8 @@ struct KeeperStorageSyncRequest final : public KeeperStorageRequest
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & /* container */, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         auto response = zk_request->makeResponse();
-        dynamic_cast<Coordination::ZooKeeperSyncResponse *>(response.get())->path = dynamic_cast<Coordination::ZooKeeperSyncRequest *>(zk_request.get())->path;
+        dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path
+            = dynamic_cast<Coordination::ZooKeeperSyncRequest &>(*zk_request).path;
         return {response, {}};
     }
 };

@@ -21,12 +21,12 @@ static DataTypePtr createNumericDataType(const ASTPtr & arguments)
         if (std::is_integral_v<T>)
         {
             if (arguments->children.size() > 1)
-                throw Exception(String(TypeName<T>::get()) + " data type family must not have more than one argument - display width", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} data type family must not have more than one argument - display width", TypeName<T>);
         }
         else
         {
             if (arguments->children.size() > 2)
-                throw Exception(String(TypeName<T>::get()) + " data type family must not have more than two arguments - total number of digits and number of digits following the decimal point", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} data type family must not have more than two arguments - total number of digits and number of digits following the decimal point", TypeName<T>);
         }
     }
     return std::make_shared<DataTypeNumber<T>>();
@@ -44,10 +44,13 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerDataType("Int16", createNumericDataType<Int16>);
     factory.registerDataType("Int32", createNumericDataType<Int32>);
     factory.registerDataType("Int64", createNumericDataType<Int64>);
+
     factory.registerDataType("Float32", createNumericDataType<Float32>);
     factory.registerDataType("Float64", createNumericDataType<Float64>);
 
+    factory.registerSimpleDataType("UInt128", [] { return DataTypePtr(std::make_shared<DataTypeUInt128>()); });
     factory.registerSimpleDataType("UInt256", [] { return DataTypePtr(std::make_shared<DataTypeUInt256>()); });
+
     factory.registerSimpleDataType("Int128", [] { return DataTypePtr(std::make_shared<DataTypeInt128>()); });
     factory.registerSimpleDataType("Int256", [] { return DataTypePtr(std::make_shared<DataTypeInt256>()); });
 

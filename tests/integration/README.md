@@ -52,11 +52,10 @@ To check, that you have access to Docker, run `docker ps`.
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 
 By default tests are run with system-wide client binary, server binary and base configs. To change that,
-set the following environment variables:`
+set the following environment variables:
 * `CLICKHOUSE_TESTS_SERVER_BIN_PATH` to choose the server binary.
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
-* `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and
-  `users.xml`) are taken.
+* `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and`users.xml`) are taken.
 
 For tests that use common docker compose files you may need to set up their path with environment variable: `DOCKER_COMPOSE_DIR=$HOME/ClickHouse/docker/test/integration/runner/compose`
 
@@ -146,4 +145,12 @@ If tests failing for misterious reasons, this may help:
 sudo service docker stop
 sudo bash -c 'rm -rf /var/lib/docker/*'
 sudo service docker start
+```
+
+#### `iptables-nft`
+
+On Ubuntu 20.10 and later in host network mode (default) one may encounter problem with nested containers not seeing each other. It happens because legacy and nftables rules are out of sync. Problem can be solved by:
+
+```
+sudo iptables -P FORWARD ACCEPT
 ```

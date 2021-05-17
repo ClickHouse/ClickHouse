@@ -10,7 +10,7 @@ PEERDIR(
 
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -F tests | grep -v -P 'Kafka|RabbitMQ|S3|HDFS|Licenses|TimeZones|RocksDB|PostgreSQL' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | grep -v -P 'Kafka|RabbitMQ|S3|HDFS|Licenses|TimeZones|RocksDB|PostgreSQL' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

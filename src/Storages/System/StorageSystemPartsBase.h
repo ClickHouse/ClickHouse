@@ -24,7 +24,8 @@ struct StoragesInfo
     MergeTreeData * data = nullptr;
 
     operator bool() const { return storage != nullptr; }
-    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
+    MergeTreeData::DataPartsVector
+    getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */

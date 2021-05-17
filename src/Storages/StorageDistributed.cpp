@@ -386,6 +386,7 @@ StorageDistributed::StorageDistributed(
     const StorageID & id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
@@ -411,6 +412,7 @@ StorageDistributed::StorageDistributed(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (sharding_key_)
@@ -452,17 +454,32 @@ StorageDistributed::StorageDistributed(
     const DistributedSettings & distributed_settings_,
     bool attach,
     ClusterPtr owned_cluster_)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_,
-    storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
+    : StorageDistributed(
+        id_,
+        columns_,
+        constraints_,
+        String{},
+        String{},
+        String{},
+        cluster_name_,
+        context_,
+        sharding_key_,
+        storage_policy_name_,
+        relative_data_path_,
+        distributed_settings_,
+        attach,
+        std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
-    ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     ClusterPtr cluster = getCluster();
     query_info.cluster = cluster;
@@ -628,7 +645,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
         local_context, *this, metadata_snapshot,
         createInsertToRemoteTableQuery(
             remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
-        cluster, insert_sync, timeout);
+        cluster, insert_sync, timeout, StorageID{remote_database, remote_table});
 }
 
 
@@ -723,7 +740,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
 
             throw Exception("Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
-        if (command.type == AlterCommand::DROP_COLUMN)
+        if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
@@ -1251,8 +1268,13 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         return StorageDistributed::create(
-            args.table_id, args.columns, args.constraints,
-            remote_database, remote_table, cluster_name,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            remote_database,
+            remote_table,
+            cluster_name,
             args.getContext(),
             sharding_key,
             storage_policy,

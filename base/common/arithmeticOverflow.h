@@ -56,27 +56,33 @@ namespace common
     }
 
     template <>
-    inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
+    inline bool addOverflow(Int128 x, Int128 y, Int128 & res)
     {
-        static constexpr __int128 min_int128 = minInt128();
-        static constexpr __int128 max_int128 = maxInt128();
         res = addIgnoreOverflow(x, y);
-        return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
+        return (y > 0 && x > std::numeric_limits<Int128>::max() - y) ||
+            (y < 0 && x < std::numeric_limits<Int128>::min() - y);
     }
 
     template <>
-    inline bool addOverflow(wInt256 x, wInt256 y, wInt256 & res)
+    inline bool addOverflow(UInt128 x, UInt128 y, UInt128 & res)
     {
         res = addIgnoreOverflow(x, y);
-        return (y > 0 && x > std::numeric_limits<wInt256>::max() - y) ||
-            (y < 0 && x < std::numeric_limits<wInt256>::min() - y);
+        return x > std::numeric_limits<UInt128>::max() - y;
     }
 
     template <>
-    inline bool addOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
+    inline bool addOverflow(Int256 x, Int256 y, Int256 & res)
     {
         res = addIgnoreOverflow(x, y);
-        return x > std::numeric_limits<wUInt256>::max() - y;
+        return (y > 0 && x > std::numeric_limits<Int256>::max() - y) ||
+            (y < 0 && x < std::numeric_limits<Int256>::min() - y);
+    }
+
+    template <>
+    inline bool addOverflow(UInt256 x, UInt256 y, UInt256 & res)
+    {
+        res = addIgnoreOverflow(x, y);
+        return x > std::numeric_limits<UInt256>::max() - y;
     }
 
     template <typename T>
@@ -104,24 +110,30 @@ namespace common
     }
 
     template <>
-    inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
+    inline bool subOverflow(Int128 x, Int128 y, Int128 & res)
     {
-        static constexpr __int128 min_int128 = minInt128();
-        static constexpr __int128 max_int128 = maxInt128();
         res = subIgnoreOverflow(x, y);
-        return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
+        return (y < 0 && x > std::numeric_limits<Int128>::max() + y) ||
+            (y > 0 && x < std::numeric_limits<Int128>::min() + y);
     }
 
     template <>
-    inline bool subOverflow(wInt256 x, wInt256 y, wInt256 & res)
+    inline bool subOverflow(UInt128 x, UInt128 y, UInt128 & res)
     {
         res = subIgnoreOverflow(x, y);
-        return (y < 0 && x > std::numeric_limits<wInt256>::max() + y) ||
-            (y > 0 && x < std::numeric_limits<wInt256>::min() + y);
+        return x < y;
     }
 
     template <>
-    inline bool subOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
+    inline bool subOverflow(Int256 x, Int256 y, Int256 & res)
+    {
+        res = subIgnoreOverflow(x, y);
+        return (y < 0 && x > std::numeric_limits<Int256>::max() + y) ||
+            (y > 0 && x < std::numeric_limits<Int256>::min() + y);
+    }
+
+    template <>
+    inline bool subOverflow(UInt256 x, UInt256 y, UInt256 & res)
     {
         res = subIgnoreOverflow(x, y);
         return x < y;
@@ -151,36 +163,33 @@ namespace common
         return __builtin_smulll_overflow(x, y, &res);
     }
 
+    /// Overflow check is not implemented for big integers.
+
     template <>
-    inline bool mulOverflow(__int128 x, __int128 y, __int128 & res)
+    inline bool mulOverflow(Int128 x, Int128 y, Int128 & res)
     {
         res = mulIgnoreOverflow(x, y);
-        if (!x || !y)
-            return false;
-
-        unsigned __int128 a = (x > 0) ? x : -x;
-        unsigned __int128 b = (y > 0) ? y : -y;
-        return mulIgnoreOverflow(a, b) / b != a;
+        return false;
     }
 
     template <>
-    inline bool mulOverflow(wInt256 x, wInt256 y, wInt256 & res)
+    inline bool mulOverflow(Int256 x, Int256 y, Int256 & res)
     {
         res = mulIgnoreOverflow(x, y);
-        if (!x || !y)
-            return false;
-
-        wInt256 a = (x > 0) ? x : -x;
-        wInt256 b = (y > 0) ? y : -y;
-        return mulIgnoreOverflow(a, b) / b != a;
+        return false;
     }
 
     template <>
-    inline bool mulOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
+    inline bool mulOverflow(UInt128 x, UInt128 y, UInt128 & res)
     {
         res = mulIgnoreOverflow(x, y);
-        if (!x || !y)
-            return false;
-        return res / y != x;
+        return false;
+    }
+
+    template <>
+    inline bool mulOverflow(UInt256 x, UInt256 y, UInt256 & res)
+    {
+        res = mulIgnoreOverflow(x, y);
+        return false;
     }
 }
