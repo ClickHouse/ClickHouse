@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
@@ -99,6 +100,7 @@ struct ArrayAggregateImpl
 
                 return true;
             }
+            /// FIXME: DateTime64 also should be handled here.
             else if constexpr (IsDataTypeDecimal<DataType> && !IsDataTypeDateOrDateTime<DataType>)
             {
                 using DecimalReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;

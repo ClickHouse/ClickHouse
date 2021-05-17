@@ -31,16 +31,16 @@ struct ArrayDifferenceImpl
         if (which.isUInt8() || which.isInt8())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>());
 
-        if (which.isUInt16() || which.isInt16())
+        if (which.isUInt16() || which.isInt16() || which.isDate())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>());
 
-        if (which.isUInt32() || which.isUInt64() || which.isInt32() || which.isInt64())
+        if (which.isUInt32() || which.isUInt64() || which.isInt32() || which.isInt64() || which.isDateTime())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 
         if (which.isFloat32() || which.isFloat64())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
-        if (which.isDecimal())
+        if (which.isDecimal() || which.isDateTime64())
             return std::make_shared<DataTypeArray>(expression_return);
 
         throw Exception("arrayDifference cannot process values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

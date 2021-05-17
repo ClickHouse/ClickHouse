@@ -857,7 +857,13 @@ struct Transformer
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeTransformImpl
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
+    template <typename Additions = void *>
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t /*input_rows_count*/,
+        Additions additions [[maybe_unused]] = Additions(),
+        const Transform & transform = {})
     {
         using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
 

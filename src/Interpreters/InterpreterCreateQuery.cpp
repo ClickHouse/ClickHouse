@@ -627,7 +627,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
         {
             WhichDataType which(*name_and_type_pair.type);
-            if (which.IsBigIntOrDeimal())
+            if (which.isBigIntOrDecimal())
             {
                 const auto & type_name = name_and_type_pair.type->getName();
                 String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"

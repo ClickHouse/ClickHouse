@@ -342,7 +342,7 @@ struct WhichDataType
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
 
-    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
+    constexpr bool isBigIntOrDecimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -502,6 +502,8 @@ template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = tru
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
+template <> inline constexpr bool IsDataTypeNumber<DataTypeDate> = true;
+template <> inline constexpr bool IsDataTypeNumber<DataTypeDateTime> = true;
 
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;

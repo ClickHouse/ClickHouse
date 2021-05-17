@@ -3,6 +3,9 @@ SELECT 'Array max ', (arrayMax(array(1,2,3,4,5,6)));
 SELECT 'Array sum ', (arraySum(array(1,2,3,4,5,6)));
 SELECT 'Array avg ', (arrayAvg(array(1,2,3,4,5,6)));
 
+WITH [toDateTime('2016-06-15 23:00:00'), toDateTime('2016-06-15 23:00:01')] AS dt, [toDate('2016-06-15'), toDate('2016-06-16')] AS t
+SELECT arrayMax(dt), arrayMin(dt), arrayDifference(dt), arrayMax(t), arrayMin(t), arrayDifference(t);
+
 DROP TABLE IF EXISTS test_aggregation;
 CREATE TABLE test_aggregation (x Array(Int)) ENGINE=TinyLog;
 
