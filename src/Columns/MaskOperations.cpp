@@ -1,9 +1,7 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNothing.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
 
 namespace DB
