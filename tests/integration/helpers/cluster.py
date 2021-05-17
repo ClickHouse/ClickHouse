@@ -443,8 +443,7 @@ class ClickHouseCluster:
         run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
-        start_deadline = time.time() + 20.0  # seconds
-        node.wait_for_start(start_deadline)
+        node.wait_for_start(timeout=20.0, connection_timeout=600.0)  # seconds
         return node
 
     def get_instance_ip(self, instance_name):
@@ -1245,11 +1244,14 @@ class ClickHouseInstance:
     def start(self):
         self.get_docker_handle().start()
 
-    def wait_for_start(self, deadline=None, timeout=None):
+    def wait_for_start(self, deadline=None, timeout=None, connection_timeout=None):
         start_time = time.time()
 
         if timeout is not None:
             deadline = start_time + timeout
+
+        connection_deadline = (start_time + connection_timeout) if connection_timeout else None
+        prev_rows_in_log = 0
 
         while True:
             handle = self.get_docker_handle()
@@ -1259,9 +1261,22 @@ class ClickHouseInstance:
                     "Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status,
                                                                                            handle.logs().decode('utf-8')))
 
+            current_deadline = deadline
+            # It is possible that server starts slowly.
+            # If container is running, and there is some progress in log, check connection_timeout.
+            if connection_deadline and current_deadline < connection_deadline and status == 'running':
+                rows_in_log = self.count_in_log(".*").strip()
+                try:
+                    rows_in_log = int(rows_in_log)
+                    if rows_in_log > prev_rows_in_log:
+                        prev_rows_in_log = rows_in_log
+                        current_deadline = connection_deadline
+                except ValueError:
+                    pass
+
             current_time = time.time()
-            time_left = deadline - current_time
-            if deadline is not None and current_time >= deadline:
+            time_left = current_deadline - current_time
+            if deadline is not None and current_time >= current_deadline:
                 raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
                                 "Container status: {}, logs: {}".format(self.name, self.ip_address, status,
                                                                         handle.logs().decode('utf-8')))
