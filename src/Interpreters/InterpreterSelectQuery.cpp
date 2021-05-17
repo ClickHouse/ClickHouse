@@ -55,7 +55,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/GroupingSetsStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
