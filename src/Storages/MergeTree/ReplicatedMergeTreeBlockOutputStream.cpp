@@ -183,7 +183,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, String block_id)
+void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
     last_block_is_duplicate = false;
 
