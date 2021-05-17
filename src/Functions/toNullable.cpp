@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
@@ -16,7 +16,7 @@ class FunctionToNullable : public IFunction
 public:
     static constexpr auto name = "toNullable";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionToNullable>();
     }

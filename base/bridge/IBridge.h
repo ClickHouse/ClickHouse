@@ -2,9 +2,10 @@
 
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
-#include <Poco/Util/ServerApplication.h>
-#include <Poco/Logger.h>
 #include <daemon/BaseDaemon.h>
+
+#include <Poco/Logger.h>
+#include <Poco/Util/ServerApplication.h>
 
 
 namespace DB
@@ -29,9 +30,9 @@ protected:
 
     int main(const std::vector<std::string> & args) override;
 
-    virtual const std::string bridgeName() const = 0;
+    virtual std::string bridgeName() const = 0;
 
-    virtual HandlerFactoryPtr getHandlerFactoryPtr(Context & context) const = 0;
+    virtual HandlerFactoryPtr getHandlerFactoryPtr(ContextPtr context) const = 0;
 
     size_t keep_alive_timeout;
 

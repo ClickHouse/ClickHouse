@@ -31,7 +31,7 @@ toc_title: 云
 
 ## 阿里云 {#alibaba-cloud}
 
-阿里云的 ClickHouse 托管服务 [中国站](https://www.aliyun.com/product/clickhouse) (国际站于2021年5月初开放) 提供以下主要功能：
+[阿里云的 ClickHouse 托管服务](https://www.alibabacloud.com/zh/product/clickhouse) 提供以下主要功能：
 
 -   基于阿里飞天分布式系统的高可靠云盘存储引擎
 -   按需扩容，无需手动进行数据搬迁

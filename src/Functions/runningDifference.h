@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -124,7 +124,7 @@ private:
 public:
     static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }

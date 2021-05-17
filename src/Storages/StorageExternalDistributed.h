@@ -4,11 +4,8 @@
 #include "config_core.h"
 #endif
 
-#if USE_MYSQL || USE_LIBPQXX
-
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-#include <mysqlxx/PoolWithFailover.h>
 
 
 namespace DB
@@ -28,7 +25,7 @@ public:
     {
         MySQL,
         PostgreSQL,
-        Default
+        URL
     };
 
     std::string getName() const override { return "ExternalDistributed"; }
@@ -37,7 +34,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -53,7 +50,18 @@ protected:
         const String & password,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_);
+        const String & comment,
+        ContextPtr context_);
+
+    StorageExternalDistributed(
+        const String & addresses_description,
+        const StorageID & table_id,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const String & compression_method,
+        const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints,
+        ContextPtr context);
 
 private:
     using Shards = std::unordered_set<StoragePtr>;
@@ -61,5 +69,3 @@ private:
 };
 
 }
-
-#endif

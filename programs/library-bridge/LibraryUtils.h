@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Common/StringUtils/StringUtils.h>
-#include <Dictionaries/LibraryDictionarySourceExternal.h>
 #include <Core/Block.h>
 #include <ext/bit_cast.h>
 #include <ext/range.h>
+
+#include "LibraryInterface.h"
 
 
 namespace DB

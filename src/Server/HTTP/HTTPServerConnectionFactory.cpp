@@ -5,8 +5,8 @@
 namespace DB
 {
 HTTPServerConnectionFactory::HTTPServerConnectionFactory(
-    const Context & context_, Poco::Net::HTTPServerParams::Ptr params_, HTTPRequestHandlerFactoryPtr factory_)
-    : context(context_), params(params_), factory(factory_)
+    ContextPtr context_, Poco::Net::HTTPServerParams::Ptr params_, HTTPRequestHandlerFactoryPtr factory_)
+    : context(Context::createCopy(context_)), params(params_), factory(factory_)
 {
     poco_check_ptr(factory);
 }

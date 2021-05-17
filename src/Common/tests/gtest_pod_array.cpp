@@ -4,6 +4,419 @@
 
 using namespace DB;
 
+
+TEST(Common, PODArrayBasicMove)
+{
+    using namespace DB;
+
+    static constexpr size_t initial_bytes = 32;
+    using Array = PODArray<UInt64, initial_bytes,
+        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
+
+    {
+        Array arr;
+        Array arr2;
+        arr2 = std::move(arr);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+
+        Array arr2;
+
+        arr2 = std::move(arr);
+
+        ASSERT_EQ(arr2.size(), 3);
+        ASSERT_EQ(arr2[0], 1);
+        ASSERT_EQ(arr2[1], 2);
+        ASSERT_EQ(arr2[2], 3);
+
+        arr = std::move(arr2);
+
+        ASSERT_EQ(arr.size(), 3);
+        ASSERT_EQ(arr[0], 1);
+        ASSERT_EQ(arr[1], 2);
+        ASSERT_EQ(arr[2], 3);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+        arr.push_back(4);
+        arr.push_back(5);
+
+        Array arr2;
+
+        arr2 = std::move(arr);
+
+        ASSERT_EQ(arr2.size(), 5);
+        ASSERT_EQ(arr2[0], 1);
+        ASSERT_EQ(arr2[1], 2);
+        ASSERT_EQ(arr2[2], 3);
+        ASSERT_EQ(arr2[3], 4);
+        ASSERT_EQ(arr2[4], 5);
+
+        arr = std::move(arr2);
+
+        ASSERT_EQ(arr.size(), 5);
+        ASSERT_EQ(arr[0], 1);
+        ASSERT_EQ(arr[1], 2);
+        ASSERT_EQ(arr[2], 3);
+        ASSERT_EQ(arr[3], 4);
+        ASSERT_EQ(arr[4], 5);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+
+        Array arr2;
+
+        arr2.push_back(4);
+        arr2.push_back(5);
+        arr2.push_back(6);
+        arr2.push_back(7);
+
+        arr2 = std::move(arr);
+
+        ASSERT_EQ(arr2.size(), 3);
+        ASSERT_EQ(arr2[0], 1);
+        ASSERT_EQ(arr2[1], 2);
+        ASSERT_EQ(arr2[2], 3);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+
+        Array arr2;
+
+        arr2.push_back(4);
+        arr2.push_back(5);
+        arr2.push_back(6);
+        arr2.push_back(7);
+        arr2.push_back(8);
+
+        arr = std::move(arr2);
+
+        ASSERT_EQ(arr.size(), 5);
+        ASSERT_EQ(arr[0], 4);
+        ASSERT_EQ(arr[1], 5);
+        ASSERT_EQ(arr[2], 6);
+        ASSERT_EQ(arr[3], 7);
+        ASSERT_EQ(arr[4], 8);
+    }
+}
+
+
+TEST(Common, PODArrayBasicSwap)
+{
+    using namespace DB;
+
+    static constexpr size_t initial_bytes = 32;
+    using Array = PODArray<UInt64, initial_bytes,
+        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
+
+    {
+        Array arr;
+        Array arr2;
+        arr.swap(arr2);
+        arr2.swap(arr);
+    }
+
+    {
+        Array arr;
+
+        Array arr2;
+
+        arr2.push_back(1);
+        arr2.push_back(2);
+        arr2.push_back(3);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 3);
+        ASSERT_TRUE(arr[0] == 1);
+        ASSERT_TRUE(arr[1] == 2);
+        ASSERT_TRUE(arr[2] == 3);
+
+        ASSERT_TRUE(arr2.empty());
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.empty());
+
+        ASSERT_TRUE(arr2.size() == 3);
+        ASSERT_TRUE(arr2[0] == 1);
+        ASSERT_TRUE(arr2[1] == 2);
+        ASSERT_TRUE(arr2[2] == 3);
+    }
+
+    {
+        Array arr;
+
+        Array arr2;
+
+        arr2.push_back(1);
+        arr2.push_back(2);
+        arr2.push_back(3);
+        arr2.push_back(4);
+        arr2.push_back(5);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 5);
+        ASSERT_TRUE(arr[0] == 1);
+        ASSERT_TRUE(arr[1] == 2);
+        ASSERT_TRUE(arr[2] == 3);
+        ASSERT_TRUE(arr[3] == 4);
+        ASSERT_TRUE(arr[4] == 5);
+
+        ASSERT_TRUE(arr2.empty());
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.empty());
+
+        ASSERT_TRUE(arr2.size() == 5);
+        ASSERT_TRUE(arr2[0] == 1);
+        ASSERT_TRUE(arr2[1] == 2);
+        ASSERT_TRUE(arr2[2] == 3);
+        ASSERT_TRUE(arr2[3] == 4);
+        ASSERT_TRUE(arr2[4] == 5);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+
+        Array arr2;
+
+        arr2.push_back(4);
+        arr2.push_back(5);
+        arr2.push_back(6);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 3);
+        ASSERT_TRUE(arr[0] == 4);
+        ASSERT_TRUE(arr[1] == 5);
+        ASSERT_TRUE(arr[2] == 6);
+
+        ASSERT_TRUE(arr2.size() == 3);
+        ASSERT_TRUE(arr2[0] == 1);
+        ASSERT_TRUE(arr2[1] == 2);
+        ASSERT_TRUE(arr2[2] == 3);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 3);
+        ASSERT_TRUE(arr[0] == 1);
+        ASSERT_TRUE(arr[1] == 2);
+        ASSERT_TRUE(arr[2] == 3);
+
+        ASSERT_TRUE(arr2.size() == 3);
+        ASSERT_TRUE(arr2[0] == 4);
+        ASSERT_TRUE(arr2[1] == 5);
+        ASSERT_TRUE(arr2[2] == 6);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+
+        Array arr2;
+
+        arr2.push_back(3);
+        arr2.push_back(4);
+        arr2.push_back(5);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 3);
+        ASSERT_TRUE(arr[0] == 3);
+        ASSERT_TRUE(arr[1] == 4);
+        ASSERT_TRUE(arr[2] == 5);
+
+        ASSERT_TRUE(arr2.size() == 2);
+        ASSERT_TRUE(arr2[0] == 1);
+        ASSERT_TRUE(arr2[1] == 2);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 2);
+        ASSERT_TRUE(arr[0] == 1);
+        ASSERT_TRUE(arr[1] == 2);
+
+        ASSERT_TRUE(arr2.size() == 3);
+        ASSERT_TRUE(arr2[0] == 3);
+        ASSERT_TRUE(arr2[1] == 4);
+        ASSERT_TRUE(arr2[2] == 5);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+
+        Array arr2;
+
+        arr2.push_back(4);
+        arr2.push_back(5);
+        arr2.push_back(6);
+        arr2.push_back(7);
+        arr2.push_back(8);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 5);
+        ASSERT_TRUE(arr[0] == 4);
+        ASSERT_TRUE(arr[1] == 5);
+        ASSERT_TRUE(arr[2] == 6);
+        ASSERT_TRUE(arr[3] == 7);
+        ASSERT_TRUE(arr[4] == 8);
+
+        ASSERT_TRUE(arr2.size() == 3);
+        ASSERT_TRUE(arr2[0] == 1);
+        ASSERT_TRUE(arr2[1] == 2);
+        ASSERT_TRUE(arr2[2] == 3);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 3);
+        ASSERT_TRUE(arr[0] == 1);
+        ASSERT_TRUE(arr[1] == 2);
+        ASSERT_TRUE(arr[2] == 3);
+
+        ASSERT_TRUE(arr2.size() == 5);
+        ASSERT_TRUE(arr2[0] == 4);
+        ASSERT_TRUE(arr2[1] == 5);
+        ASSERT_TRUE(arr2[2] == 6);
+        ASSERT_TRUE(arr2[3] == 7);
+        ASSERT_TRUE(arr2[4] == 8);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+        arr.push_back(4);
+        arr.push_back(5);
+
+        Array arr2;
+
+        arr2.push_back(6);
+        arr2.push_back(7);
+        arr2.push_back(8);
+        arr2.push_back(9);
+        arr2.push_back(10);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 5);
+        ASSERT_TRUE(arr[0] == 6);
+        ASSERT_TRUE(arr[1] == 7);
+        ASSERT_TRUE(arr[2] == 8);
+        ASSERT_TRUE(arr[3] == 9);
+        ASSERT_TRUE(arr[4] == 10);
+
+        ASSERT_TRUE(arr2.size() == 5);
+        ASSERT_TRUE(arr2[0] == 1);
+        ASSERT_TRUE(arr2[1] == 2);
+        ASSERT_TRUE(arr2[2] == 3);
+        ASSERT_TRUE(arr2[3] == 4);
+        ASSERT_TRUE(arr2[4] == 5);
+
+        arr.swap(arr2);
+
+        ASSERT_TRUE(arr.size() == 5);
+        ASSERT_TRUE(arr[0] == 1);
+        ASSERT_TRUE(arr[1] == 2);
+        ASSERT_TRUE(arr[2] == 3);
+        ASSERT_TRUE(arr[3] == 4);
+        ASSERT_TRUE(arr[4] == 5);
+
+        ASSERT_TRUE(arr2.size() == 5);
+        ASSERT_TRUE(arr2[0] == 6);
+        ASSERT_TRUE(arr2[1] == 7);
+        ASSERT_TRUE(arr2[2] == 8);
+        ASSERT_TRUE(arr2[3] == 9);
+        ASSERT_TRUE(arr2[4] == 10);
+    }
+}
+
+TEST(Common, PODArrayBasicSwapMoveConstructor)
+{
+    static constexpr size_t initial_bytes = 32;
+    using Array = PODArray<UInt64, initial_bytes,
+        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
+
+    {
+        Array arr;
+        Array arr2{std::move(arr)};
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+
+        Array arr2{std::move(arr)};
+
+        ASSERT_TRUE(arr.empty()); // NOLINT
+
+        ASSERT_TRUE(arr2.size() == 3);
+        ASSERT_TRUE(arr2[0] == 1);
+        ASSERT_TRUE(arr2[1] == 2);
+        ASSERT_TRUE(arr2[2] == 3);
+    }
+
+    {
+        Array arr;
+
+        arr.push_back(1);
+        arr.push_back(2);
+        arr.push_back(3);
+        arr.push_back(4);
+        arr.push_back(5);
+
+        Array arr2{std::move(arr)};
+
+        ASSERT_TRUE(arr.empty()); // NOLINT
+
+        ASSERT_TRUE(arr2.size() == 5);
+        ASSERT_TRUE(arr2[0] == 1);
+        ASSERT_TRUE(arr2[1] == 2);
+        ASSERT_TRUE(arr2[2] == 3);
+        ASSERT_TRUE(arr2[3] == 4);
+        ASSERT_TRUE(arr2[4] == 5);
+    }
+}
+
 TEST(Common, PODArrayInsert)
 {
     std::string str = "test_string_abacaba";
@@ -44,18 +457,6 @@ TEST(Common, PODArrayInsertFromItself)
         PaddedPODArray<UInt64> expected {1,1,1,1,1,1,1,1};
         ASSERT_EQ(array,expected);
     }
-}
-
-TEST(Common, PODPushBackRawMany)
-{
-    PODArray<char> chars;
-    chars.push_back_raw_many(5, "first");
-    EXPECT_EQ(std::string("first"), std::string(chars.data(), chars.size()));
-    EXPECT_EQ(5, chars.size());
-    EXPECT_LE(chars.capacity() - chars.size(), 10);
-    chars.push_back_raw_many(10, "0123456789");
-    EXPECT_EQ(15, chars.size());
-    EXPECT_EQ(std::string("first0123456789"), std::string(chars.data(), chars.size()));
 }
 
 TEST(Common, PODNoOverallocation)

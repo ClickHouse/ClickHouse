@@ -23,7 +23,7 @@ class FunctionMapPopulateSeries : public IFunction
 {
 public:
     static constexpr auto name = "mapPopulateSeries";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapPopulateSeries>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapPopulateSeries>(); }
 
 private:
     String getName() const override { return name; }

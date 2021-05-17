@@ -137,7 +137,7 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
 
     if (startsWith(response_expression, file_prefix))
     {
-        const auto & user_files_absolute_path = Poco::Path(server.context().getUserFilesPath()).makeAbsolute().makeDirectory().toString();
+        const auto & user_files_absolute_path = Poco::Path(server.context()->getUserFilesPath()).makeAbsolute().makeDirectory().toString();
         const auto & file_name = response_expression.substr(file_prefix.size(), response_expression.size() - file_prefix.size());
 
         const auto & file_path = Poco::Path(user_files_absolute_path, file_name).makeAbsolute().toString();

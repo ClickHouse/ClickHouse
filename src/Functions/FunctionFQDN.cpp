@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <common/getFQDNOrHostName.h>
@@ -12,7 +12,7 @@ class FunctionFQDN : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionFQDN>();
     }

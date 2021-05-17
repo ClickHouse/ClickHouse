@@ -56,6 +56,26 @@ Default value: 150.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
+## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
+
+If the number of inactive parts in a single partition more than the `inactive_parts_to_throw_insert` value, `INSERT` is interrupted with the "Too many inactive parts (N). Parts cleaning are processing significantly slower than inserts" exception.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 0 (unlimited).
+
+## inactive_parts_to_delay_insert {#inactive-parts-to-delay-insert}
+
+If the number of inactive parts in a single partition in the table at least that many the `inactive_parts_to_delay_insert` value, an `INSERT` artificially slows down. It is useful when a server fails to clean up parts quickly enough.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 0 (unlimited).
+
 ## max_delay_to_insert {#max-delay-to-insert}
 
 The value in seconds, which is used to calculate the `INSERT` delay, if the number of active parts in a single partition exceeds the [parts_to_delay_insert](#parts-to-delay-insert) value.
@@ -114,6 +134,39 @@ Possible values:
 Default value: 604800 (1 week).
 
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
+
+## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
+
+HTTP connection timeout (in seconds) for part fetch requests. Inherited from default profile [http_connection_timeout](./settings.md#http_connection_timeout) if not set explicitly.
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Use value of `http_connection_timeout`.
+
+Default value: 0.
+
+## replicated_fetches_http_send_timeout {#replicated_fetches_http_send_timeout}
+
+HTTP send timeout (in seconds) for part fetch requests. Inherited from default profile [http_send_timeout](./settings.md#http_send_timeout) if not set explicitly.
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Use value of `http_send_timeout`.
+
+Default value: 0.
+
+## replicated_fetches_http_receive_timeout {#replicated_fetches_http_receive_timeout}
+
+HTTP receive timeout (in seconds) for fetch part requests. Inherited from default profile [http_receive_timeout](./settings.md#http_receive_timeout) if not set explicitly.
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Use value of `http_receive_timeout`.
+
+Default value: 0.
 
 ## old_parts_lifetime {#old-parts-lifetime}
 

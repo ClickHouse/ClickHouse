@@ -81,10 +81,10 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_
 }
 
 
-void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_QUOTAS);
-    auto usage = context.getQuotaUsage();
+    context->checkAccess(AccessType::SHOW_QUOTAS);
+    auto usage = context->getQuotaUsage();
     if (!usage)
         return;
 
@@ -94,7 +94,7 @@ void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, const Conte
 
 void StorageSystemQuotaUsage::fillDataImpl(
     MutableColumns & res_columns,
-    const Context & context,
+    ContextPtr context,
     bool add_column_is_current,
     const std::vector<QuotaUsage> & quotas_usage)
 {
@@ -128,7 +128,7 @@ void StorageSystemQuotaUsage::fillDataImpl(
     std::optional<UUID> current_quota_id;
     if (add_column_is_current)
     {
-        if (auto current_usage = context.getQuotaUsage())
+        if (auto current_usage = context->getQuotaUsage())
             current_quota_id = current_usage->quota_id;
     }
 

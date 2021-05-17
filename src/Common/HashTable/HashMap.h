@@ -22,18 +22,27 @@ struct PairNoInit
     First first;
     Second second;
 
-    PairNoInit() {}
+    PairNoInit() {} /// NOLINT
 
-    template <typename First_>
-    PairNoInit(First_ && first_, NoInitTag) : first(std::forward<First_>(first_))
+    template <typename FirstValue>
+    PairNoInit(FirstValue && first_, NoInitTag)
+        : first(std::forward<FirstValue>(first_))
     {
     }
 
-    template <typename First_, typename Second_>
-    PairNoInit(First_ && first_, Second_ && second_) : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_))
+    template <typename FirstValue, typename SecondValue>
+    PairNoInit(FirstValue && first_, SecondValue && second_)
+        : first(std::forward<FirstValue>(first_))
+        , second(std::forward<SecondValue>(second_))
     {
     }
 };
+
+template <typename First, typename Second>
+PairNoInit<std::decay_t<First>, std::decay_t<Second>> makePairNoInit(First && first, Second && second)
+{
+    return PairNoInit<std::decay_t<First>, std::decay_t<Second>>(std::forward<First>(first), std::forward<Second>(second));
+}
 
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
@@ -76,9 +85,6 @@ struct HashMapCell
 
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
-
-    /// Whether the cell was deleted.
-    bool isDeleted() const { return false; }
 
     void setMapped(const value_type & value_) { value.second = value_.second; }
 

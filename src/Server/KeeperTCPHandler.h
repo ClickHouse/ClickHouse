@@ -37,7 +37,7 @@ public:
 private:
     IServer & server;
     Poco::Logger * log;
-    Context global_context;
+    ContextPtr global_context;
     std::shared_ptr<KeeperStorageDispatcher> nu_keeper_storage_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;

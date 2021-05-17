@@ -19,7 +19,7 @@ struct ConstraintsDescription
 
     static ConstraintsDescription parse(const String & str);
 
-    ConstraintsExpressions getExpressions(const Context & context, const NamesAndTypesList & source_columns_) const;
+    ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);

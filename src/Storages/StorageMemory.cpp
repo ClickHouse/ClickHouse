@@ -26,10 +26,6 @@ class MemorySource : public SourceWithProgress
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
 public:
-    /// Blocks are stored in std::list which may be appended in another thread.
-    /// We use pointer to the beginning of the list and its current size.
-    /// We don't need synchronisation in this reader, because while we hold SharedLock on storage,
-    /// only new elements can be added to the back of the list, so our iterators remain valid
 
     MemorySource(
         Names column_names_,
@@ -59,7 +55,7 @@ protected:
 
         size_t current_index = getAndIncrementExecutionIndex();
 
-        if (current_index >= data->size())
+        if (!data || current_index >= data->size())
         {
             return {};
         }
@@ -168,12 +164,14 @@ StorageMemory::StorageMemory(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
+    const String & comment,
     bool compress_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -182,7 +180,7 @@ Pipe StorageMemory::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
@@ -230,7 +228,7 @@ Pipe StorageMemory::read(
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
 }
@@ -258,7 +256,7 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
     /// Some validation will be added
 }
 
-void StorageMemory::mutate(const MutationCommands & commands, const Context & context)
+void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -320,7 +318,7 @@ void StorageMemory::mutate(const MutationCommands & commands, const Context & co
 
 
 void StorageMemory::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
@@ -353,7 +351,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
     },
     {
         .supports_settings = true,

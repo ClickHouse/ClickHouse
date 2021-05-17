@@ -66,7 +66,7 @@
 #cmakedefine WITH_SASL_OAUTHBEARER 1
 #cmakedefine WITH_SASL_CYRUS 1
 // crc32chw
-#if !defined(__PPC__) && (!defined(__aarch64__) || defined(__ARM_FEATURE_CRC32))
+#if !defined(__PPC__) && (!defined(__aarch64__) || defined(__ARM_FEATURE_CRC32)) && !(defined(__aarch64__) && defined(__APPLE__))
 #define WITH_CRC32C_HW 1
 #endif
 // regex
@@ -75,6 +75,8 @@
 #define HAVE_STRNDUP 1
 // strerror_r
 #define HAVE_STRERROR_R 1
+// rand_r
+#define HAVE_RAND_R 1
 
 #ifdef __APPLE__
 // pthread_setname_np

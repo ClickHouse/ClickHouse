@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,7 +28,7 @@ class FunctionCountDigits : public IFunction
 public:
     static constexpr auto name = "countDigits";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionCountDigits>();
     }

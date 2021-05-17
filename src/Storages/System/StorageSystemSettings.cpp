@@ -26,10 +26,10 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    const Settings & settings = context.getSettingsRef();
-    auto settings_constraints = context.getSettingsConstraints();
+    const Settings & settings = context->getSettingsRef();
+    auto settings_constraints = context->getSettingsConstraints();
     for (const auto & setting : settings.all())
     {
         const auto & setting_name = setting.getName();

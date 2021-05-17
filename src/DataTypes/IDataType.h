@@ -342,7 +342,7 @@ struct WhichDataType
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
 
-    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
+    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isUInt128() || isInt256() || isUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -360,7 +360,8 @@ inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_ty
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
-inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
+inline bool isMap(const DataTypePtr & data_type) { return WhichDataType(data_type).isMap(); }
+inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
 
 template <typename T>
 inline bool isUInt8(const T & data_type)
@@ -429,7 +430,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
 }
 
 template <typename T>
@@ -466,19 +467,6 @@ inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 inline bool isCompilableType(const DataTypePtr & data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
-}
-
-template <TypeIndex TYPE_IDX, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    WhichDataType which(data_type);
-    return which.idx == TYPE_IDX;
-}
-
-template <typename ExpectedDataType, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    return isDataType<ExpectedDataType::type_id>(data_type);
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

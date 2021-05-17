@@ -51,7 +51,7 @@ private:
       */
     struct PoolEntryHelper
     {
-        PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
+        explicit PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
         ~PoolEntryHelper()
         {
             std::unique_lock lock(data.pool.mutex);
@@ -69,7 +69,7 @@ public:
     public:
         friend class PoolBase<Object>;
 
-        Entry() {}    /// For deferred initialization.
+        Entry() = default;    /// For deferred initialization.
 
         /** The `Entry` object protects the resource from being used by another thread.
           * The following methods are forbidden for `rvalue`, so you can not write a similar to
@@ -99,10 +99,10 @@ public:
     private:
         std::shared_ptr<PoolEntryHelper> data;
 
-        Entry(PooledObject & object) : data(std::make_shared<PoolEntryHelper>(object)) {}
+        explicit Entry(PooledObject & object) : data(std::make_shared<PoolEntryHelper>(object)) {}
     };
 
-    virtual ~PoolBase() {}
+    virtual ~PoolBase() = default;
 
     /** Allocates the object. Wait for free object in pool for 'timeout'. With 'timeout' < 0, the timeout is infinite. */
     Entry get(Poco::Timespan::TimeDiff timeout)
