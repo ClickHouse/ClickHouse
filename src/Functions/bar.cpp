@@ -1,9 +1,8 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/UnicodeBar.h>
-#include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 
 

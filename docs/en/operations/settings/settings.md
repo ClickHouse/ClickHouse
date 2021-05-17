@@ -143,6 +143,16 @@ Possible values:
 
 Default value: 0.
 
+## http_max_uri_size {#http-max-uri-size}
+
+Sets the maximum URI length of an HTTP request.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: 1048576.
+
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
@@ -2853,6 +2863,39 @@ Sets the interval in seconds after which periodically refreshed [live view](../.
 
 Default value: `60`.
 
+## http_connection_timeout {#http_connection_timeout}
+
+HTTP connection timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1.
+
+## http_send_timeout {#http_send_timeout}
+
+HTTP send timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1800.
+
+## http_receive_timeout {#http_receive_timeout}
+
+HTTP receive timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1800.
+
 ## check_query_single_value_result {#check_query_single_value_result}
 
 Defines the level of detail for the [CHECK TABLE](../../sql-reference/statements/check-table.md#checking-mergetree-tables) query result for `MergeTree` family engines .
@@ -2863,5 +2906,98 @@ Possible values:
 -   1 — the query shows the general table check status.
 
 Default value: `0`.
+
+## prefer_column_name_to_alias {#prefer-column-name-to-alias}
+
+Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](../../sql-reference/syntax.md#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
+
+Possible values:
+
+- 0 — The column name is substituted with the alias.
+- 1 — The column name is not substituted with the alias. 
+
+Default value: `0`.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET prefer_column_name_to_alias = 0;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Result:
+
+```text
+Received exception from server (version 21.5.1):
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
+Query:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Result:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
+
+## limit {#limit}
+
+Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
+
+Possible values:
+
+-   0 — The number of rows is not limited.
+-   Positive integer.
+
+Default value: `0`.
+
+## offset {#offset}
+
+Sets the number of rows to skip before starting to return rows from the query. It adjusts the offset set by the [OFFSET](../../sql-reference/statements/select/offset.md#offset-fetch) clause, so that these two values are summarized.
+
+Possible values:
+
+-   0 — No rows are skipped .
+-   Positive integer.
+
+Default value: `0`.
+
+**Example**
+
+Input table:
+
+``` sql
+CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
+INSERT INTO test SELECT number FROM numbers(500);
+```
+
+Query:
+
+``` sql
+SET limit = 5;
+SET offset = 7;
+SELECT * FROM test LIMIT 10 OFFSET 100;
+```
+
+Result:
+
+``` text
+┌───i─┐
+│ 107 │
+│ 108 │
+│ 109 │
+└─────┘
+```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -15,7 +15,7 @@ class ExternalLoaderXMLConfigRepository : public IExternalLoaderConfigRepository
 public:
     ExternalLoaderXMLConfigRepository(const Poco::Util::AbstractConfiguration & main_config_, const std::string & config_key_);
 
-    const String & getName() const override { return name; }
+    std::string getName() const override { return name; }
 
     /// Return set of .xml files from path in main_config (config_key)
     std::set<std::string> getAllLoadablesDefinitionNames() override;

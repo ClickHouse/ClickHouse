@@ -29,6 +29,7 @@ public:
         const std::string & remote_database_name,
         const std::string & remote_table_name,
         const ColumnsDescription & columns_,
+        const String & comment,
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 

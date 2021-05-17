@@ -44,7 +44,8 @@ public:
         const ASTPtr & query_ast_,
         const ClusterPtr & cluster_,
         bool insert_sync_,
-        UInt64 insert_timeout_);
+        UInt64 insert_timeout_,
+        StorageID main_table_);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -96,6 +97,7 @@ private:
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
+    StorageID main_table;
     Stopwatch watch;
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;

@@ -223,7 +223,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (strcmp(name.c_str(), func[0]) != 0)
+                if (strcasecmp(name.c_str(), func[0]) != 0)
                 {
                     continue;
                 }
@@ -383,14 +383,40 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
+                // fuzzer sometimes may inserts tupleElement() created from ASTLiteral:
+                //
+                //     Function_tupleElement, 0xx
+                //     -ExpressionList_, 0xx
+                //     --Literal_Int64_255, 0xx
+                //     --Literal_Int64_100, 0xx
+                //
+                // And in this case it will be printed as "255.100", which
+                // later will be parsed as float, and formatting will be
+                // inconsistent.
+                //
+                // So instead of printing it as regular tuple,
+                // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                bool tuple_arguments_valid = true;
+                const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
+                const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
+
+                if (lit_left)
+                {
+                    Field::Types::Which type = lit_left->value.getType();
+                    if (type != Field::Types::Tuple && type != Field::Types::Array)
+                    {
+                        tuple_arguments_valid = false;
+                    }
+                }
+
                 // It can be printed in a form of 'x.1' only if right hand side
                 // is an unsigned integer lineral. We also allow nonnegative
                 // signed integer literals, because the fuzzer sometimes inserts
                 // them, and we want to have consistent formatting.
-                if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
+                if (tuple_arguments_valid && lit_right)
                 {
-                    if (isInt64FieldType(lit->value.getType())
-                        && lit->value.get<Int64>() >= 0)
+                    if (isInt64OrUInt64FieldType(lit_right->value.getType())
+                        && lit_right->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';

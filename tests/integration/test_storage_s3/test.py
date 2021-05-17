@@ -146,6 +146,47 @@ def test_put(cluster, maybe_auth, positive, compression):
         assert values_csv == get_s3_file_content(cluster, bucket, filename)
 
 
+@pytest.mark.parametrize("special", [
+    "space",
+    "plus"
+])
+def test_get_file_with_special(cluster, special):
+    symbol = {"space": " ", "plus": "+"}[special]
+    urlsafe_symbol = {"space": "%20", "plus": "%2B"}[special]
+    auth = "'minio','minio123',"
+    bucket = cluster.minio_restricted_bucket
+    instance = cluster.instances["dummy"]
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    values = [[12549, 2463, 19893], [64021, 38652, 66703], [81611, 39650, 83516], [11079, 59507, 61546], [51764, 69952, 6876], [41165, 90293, 29095], [40167, 78432, 48309], [81629, 81327, 11855], [55852, 21643, 98507], [6738, 54643, 41155]]
+    values_csv = ('\n'.join((','.join(map(str, row)) for row in values)) + '\n').encode()
+    filename = f"get_file_with_{special}_{symbol}two.csv"
+    put_s3_file_content(cluster, bucket, filename, values_csv)
+
+    get_query = f"SELECT * FROM s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/get_file_with_{special}_{urlsafe_symbol}two.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
+    assert [list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()] == values
+
+    get_query = f"SELECT * FROM s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/get_file_with_{special}*.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
+    assert [list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()] == values
+
+    get_query = f"SELECT * FROM s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/get_file_with_{special}_{urlsafe_symbol}*.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
+    assert [list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()] == values
+
+
+@pytest.mark.parametrize("special", [
+    "space",
+    "plus",
+    "plus2"
+])
+def test_get_path_with_special(cluster, special):
+    symbol = {"space": "%20", "plus": "%2B", "plus2": "%2B"}[special]
+    safe_symbol = {"space": "%20", "plus": "+", "plus2": "%2B"}[special]
+    auth = "'minio','minio123',"
+    table_format = "column1 String"
+    instance = cluster.instances["dummy"]
+    get_query = f"SELECT * FROM s3('http://resolver:8082/get-my-path/{safe_symbol}.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
+    assert run_query(instance, get_query).splitlines() == [f"/{symbol}.csv"]
+
+
 # Test put no data to S3.
 @pytest.mark.parametrize("auth", [
     "'minio','minio123',"
@@ -389,6 +430,7 @@ def run_s3_mocks(cluster):
     mocks = (
         ("mock_s3.py", "resolver", "8080"),
         ("unstable_server.py", "resolver", "8081"),
+        ("echo.py", "resolver", "8082"),
     )
     for mock_filename, container, port in mocks:
         container_id = cluster.get_container_id(container)
@@ -462,7 +504,7 @@ def test_custom_auth_headers_exclusion(cluster):
         print(result)
 
     assert ei.value.returncode == 243
-    assert '403 Forbidden' in ei.value.stderr
+    assert 'Forbidden Error' in ei.value.stderr
 
 
 def test_infinite_redirect(cluster):

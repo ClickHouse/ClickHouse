@@ -36,7 +36,7 @@ SELECT toDecimal128('1.0', 5) AS x, erf(x), erfc(x);
 SELECT toDecimal128('42.42', 4) AS x, lgamma(x), tgamma(x);
 
 SELECT toDecimal128('0.0', 2) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);
-SELECT toDecimal128(pi(), 37) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);
+SELECT toDecimal128(pi(), 14) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);
 SELECT toDecimal128('1.0', 2) AS x, asin(x), acos(x), atan(x);
 
 

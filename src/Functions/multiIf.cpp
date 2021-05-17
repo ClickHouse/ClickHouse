@@ -31,7 +31,7 @@ namespace
 ///
 /// Additionally the arguments, conditions or branches, support nullable types
 /// and the NULL value, with a NULL condition treated as false.
-class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
+class FunctionMultiIf final : public FunctionIfBase
 {
 public:
     static constexpr auto name = "multiIf";
