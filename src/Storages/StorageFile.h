@@ -53,6 +53,7 @@ public:
         std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
+        const String & comment;
     };
 
     NamesAndTypesList getVirtuals() const override;

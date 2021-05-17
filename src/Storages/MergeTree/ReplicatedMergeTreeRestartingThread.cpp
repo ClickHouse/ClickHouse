@@ -57,7 +57,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
     try
     {
-        if (first_time || storage.getZooKeeper()->expired())
+        if (first_time || readonly_mode_was_set || storage.getZooKeeper()->expired())
         {
             startup_completed = false;
 
@@ -67,15 +67,15 @@ void ReplicatedMergeTreeRestartingThread::run()
             }
             else
             {
-                LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
-
-                bool old_val = false;
-                if (storage.is_readonly.compare_exchange_strong(old_val, true))
+                if (storage.getZooKeeper()->expired())
                 {
-                    incr_readonly = true;
-                    CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+                    LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
+                    setReadonly();
                 }
-
+                else if (readonly_mode_was_set)
+                {
+                    LOG_WARNING(log, "Table was in readonly mode. Will try to activate it.");
+                }
                 partialShutdown();
             }
 
@@ -98,8 +98,14 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                 if (!need_stop && !tryStartup())
                 {
+                    /// We couldn't startup replication. Table must be readonly.
+                    /// Otherwise it can have partially initialized queue and other
+                    /// strange parts of state.
+                    setReadonly();
+
                     if (first_time)
                         storage.startup_event.set();
+
                     task->scheduleAfter(retry_period_ms);
                     return;
                 }
@@ -116,7 +122,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             bool old_val = true;
             if (storage.is_readonly.compare_exchange_strong(old_val, false))
             {
-                incr_readonly = false;
+                readonly_mode_was_set = false;
                 CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
             }
 
@@ -125,6 +131,8 @@ void ReplicatedMergeTreeRestartingThread::run()
     }
     catch (...)
     {
+        /// We couldn't activate table let's set it into readonly mode
+        setReadonly();
         storage.startup_event.set();
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
@@ -184,7 +192,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Couldn't start replication (table will be in readonly mode): {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
         catch (const Exception & e)
@@ -192,7 +200,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
-            LOG_ERROR(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Couldn't start replication (table will be in readonly mode): {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
     }
@@ -356,14 +364,24 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
     LOG_TRACE(log, "Restarting thread finished");
 
     /// For detach table query, we should reset the ReadonlyReplica metric.
-    if (incr_readonly)
+    if (readonly_mode_was_set)
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        incr_readonly = false;
+        readonly_mode_was_set = false;
     }
 
     /// Stop other tasks.
     partialShutdown();
+}
+
+void ReplicatedMergeTreeRestartingThread::setReadonly()
+{
+    bool old_val = false;
+    if (storage.is_readonly.compare_exchange_strong(old_val, true))
+    {
+        readonly_mode_was_set = true;
+        CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+    }
 }
 
 }

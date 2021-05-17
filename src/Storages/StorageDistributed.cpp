@@ -388,6 +388,7 @@ StorageDistributed::StorageDistributed(
     const StorageID & id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
@@ -413,6 +414,7 @@ StorageDistributed::StorageDistributed(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (sharding_key_)
@@ -454,8 +456,21 @@ StorageDistributed::StorageDistributed(
     const DistributedSettings & distributed_settings_,
     bool attach,
     ClusterPtr owned_cluster_)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_,
-    storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
+    : StorageDistributed(
+        id_,
+        columns_,
+        constraints_,
+        String{},
+        String{},
+        String{},
+        cluster_name_,
+        context_,
+        sharding_key_,
+        storage_policy_name_,
+        relative_data_path_,
+        distributed_settings_,
+        attach,
+        std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
@@ -1255,8 +1270,13 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         return StorageDistributed::create(
-            args.table_id, args.columns, args.constraints,
-            remote_database, remote_table, cluster_name,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            remote_database,
+            remote_table,
+            cluster_name,
             args.getContext(),
             sharding_key,
             storage_policy,

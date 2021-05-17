@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionOld.h>
 #include <DataTypes/Native.h>
 
 #if !defined(ARCADIA_BUILD)
