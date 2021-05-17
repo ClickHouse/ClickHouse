@@ -17,7 +17,7 @@ class IHashingBuffer : public BufferWithOwnMemory<Buffer>
 public:
     using uint128 = CityHash_v1_0_2::uint128;
 
-    IHashingBuffer<Buffer>(size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
+    IHashingBuffer(size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : BufferWithOwnMemory<Buffer>(block_size_), block_pos(0), block_size(block_size_), state(0, 0)
     {
     }
