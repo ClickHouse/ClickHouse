@@ -1,3 +1,4 @@
+import datetime
 import logging
 import time
 
@@ -63,7 +64,7 @@ def test_s3_zero_copy_replication(cluster, policy):
     )
 
     node1.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
-    time.sleep(1)
+    node2.query("SYSTEM SYNC REPLICA s3_test")
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
     assert node2.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
 
@@ -71,7 +72,8 @@ def test_s3_zero_copy_replication(cluster, policy):
     assert get_large_objects_count(cluster) == 1
 
     node2.query("INSERT INTO s3_test VALUES (2,'data'),(3,'data')")
-    time.sleep(1)
+    node1.query("SYSTEM SYNC REPLICA s3_test")
+
     assert node2.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
 
@@ -105,8 +107,7 @@ def test_s3_zero_copy_on_hybrid_storage(cluster):
     )
 
     node1.query("INSERT INTO hybrid_test VALUES (0,'data'),(1,'data')")
-
-    time.sleep(1)
+    node2.query("SYSTEM SYNC REPLICA hybrid_test")
 
     assert node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
     assert node2.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
@@ -137,10 +138,30 @@ def test_s3_zero_copy_on_hybrid_storage(cluster):
     node2.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
 
 
+def insert_data_time(node, table, number_of_mb, time, start=0):
+    values = ','.join(f"({x},{time})" for x in range(start, int((1024 * 1024 * number_of_mb) / 8) + start + 1))
+    node.query(f"INSERT INTO {table} VALUES {values}")
+
+
+def insert_large_data(node, table):
+    tm = time.mktime((datetime.date.today() - datetime.timedelta(days=7)).timetuple())
+    insert_data_time(node, table, 1, tm, 0)
+    tm = time.mktime((datetime.date.today() - datetime.timedelta(days=3)).timetuple())
+    insert_data_time(node, table, 1, tm, 1024*1024)
+    tm = time.mktime(datetime.date.today().timetuple())
+    insert_data_time(node, table, 10, tm, 1024*1024*2)
+
+
 @pytest.mark.parametrize(
-    "storage_policy", ["tiered", "tiered_copy"]
+    ("storage_policy", "large_data"),
+    [
+        ("tiered", False),
+        ("tiered_copy", False),
+        ("tiered", True),
+        ("tiered_copy", True),
+    ]
 )
-def test_s3_zero_copy_with_ttl_move(cluster, storage_policy):
+def test_s3_zero_copy_with_ttl_move(cluster, storage_policy, large_data):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -159,21 +180,36 @@ def test_s3_zero_copy_with_ttl_move(cluster, storage_policy):
                 .format('{replica}', storage_policy)
         )
 
-        node1.query("INSERT INTO ttl_move_test VALUES (10, now() - INTERVAL 3 DAY)")
-        node1.query("INSERT INTO ttl_move_test VALUES (11, now() - INTERVAL 1 DAY)")
+        if large_data:
+            insert_large_data(node1, 'ttl_move_test')
+        else:
+            node1.query("INSERT INTO ttl_move_test VALUES (10, now() - INTERVAL 3 DAY)")
+            node1.query("INSERT INTO ttl_move_test VALUES (11, now() - INTERVAL 1 DAY)")
 
         node1.query("OPTIMIZE TABLE ttl_move_test FINAL")
+        node2.query("SYSTEM SYNC REPLICA ttl_move_test")
 
-        assert node1.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(2)"
-        assert node2.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(2)"
-        assert node1.query("SELECT d FROM ttl_move_test ORDER BY d FORMAT Values") == "(10),(11)"
-        assert node2.query("SELECT d FROM ttl_move_test ORDER BY d FORMAT Values") == "(10),(11)"
+        if large_data:
+            assert node1.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(1572867)"
+            assert node2.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(1572867)"
+        else:
+            assert node1.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(2)"
+            assert node2.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(2)"
+            assert node1.query("SELECT d FROM ttl_move_test ORDER BY d FORMAT Values") == "(10),(11)"
+            assert node2.query("SELECT d FROM ttl_move_test ORDER BY d FORMAT Values") == "(10),(11)"
 
         node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
         node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
 
 
-def test_s3_zero_copy_with_ttl_delete(cluster):
+@pytest.mark.parametrize(
+    ("large_data"),
+    [
+        (False),
+        (True),
+    ]
+)
+def test_s3_zero_copy_with_ttl_delete(cluster, large_data):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -192,15 +228,23 @@ def test_s3_zero_copy_with_ttl_delete(cluster):
                 .format('{replica}')
         )
 
-        node1.query("INSERT INTO ttl_delete_test VALUES (10, now() - INTERVAL 3 DAY)")
-        node1.query("INSERT INTO ttl_delete_test VALUES (11, now() - INTERVAL 1 DAY)")
+        if large_data:
+            insert_large_data(node1, 'ttl_delete_test')
+        else:
+            node1.query("INSERT INTO ttl_delete_test VALUES (10, now() - INTERVAL 3 DAY)")
+            node1.query("INSERT INTO ttl_delete_test VALUES (11, now() - INTERVAL 1 DAY)")
 
         node1.query("OPTIMIZE TABLE ttl_delete_test FINAL")
+        node2.query("SYSTEM SYNC REPLICA ttl_delete_test")
 
-        assert node1.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
-        assert node2.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
-        assert node1.query("SELECT d FROM ttl_delete_test ORDER BY d FORMAT Values") == "(11)"
-        assert node2.query("SELECT d FROM ttl_delete_test ORDER BY d FORMAT Values") == "(11)"
+        if large_data:
+            assert node1.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1310721)"
+            assert node2.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1310721)"
+        else:
+            assert node1.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
+            assert node2.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
+            assert node1.query("SELECT d FROM ttl_delete_test ORDER BY d FORMAT Values") == "(11)"
+            assert node2.query("SELECT d FROM ttl_delete_test ORDER BY d FORMAT Values") == "(11)"
 
         node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
         node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
