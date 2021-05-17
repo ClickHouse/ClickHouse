@@ -1,22 +1,13 @@
 #include "Coverage.h"
 
-#include <algorithm>
-#include <atomic>
-#include <exception>
-#include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <stdexcept>
 #include <string>
-#include <thread>
-#include <unordered_map>
 #include <utility>
 
 #include <fmt/core.h>
-#include <fmt/format.h>
 
 #include "Common/ProfileEvents.h"
 
@@ -64,64 +55,83 @@ inline void setOrIncrement(T& container, typename T::key_type key, typename T::m
 }
 }
 
-void TaskQueue::worker(size_t thread_id)
+TaskQueue::TaskQueue(size_t max_threads)
 {
-    while (true)
-    {
-        Job job;
-
-        {
-            std::unique_lock lock(mutex);
-            new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
-
-            if (jobs.empty())
-                return;
-
-            job = std::move(jobs.front());
-            jobs.pop();
-        }
-
-        job(thread_id);
-        job = {};
-
-        {
-            std::unique_lock lock(mutex);
-            --scheduled_jobs;
-        }
-
-        job_finished.notify_all();
-    }
+    spawnThreads(max_threads);
 }
 
-void TaskQueue::finalize()
+void TaskQueue::waitAndRespawnThreads(size_t new_threads_count)
 {
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         shutdown = true;
     }
 
     new_job_or_shutdown.notify_all();
 
     for (auto & thread : threads)
-        thread.join();
+        if (thread.joinable())
+            thread.join();
 
     threads.clear();
+
+    shutdown = false; //no mutex needed as thread list is empty
+
+    spawnThreads(new_threads_count);
 }
+
+void TaskQueue::worker(size_t thread_id)
+{
+    while (true)
+    {
+        Job job;
+        bool is_shutdown;
+        bool has_job;
+
+        {
+            std::unique_lock lock(mutex);
+
+            new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
+
+            is_shutdown = shutdown;
+            has_job = !jobs.empty();
+
+            if (has_job)
+            {
+                job = std::move(jobs.front());
+                jobs.pop();
+            }
+        }
+
+        if (has_job)
+            job(thread_id);
+
+        if (is_shutdown)
+            return;
+    }
+}
+
+constexpr const std::string_view docker_ch_src = "/build/src";
+constexpr const std::string_view docker_report_path = "/home/myrrc/report.ccr";
 
 Writer::Writer()
     : hardware_concurrency(std::thread::hardware_concurrency()),
       base_log(nullptr),
-      // TODO works only in docker
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
-      clickhouse_src_dir_abs_path("/build/src"),
+
+      // TODO works only in docker
+      clickhouse_src_dir_abs_path(docker_ch_src),
+      report_path(docker_report_path),
+
       functions_count(0),
       addrs_count(0),
       edges_count(0),
+
       // Set the initial pool size to all threads as we'll need all resources to symbolize fast.
       tasks_queue(hardware_concurrency),
-      test_index(0),
-      ccr_header_buffer() { }
+
+      test_index(0) {}
 
 Writer& Writer::instance()
 {
@@ -181,16 +191,26 @@ void Writer::initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_ar
 
 void Writer::deinitRuntime()
 {
-    tasks_queue.wait();
-    tasks_queue.finalize();
+    tasks_queue.waitAndRespawnThreads(0);
     writeCCRFooter();
     report_file.close();
+    LOG_INFO(base_log, "Shut down runtime");
 }
 
 void Writer::onServerInitialized()
 {
-    // Before server initialization we couldn't log data to Poco.
+    // Before server initialization we couldn't log data to Poco as Writer constructor gets called in
+    // sanitizer callback which occurs before Poco internal structures initialization.
     base_log = &Poco::Logger::get(std::string{logger_base_name});
+
+    // fwrite also cannot be called before server initialization (some internal state is left uninitialized if we
+    // try to write file in the pc table callback).
+    report_file.set(report_path, "w");
+
+    if (report_file.file() == nullptr)
+        throw std::runtime_error("Failed to open " + report_path);
+    else
+        LOG_INFO(base_log, "Opened report file {}", report_path);
 
     symbolizeInstrumentedData();
 }
@@ -270,12 +290,12 @@ void Writer::symbolizeInstrumentedData()
 
     LOG_INFO(base_log,
         "Split addresses into function entries ({}) and normal ones ({}), {} total. "
-        "Symbolizing addresses, thread pool of size {}",
+        "Using thread pool of size {}. ",
         functions_count, addrs_count, edges_to_addrs.size(), hardware_concurrency);
 
     scheduleSymbolizationJobs<true, FuncSym>(func_caches, function_indices);
 
-    tasks_queue.wait();
+    tasks_queue.waitAndRespawnThreads(hardware_concurrency);
 
     LOG_INFO(base_log, "Symbolized all functions");
 
@@ -290,17 +310,13 @@ void Writer::symbolizeInstrumentedData()
     /// Merge functions data while other threads process addresses.
     mergeDataToCaches<true, FuncSym>(func_caches);
 
-    tasks_queue.wait();
+    tasks_queue.waitAndRespawnThreads(thread_pool_size_for_tests);
 
     mergeDataToCaches<false, AddrSym>(addr_caches);
 
-    tasks_queue.changePoolSizeAndRespawnThreads(thread_pool_size_for_tests);
-
     LOG_INFO(base_log, "Symbolized all addresses");
 
-    writeCCRHeaderToInternalBuffer();
-
-    LOG_INFO(base_log, "Wrote report header to internal buffer");
+    writeCCRHeader();
 }
 
 void Writer::onChangedTestName(std::string old_test_name)
@@ -360,7 +376,7 @@ void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
     writeCCREntry(test_data);
 }
 
-void Writer::writeCCRHeaderToInternalBuffer()
+void Writer::writeCCRHeader()
 {
     fmt::memory_buffer mb;
     mb.reserve(10 * 1024 * 1024); //small speedup
@@ -395,7 +411,9 @@ void Writer::writeCCRHeaderToInternalBuffer()
             fmt::format_to(mb, "{}\n", fmt::join(file.instrumented_lines, "\n"));
     }
 
-    ccr_header_buffer = std::move(mb);
+    report_file.write(mb);
+
+    LOG_INFO(base_log, "Wrote CCR header, {}b", mb.size());
 }
 
 void Writer::writeCCREntry(const Writer::TestData& test_data)
@@ -458,6 +476,8 @@ void Writer::writeCCRFooter()
 template <bool is_func_cache, class CacheItem>
 void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
 {
+    // Each worker symbolizes an address range. Ranges are uniformly distributed.
+
     for (size_t k = 0; k < hardware_concurrency; ++k)
         tasks_queue.schedule([this, &local_caches, &data](size_t thread_index)
         {
@@ -510,6 +530,8 @@ void Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, con
                 }
             }
         });
+
+    LOG_INFO(base_log, "Scheduled symbolization jobs");
 }
 
 template<bool is_func_cache, class CacheItem>
@@ -552,6 +574,8 @@ void Writer::mergeDataToCaches(const LocalCaches<CacheItem>& data)
                         instrumented.push_back(line);
 
                     edges_cache[edge_index] = {line, source_index, {}};
+
+                    // lines is a vector, so we need to check for duplicates beforehand
                     lines.insert(line);
                 }
             }

@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <exception>
 #include <filesystem>
 #include <functional>
 #include <iterator>
@@ -12,6 +11,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <queue>
 #include <list>
 #include <string_view>
@@ -19,6 +19,7 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 
@@ -56,83 +57,42 @@ using Line = size_t;
 class TaskQueue
 {
 public:
-    explicit inline TaskQueue(size_t max_threads_): max_threads(max_threads_)
-    {
-        for (size_t i = 0; i < max_threads; ++i)
-            spawnThread(i);
-    }
+    explicit TaskQueue(size_t max_threads);
 
     template <class J>
     void schedule(J && job)
     {
         {
-            std::unique_lock lock(mutex);
+            std::lock_guard lock(mutex);
             jobs.emplace(std::forward<J>(job));
-            ++scheduled_jobs;
         }
 
         new_job_or_shutdown.notify_one();
     }
 
-    inline void wait()
-    {
-        std::unique_lock lock(mutex);
-        job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
-    }
+    /// Wait for all active jobs to finish, remove all threads, spawn new threads
+    void waitAndRespawnThreads(size_t new_threads_count); // count can be zero
 
-    inline ~TaskQueue() { finalize(); }
-
-    inline void changePoolSizeAndRespawnThreads(size_t size)
-    {
-        // will be called when there are 0 jobs active, no mutex needed
-        //std::lock_guard lock(mutex);
-
-        finalize();
-        shutdown = false;
-
-        max_threads = size;
-
-        for (size_t i = 0; i < max_threads; ++i)
-            spawnThread(i);
-    }
-
-    void finalize();
+    ~TaskQueue() { waitAndRespawnThreads(0); }
 
 private:
     using Job = std::function<void(size_t)>;
     using Thread = std::thread;
 
     std::mutex mutex;
-    std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
-
-    size_t max_threads;
-
-    size_t scheduled_jobs = 0;
     bool shutdown = false;
 
     std::queue<Job> jobs;
     std::list<Thread> threads;
-    using Iter = typename std::list<Thread>::iterator;
 
     void worker(size_t thread_id);
 
-    inline void spawnThread(size_t thread_index)
+    inline void spawnThreads(size_t thread_count)
     {
-        threads.emplace_front([this, thread_index] { worker(thread_index); });
+        for (size_t i = 0; i < thread_count; ++i)
+            threads.emplace_front([this, i] { worker(i); });
     }
-};
-
-/// RAII wrapper for FILE *
-class FileWrapper
-{
-    FILE * handle;
-public:
-    inline FileWrapper(): handle(nullptr) {}
-    inline void set(const std::string& pathname, const char * mode) { handle = fopen(pathname.data(), mode); }
-    inline FILE * file() { return handle; }
-    inline void close() { fclose(handle); handle = nullptr; }
-    inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), 1, mb.size(), handle); }
 };
 
 /**
@@ -147,7 +107,6 @@ class Writer
 public:
     static constexpr std::string_view setting_test_name = "coverage_test_name";
     static constexpr std::string_view setting_tests_count = "coverage_tests_count";
-    static constexpr std::string_view setting_report_path = "coverage_report_path";
 
     static Writer& instance();
 
@@ -161,17 +120,6 @@ public:
     {
         // This is an upper bound (as we don't know which tests will be skipped before running them).
         tests.resize(tests_count);
-    }
-
-    inline void setReportPath(const std::string& report_path_)
-    {
-        report_path = report_path_;
-        report_file.set(report_path, "w");
-
-        LOG_INFO(base_log, "Set report file path to {}, writing CCR header, {}b",
-                report_path_, ccr_header_buffer.size());
-
-        writeCCRHeaderToFile();
     }
 
     void onChangedTestName(std::string old_test_name); // String is passed by value as it's swapped with _test_.
@@ -194,7 +142,7 @@ private:
     const Dwarf dwarf;
 
     const std::filesystem::path clickhouse_src_dir_abs_path;
-    std::filesystem::path report_path;
+    const std::string report_path;
 
     size_t functions_count;
     size_t addrs_count;
@@ -253,6 +201,17 @@ private:
     EdgesHit edges_hit; /// Data accumulated for a single test.
 
     size_t test_index;
+
+    class FileWrapper /// RAII wrapper for FILE *
+    {
+        FILE * handle {nullptr};
+    public:
+        inline void set(const std::string& pathname, const char * mode) { handle = fopen(pathname.data(), mode); }
+        inline FILE * file() { return handle; }
+        inline void close() { fclose(handle); handle = nullptr; }
+        inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), mb.size(), sizeof(char), handle); }
+    };
+
     FileWrapper report_file;
 
     void deinitRuntime();
@@ -261,16 +220,7 @@ private:
 
     // CCR (ClickHouse coverage report) is a format for storing large coverage reports while preserving per-test data.
 
-    fmt::memory_buffer ccr_header_buffer; // Report header may be formatted before report file path is specified.
-
-    inline void writeCCRHeaderToFile()
-    {
-        report_file.write(ccr_header_buffer);
-        // do not free buffer memory to save a bit of time.
-        fflush(report_file.file());
-    }
-
-    void writeCCRHeaderToInternalBuffer();
+    void writeCCRHeader();
     void writeCCREntry(const TestData& test_data);
     void writeCCRFooter();
 

@@ -1144,12 +1144,6 @@ void Context::setSetting(const StringRef & name, const Field & value)
         ::detail::Writer::instance().setTestsCount(value.get<UInt64>());
         return;
     }
-
-    if (name_view == ::detail::Writer::setting_report_path)
-    {
-        ::detail::Writer::instance().setReportPath(value.get<String>());
-        return;
-    }
 #endif
 
     if (name == "profile")

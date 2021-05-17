@@ -471,7 +471,6 @@ class IColumn;
     M(Bool, database_replicated_ddl_output, true, "Obsolete setting, does nothing. Will be removed after 2021-09-08", 0) \
     \
     M(String, coverage_test_name, "",   "Internal setting, used by coverage runtime", 0) \
-    M(String, coverage_report_path, "", "Internal setting, used by coverage runtime", 0) \
     M(UInt64, coverage_tests_count, 0,  "Internal setting, used by coverage runtime", 0) \
     \
     M(HandleKafkaErrorMode, handle_kafka_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Passible values: default, stream.", 0) \

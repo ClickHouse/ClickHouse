@@ -1162,6 +1162,7 @@ Dwarf::LocationInfo Dwarf::findAddressForCoverageRuntime(uintptr_t address) cons
     auto unit = getCompilationUnit(info_, offset);
     [[maybe_unused]] const bool found_location = findLocation(address, mode, unit, location_info, inline_frames);
     assert(found_location);
+
     return location_info;
 }
 

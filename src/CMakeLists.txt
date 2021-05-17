@@ -295,7 +295,18 @@ set_source_files_properties(
     Common/Dwarf.cpp
     Common/SymbolIndex.cpp
 
+    Common/ThreadFuzzer.cpp
+
     PROPERTIES COMPILE_FLAGS "-O3 -ggdb -g3 -finline-functions ${WITHOUT_COVERAGE}")
+
+if (ENABLE_TESTS)
+    set_source_files_properties(
+        Common/new_delete.cpp
+        Common/CurrentMemoryTracker.cpp
+        Common/CurrentThread.cpp
+
+        PROPERTIES COMPILE_FLAGS "-O3 -ggdb -g3 -finline-functions ${WITHOUT_COVERAGE}")
+endif()
 
 target_link_libraries (clickhouse_common_io
         PRIVATE

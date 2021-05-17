@@ -22,9 +22,13 @@ kill_clickhouse () {
 }
 
 start_clickhouse () {
-    sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml &
+    #sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml &
+    /usr/bin/clickhouse server --config /etc/clickhouse-server/config.xml &
     counter=0
-    until clickhouse-client --query "SELECT 1"
+
+    # TODO
+    # until clickhouse-client --query "SELECT 1"
+    until /usr/bin/clickhouse client --query "SELECT 1"
     do
         if [ "$counter" -gt 120 ]
         then
@@ -45,12 +49,12 @@ wail_till_ready () {
     func_time=$(time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all functions/ q' > /dev/null)
 
     echo "Symbolized functions"
-    echo $func_time
+    echo "$func_time"
 
     addr_time=$(time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null)
 
     echo "Symbolized addresses"
-    echo $addr_time
+    echo "$addr_time"
 
     instrumented_contribs=$(grep "contrib/" < report.ccr)
     has_contribs=$(echo "$instrumented_contribs" | wc -l)
@@ -66,18 +70,26 @@ wail_till_ready () {
 
 chmod 777 /
 
-dpkg -i package_folder/clickhouse-common-static_*.deb; \
-    dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
-    dpkg -i package_folder/clickhouse-server_*.deb;  \
-    dpkg -i package_folder/clickhouse-client_*.deb; \
-    dpkg -i package_folder/clickhouse-test_*.deb
+# TODO
+# dpkg -i package_folder/clickhouse-common-static_*.deb; \
+#     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
+#     dpkg -i package_folder/clickhouse-server_*.deb;  \
+#     dpkg -i package_folder/clickhouse-client_*.deb; \
+#     dpkg -i package_folder/clickhouse-test_*.deb
+
+cp build/san_full/programs/clickhouse /usr/bin/clickhouse
+cp build/tests/clickhouse-test /usr/bin/clickhouse-test
+mkdir /etc/clickhouse-server
+cp build/programs/server/config.xml /etc/clickhouse-server/config.xml
+cp build/programs/server/users.xml /etc/clickhouse-server/users.xml
+mkdir /home/myrrc
 
 mkdir -p /var/lib/clickhouse
 mkdir -p /var/log/clickhouse-server
 chmod 777 -R /var/log/clickhouse-server/
 
 # install test configs
-/usr/share/clickhouse-test/config/install.sh
+# TODO /usr/share/clickhouse-test/config/install.sh
 
 start_clickhouse
 
@@ -90,8 +102,6 @@ fi
 chmod 777 -R /var/lib/clickhouse
 
 wail_till_ready
-
-clickhouse-client --query "SET coverage_report_path='/report.ccr'"
 
 # clickhouse-client --query "SET coverage_tests_count=2"
 # clickhouse-client --query "SET coverage_test_name='client_initial_1'"
@@ -125,9 +135,8 @@ kill_clickhouse
 # TODO use baseline for incremental coverage
 # --baseline, --highlight, --diff
 
-cp /usr/bin/report.ccr report.ccr
-cp report.ccr "${OUTPUT_DIR}"/report.ccr
-python3 ccr_converter.py report.ccr --genhtml-slim-report report.info
+cp /report.ccr "${OUTPUT_DIR}"/report.ccr
+python3 ccr_converter.py /report.ccr --genhtml-slim-report report.info
 cp report.info "${OUTPUT_DIR}"/report.info
 
 # Demangling names by c++filt here is cheaper than demangling names in binary

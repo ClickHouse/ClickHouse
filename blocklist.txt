@@ -30,3 +30,9 @@ fun:__profd__ZN3fmt*
 # sparsehash-c11
 fun:_ZN6google*
 fun:_ZNK6google*
+# llvm
+fun:_ZN4llvm*
+fun:_ZNKllvm*
+# internal memory routines
+fun:_ZN6Memory*
+fun:_ZN6Memory*

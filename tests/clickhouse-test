@@ -374,8 +374,6 @@ def run_tests_array(all_tests_with_params):
         return True, failures
 
     if args.coverage:
-        # We don't care if server answered to that query as this query does not really set the setting
-        # (it just invokes coverage runtime routines).
         run_query("SET coverage_tests_count={};".format(len(all_tests)), 0, False)
 
     for case in all_tests:
@@ -1069,7 +1067,7 @@ if __name__ == '__main__':
         help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
-    parser.add_argument('--coverage', action='store_true', default=False,
+    parser.add_argument('--coverage', action='store_false',
         help="Set* internal coverage test name setting before test run, similar to --testname. "
              "Note that setting is not actually set in server, it's just using settings pipeline, see "
              "Context.cpp :: setSetting()")
