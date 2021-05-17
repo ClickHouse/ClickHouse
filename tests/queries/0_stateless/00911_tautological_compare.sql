@@ -1,3 +1,4 @@
+-- TODO: Return this test after simplifying InterpreterSelectQuery
 -- SELECT count() FROM system.numbers WHERE number != number;
 -- SELECT count() FROM system.numbers WHERE number < number;
 -- SELECT count() FROM system.numbers WHERE number > number;
