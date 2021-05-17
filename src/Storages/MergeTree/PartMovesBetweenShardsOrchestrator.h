@@ -3,6 +3,7 @@
 #include <vector>
 #include <common/logger_useful.h>
 #include <common/types.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/WriteHelpers.h>
@@ -136,7 +137,7 @@ public:
 
 private:
     void run();
-    void stepEntry(const Entry & entry);
+    void stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk);
 
 private:
     StorageReplicatedMergeTree & storage;
