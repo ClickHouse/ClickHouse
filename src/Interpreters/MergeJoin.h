@@ -103,6 +103,8 @@ private:
     const size_t max_rows_in_right_block;
     const size_t max_files_to_merge;
 
+    Names lowcard_right_keys;
+
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);
 
