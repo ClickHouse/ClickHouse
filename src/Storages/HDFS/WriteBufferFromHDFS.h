@@ -13,7 +13,7 @@ namespace DB
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class WriteBufferFromHDFS : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromHDFS final : public BufferWithOwnMemory<WriteBuffer>
 {
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;
@@ -29,7 +29,7 @@ public:
 
     void sync() override;
 
-    void finalize() final override;
+    void finalize() override;
 };
 }
 #endif
