@@ -221,7 +221,8 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, ContextPtr,
         String thread_name;
         if (std::filesystem::exists(thread_name_path))
         {
-            ReadBufferFromFile comm(thread_name_path.string());
+            constexpr size_t comm_buf_size = 32; /// More than enough for thread name
+            ReadBufferFromFile comm(thread_name_path.string(), comm_buf_size);
             readStringUntilEOF(thread_name, comm);
             comm.close();
         }
