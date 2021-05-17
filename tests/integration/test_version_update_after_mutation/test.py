@@ -2,7 +2,7 @@ import pytest
 import time
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -38,29 +38,9 @@ def test_mutate_and_upgrade(start_cluster):
     node1.restart_with_latest_version(signal=9)
     node2.restart_with_latest_version(signal=9)
 
-    exception = None
     # After hard restart table can be in readonly mode
-    for _ in range(40):
-        try:
-            node2.query("INSERT INTO mt VALUES ('2020-02-13', 3);")
-            break
-        except Exception as ex:
-            print("Cannot insert into node2 with error {}", ex)
-            time.sleep(0.5)
-            exception = ex
-    else:
-        raise exception
-
-    for _ in range(40):
-        try:
-            node1.query("SYSTEM SYNC REPLICA mt", timeout=5)
-            break
-        except Exception as ex:
-            print("Cannot sync node1 with error {}", ex)
-            time.sleep(0.5)
-            exception = ex
-    else:
-        raise exception
+    exec_query_with_retry(node2, "INSERT INTO mt VALUES ('2020-02-13', 3)")
+    exec_query_with_retry(node1, "SYSTEM SYNC REPLICA mt")
 
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"
@@ -99,19 +79,7 @@ def test_upgrade_while_mutation(start_cluster):
 
     node3.restart_with_latest_version(signal=9)
 
-    # After hard restart table can be in readonly mode
-    exception = None
-    for _ in range(40):
-        try:
-            node3.query("ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
-            break
-        except Exception as ex:
-            print("Cannot alter node3 with error {}", ex)
-            time.sleep(0.5)
-            exception = ex
-    else:
-        raise exception
-
+    exec_query_with_retry(node3, "ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
     # will delete nothing, but previous async mutation will finish with this query
 
     assert_eq_with_retry(node3, "SELECT COUNT() from mt1", "50000\n")

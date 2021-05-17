@@ -1029,10 +1029,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
                     String lambda_name = data.getUniqueName("__lambda");
 
-                    auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
+                    auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
                             lambda_actions, captured, lambda_arguments, result_type, result_name);
-                    auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
-                    data.addFunction(function_capture_adapter, captured, lambda_name);
+                    data.addFunction(function_capture, captured, lambda_name);
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                     argument_names[i] = lambda_name;

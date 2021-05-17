@@ -49,6 +49,7 @@ StorageMySQL::StorageMySQL(
     const std::string & on_duplicate_clause_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -61,6 +62,7 @@ StorageMySQL::StorageMySQL(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -272,6 +274,7 @@ void registerStorageMySQL(StorageFactory & factory)
             on_duplicate_clause,
             args.columns,
             args.constraints,
+            args.comment,
             args.getContext());
     },
     {
