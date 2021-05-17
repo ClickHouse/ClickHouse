@@ -3,13 +3,13 @@ DROP TABLE IF EXISTS table2;
 
 CREATE TABLE table1
 (
-	`id` UInt32,
+	`id` UInt32
 )
 ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'table2', rand());
 
 CREATE TABLE table2
 (
-	`id` UInt32,
+	`id` UInt32
 )
 ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'table1', rand());
 
