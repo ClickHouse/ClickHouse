@@ -466,6 +466,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
 
     metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
+    auto index_stats = use_cache ? std::move(cache->index_stats) : std::make_unique<ReadFromMergeTree::IndexStats>();
 
     // Build and check if primary key is used when necessary
     std::optional<KeyCondition> key_condition;
@@ -483,15 +484,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 fmt::join(primary_key_columns, ", "));
         }
         LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
-    }
 
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
-    auto index_stats = use_cache ? std::move(cache->index_stats) : std::make_unique<ReadFromMergeTree::IndexStats>();
-
-    // Select parts to read and do partition pruning via partition value and minmax indices
-    if (!use_cache)
-    {
+        /// Select parts to read and do partition pruning via partition value and minmax indices
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
         DataTypes minmax_columns_types;
@@ -523,6 +517,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             }
         }
 
+        auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
         PartFilterCounters part_filter_counters;
         if (query_context->getSettingsRef().allow_experimental_query_deduplication)
             selectPartsToReadWithUUIDFilter(
@@ -574,6 +569,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
     /// Sampling.
     MergeTreeDataSelectSamplingData sampling = use_cache ? std::move(cache->sampling) : MergeTreeDataSelectSamplingData{};
     if (!use_cache)
