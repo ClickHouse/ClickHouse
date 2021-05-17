@@ -2,6 +2,7 @@
 
 #include <ifaddrs.h>
 #include <cstring>
+#include <optional>
 #include <common/types.h>
 #include <Common/Exception.h>
 #include <Poco/Net/IPAddress.h>
@@ -54,6 +55,10 @@ struct NetworkInterfaces
                     continue;
             }
 
+            /** Compare the addresses without taking into account `scope`.
+              * Theoretically, this may not be correct - depends on `route` setting
+              *  - through which interface we will actually access the specified address.
+              */
             if (interface_address->length() == address.length()
                 && 0 == memcmp(interface_address->addr(), address.addr(), address.length()))
                 return true;
