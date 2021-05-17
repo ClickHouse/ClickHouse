@@ -104,8 +104,6 @@ public:
         return std::make_shared<DataTypeArray>(type);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         /// TODO Do positions need to be 1-based for this function?

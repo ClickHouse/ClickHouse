@@ -109,7 +109,7 @@ SELECT
     t2_00826.a,
     t2_00826.b
 FROM t1_00826
-ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (a = t2_00826.a) AND (a = t2_00826.a) AND (b = t2_00826.b)
+ALL INNER JOIN t2_00826 ON (((a = t2_00826.a) AND (a = t2_00826.a)) AND (a = t2_00826.a)) AND (b = t2_00826.b)
 WHERE (a = t2_00826.a) AND ((a = t2_00826.a) AND ((a = t2_00826.a) AND (b = t2_00826.b)))
 --- cross split conjunction ---
 SELECT

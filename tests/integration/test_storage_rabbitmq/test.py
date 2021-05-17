@@ -1971,29 +1971,6 @@ def test_rabbitmq_format_factory_settings(rabbitmq_cluster):
     assert(result == expected)
 
 
-@pytest.mark.timeout(120)
-def test_rabbitmq_vhost(rabbitmq_cluster):
-    instance.query('''
-        CREATE TABLE test.rabbitmq_vhost (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'vhost',
-                     rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_vhost = '/'
-        ''')
-
-    credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-    channel.basic_publish(exchange='vhost', routing_key='', body=json.dumps({'key': 1, 'value': 2}))
-    connection.close()
-    while True:
-        result = instance.query('SELECT * FROM test.rabbitmq_vhost ORDER BY key', ignore_error=True)
-        if result == "1\t2\n":
-            break
-
-
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

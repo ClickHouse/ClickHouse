@@ -17,11 +17,9 @@
 
 (defn get-clickhouse-url
   [url]
-  (non-precise-cached-wget! url))
-
-(defn get-clickhouse-scp
-  [path]
-  (c/upload path (str common-prefix "/clickhouse")))
+  (let [download-result (cu/wget! url)]
+    (do (c/exec :mv download-result common-prefix)
+        (str common-prefix "/" download-result))))
 
 (defn download-clickhouse
   [source]
@@ -29,7 +27,6 @@
   (cond
     (clojure.string/starts-with? source "rbtorrent:") (get-clickhouse-sky source)
     (clojure.string/starts-with? source "http") (get-clickhouse-url source)
-    (.exists (io/file source)) (get-clickhouse-scp source)
     :else (throw (Exception. (str "Don't know how to download clickhouse from" source)))))
 
 (defn unpack-deb
@@ -52,7 +49,6 @@
 
 (defn chmod-binary
   [path]
-  (info "Binary path chmod" path)
   (c/exec :chmod :+x path))
 
 (defn install-downloaded-clickhouse
@@ -94,13 +90,6 @@
   (c/exec :echo (slurp (io/resource "listen.xml")) :> (str sub-configs-dir "/listen.xml"))
   (c/exec :echo (cluster-config test node (slurp (io/resource "keeper_config.xml"))) :> (str sub-configs-dir "/keeper_config.xml")))
 
-(defn collect-traces
-  [test node]
-  (let [pid (c/exec :pidof "clickhouse")]
-    (c/exec :timeout :-s "KILL" "60" :gdb :-ex "set pagination off" :-ex (str "set logging file " logs-dir "/gdb.log") :-ex
-            "set logging on" :-ex "backtrace" :-ex "thread apply all backtrace"
-            :-ex "backtrace" :-ex "detach" :-ex "quit" :--pid pid :|| :true)))
-
 (defn db
   [version reuse-binary]
   (reify db/DB
@@ -121,31 +110,19 @@
 
     (teardown! [_ test node]
       (info node "Tearing down clickhouse")
+      (kill-clickhouse! node test)
       (c/su
-       (kill-clickhouse! node test)
        (if (not reuse-binary)
          (c/exec :rm :-rf binary-path))
        (c/exec :rm :-rf pid-file-path)
        (c/exec :rm :-rf data-dir)
-       (c/exec :rm :-rf logs-dir)
+       ;(c/exec :rm :-rf logs-dir)
        (c/exec :rm :-rf configs-dir)))
 
     db/LogFiles
     (log-files [_ test node]
       (c/su
-       ;(if (cu/exists? pid-file-path)
-         ;(do
-         ;  (info node "Collecting traces")
-         ;  (collect-traces test node))
-         ;(info node "Pid files doesn't exists"))
        (kill-clickhouse! node test)
-       (if (cu/exists? coordination-data-dir)
-         (do
-           (info node "Coordination files exists, going to compress")
-           (c/cd data-dir
-                 (c/exec :tar :czf "coordination.tar.gz" "coordination")))))
-      (let [common-logs [stderr-file (str logs-dir "/clickhouse-server.log") (str data-dir "/coordination.tar.gz")]
-            gdb-log (str logs-dir "/gdb.log")]
-        (if (cu/exists? (str logs-dir "/gdb.log"))
-          (conj common-logs gdb-log)
-          common-logs)))))
+       (c/cd data-dir
+             (c/exec :tar :czf "coordination.tar.gz" "coordination")))
+      [stderr-file (str logs-dir "/clickhouse-server.log") (str data-dir "/coordination.tar.gz")])))

@@ -136,8 +136,8 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 {
     const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
-    const auto & access_control = getContext()->getAccessControlManager();
-    auto ids = RolesOrUsersSet{*show_query.for_roles, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
+    const auto & access_control = context.getAccessControlManager();
+    auto ids = RolesOrUsersSet{*show_query.for_roles, access_control, context.getUserID()}.getMatchingIDs(access_control);
 
     std::vector<AccessEntityPtr> entities;
     for (const auto & id : ids)
@@ -155,7 +155,7 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 ASTs InterpreterShowGrantsQuery::getGrantQueries() const
 {
     auto entities = getEntities();
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = context.getAccessControlManager();
 
     ASTs grant_queries;
     for (const auto & entity : entities)

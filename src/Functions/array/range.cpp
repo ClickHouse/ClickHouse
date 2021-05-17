@@ -1,4 +1,4 @@
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -32,7 +32,7 @@ class FunctionRange : public IFunction
 public:
     static constexpr auto name = "range";
     static constexpr size_t max_elements = 100'000'000;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRange>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
 
 private:
     String getName() const override { return name; }

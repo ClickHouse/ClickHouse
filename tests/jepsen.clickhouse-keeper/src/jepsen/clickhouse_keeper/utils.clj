@@ -6,24 +6,11 @@
             [jepsen.control.util :as cu]
             [jepsen.clickhouse-keeper.constants :refer :all]
             [jepsen.control :as c]
-            [clojure.tools.logging :refer :all]
-            [clojure.java.io :as io])
+            [clojure.tools.logging :refer :all])
   (:import (org.apache.zookeeper.data Stat)
            (org.apache.zookeeper CreateMode
                                  ZooKeeper)
-           (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)
-           (java.security MessageDigest)))
-
-(defn exec-with-retries
-  [retries f & args]
-  (let [res (try {:value (apply f args)}
-                 (catch Exception e
-                   (if (zero? retries)
-                     (throw e)
-                     {:exception e})))]
-    (if (:exception res)
-      (do (Thread/sleep 1000) (recur (dec retries) f args))
-      (:value res))))
+           (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
 (defn parse-long
   "Parses a string to a Long. Passes through `nil` and empty strings."
@@ -45,7 +32,7 @@
 
 (defn zk-connect
   [host port timeout]
-  (exec-with-retries 30 (fn [] (zk/connect (str host ":" port) :timeout-msec timeout))))
+  (zk/connect (str host ":" port) :timeout-msec timeout))
 
 (defn zk-create-range
   [conn n]
@@ -181,23 +168,13 @@
     :--keeper_server.logs_storage_path coordination-logs-dir)
    (wait-clickhouse-alive! node test)))
 
-(defn md5 [^String s]
-  (let [algorithm (MessageDigest/getInstance "MD5")
-        raw (.digest algorithm (.getBytes s))]
-    (format "%032x" (BigInteger. 1 raw))))
-
-(defn non-precise-cached-wget!
-  [url]
-  (let [encoded-url (md5 url)
-        expected-file-name (.getName (io/file url))
-        dest-file (str binaries-cache-dir "/" encoded-url)
-        dest-symlink (str common-prefix "/" expected-file-name)
-        wget-opts (concat cu/std-wget-opts [:-O dest-file])]
-    (when-not (cu/exists? dest-file)
-      (info "Downloading" url)
-      (do (c/exec :mkdir :-p binaries-cache-dir)
-          (c/cd binaries-cache-dir
-                (cu/wget-helper! wget-opts url))))
-    (c/exec :rm :-rf dest-symlink)
-    (c/exec :ln :-s dest-file dest-symlink)
-    dest-symlink))
+(defn exec-with-retries
+  [retries f & args]
+  (let [res (try {:value (apply f args)}
+                 (catch Exception e
+                   (if (zero? retries)
+                     (throw e)
+                     {:exception e})))]
+    (if (:exception res)
+      (do (Thread/sleep 1000) (recur (dec retries) f args))
+      (:value res))))

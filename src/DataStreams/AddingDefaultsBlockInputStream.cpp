@@ -130,7 +130,7 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
 AddingDefaultsBlockInputStream::AddingDefaultsBlockInputStream(
     const BlockInputStreamPtr & input,
     const ColumnsDescription & columns_,
-    ContextPtr context_)
+    const Context & context_)
     : columns(columns_)
     , column_defaults(columns.getDefaults())
     , context(context_)

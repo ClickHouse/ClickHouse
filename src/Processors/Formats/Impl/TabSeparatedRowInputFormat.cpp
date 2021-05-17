@@ -7,7 +7,6 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
@@ -339,10 +338,8 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
     const auto & index = column_mapping->column_indexes_for_input_fields[file_column];
     if (index)
     {
-        bool can_be_parsed_as_null = removeLowCardinality(type)->isNullable();
-
         // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
-        if (!can_be_parsed_as_null && !in.eof())
+        if (!type->isNullable() && !in.eof())
         {
             if (*in.position() == '\\' && in.available() >= 2)
             {

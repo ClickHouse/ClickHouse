@@ -1,4 +1,4 @@
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -20,16 +20,16 @@ namespace
 
 /** Get scalar value of sub queries from query context via IAST::Hash.
   */
-class FunctionGetScalar : public IFunction, WithContext
+class FunctionGetScalar : public IFunction
 {
 public:
     static constexpr auto name = "__getScalar";
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionGetScalar>(context_);
+        return std::make_shared<FunctionGetScalar>(context);
     }
 
-    explicit FunctionGetScalar(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionGetScalar(const Context & context_) : context(context_) {}
 
     String getName() const override
     {
@@ -46,8 +46,8 @@ public:
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
             throw Exception("Function " + getName() + " accepts one const string argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
-        ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
-        scalar = query_context->getScalar(scalar_name).getByPosition(0);
+        const Context & query_context = context.hasQueryContext() ? context.getQueryContext() : context;
+        scalar = query_context.getScalar(scalar_name).getByPosition(0);
         return scalar.type;
     }
 
@@ -58,6 +58,7 @@ public:
 
 private:
     mutable ColumnWithTypeAndName scalar;
+    const Context & context;
 };
 
 }

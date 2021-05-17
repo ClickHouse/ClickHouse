@@ -69,8 +69,6 @@ Types of sources (`source_type`):
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
-    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)    
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
 

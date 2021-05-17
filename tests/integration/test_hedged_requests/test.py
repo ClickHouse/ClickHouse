@@ -87,10 +87,7 @@ def check_settings(node_name, sleep_in_send_tables_status_ms, sleep_in_send_data
 
 def check_changing_replica_events(expected_count):
     result = NODES['node'].query("SELECT value FROM system.events WHERE event='HedgedRequestsChangeReplica'")
-
-    # If server load is high we can see more than expected
-    # replica change events, but never less than expected
-    assert int(result) >= expected_count
+    assert int(result) == expected_count
 
 
 def update_configs(node_1_sleep_in_send_tables_status=0, node_1_sleep_in_send_data=0,

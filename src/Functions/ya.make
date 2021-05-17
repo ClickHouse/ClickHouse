@@ -74,7 +74,6 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     GeoHash.cpp
     IFunction.cpp
-    IFunctionOld.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
@@ -230,8 +229,6 @@ SRCS(
     defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
-    divide/divide.cpp
-    divide/divideImpl.cpp
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
@@ -304,7 +301,6 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
-    indexHint.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -534,7 +530,6 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
-    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp

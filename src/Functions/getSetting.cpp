@@ -1,4 +1,4 @@
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
@@ -19,13 +19,13 @@ namespace
 {
 
 /// Get the value of a setting.
-class FunctionGetSetting : public IFunction, WithContext
+class FunctionGetSetting : public IFunction
 {
 public:
     static constexpr auto name = "getSetting";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
-    explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionGetSetting>(context_); }
+    explicit FunctionGetSetting(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
@@ -43,7 +43,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN};
 
         std::string_view setting_name{column->getDataAt(0)};
-        value = getContext()->getSettingsRef().get(setting_name);
+        value = context.getSettingsRef().get(setting_name);
 
         DataTypePtr type = applyVisitor(FieldToDataType{}, value);
         value = convertFieldToType(value, *type);
@@ -57,6 +57,7 @@ public:
 
 private:
     mutable Field value;
+    const Context & context;
 };
 
 }

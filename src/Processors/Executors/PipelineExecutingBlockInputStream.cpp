@@ -121,4 +121,11 @@ void PipelineExecutingBlockInputStream::setQuota(const std::shared_ptr<const Ena
                     ErrorCodes::LOGICAL_ERROR);
 }
 
+void PipelineExecutingBlockInputStream::addTotalRowsApprox(size_t)
+{
+    throw Exception("Progress is not supported by PipelineExecutingBlockInputStream",
+                    ErrorCodes::LOGICAL_ERROR);
+}
+
+
 }

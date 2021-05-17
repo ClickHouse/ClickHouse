@@ -15,16 +15,16 @@ Columns:
 -   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ZooKeeper.
 
 -   `type` ([String](../../sql-reference/data-types/string.md)) — Type of the task in the queue, one of:
-
-    -   `GET_PART` — Get the part from another replica.
-    -   `ATTACH_PART` — Attach the part, possibly from our own replica (if found in the `detached` folder). You may think of it as a `GET_PART` with some optimizations as they're nearly identical.
-    -   `MERGE_PARTS` — Merge the parts.
-    -   `DROP_RANGE` — Delete the parts in the specified partition in the specified number range.
-    -   `CLEAR_COLUMN` — NOTE: Deprecated. Drop specific column from specified partition.
-    -   `CLEAR_INDEX` — NOTE: Deprecated. Drop specific index from specified partition.
-    -   `REPLACE_RANGE` — Drop a certain range of parts and replace them with new ones.
-    -   `MUTATE_PART` — Apply one or several mutations to the part.
-    -   `ALTER_METADATA` — Apply alter modification according to global /metadata and /columns paths.
+    - `GET_PART`       - Get the part from another replica.
+    - `ATTACH_PART`    - Attach the part, possibly from our own replica (if found in `detached` folder). 
+    You may think of it as a `GET_PART` with some optimisations as they're nearly identical.
+    - `MERGE_PARTS`    - Merge the parts.
+    - `DROP_RANGE`     - Delete the parts in the specified partition in the specified number range.
+    - `CLEAR_COLUMN`   - NOTE: Deprecated. Drop specific column from specified partition.
+    - `CLEAR_INDEX`    - NOTE: Deprecated. Drop specific index from specified partition.
+    - `REPLACE_RANGE`  - Drop certain range of partitions and replace them by new ones
+    - `MUTATE_PART`    - Apply one or several mutations to the part.
+    - `ALTER_METADATA` - Apply alter modification according to global /metadata and /columns paths
 
 -   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was submitted for execution.
 
