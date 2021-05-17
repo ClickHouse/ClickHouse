@@ -291,6 +291,9 @@ class ClickHouseCluster:
         self.rabbitmq_host = "rabbitmq1"
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
+        self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
+        self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
+
 
         # available when with_redis == True
         self.redis_host = "redis1"
@@ -535,6 +538,8 @@ class ClickHouseCluster:
         self.with_rabbitmq = True
         env_variables['RABBITMQ_HOST'] = self.rabbitmq_host
         env_variables['RABBITMQ_PORT'] = str(self.rabbitmq_port)
+        env_variables['RABBITMQ_LOGS'] = self.rabbitmq_logs_dir
+        env_variables['RABBITMQ_LOGS_FS'] = "bind"
 
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
         self.base_rabbitmq_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
@@ -1208,6 +1213,9 @@ class ClickHouseCluster:
                 self.wait_kafka_is_available(self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100)
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
+                logging.debug('Setup RabbitMQ')
+                os.makedirs(self.rabbitmq_logs_dir)
+                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
                 self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
                 self.wait_rabbitmq_to_start()
@@ -1282,6 +1290,7 @@ class ClickHouseCluster:
             logging.debug("Failed to start cluster: ")
             logging.debug(str(e))
             logging.debug(traceback.print_exc())
+            self.shutdown()
             raise
 
     def shutdown(self, kill=True):

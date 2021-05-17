@@ -9,3 +9,8 @@ services:
         environment:
             RABBITMQ_DEFAULT_USER: "root"
             RABBITMQ_DEFAULT_PASS: "clickhouse"
+            RABBITMQ_LOGS: /rabbitmq_logs/
+        volumes:
+            - type: ${RABBITMQ_LOGS_FS:-tmpfs}
+              source: ${RABBITMQ_LOGS:-}
+              target: /rabbitmq_logs/

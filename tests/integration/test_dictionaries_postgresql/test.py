@@ -160,7 +160,7 @@ def test_dictionary_with_replicas(started_cluster):
 
 
 def test_postgres_scema(started_cluster):
-    conn = get_postgres_conn(port=5432, database=True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
     cursor = conn.cursor()
 
     cursor.execute('CREATE SCHEMA test_schema')

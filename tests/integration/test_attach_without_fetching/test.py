@@ -7,9 +7,9 @@ from helpers.network import PartitionManager
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_by_path
 
 def fill_node(node):
-    node.query(
+    node.query_with_retry(
     '''
-        CREATE TABLE test(n UInt32)
+        CREATE TABLE IF NOT EXISTS test(n UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test', '{replica}')
         ORDER BY n PARTITION BY n % 10;
     '''.format(replica=node.name))
@@ -39,9 +39,9 @@ def start_cluster():
 def check_data(nodes, detached_parts):
     for node in nodes:
         print("> Replication queue for", node.name, "\n> table\treplica_name\tsource_replica\ttype\tposition\n",
-            node.query("SELECT table, replica_name, source_replica, type, position FROM system.replication_queue"))
+            node.query_with_retry("SELECT table, replica_name, source_replica, type, position FROM system.replication_queue"))
 
-        node.query("SYSTEM SYNC REPLICA test")
+        node.query_with_retry("SYSTEM SYNC REPLICA test")
 
         print("> Checking data integrity for", node.name)
 
