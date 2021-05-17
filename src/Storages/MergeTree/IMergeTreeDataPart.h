@@ -136,7 +136,7 @@ public:
 
     void remove(bool keep_s3 = false) const;
 
-    void projectionRemove(const String & parent_to) const;
+    void projectionRemove(const String & parent_to, bool keep_s3 = false) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.

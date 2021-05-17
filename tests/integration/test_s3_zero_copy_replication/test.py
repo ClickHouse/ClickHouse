@@ -27,7 +27,7 @@ def cluster():
         cluster.shutdown()
 
 
-def get_large_objects_count(cluster, folder='data', size=100):
+def get_large_objects_count(cluster, size=100, folder='data'):
     minio = cluster.minio_client
     counter = 0
     for obj in minio.list_objects(cluster.minio_bucket, '{}/'.format(folder)):
@@ -38,11 +38,11 @@ def get_large_objects_count(cluster, folder='data', size=100):
 
 def wait_for_large_objects_count(cluster, expected, size=100, timeout=30):
     while timeout > 0:
-        if get_large_objects_count(cluster, size) == expected:
+        if get_large_objects_count(cluster, size=size) == expected:
             return
         timeout -= 1
         time.sleep(1)
-    assert get_large_objects_count(cluster, size) == expected
+    assert get_large_objects_count(cluster, size=size) == expected
 
 
 @pytest.mark.parametrize(

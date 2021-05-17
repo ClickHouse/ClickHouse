@@ -1227,7 +1227,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
             "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
             fullPath(disk, to));
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeRecursive(to + "/", keep_s3);
+        disk->removeSharedRecursive(to + "/", keep_s3);
     }
     else
     {
@@ -1240,17 +1240,17 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                disk->removeFile(to + "/" + file, keep_s3);
+                disk->removeSharedFile(to + "/" + file, keep_s3);
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeFile(to + "/" + file);
-            disk->removeFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            disk->removeFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+                disk->removeSharedFile(to + "/" + file, keep_s3);
+            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
+            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
 
-            disk->removeDirectory(to);
+            disk->removeSharedRecursive(to, keep_s3);
         }
         catch (...)
         {
@@ -1258,7 +1258,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeRecursive(to + "/", keep_s3);
+            disk->removeSharedRecursive(to + "/", keep_s3);
          }
      }
  }
