@@ -103,84 +103,6 @@ private:
     size_t max_size;
 };
 
-// std::vector<UInt64> generateNumbersToInsert(size_t numbers_to_insert_size)
-// {
-//     std::vector<UInt64> numbers;
-//     numbers.reserve(numbers_to_insert_size);
-
-//     std::random_device rd;
-//     pcg64 gen(rd());
-
-//     UInt64 min = std::numeric_limits<UInt64>::min();
-//     UInt64 max = std::numeric_limits<UInt64>::max();
-
-//     auto distribution = std::uniform_int_distribution<>(min, max);
-
-//     for (size_t i = 0; i < numbers_to_insert_size; ++i)
-//     {
-//         UInt64 number = distribution(gen);
-//         numbers.emplace_back(number);
-//     }
-
-//     return numbers;
-// }
-
-// void testInsertElementsIntoHashMap(size_t map_size, const std::vector<UInt64> & numbers_to_insert, bool preallocated)
-// {
-//     size_t numbers_to_insert_size = numbers_to_insert.size();
-//     std::cout << "TestInsertElementsIntoHashMap preallocated map size: " << map_size << " numbers to insert size: " << numbers_to_insert_size;
-//     std::cout << std::endl;
-
-//     HashMap<int, int> hash_map(preallocated ? map_size : 32);
-
-//     Stopwatch watch;
-
-//     for (size_t i = 0; i < numbers_to_insert_size; ++i)
-//         hash_map.insert({ numbers_to_insert[i], numbers_to_insert[i] });
-
-//     std::cout << "Inserted in " << watch.elapsedMilliseconds() << " milliseconds" << std::endl;
-
-//     UInt64 summ = 0;
-
-//     for (size_t i = 0; i < numbers_to_insert_size; ++i)
-//     {
-//         auto * it = hash_map.find(numbers_to_insert[i]);
-
-//         if (it)
-//             summ += it->getMapped();
-//     }
-
-//     std::cout << "Calculated summ: " << summ << " in " << watch.elapsedMilliseconds() << " milliseconds" << std::endl;
-// }
-
-// void testInsertElementsIntoStandardMap(size_t map_size, const std::vector<UInt64> & numbers_to_insert, bool preallocated)
-// {
-//     size_t numbers_to_insert_size = numbers_to_insert.size();
-//     std::cout << "TestInsertElementsIntoStandardMap map size: " << map_size << " numbers to insert size: " << numbers_to_insert_size;
-//     std::cout << std::endl;
-
-//     std::unordered_map<int, int> hash_map(preallocated ? map_size : 32);
-
-//     Stopwatch watch;
-
-//     for (size_t i = 0; i < numbers_to_insert_size; ++i)
-//         hash_map.insert({ numbers_to_insert[i], numbers_to_insert[i] });
-
-//     std::cout << "Inserted in " << watch.elapsedMilliseconds() << " milliseconds" << std::endl;
-
-//     UInt64 summ = 0;
-
-//     for (size_t i = 0; i < numbers_to_insert_size; ++i)
-//     {
-//         auto it = hash_map.find(numbers_to_insert[i]);
-
-//         if (it != hash_map.end())
-//             summ += it->second;
-//     }
-
-//     std::cout << "Calculated summ: " << summ << " in " << watch.elapsedMilliseconds() << " milliseconds" << std::endl;
-// }
-
 template <typename Key, typename Map>
 static void NO_INLINE test(const Key * data, size_t size, const std::string & name)
 {
@@ -226,34 +148,6 @@ int main(int argc, char ** argv)
 {
     (void)(argc);
     (void)(argv);
-
-    // size_t hash_map_size = 1200000;
-    // size_t numbers_to_insert_size = 12000000;
-    // std::vector<UInt64> numbers = generateNumbersToInsert(numbers_to_insert_size);
-
-    // std::cout << "Test insert into HashMap preallocated=0" << std::endl;
-    // testInsertElementsIntoHashMap(hash_map_size, numbers, true);
-    // std::cout << std::endl;
-
-    // std::cout << "Test insert into HashMap preallocated=1" << std::endl;
-    // testInsertElementsIntoHashMap(hash_map_size, numbers, true);
-    // std::cout << std::endl;
-
-    // std::cout << "Test LRUHashMap preallocated=0" << std::endl;
-    // testInsertIntoEmptyCache<LRUHashMap<UInt64, UInt64>>(hash_map_size, numbers, false);
-    // std::cout << std::endl;
-
-    // std::cout << "Test LRUHashMap preallocated=1" << std::endl;
-    // testInsertIntoEmptyCache<LRUHashMap<UInt64, UInt64>>(hash_map_size, numbers, true);
-    // std::cout << std::endl;
-
-    // std::cout << "Test LRUHashMapBasic preallocated=0" << std::endl;
-    // testInsertIntoEmptyCache<LRUHashMapBasic<UInt64, UInt64>>(hash_map_size, numbers, false);
-    // std::cout << std::endl;
-
-    // std::cout << "Test LRUHashMapBasic preallocated=1" << std::endl;
-    // testInsertIntoEmptyCache<LRUHashMapBasic<UInt64, UInt64>>(hash_map_size, numbers, true);
-    // std::cout << std::endl;
 
     if (argc < 4)
     {
