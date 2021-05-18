@@ -76,8 +76,9 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         if (is_condition_const && !condition)
-            continue;
-        else if (!is_condition_const && !condition_column->getData()[i])
+            break;
+
+        if (!is_condition_const && !condition_column->getData()[i])
             continue;
 
         /// The condition is true, then check the row in subcolumns in Nested Type has the same array size
