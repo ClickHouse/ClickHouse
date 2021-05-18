@@ -30,8 +30,13 @@ private:
     UInt64 random_seed = 0;
 
 protected:
-    StorageGenerateRandom(const StorageID & table_id_, const ColumnsDescription & columns_,
-        UInt64 max_array_length, UInt64 max_string_length, std::optional<UInt64> random_seed);
+    StorageGenerateRandom(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & comment,
+        UInt64 max_array_length,
+        UInt64 max_string_length,
+        std::optional<UInt64> random_seed);
 };
 
 }

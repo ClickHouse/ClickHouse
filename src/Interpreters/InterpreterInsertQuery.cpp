@@ -309,8 +309,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
             out_wrapper->setProcessListElement(getContext()->getProcessListElement());
-            out = std::move(out_wrapper);
-            out_streams.emplace_back(std::move(out));
+            out_streams.emplace_back(std::move(out_wrapper));
         }
     }
 

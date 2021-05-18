@@ -143,11 +143,13 @@ ContextAccess::ContextAccess(const AccessControlManager & manager_, const Params
     : manager(&manager_)
     , params(params_)
 {
+    std::lock_guard lock{mutex};
+
     subscription_for_user_change = manager->subscribeForChanges(
         *params.user_id, [this](const UUID &, const AccessEntityPtr & entity)
     {
         UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
-        std::lock_guard lock{mutex};
+        std::lock_guard lock2{mutex};
         setUser(changed_user);
     });
 
@@ -189,7 +191,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(params.current_roles);
     }
 
-    subscription_for_roles_changes = {};
+    subscription_for_roles_changes.reset();
     enabled_roles = manager->getEnabledRoles(current_roles, current_roles_with_admin_option);
     subscription_for_roles_changes = enabled_roles->subscribeForChanges([this](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
     {
