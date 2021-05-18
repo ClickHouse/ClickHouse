@@ -1249,6 +1249,8 @@ class ClickHouseInstance:
 
         if timeout is not None:
             deadline = start_time + timeout
+        else:
+            timeout = max(0.1, deadline - start_time)
 
         connection_deadline = (start_time + connection_timeout) if connection_timeout else None
         prev_rows_in_log = 0
@@ -1275,7 +1277,7 @@ class ClickHouseInstance:
                     pass
 
             current_time = time.time()
-            time_left = current_deadline - current_time
+            time_left = min(timeout, current_deadline - current_time)
             if deadline is not None and current_time >= current_deadline:
                 raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
                                 "Container status: {}, logs: {}".format(self.name, self.ip_address, status,
