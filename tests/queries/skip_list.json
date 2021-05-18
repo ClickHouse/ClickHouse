@@ -571,6 +571,7 @@
         "01150_ddl_guard_rwr",
         "01153_attach_mv_uuid",
         "01152_cross_replication",
+        "01154_move_partition_long",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
@@ -722,5 +723,6 @@
         "01821_table_comment",
         "01710_projection_fetch",
         "01870_modulo_partition_key"
+        "01870_buffer_flush" // creates database
     ]
 }
