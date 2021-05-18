@@ -45,7 +45,7 @@ protected:
 class ParserIdentifier : public IParserBase
 {
 public:
-    explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
+    ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -59,7 +59,7 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
+    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false)
         : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_)
     {
     }
@@ -85,7 +85,7 @@ public:
     using ColumnTransformers = MultiEnum<ColumnTransformer, UInt8>;
     static constexpr auto AllTransformers = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
 
-    explicit ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
+    ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
         : allowed_transformers(allowed_transformers_)
         , is_strict(is_strict_)
     {}
@@ -103,7 +103,7 @@ class ParserAsterisk : public IParserBase
 {
 public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    explicit ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+    ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
     {}
 
@@ -129,7 +129,7 @@ class ParserColumnsMatcher : public IParserBase
 {
 public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    explicit ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+    ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
     {}
 
@@ -149,7 +149,7 @@ protected:
 class ParserFunction : public IParserBase
 {
 public:
-    explicit ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
+    ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
         : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
     {
     }
@@ -209,22 +209,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// Fast path of cast operator "::".
-/// It tries to read literal as text.
-/// If it fails, later operator will be transformed to function CAST.
-/// Examples: "0.1::Decimal(38, 38)", "[1, 2]::Array(UInt8)"
-class ParserCastOperator : public IParserBase
+class ParserCastExpression : public IParserBase
 {
 protected:
-    const char * getName() const override { return "CAST operator"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
-class ParserCastAsExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CAST AS expression"; }
+    const char * getName() const override { return "CAST expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -347,6 +335,18 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         return tuple_parser.parse(pos, node, expected);
+    }
+};
+
+class ParserMapOfLiterals : public IParserBase
+{
+public:
+    ParserCollectionOfLiterals<Map> map_parser{TokenType::OpeningCurlyBrace, TokenType::ClosingCurlyBrace};
+protected:
+    const char * getName() const override { return "map"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return map_parser.parse(pos, node, expected);
     }
 };
 

@@ -23,7 +23,7 @@ void ASTRowPolicyName::formatImpl(const FormatSettings & settings, FormatState &
 }
 
 
-void ASTRowPolicyName::replaceEmptyDatabase(const String & current_database)
+void ASTRowPolicyName::replaceEmptyDatabaseWithCurrent(const String & current_database)
 {
     if (name_parts.database.empty())
         name_parts.database = current_database;
@@ -125,7 +125,7 @@ Strings ASTRowPolicyNames::toStrings() const
 }
 
 
-void ASTRowPolicyNames::replaceEmptyDatabase(const String & current_database)
+void ASTRowPolicyNames::replaceEmptyDatabaseWithCurrent(const String & current_database)
 {
     for (auto & np : name_parts)
         if (np.database.empty())

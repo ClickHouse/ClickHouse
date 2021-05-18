@@ -373,7 +373,7 @@ This function accepts a number or date or date with time, and returns a FixedStr
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-Accepts 16 bytes string and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+This function accepts 16 bytes string, and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
 
 **Syntax**
 
@@ -381,9 +381,11 @@ Accepts 16 bytes string and returns UUID containing bytes representing the corre
 reinterpretAsUUID(fixed_string)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `fixed_string` — Big-endian byte string. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
+
+## reinterpret(x, T) {#type_conversion_function-reinterpret}
 
 **Returned value**
 
@@ -396,7 +398,9 @@ String to UUID.
 Query:
 
 ``` sql
-SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')));
+SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
+    reinterpret(toInt8(1), 'Float32') as int_to_float,
+    reinterpret('1', 'UInt32') as string_to_int;
 ```
 
 Result:
@@ -427,84 +431,15 @@ Result:
 └─────────────────────┘
 ```
 
-## reinterpret(x, T) {#type_conversion_function-reinterpret}
-
-Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type.
-
-**Syntax**
-
-``` sql
-reinterpret(x, type)
-```
-
-**Arguments**
-
--   `x` — Any type. 
--   `type` — Destination type. [String](../../sql-reference/data-types/string.md). 
-
-**Returned value**
-
--   Destination type value.
-
-**Examples**
-
-Query:
-```sql
-SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
-    reinterpret(toInt8(1), 'Float32') as int_to_float,
-    reinterpret('1', 'UInt32') as string_to_int;
-```
-
-Result:
-
-```
-┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
-│         255 │        1e-45 │            49 │
-└─────────────┴──────────────┴───────────────┘
-```
-
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Converts input value `x` to the `T` data type. Unlike to `reinterpret` function, type conversion is performed in a natural way.
+Converts input value `x` to the `T` data type.
 
 The syntax `CAST(x AS t)` is also supported.
 
-!!! note "Note"
-    If value `x` does not fit the bounds of type `T`, the function overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
+Note, that if value `x` does not fit the bounds of type T, the function overflows. For example, CAST(-1, 'UInt8') returns 255.
 
-**Syntax**
-
-``` sql
-CAST(x, T)
-```
-
-**Arguments**
-
--   `x` — Any type. 
--   `T` — Destination type. [String](../../sql-reference/data-types/string.md).  
-
-**Returned value**
-
--   Destination type value.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT
-    CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
-    CAST(toInt8(1), 'Float32') AS cast_int_to_float,
-    CAST('1', 'UInt32') AS cast_string_to_int;
-```
-
-Result:
-
-```
-┌─cast_int_to_uint─┬─cast_int_to_float─┬─cast_string_to_int─┐
-│              255 │                 1 │                  1 │
-└──────────────────┴───────────────────┴────────────────────┘
-```
+**Example**
 
 Query:
 
@@ -525,7 +460,7 @@ Result:
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 ```
 
-Conversion to FixedString(N) only works for arguments of type [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+Conversion to FixedString(N) only works for arguments of type String or FixedString(N).
 
 Type conversion to [Nullable](../../sql-reference/data-types/nullable.md) and back is supported. 
 
@@ -699,7 +634,6 @@ Result:
 ```
 
 ## parseDateTimeBestEffort {#parsedatetimebesteffort}
-## parseDateTime32BestEffort {#parsedatetime32besteffort}
 
 Converts a date and time in the [String](../../sql-reference/data-types/string.md) representation to [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) data type.
 
@@ -888,12 +822,10 @@ Result:
 ```
 
 ## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
-## parseDateTime32BestEffortOrNull {#parsedatetime32besteffortornull}
 
-Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
+Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns null when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
-## parseDateTime32BestEffortOrZero {#parsedatetime32besteffortorzero}
 
 Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
 
@@ -1069,61 +1001,6 @@ Result:
 └─────────────────────────────────┘
 ```
 
-## parseDateTime64BestEffort {#parsedatetime64besteffort}
-
-Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns [DateTime](../../sql-reference/functions/type-conversion-functions.md#data_type-datetime) data type.
-
-**Syntax**
-
-``` sql
-parseDateTime64BestEffort(time_string [, precision [, time_zone]])
-```
-
-**Parameters**
-
--   `time_string` — String containing a date or date with time to convert. [String](../../sql-reference/data-types/string.md).
--   `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   `time_string` converted to the [DateTime](../../sql-reference/data-types/datetime.md) data type.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT parseDateTime64BestEffort('2021-01-01') AS a, toTypeName(a) AS t
-UNION ALL
-SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346') AS a, toTypeName(a) AS t
-UNION ALL
-SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
-UNION ALL
-SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
-FORMAT PrettyCompactMonoBlock;
-```
-
-Result:
-
-```
-┌──────────────────────────a─┬─t──────────────────────────────┐
-│ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
-│ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
-│ 2021-01-01 01:01:00.123460 │ DateTime64(6)                  │
-│ 2020-12-31 22:01:00.123000 │ DateTime64(3, 'Europe/Moscow') │
-└────────────────────────────┴────────────────────────────────┘
-```
-
-## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
-
-Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
-
-## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
-
-Same as for [parseDateTime64BestEffort](#parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
-
-
 ## toLowCardinality {#tolowcardinality}
 
 Converts input parameter to the [LowCardianlity](../../sql-reference/data-types/lowcardinality.md) version of same data type.
@@ -1132,7 +1009,7 @@ To convert data from the `LowCardinality` data type use the [CAST](#type_convers
 
 **Syntax**
 
-```sql
+``` sql
 toLowCardinality(expr)
 ```
 
@@ -1150,7 +1027,7 @@ Type: `LowCardinality(expr_result_type)`
 
 Query:
 
-```sql
+``` sql
 SELECT toLowCardinality('1');
 ```
 
@@ -1168,14 +1045,11 @@ Result:
 
 ## toUnixTimestamp64Nano {#tounixtimestamp64nano}
 
-Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision. 
-
-!!! info "Note"
-    The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision. Please note that output value is a timestamp in UTC, not in timezone of `DateTime64`.
 
 **Syntax**
 
-```sql
+``` sql
 toUnixTimestamp64Milli(value)
 ```
 
@@ -1191,7 +1065,7 @@ toUnixTimestamp64Milli(value)
 
 Query:
 
-```sql
+``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
 SELECT toUnixTimestamp64Milli(dt64);
 ```
@@ -1203,8 +1077,6 @@ Result:
 │                1568650812345 │
 └──────────────────────────────┘
 ```
-
-Query: 
 
 ``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
@@ -1337,3 +1209,5 @@ Result:
 │ 2,"good"                                  │
 └───────────────────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

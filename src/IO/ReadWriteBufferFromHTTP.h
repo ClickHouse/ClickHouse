@@ -92,7 +92,6 @@ namespace detail
     protected:
         Poco::URI uri;
         std::string method;
-        std::string content_encoding;
 
         UpdatableSessionPtr session;
         std::istream * istr; /// owned by session
@@ -138,7 +137,6 @@ namespace detail
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
-                content_encoding = response.get("Content-Encoding", "");
                 return istr;
 
             }
@@ -231,11 +229,6 @@ namespace detail
             next_callback = next_callback_;
             /// Some data maybe already read
             next_callback(count());
-        }
-
-        const std::string & getCompressionMethod() const
-        {
-            return content_encoding;
         }
     };
 }

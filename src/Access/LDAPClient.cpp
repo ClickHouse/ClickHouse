@@ -5,7 +5,6 @@
 
 #include <Poco/Logger.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/container_hash/hash.hpp>
 
 #include <mutex>
 #include <utility>
@@ -26,25 +25,7 @@ namespace ErrorCodes
     extern const int LDAP_ERROR;
 }
 
-void LDAPClient::SearchParams::combineHash(std::size_t & seed) const
-{
-    boost::hash_combine(seed, base_dn);
-    boost::hash_combine(seed, static_cast<int>(scope));
-    boost::hash_combine(seed, search_filter);
-    boost::hash_combine(seed, attribute);
-    boost::hash_combine(seed, prefix);
-}
-
-void LDAPClient::Params::combineCoreHash(std::size_t & seed) const
-{
-    boost::hash_combine(seed, host);
-    boost::hash_combine(seed, port);
-    boost::hash_combine(seed, bind_dn);
-    boost::hash_combine(seed, user);
-    boost::hash_combine(seed, password);
-}
-
-LDAPClient::LDAPClient(const Params & params_)
+LDAPClient::LDAPClient(const LDAPServerParams & params_)
     : params(params_)
 {
 }
@@ -162,7 +143,7 @@ void LDAPClient::openConnection()
         LDAPURLDesc url;
         std::memset(&url, 0, sizeof(url));
 
-        url.lud_scheme = const_cast<char *>(params.enable_tls == LDAPClient::Params::TLSEnable::YES ? "ldaps" : "ldap");
+        url.lud_scheme = const_cast<char *>(params.enable_tls == LDAPServerParams::TLSEnable::YES ? "ldaps" : "ldap");
         url.lud_host = const_cast<char *>(params.host.c_str());
         url.lud_port = params.port;
         url.lud_scope = LDAP_SCOPE_DEFAULT;
@@ -182,8 +163,8 @@ void LDAPClient::openConnection()
         int value = 0;
         switch (params.protocol_version)
         {
-            case LDAPClient::Params::ProtocolVersion::V2: value = LDAP_VERSION2; break;
-            case LDAPClient::Params::ProtocolVersion::V3: value = LDAP_VERSION3; break;
+            case LDAPServerParams::ProtocolVersion::V2: value = LDAP_VERSION2; break;
+            case LDAPServerParams::ProtocolVersion::V3: value = LDAP_VERSION3; break;
         }
         diag(ldap_set_option(handle, LDAP_OPT_PROTOCOL_VERSION, &value));
     }
@@ -227,11 +208,11 @@ void LDAPClient::openConnection()
         int value = 0;
         switch (params.tls_minimum_protocol_version)
         {
-            case LDAPClient::Params::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
-            case LDAPClient::Params::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
+            case LDAPServerParams::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
+            case LDAPServerParams::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
+            case LDAPServerParams::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
+            case LDAPServerParams::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
+            case LDAPServerParams::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
         }
         diag(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MIN, &value));
     }
@@ -242,10 +223,10 @@ void LDAPClient::openConnection()
         int value = 0;
         switch (params.tls_require_cert)
         {
-            case LDAPClient::Params::TLSRequireCert::NEVER:  value = LDAP_OPT_X_TLS_NEVER;  break;
-            case LDAPClient::Params::TLSRequireCert::ALLOW:  value = LDAP_OPT_X_TLS_ALLOW;  break;
-            case LDAPClient::Params::TLSRequireCert::TRY:    value = LDAP_OPT_X_TLS_TRY;    break;
-            case LDAPClient::Params::TLSRequireCert::DEMAND: value = LDAP_OPT_X_TLS_DEMAND; break;
+            case LDAPServerParams::TLSRequireCert::NEVER:  value = LDAP_OPT_X_TLS_NEVER;  break;
+            case LDAPServerParams::TLSRequireCert::ALLOW:  value = LDAP_OPT_X_TLS_ALLOW;  break;
+            case LDAPServerParams::TLSRequireCert::TRY:    value = LDAP_OPT_X_TLS_TRY;    break;
+            case LDAPServerParams::TLSRequireCert::DEMAND: value = LDAP_OPT_X_TLS_DEMAND; break;
         }
         diag(ldap_set_option(handle, LDAP_OPT_X_TLS_REQUIRE_CERT, &value));
     }
@@ -283,12 +264,12 @@ void LDAPClient::openConnection()
     }
 #endif
 
-    if (params.enable_tls == LDAPClient::Params::TLSEnable::YES_STARTTLS)
+    if (params.enable_tls == LDAPServerParams::TLSEnable::YES_STARTTLS)
         diag(ldap_start_tls_s(handle, nullptr, nullptr));
 
     switch (params.sasl_mechanism)
     {
-        case LDAPClient::Params::SASLMechanism::SIMPLE:
+        case LDAPServerParams::SASLMechanism::SIMPLE:
         {
             const auto escaped_user_name = escapeForLDAP(params.user);
             const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", escaped_user_name} });
@@ -318,19 +299,19 @@ void LDAPClient::closeConnection() noexcept
     handle = nullptr;
 }
 
-LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
+LDAPSearchResults LDAPClient::search(const LDAPSearchParams & search_params)
 {
     std::scoped_lock lock(ldap_global_mutex);
 
-    SearchResults result;
+    LDAPSearchResults result;
 
     int scope = 0;
     switch (search_params.scope)
     {
-        case SearchParams::Scope::BASE:      scope = LDAP_SCOPE_BASE;     break;
-        case SearchParams::Scope::ONE_LEVEL: scope = LDAP_SCOPE_ONELEVEL; break;
-        case SearchParams::Scope::SUBTREE:   scope = LDAP_SCOPE_SUBTREE;  break;
-        case SearchParams::Scope::CHILDREN:  scope = LDAP_SCOPE_CHILDREN; break;
+        case LDAPSearchParams::Scope::BASE:      scope = LDAP_SCOPE_BASE;     break;
+        case LDAPSearchParams::Scope::ONE_LEVEL: scope = LDAP_SCOPE_ONELEVEL; break;
+        case LDAPSearchParams::Scope::SUBTREE:   scope = LDAP_SCOPE_SUBTREE;  break;
+        case LDAPSearchParams::Scope::CHILDREN:  scope = LDAP_SCOPE_CHILDREN; break;
     }
 
     const auto escaped_user_name = escapeForLDAP(params.user);
@@ -471,7 +452,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
     return result;
 }
 
-bool LDAPSimpleAuthClient::authenticate(const SearchParamsList * search_params, SearchResultsList * search_results)
+bool LDAPSimpleAuthClient::authenticate(const LDAPSearchParamsList * search_params, LDAPSearchResultsList * search_results)
 {
     if (params.user.empty())
         throw Exception("LDAP authentication of a user with empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
@@ -527,12 +508,12 @@ void LDAPClient::closeConnection() noexcept
 {
 }
 
-LDAPClient::SearchResults LDAPClient::search(const SearchParams &)
+LDAPSearchResults LDAPClient::search(const LDAPSearchParams &)
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
 
-bool LDAPSimpleAuthClient::authenticate(const SearchParamsList *, SearchResultsList *)
+bool LDAPSimpleAuthClient::authenticate(const LDAPSearchParamsList *, LDAPSearchResultsList *)
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }

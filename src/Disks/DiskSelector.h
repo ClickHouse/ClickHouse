@@ -10,6 +10,7 @@
 namespace DB
 {
 
+class Context;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 using DisksMap = std::map<String, DiskPtr>;
@@ -19,13 +20,13 @@ using DisksMap = std::map<String, DiskPtr>;
 class DiskSelector
 {
 public:
-    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context);
+    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context);
     DiskSelector(const DiskSelector & from) : disks(from.disks) { }
 
     DiskSelectorPtr updateFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context
+        const Context & context
     ) const;
 
     /// Get disk by name

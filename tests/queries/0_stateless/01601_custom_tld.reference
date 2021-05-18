@@ -1,24 +1,11 @@
--- no-tld
-
-foo.there-is-no-such-domain
-foo.there-is-no-such-domain
+no-tld
 
 foo.there-is-no-such-domain
 foo.there-is-no-such-domain
 foo
--- generic
+generic
 kernel
 kernel.biz.ss
--- difference
+difference
 biz.ss
 kernel.biz.ss
--- 3+level
-xx.blogspot.co.at
-blogspot
-xx.blogspot.co.at
-blogspot
--- url
-foobar.com
-foobar.com
-foobar.com
-xx.blogspot.co.at

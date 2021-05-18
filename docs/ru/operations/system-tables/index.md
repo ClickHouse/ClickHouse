@@ -1,6 +1,6 @@
 ---
 toc_priority: 52
-toc_title: "Системные таблицы"
+toc_title: "\u0421\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435\u0020\u0442\u0430\u0431\u043b\u0438\u0446\u044b"
 ---
 
 # Системные таблицы {#system-tables}
@@ -27,7 +27,7 @@ toc_title: "Системные таблицы"
 -   `database` — база данных, к которой принадлежит системная таблица. Эта опция на текущий момент устарела. Все системные таблицы находятся в базе данных `system`.
 -   `table` — таблица для добавления данных.
 -   `partition_by` — [ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
--   `ttl` — [время жизни](../../sql-reference/statements/alter/ttl.md) записей в таблице.
+-   `ttl` — [время жизни](../../sql-reference/statements/alter/ttl.md) таблицы.
 -   `flush_interval_milliseconds` — интервал сброса данных на диск, в миллисекундах.
 -   `engine` — полное имя движка (начиная с `ENGINE =` ) с параметрами. Эта опция противоречит `partition_by` и `ttl`. Если указать оба параметра вместе, сервер вернет ошибку и завершит работу.
 
@@ -70,3 +70,4 @@ toc_title: "Системные таблицы"
 -   `OSReadBytes`
 -   `OSWriteBytes`
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system-tables/) <!--hide-->

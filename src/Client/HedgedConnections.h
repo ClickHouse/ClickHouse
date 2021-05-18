@@ -14,12 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 /** To receive data from multiple replicas (connections) from one shard asynchronously.
   * The principe of Hedged Connections is used to reduce tail latency:
   * if we don't receive data from replica and there is no progress in query execution
@@ -89,11 +83,6 @@ public:
         UInt64 stage,
         const ClientInfo & client_info,
         bool with_pending_data) override;
-
-    void sendReadTaskResponse(const String &) override
-    {
-        throw Exception("sendReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
-    }
 
     Packet receivePacket() override;
 

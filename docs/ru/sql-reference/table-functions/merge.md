@@ -9,3 +9,4 @@ toc_title: merge
 
 Структура таблицы берётся из первой попавшейся таблицы, подходящей под регулярное выражение.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/merge/) <!--hide-->
