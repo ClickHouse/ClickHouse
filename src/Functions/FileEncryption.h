@@ -1,6 +1,9 @@
 #pragma once
 
+#include <fstream>
+
 #include <openssl/evp.h>
+#include <openssl/engine.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -8,63 +11,76 @@
 
 #include <sys/random.h>
 
+#include <limits>
 #include <cassert>
 #include <cmath>
 
 #include <Functions/FunctionsAES.h>
 
-
 namespace FileEncryption
 {
 
-constexpr size_t kIVSize = sizeof(DB::UInt64);
+constexpr size_t kIVSize = sizeof(DB::UInt128);
 
 class InitVector
 {
 public:
-    InitVector(String iv_) : iv(iv_) { }
+    InitVector(String iv_) : iv(FromBigEndianString(iv_)) { }
 
-    size_t Size() const { return iv.size(); }
-    String Data() const { return iv; }
-    char * GetRef() const
+    const char * GetRef() const
     {
-        modify = iv;
-        modify.resize(iv.size() + sizeof(counter));
-	BigEndianCopy(modify.data() + iv.size(), counter, sizeof(counter));
-	return modify.data();
+        local = ToBigEndianString(iv + counter);
+	return local.data();
     }
 
     void Inc() { ++counter; }
     void Inc(size_t n) { counter += n; }
-    void SetCounter(size_t n) { counter = n; }
+    void Set(size_t n) { counter = n; }
 
 private:
-    void BigEndianCopy(char * to, DB::UInt64 value, size_t size) const
+    String ToBigEndianString(DB::UInt128 value) const
     {
+        size_t size = kIVSize;
         size_t dev = std::pow(2, CHAR_BIT);
+	String result(size, 0);
+
         for (size_t i = 0; i != size; ++i)
         {
-            to[size - i - 1] = value % dev;
+            result[size - i - 1] = value % dev;
             value /= dev;
         }
+	return result;
     }
 
-    String iv;
-    DB::UInt64 counter = 0;
-    mutable String modify;
+    DB::UInt128 FromBigEndianString(const String & str) const
+    {
+        size_t dev = std::pow(2, CHAR_BIT);
+	DB::UInt128 result = 0;
+
+	for (auto c : str)
+	{
+	    result *= dev;
+	    result += c % dev;
+	}
+	return result;
+    }
+
+    DB::UInt128 iv;
+    DB::UInt128 counter = 0;
+    mutable String local;
 };
 
 class EncryptionKey
 {
 public:
     EncryptionKey(String key_) : key(key_) { }
-    String Get() const { return key; }
     size_t Size() const { return key.size(); }
     const char * GetRef() const { return key.data(); }
 
 private:
     String key;
 };
+
 
 
 String ReadIV(size_t size, DB::ReadBuffer & in)
@@ -84,7 +100,7 @@ String GetRandomString(size_t size)
 void WriteIV(const String & iv, DB::WriteBuffer & out)
 {
     for (auto i : iv)
-	DB::writeChar(i, out);
+        DB::writeChar(i, out);
 }
 
 size_t CipherKeyLength(const EVP_CIPHER * evp_cipher)
@@ -111,11 +127,13 @@ public:
         , key(key_)
         , block_size(CipherIVLength(evp_cipher))
     {
-        assert(iv_.size() == CipherIVLength(evp_cipher) / 2);
+        assert(iv_.size() == CipherIVLength(evp_cipher));
 	assert(key_.Size() == CipherKeyLength(evp_cipher));
 
         offset = BlockOffset(offset_);
     }
+
+    Poco::Logger * log = &Poco::Logger::get("FileEncryption");
 
 protected:
 
@@ -123,8 +141,12 @@ protected:
 
     size_t Blocks(size_t pos) const { return pos / block_size; }
 
-    size_t FirstBlockSize(size_t size, size_t off)
+    size_t PartBlockSize(size_t size, size_t off)
     {
+        assert(off < block_size);
+        // write the part as usual block
+        if (off == 0)
+            return 0;
         return off + size <= block_size ? size : (block_size - off) % block_size;
     }
 
@@ -134,13 +156,15 @@ protected:
     const String init_vector;
     const EncryptionKey key;
     size_t block_size;
+
+    // absolute offset
     size_t offset = 0;
 };
 
 class Encryptor : public Encryption
 {
 public:
-    Encryptor(const String & iv_, const EncryptionKey & key_, size_t off)
+	Encryptor(const String & iv_, const EncryptionKey & key_, size_t off)
         : Encryption(iv_, key_, off) { }
 
     void Encrypt(const char * plaintext, DB::WriteBuffer & buf, size_t size)
@@ -149,23 +173,23 @@ public:
             return;
 
         auto iv = InitVector(init_vector);
-	iv.SetCounter(Blocks(offset));
+	auto off = BlockOffset(offset);
+	iv.Set(Blocks(offset));
 
-        size_t first_block_size = FirstBlockSize(size, offset);
-        if (offset)
+        size_t part_size = PartBlockSize(size, off);
+        if (off)
         {
-            buf.write(EncryptPartialBlock(plaintext, first_block_size, iv, offset).data(), first_block_size);
-            offset = BlockOffset(offset + first_block_size);
-            size -= first_block_size;
+            buf.write(EncryptPartialBlock(plaintext, part_size, iv, off).data(), part_size);
+            offset += part_size;
+            size -= part_size;
+	    plaintext += part_size;
             iv.Inc();
         }
 
         if (size)
         {
-            size_t blocks = Blocks(size);
-            buf.write(EncryptNBytes(plaintext + first_block_size, size, iv).data(), size);
-            iv.Inc(blocks);
-            offset = size - blocks * block_size;
+            buf.write(EncryptNBytes(plaintext + part_size, size, iv).data(), size);
+	    offset += size;
         }
     }
 
@@ -233,24 +257,20 @@ public:
             return;
 
         auto iv = InitVector(init_vector);
-        iv.SetCounter(Blocks(off));
-        off = BlockOffset(off);
+	iv.Set(Blocks(off));
+	off = BlockOffset(off);
 
-        size_t first_block_size = FirstBlockSize(size, off);
+        size_t part_size = PartBlockSize(size, off);
         if (off)
         {
-            DecryptPartialBlock(buf, ciphertext, first_block_size, iv, off);
-            size -= first_block_size;
-            if (first_block_size + off == block_size)
+            DecryptPartialBlock(buf, ciphertext, part_size, iv, off);
+            size -= part_size;
+	    if (part_size + off == block_size)
                 iv.Inc();
         }
 
         if (size)
-        {
-            size_t blocks = Blocks(size);
-            DecryptNBytes(buf, ciphertext + first_block_size, size, iv);
-            iv.Inc(blocks);
-        }
+            DecryptNBytes(buf, ciphertext + part_size, size, iv);
     }
 
 private:
