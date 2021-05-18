@@ -496,10 +496,9 @@ public:
 
     /// Removes all parts from the working set parts
     ///  for which (partition_id = drop_range.partition_id && min_block >= drop_range.min_block && max_block <= drop_range.max_block).
-    /// If a part intersecting drop_range.max_block is found, an exception will be thrown.
     /// Used in REPLACE PARTITION command;
     DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
-                                                     bool skip_intersecting_parts, DataPartsLock & lock);
+                                                     DataPartsLock & lock);
 
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.

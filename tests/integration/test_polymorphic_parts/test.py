@@ -7,7 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -408,8 +408,9 @@ def test_in_memory_wal_rotate(start_cluster):
 
 def test_in_memory_deduplication(start_cluster):
     for i in range(3):
-        node9.query("INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
-        node10.query("INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
+        # table can be in readonly node
+        exec_query_with_retry(node9, "INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
+        exec_query_with_retry(node10, "INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
 
     node9.query("SYSTEM SYNC REPLICA deduplication_table", timeout=20)
     node10.query("SYSTEM SYNC REPLICA deduplication_table", timeout=20)
@@ -430,10 +431,10 @@ def test_in_memory_alters(start_cluster):
     node9.restart_clickhouse(kill=True)
 
     expected = "1\tab\t0\n2\tcd\t0\n"
-    assert node9.query("SELECT id, s, col1 FROM alters_table") == expected
+    assert node9.query("SELECT id, s, col1 FROM alters_table ORDER BY id") == expected
     check_parts_type(1)
-
-    node9.query("INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)")
+    # After hard restart table can be in readonly mode
+    exec_query_with_retry(node9, "INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)")
     node9.query("ALTER TABLE alters_table MODIFY COLUMN col1 String")
     node9.query("ALTER TABLE alters_table DROP COLUMN s")
     node9.restart_clickhouse(kill=True)
@@ -442,8 +443,10 @@ def test_in_memory_alters(start_cluster):
     with pytest.raises(Exception):
         node9.query("SELECT id, s, col1 FROM alters_table")
 
-    expected = expected = "1\t0_foo\n2\t0_foo\n3\t100_foo\n"
-    assert node9.query("SELECT id, col1 || '_foo' FROM alters_table")
+    # Values of col1 was not materialized as integers, so they have
+    # default string values after alter
+    expected = "1\t_foo\n2\t_foo\n3\t100_foo\n"
+    assert node9.query("SELECT id, col1 || '_foo' FROM alters_table ORDER BY id") == expected
 
 
 def test_polymorphic_parts_index(start_cluster):

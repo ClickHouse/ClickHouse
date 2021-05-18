@@ -220,6 +220,12 @@ public:
         return find(key) != nullptr;
     }
 
+    Value & ALWAYS_INLINE operator[](const Key & key)
+    {
+        auto [it, _] = emplace(key);
+        return it->getMapped();
+    }
+
     bool ALWAYS_INLINE erase(const Key & key)
     {
         auto key_hash = Base::hash(key);

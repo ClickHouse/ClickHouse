@@ -252,12 +252,13 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         {
             if (parts_ranges.empty() || !parts_ranges.back().empty())
                 parts_ranges.emplace_back();
+
             /// New partition frame.
             prev_partition_id = &partition_id;
             prev_part = nullptr;
         }
 
-        /// Check predicate only for first part in each partition.
+        /// Check predicate only for the first part in each range.
         if (!prev_part)
         {
             /* Parts can be merged with themselves for TTL needs for example.
@@ -266,6 +267,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             * of each partition because it will be automatically checked for a pair of parts. */
             if (!can_merge_callback(nullptr, part, nullptr))
                 continue;
+
         }
         else
         {
@@ -274,8 +276,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             if (!can_merge_callback(*prev_part, part, nullptr))
             {
                 /// Starting new interval in the same partition
-                if (!parts_ranges.back().empty())
-                    parts_ranges.emplace_back();
+                assert(!parts_ranges.back().empty());
+                parts_ranges.emplace_back();
 
                 /// Now we have no previous part, but it affects only logging
                 prev_part = nullptr;
@@ -299,7 +301,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
             && part->info.min_block <= (*prev_part)->info.max_block)
         {
-            LOG_ERROR(log, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
         }
 
         prev_part = &part;
