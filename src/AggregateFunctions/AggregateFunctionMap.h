@@ -195,7 +195,8 @@ public:
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
-        res_offsets.push_back(res_offset);
+        auto last_offset = res_offsets[res_offsets.size() - 1];
+        res_offsets.push_back(last_offset + res_offset);
     }
 
     bool allocatesMemoryInArena() const override { return true; }
