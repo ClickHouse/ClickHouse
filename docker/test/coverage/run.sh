@@ -43,15 +43,9 @@ start_clickhouse () {
 wail_till_ready () {
     echo "Waiting for server to symbolize all addresses"
 
-    func_time=$(time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all functions/ q' > /dev/null)
+    tail -n +1 -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null
 
-    echo "Symbolized functions"
-    echo "$func_time"
-
-    addr_time=$(time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null)
-
-    echo "Symbolized addresses"
-    echo "$addr_time"
+    echo "Symbolized all addresses"
 
     instrumented_contribs=$(grep "contrib/" < /report.ccr)
     has_contribs=$(echo "$instrumented_contribs" | wc -l)
