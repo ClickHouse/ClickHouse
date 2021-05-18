@@ -1,6 +1,6 @@
 #pragma once
 
-#include <fstream>
+#if USE_SSL
 
 #include <openssl/evp.h>
 #include <openssl/engine.h>
@@ -326,3 +326,6 @@ private:
 };
 
 }
+
+
+#endif

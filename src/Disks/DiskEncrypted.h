@@ -1,5 +1,7 @@
 #pragma once
 
+#if USE_SSL
+
 #include <Disks/IDisk.h>
 #include <Disks/DiskDecorator.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -242,3 +244,6 @@ private:
 };
 
 }
+
+
+#endif

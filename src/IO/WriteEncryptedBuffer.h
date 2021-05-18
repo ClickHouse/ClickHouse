@@ -1,5 +1,7 @@
 #pragma once
 
+#if USE_SSL
+
 #include <IO/WriteBufferFromFileBase.h>
 #include <Functions/FileEncryption.h>
 
@@ -78,3 +80,6 @@ private:
 };
 
 }
+
+
+#endif
