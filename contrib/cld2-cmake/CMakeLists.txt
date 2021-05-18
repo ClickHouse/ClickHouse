@@ -28,19 +28,9 @@ set (SRCS
     ${LIBRARY_DIR}/internal/cld_generated_score_quad_octa_2.cc
 )
 
-add_library(cld2 ${SRCS})
+add_library(cld2 SHARED ${SRCS})
+target_compile_options (cld2 PRIVATE -Wl -Wno-narrowing)
 
-target_compile_options (cld2
-    PRIVATE
-        -Wno-old-style-cast
-        -Wno-inconsistent-missing-destructor-override
-        -Wno-deprecated
-        -Wno-unused-parameter
-        -Wno-shadow
-        -Wno-tautological-type-limit-compare
-        -Wno-extra-semi
-        -Wno-narrowing
-        -Wl
-)
 
-target_include_directories (cld2 PUBLIC ${LIBRARY_DIR}/public)
+target_link_libraries (cld2 PRIVATE ${LIBRARY_DIR}/internal/libcld2.so)
+target_include_directories(cld2 PUBLIC "${LIBRARY_DIR}/public")

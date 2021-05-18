@@ -4,7 +4,6 @@
 #include <Common/UTF8Helpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-
 #include <algorithm>
 #include <cstring>
 #include <cmath>
@@ -27,8 +26,6 @@ struct CharsetClassificationImpl
     using CodePoint = UInt8;
 
     static constexpr Float64 zero_frequency = 0.000001;
-    /// map_size for ngram count.
-    static constexpr size_t map_size = 1u << 16;
 
     /// If the data size is bigger than this, behaviour is unspecified for this function.
     static constexpr size_t max_string_size = 1u << 15;
@@ -39,10 +36,6 @@ struct CharsetClassificationImpl
     /// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
 
-    /** map_size of this fits mostly in L2 cache all the time.
-      * Actually use UInt16 as addings and subtractions do not UB overflow. But think of it as a signed
-      * integer array.
-      */
     using NgramCount = UInt16;
 
     static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64> standart, std::unordered_map<UInt16, Float64> model)

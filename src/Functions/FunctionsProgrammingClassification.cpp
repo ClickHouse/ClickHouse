@@ -151,10 +151,10 @@ struct ProgrammingClassificationImpl
 
             const auto ans = most_liked.c_str();
             size_t cur_offset = offsets[i];
-
-            res_data.resize(res_offset + strlen(ans) + 1);
-            memcpy(&res_data[res_offset], ans, strlen(ans));
-            res_offset += strlen(ans);
+            size_t ans_size = strlen(ans);
+            res_data.resize(res_offset + ans_size + 1);
+            memcpy(&res_data[res_offset], ans, ans_size);
+            res_offset += ans_size;
 
             res_data[res_offset] = 0;
             ++res_offset;
