@@ -65,7 +65,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     auto wrapped_path = wrappedPath(path);
     auto buffer = delegate->readFile(wrapped_path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 
-    auto iv = GetRandomString(kIVSize);
+    String iv;
     size_t offset = 0;
 
     if (exists(path) && getFileSize(path))
@@ -73,6 +73,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
         iv = ReadIV(kIVSize, *buffer);
         offset = kIVSize;
     }
+    else
+        iv = GetRandomString(kIVSize);
 
     return std::make_unique<ReadEncryptedBuffer>(buf_size, std::move(buffer), iv, key, offset);
 }
@@ -82,18 +84,21 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(
     size_t buf_size,
     WriteMode mode)
 {
+    String iv;
+    size_t offset = 0;
     auto wrapped_path = wrappedPath(path);
-    auto iv = GetRandomString(kIVSize);
 
-    if (exists(path) && getFileSize(path))
+    if (mode == WriteMode::Append && exists(path) && getFileSize(path))
     {
         auto read_buffer = delegate->readFile(wrapped_path, kIVSize);
         iv = ReadIV(kIVSize, *read_buffer);
+        offset = getFileSize(path);
     }
+    else
+        iv = GetRandomString(kIVSize);
 
     auto buffer = delegate->writeFile(wrapped_path, buf_size, mode);
-    return std::make_unique<WriteEncryptedBuffer>(buf_size, std::move(buffer), iv, key,
-                                                  mode == WriteMode::Append ? delegate->getFileSize(wrapped_path) : 0);
+    return std::make_unique<WriteEncryptedBuffer>(buf_size, std::move(buffer), iv, key, offset);
 }
 
 
