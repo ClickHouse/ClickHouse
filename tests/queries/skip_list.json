@@ -722,7 +722,7 @@
         "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
         "01821_table_comment",
         "01710_projection_fetch",
-        "01870_modulo_partition_key"
+        "01870_modulo_partition_key",
         "01870_buffer_flush" // creates database
     ]
 }
