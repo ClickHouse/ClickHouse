@@ -101,7 +101,7 @@ public:
 
     private:
         /// Transient value for CAS.
-        uint32_t version = 0;
+        uint32_t version;
 
         String znode_path;
 
