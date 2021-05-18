@@ -53,7 +53,7 @@ if (NOT LIBRARY_REPLXX OR NOT INCLUDE_REPLXX OR NOT EXTERNAL_REPLXX_WORKS)
         "${LIBRARY_DIR}/src/ConvertUTF.cpp"
         "${LIBRARY_DIR}/src/escape.cxx"
         "${LIBRARY_DIR}/src/history.cxx"
-        "${LIBRARY_DIR}/src/io.cxx"
+        "${LIBRARY_DIR}/src/terminal.cxx"
         "${LIBRARY_DIR}/src/prompt.cxx"
         "${LIBRARY_DIR}/src/replxx_impl.cxx"
         "${LIBRARY_DIR}/src/replxx.cxx"
@@ -62,7 +62,7 @@ if (NOT LIBRARY_REPLXX OR NOT INCLUDE_REPLXX OR NOT EXTERNAL_REPLXX_WORKS)
     )
 
     add_library (replxx ${SRCS})
-    target_include_directories(replxx SYSTEM PUBLIC ${LIBRARY_DIR}/include)
+    target_include_directories(replxx SYSTEM PUBLIC "${LIBRARY_DIR}/include")
 endif ()
 
 if (COMPILER_CLANG)

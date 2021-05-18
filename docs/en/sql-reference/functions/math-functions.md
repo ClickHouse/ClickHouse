@@ -54,7 +54,7 @@ If ‘x’ is non-negative, then `erf(x / σ√2)` is the probability that a ran
 Example (three sigma rule):
 
 ``` sql
-SELECT erf(3 / sqrt(2))
+SELECT erf(3 / sqrt(2));
 ```
 
 ``` text
@@ -111,4 +111,369 @@ Accepts a numeric argument and returns a UInt64 number close to 2 to the power o
 
 Accepts a numeric argument and returns a UInt64 number close to 10 to the power of x.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->
+## cosh(x) {#coshx}
+
+[Hyperbolic cosine](https://in.mathworks.com/help/matlab/ref/cosh.html).
+
+**Syntax**
+
+``` sql
+cosh(x)
+```
+
+**Arguments**
+
+-   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   Values from the interval: `1 <= cosh(x) < +∞`.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT cosh(0);
+```
+
+Result:
+
+``` text
+┌─cosh(0)──┐
+│        1 │
+└──────────┘
+```
+
+## acosh(x) {#acoshx}
+
+[Inverse hyperbolic cosine](https://www.mathworks.com/help/matlab/ref/acosh.html).
+
+**Syntax**
+
+``` sql
+acosh(x)
+```
+
+**Arguments**
+
+-   `x` — Hyperbolic cosine of angle. Values from the interval: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   The angle, in radians. Values from the interval: `0 <= acosh(x) < +∞`.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT acosh(1);
+```
+
+Result:
+
+``` text
+┌─acosh(1)─┐
+│        0 │
+└──────────┘
+```
+
+**See Also**
+
+-   [cosh(x)](../../sql-reference/functions/math-functions.md#coshx)
+
+## sinh(x) {#sinhx}
+
+[Hyperbolic sine](https://www.mathworks.com/help/matlab/ref/sinh.html).
+
+**Syntax**
+
+``` sql
+sinh(x)
+```
+
+**Arguments**
+
+-   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   Values from the interval: `-∞ < sinh(x) < +∞`.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT sinh(0);
+```
+
+Result:
+
+``` text
+┌─sinh(0)──┐
+│        0 │
+└──────────┘
+```
+
+## asinh(x) {#asinhx}
+
+[Inverse hyperbolic sine](https://www.mathworks.com/help/matlab/ref/asinh.html).
+
+**Syntax**
+
+``` sql
+asinh(x)
+```
+
+**Arguments**
+
+-   `x` — Hyperbolic sine of angle. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   The angle, in radians. Values from the interval: `-∞ < asinh(x) < +∞`.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT asinh(0);
+```
+
+Result:
+
+``` text
+┌─asinh(0)─┐
+│        0 │
+└──────────┘
+```
+
+**See Also**
+
+-   [sinh(x)](../../sql-reference/functions/math-functions.md#sinhx)
+
+## atanh(x) {#atanhx}
+
+[Inverse hyperbolic tangent](https://www.mathworks.com/help/matlab/ref/atanh.html).
+
+**Syntax**
+
+``` sql
+atanh(x)
+```
+
+**Arguments**
+
+-   `x` — Hyperbolic tangent of angle. Values from the interval: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   The angle, in radians. Values from the interval: `-∞ < atanh(x) < +∞`.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT atanh(0);
+```
+
+Result:
+
+``` text
+┌─atanh(0)─┐
+│        0 │
+└──────────┘
+```
+
+## atan2(y, x) {#atan2yx}
+
+The [function](https://en.wikipedia.org/wiki/Atan2) calculates the angle in the Euclidean plane, given in radians, between the positive x axis and the ray to the point `(x, y) ≠ (0, 0)`.
+
+**Syntax**
+
+``` sql
+atan2(y, x)
+```
+
+**Arguments**
+
+-   `y` — y-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — x-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   The angle `θ` such that `−π < θ ≤ π`, in radians.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT atan2(1, 1);
+```
+
+Result:
+
+``` text
+┌────────atan2(1, 1)─┐
+│ 0.7853981633974483 │
+└────────────────────┘
+```
+
+## hypot(x, y) {#hypotxy}
+
+Calculates the length of the hypotenuse of a right-angle triangle. The [function](https://en.wikipedia.org/wiki/Hypot) avoids problems that occur when squaring very large or very small numbers.
+
+**Syntax**
+
+``` sql
+hypot(x, y)
+```
+
+**Arguments**
+
+-   `x` — The first cathetus of a right-angle triangle. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+-   `y` — The second cathetus of a right-angle triangle. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   The length of the hypotenuse of a right-angle triangle.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT hypot(1, 1);
+```
+
+Result:
+
+``` text
+┌────────hypot(1, 1)─┐
+│ 1.4142135623730951 │
+└────────────────────┘
+```
+
+## log1p(x) {#log1px}
+
+Calculates `log(1+x)`. The [function](https://en.wikipedia.org/wiki/Natural_logarithm#lnp1) `log1p(x)` is more accurate than `log(1+x)` for small values of x.
+
+**Syntax**
+
+``` sql
+log1p(x)
+```
+
+**Arguments**
+
+-   `x` — Values from the interval: `-1 < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Returned value**
+
+-   Values from the interval: `-∞ < log1p(x) < +∞`.
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT log1p(0);
+```
+
+Result:
+
+``` text
+┌─log1p(0)─┐
+│        0 │
+└──────────┘
+```
+
+**See Also**
+
+-   [log(x)](../../sql-reference/functions/math-functions.md#logx-lnx)
+
+## sign(x) {#signx}
+
+Returns the sign of a real number.
+
+**Syntax**
+
+``` sql
+sign(x)
+```
+
+**Arguments**
+
+-   `x` — Values from  `-∞` to `+∞`. Support all numeric types in ClickHouse.
+
+**Returned value**
+
+- -1 for `x < 0`
+-  0 for `x = 0`
+-  1 for `x > 0`
+
+**Examples**
+
+Sign for the zero value:
+
+``` sql
+SELECT sign(0);
+```
+
+Result:
+
+``` text
+┌─sign(0)─┐
+│       0 │
+└─────────┘
+```
+
+Sign for the positive value:
+
+``` sql
+SELECT sign(1);
+```
+
+Result:
+
+``` text
+┌─sign(1)─┐
+│       1 │
+└─────────┘
+```
+
+Sign for the negative value:
+
+``` sql
+SELECT sign(-1);
+```
+
+Result:
+
+``` text
+┌─sign(-1)─┐
+│       -1 │
+└──────────┘
+```
+

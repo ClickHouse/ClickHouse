@@ -139,7 +139,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         //std::cerr << "total_merged_rows: " << total_merged_rows << ", merged_rows: " << merged_rows << "\n";
         //std::cerr << "Inserting row\n";
-        merged_data.insertRow(current->all_columns, current->pos, current->rows);
+        merged_data.insertRow(current->all_columns, current->getRow(), current->rows);
 
         if (out_row_sources_buf)
         {

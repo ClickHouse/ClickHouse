@@ -10,7 +10,7 @@ Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 kurtPop(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
@@ -21,5 +21,5 @@ The kurtosis of the given distribution. Type — [Float64](../../../sql-referenc
 **Example**
 
 ``` sql
-SELECT kurtPop(value) FROM series_with_value_column
+SELECT kurtPop(value) FROM series_with_value_column;
 ```

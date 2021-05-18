@@ -70,4 +70,10 @@ SELECT max(n) m FROM test1 where test1.m=43 having max(n)=42;
 WITH test1 AS (SELECT n, null b, n+1 m FROM with_test where  n = 42 order by n limit 4)
 SELECT max(n) m FROM test1 where b is null and test1.m=43 having m=42 limit 4;
 
+with
+    test1 as (select n, null b, n+1 m from with_test where  n = 42 order by n limit 4),
+    test2 as (select n + 1 as x, n - 1 as y from test1),
+    test3 as (select x * y as z from test2)
+select z + 1 as q from test3;
+
 drop table  with_test ;

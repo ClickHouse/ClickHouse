@@ -43,7 +43,7 @@ $ cd ..
 
 为此，请创建以下文件：
 
-/图书馆/LaunchDaemons/限制.maxfilesplist:
+/资源库/LaunchDaemons/limit.maxfiles.plist:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>

@@ -1,6 +1,5 @@
 ---
-toc_folder_title: "\u041E\u0442 \u0441\u0442\u043E\u0440\u043E\u043D\u043D\u0438\u0445\
-  \ \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u043E\u0432"
+toc_folder_title: "Сторонние интерфейсы"
 toc_priority: 24
 ---
 
@@ -16,4 +15,3 @@ toc_priority: 24
 !!! note "Примечание"
     С ClickHouse работают также универсальные инструменты, поддерживающие общий API, такие как [ODBC](../../interfaces/odbc.md) или [JDBC](../../interfaces/jdbc.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/) <!--hide-->

@@ -1,3 +1,8 @@
+---
+toc_priority: 43
+toc_title: jdbc
+---
+
 # jdbc {#jdbc}
 
 `jdbc(jdbc_connection_uri, schema, table)` - возвращает таблицу, соединение с которой происходит через JDBC-драйвер.
@@ -19,4 +24,3 @@ SELECT * FROM jdbc('mysql://localhost:3306/?user=root&password=root', 'schema', 
 SELECT * FROM jdbc('datasource://mysql-local', 'schema', 'table')
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/jdbc/) <!--hide-->

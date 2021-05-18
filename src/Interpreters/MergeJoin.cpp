@@ -76,6 +76,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
     return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
 }
 
+/// Get first and last row from sorted block
 Block extractMinMax(const Block & block, const Block & keys)
 {
     if (block.rows() == 0)
@@ -86,7 +87,7 @@ Block extractMinMax(const Block & block, const Block & keys)
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        const auto & src_column = block.getByName(keys.getByPosition(i).name);
+        const auto & src_column = block.getByName(min_max.getByPosition(i).name);
 
         columns[i]->insertFrom(*src_column.column, 0);
         columns[i]->insertFrom(*src_column.column, block.rows() - 1);
@@ -180,12 +181,16 @@ class MergeJoinCursor
 public:
     MergeJoinCursor(const Block & block, const SortDescription & desc_)
         : impl(SortCursorImpl(block, desc_))
-    {}
+    {
+        /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
+        if (impl.permutation)
+            throw Exception("Logical error: MergeJoinCursor doesn't support permutation", ErrorCodes::LOGICAL_ERROR);
+    }
 
-    size_t position() const { return impl.pos; }
+    size_t position() const { return impl.getRow(); }
     size_t end() const { return impl.rows; }
-    bool atEnd() const { return impl.pos >= impl.rows; }
-    void nextN(size_t num) { impl.pos += num; }
+    bool atEnd() const { return impl.getRow() >= impl.rows; }
+    void nextN(size_t num) { impl.getPosRef() += num; }
 
     void setCompareNullability(const MergeJoinCursor & rhs)
     {
@@ -254,10 +259,10 @@ private:
             else if (cmp > 0)
                 rhs.impl.next();
             else if (!cmp)
-                return Range{impl.pos, rhs.impl.pos, getEqualLength(), rhs.getEqualLength()};
+                return Range{impl.getRow(), rhs.impl.getRow(), getEqualLength(), rhs.getEqualLength()};
         }
 
-        return Range{impl.pos, rhs.impl.pos, 0, 0};
+        return Range{impl.getRow(), rhs.impl.getRow(), 0, 0};
     }
 
     template <bool left_nulls, bool right_nulls>
@@ -268,7 +273,7 @@ private:
             const auto * left_column = impl.sort_columns[i];
             const auto * right_column = rhs.impl.sort_columns[i];
 
-            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.pos, rhs.impl.pos);
+            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.getRow(), rhs.impl.getRow());
             if (res)
                 return res;
         }
@@ -278,11 +283,11 @@ private:
     /// Expects !atEnd()
     size_t getEqualLength()
     {
-        size_t pos = impl.pos + 1;
+        size_t pos = impl.getRow() + 1;
         for (; pos < impl.rows; ++pos)
             if (!samePrev(pos))
                 break;
-        return pos - impl.pos;
+        return pos - impl.getRow();
     }
 
     /// Expects lhs_pos > 0
@@ -394,7 +399,8 @@ bool joinEquals(const Block & left_block, const Block & right_block, const Block
 }
 
 template <bool copy_left>
-void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, MutableColumns & right_columns,
+void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
+                      const Block & right_block, MutableColumns & right_columns,
                       size_t start, size_t end)
 {
     if (end <= start)
@@ -404,9 +410,10 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, M
     if constexpr (copy_left)
         copyLeftRange(left_block, left_columns, start, rows_to_add);
 
-    /// append nulls
-    for (auto & column : right_columns)
-        column->insertManyDefaults(rows_to_add);
+    for (size_t i = 0; i < right_columns.size(); ++i)
+    {
+        JoinCommon::addDefaultValues(*right_columns[i], right_block.getByPosition(i).type, rows_to_add);
+    }
 }
 
 }
@@ -459,6 +466,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, right_columns_to_add);
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
+    JoinCommon::removeLowCardinalityInplace(right_sample_block, table_join->keyNamesRight());
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
@@ -479,6 +487,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
             left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
 }
 
+/// Has to be called even if totals are empty
 void MergeJoin::setTotals(const Block & totals_block)
 {
     totals = totals_block;
@@ -490,7 +499,7 @@ void MergeJoin::setTotals(const Block & totals_block)
 
 void MergeJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, right_columns_to_add, table_join->keyNamesRight(), block);
+    JoinCommon::joinTotals(totals, right_columns_to_add, *table_join, block);
 }
 
 void MergeJoin::mergeRightBlocks()
@@ -516,7 +525,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     pipeline.init(std::move(source));
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
-    pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, nullptr, 0));
+    pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
 
     auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
 
@@ -692,7 +701,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
         }
 
         left_cursor.nextN(left_key_tail);
-        joinInequalsLeft<is_all>(block, left_columns, right_columns, left_cursor.position(), left_cursor.end());
+        joinInequalsLeft<is_all>(block, left_columns, right_columns_to_add, right_columns, left_cursor.position(), left_cursor.end());
         //left_cursor.nextN(left_cursor.end() - left_cursor.position());
 
         changeLeftColumns(block, std::move(left_columns));
@@ -769,7 +778,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
         Range range = left_cursor.getNextEqualRange(right_cursor);
 
-        joinInequalsLeft<is_all>(left_block, left_columns, right_columns, left_unequal_position, range.left_start);
+        joinInequalsLeft<is_all>(left_block, left_columns, right_columns_to_add, right_columns, left_unequal_position, range.left_start);
 
         if (range.empty())
             break;
@@ -924,7 +933,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStream input(flushed_right_blocks[pos]->path(), right_sample_block);
+            TemporaryFileStream input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 

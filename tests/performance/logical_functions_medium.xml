@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.5">
+<test max_ignored_relative_change="0.2">
     <settings>
         <max_threads>1</max_threads>
     </settings>

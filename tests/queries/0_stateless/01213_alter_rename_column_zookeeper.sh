@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_for_rename_replicated"
@@ -14,7 +15,7 @@ CREATE TABLE table_for_rename_replicated
   value2 String,
   value3 String
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01213/table_for_rename_replicated', '1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table_for_rename_replicated', '1')
 PARTITION BY date
 ORDER BY key;
 "

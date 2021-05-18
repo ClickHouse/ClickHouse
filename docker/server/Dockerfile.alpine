@@ -1,0 +1,37 @@
+FROM alpine
+
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    TZ=UTC \
+    CLICKHOUSE_CONFIG=/etc/clickhouse-server/config.xml
+
+COPY alpine-root/ /
+
+# user/group precreated explicitly with fixed uid/gid on purpose.
+# It is especially important for rootless containers: in that case entrypoint
+# can't do chown and owners of mounted volumes should be configured externally.
+# We do that in advance at the begining of Dockerfile before any packages will be
+# installed to prevent picking those uid / gid by some unrelated software.
+# The same uid / gid (101) is used both for alpine and ubuntu.
+
+RUN addgroup -S -g 101 clickhouse \
+    && adduser -S -h /var/lib/clickhouse -s /bin/bash -G clickhouse -g "ClickHouse server" -u 101 clickhouse \
+    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
+    && chown clickhouse:clickhouse /var/lib/clickhouse \
+    && chown root:clickhouse /var/log/clickhouse-server \
+    && chmod +x /entrypoint.sh \
+    && apk add --no-cache su-exec bash tzdata \
+    && cp /usr/share/zoneinfo/UTC /etc/localtime \
+    && echo "UTC" > /etc/timezone \
+    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
+
+# we need to allow "others" access to clickhouse folder, because docker container
+# can be started with arbitrary uid (openshift usecase)
+
+EXPOSE 9000 8123 9009
+
+VOLUME /var/lib/clickhouse \
+       /var/log/clickhouse-server
+
+ENTRYPOINT ["/entrypoint.sh"]

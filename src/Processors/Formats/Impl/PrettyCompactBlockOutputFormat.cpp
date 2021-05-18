@@ -1,6 +1,7 @@
 #include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
 
@@ -132,26 +133,23 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
     const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
                                        utf8_grid_symbols :
                                        ascii_grid_symbols;
-    /// Create delimiters
-    std::stringstream bottom_separator;
-
-    bottom_separator << grid_symbols.left_bottom_corner;
+    /// Write delimiters
+    out << grid_symbols.left_bottom_corner;
     for (size_t i = 0; i < max_widths.size(); ++i)
     {
         if (i != 0)
-            bottom_separator << grid_symbols.bottom_separator;
+            out << grid_symbols.bottom_separator;
 
         for (size_t j = 0; j < max_widths[i] + 2; ++j)
-            bottom_separator << grid_symbols.dash;
+            out << grid_symbols.dash;
     }
-    bottom_separator << grid_symbols.right_bottom_corner << "\n";
-
-    writeString(bottom_separator.str(), out);
+    out << grid_symbols.right_bottom_corner << "\n";
 }
 
 void PrettyCompactBlockOutputFormat::writeRow(
     size_t row_num,
     const Block & header,
+    const Serializations & serializations,
     const Columns & columns,
     const WidthsPerColumn & widths,
     const Widths & max_widths)
@@ -182,7 +180,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], type, row_num, cur_widths, max_widths[j]);
+        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], type.shouldAlignRightInPrettyFormats());
     }
 
     writeCString(grid_symbols.bar, out);
@@ -243,8 +241,13 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 
     writeHeader(header, max_widths, name_widths);
 
+    size_t num_columns = header.columns();
+    Serializations serializations(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
+
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
-        writeRow(i, header, columns, widths, max_widths);
+        writeRow(i, header, serializations, columns, widths, max_widths);
 
     writeBottom(max_widths);
 
@@ -259,7 +262,7 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [mono_block = mono_block](
             WriteBuffer & buf,
             const Block & sample,
-            FormatFactory::WriteCallback,
+            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
         {
             return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings, mono_block);
@@ -269,7 +272,7 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;

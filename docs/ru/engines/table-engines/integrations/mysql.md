@@ -1,3 +1,8 @@
+---
+toc_priority: 4
+toc_title: MySQL
+---
+
 # MySQL {#mysql}
 
 Движок MySQL позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.
@@ -13,12 +18,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-Смотрите подробное описание запроса [CREATE TABLE](../../../engines/table-engines/integrations/mysql.md#create-table-query).
+Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
 
 Структура таблицы может отличаться от исходной структуры таблицы MySQL:
 
 -   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
--   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../../engines/table-engines/integrations/mysql.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Настройка `external_table_functions_use_nulls` определяет как обрабатывать Nullable столбцы. По умолчанию 1, если 0 - табличная функция не будет делать nullable столбцы и будет вместо null выставлять значения по умолчанию для скалярного типа. Это также применимо для null значений внутри массивов.
 
 **Параметры движка**
 
@@ -95,4 +101,3 @@ SELECT * FROM mysql_table
 -   [Табличная функция ‘mysql’](../../../engines/table-engines/integrations/mysql.md)
 -   [Использование MySQL в качестве источника для внешнего словаря](../../../engines/table-engines/integrations/mysql.md#dicts-external_dicts_dict_sources-mysql)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mysql/) <!--hide-->

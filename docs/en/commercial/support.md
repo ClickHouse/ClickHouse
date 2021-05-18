@@ -7,6 +7,10 @@ toc_title: Support
 
 !!! info "Info"
     If you have launched a ClickHouse commercial support service, feel free to [open a pull-request](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/support.md) adding it to the following list.
+    
+## Yandex.Cloud
+
+ClickHouse worldwide support from the authors of ClickHouse. Supports on-premise and cloud deployments. Ask details on clickhouse-support@yandex-team.com
 
 ## Altinity {#altinity}
 

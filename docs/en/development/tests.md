@@ -11,7 +11,7 @@ Functional tests are the most simple and convenient to use. Most of ClickHouse f
 
 Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
 
-Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and not available to general public. We tend to use only `stateless` tests and avoid adding new `stateful` tests.
+Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and it is available to general public.
 
 Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
 
@@ -47,6 +47,8 @@ select x; -- { serverError 49 }
 ```
 This test ensures that the server returns an error with code 49 about unknown column `x`. If there is no error, or the error is different, the test will fail. If you want to ensure that an error occurs on the client side, use `clientError` annotation instead.
 
+Do not check for a particular wording of error message, it may change in the future, and the test will needlessly break. Check only the error code. If the existing error code is not precise enough for your needs, consider adding a new one.
+
 ### Testing a Distributed Query
 
 If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`. Remember to add the words `shard` or `distributed` to the test name, so that it is ran in CI in correct configurations, where the server is configured to support distributed queries.
@@ -72,9 +74,9 @@ It’s not necessarily to have unit tests if the code is already covered by func
 
 ## Performance Tests {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `clickhouse performance-test` tool (that is embedded in `clickhouse` binary). See `--help` for invocation.
+Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `docker/tests/performance-comparison` tool . See the readme file for invocation.
 
-Each test run one or multiple queries (possibly with combinations of parameters) in a loop with some conditions for stop (like “maximum execution speed is not changing in three seconds”) and measure some metrics about query performance (like “maximum execution speed”). Some tests can contain preconditions on preloaded test dataset.
+Each test run one or multiple queries (possibly with combinations of parameters) in a loop. Some tests can contain preconditions on preloaded test dataset.
 
 If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
 
@@ -82,11 +84,9 @@ If you want to improve performance of ClickHouse in some scenario, and if improv
 
 Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
 
-You can also place pair of files `.sh` and `.reference` along with the tool to run it on some predefined input - then script result can be compared to `.reference` file. These kind of tests are not automated.
-
 ## Miscellaneous Tests {#miscellaneous-tests}
 
-There are tests for external dictionaries located at `tests/external_dictionaries` and for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
+There are tests for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
 
 There is separate test for quorum inserts. This test run ClickHouse cluster on separate servers and emulate various failure cases: network split, packet drop (between ClickHouse nodes, between ClickHouse and ZooKeeper, between ClickHouse server and client, etc.), `kill -9`, `kill -STOP` and `kill -CONT` , like [Jepsen](https://aphyr.com/tags/Jepsen). Then the test checks that all acknowledged inserts was written and all rejected inserts was not.
 
@@ -167,25 +167,30 @@ Precise query execution timings are not recorded and not compared due to high va
 
 ## Build Tests {#build-tests}
 
-Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. Tests are located at `ci` directory. They run build from source inside Docker, Vagrant, and sometimes with `qemu-user-static` inside Docker. These tests are under development and test runs are not automated.
+Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
 
-Motivation:
-
-Normally we release and run all tests on a single variant of ClickHouse build. But there are alternative build variants that are not thoroughly tested. Examples:
-
--   build on FreeBSD
--   build on Debian with libraries from system packages
--   build with shared linking of libraries
--   build on AArch64 platform
--   build on PowerPc platform
+Examples:
+-   cross-compile for Darwin x86_64 (Mac OS X)
+-   cross-compile for FreeBSD x86_64
+-   cross-compile for Linux AArch64
+-   build on Ubuntu with libraries from system packages (discouraged)
+-   build with shared linking of libraries (discouraged)
 
 For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
 
 Though we cannot run all tests on all variant of builds, we want to check at least that various build variants are not broken. For this purpose we use build tests.
 
+We also test that there are no translation units that are too long to compile or require too much RAM.
+
+We also test that there are no too large stack frames.
+
 ## Testing for Protocol Compatibility {#testing-for-protocol-compatibility}
 
 When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
+
+We also test some cases automatically with integrational tests:
+- if data written by old version of ClickHouse can be successfully read by the new version;
+- do distributed queries work in a cluster with different ClickHouse versions.
 
 ## Help from the Compiler {#help-from-the-compiler}
 
@@ -193,34 +198,31 @@ Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall 
 
 Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
 
-For production builds, gcc is used (it still generates slightly more efficient code than clang). For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
+For production builds, clang is used, but we also test make gcc builds. For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 
 ## Sanitizers {#sanitizers}
 
 ### Address sanitizer
-We run functional and integration tests under ASan on per-commit basis.
-
-### Valgrind (Memcheck)
-We run functional tests under Valgrind overnight. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
-
-### Undefined behaviour sanitizer
-We run functional and integration tests under ASan on per-commit basis.
+We run functional, integration, stress and unit tests under ASan on per-commit basis.
 
 ### Thread sanitizer
-We run functional tests under TSan on per-commit basis. We still don’t run integration tests under TSan on per-commit basis.
+We run functional, integration, stress and unit tests under TSan on per-commit basis.
 
 ### Memory sanitizer
-Currently we still don’t use MSan.
+We run functional, integration, stress and unit tests under MSan on per-commit basis.
 
-### Debug allocator
-Debug version of `jemalloc` is used for debug build.
+### Undefined behaviour sanitizer
+We run functional, integration, stress and unit tests under UBSan on per-commit basis. The code of some third-party libraries is not sanitized for UB.
+
+### Valgrind (Memcheck)
+We used to run functional tests under Valgrind overnight, but don't do it anymore. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
 
 ## Fuzzing {#fuzzing}
 
 ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/LibFuzzer.html) and random SQL queries.
 All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
-LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have “\_fuzzer” name postfixes.
+LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have “_fuzzer” name postfixes.
 Fuzzer example can be found at `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
 We encourage you to write fuzz tests for every functionality that handles user input.
 
@@ -231,19 +233,62 @@ Google OSS-Fuzz can be found at `docker/fuzz`.
 We also use simple fuzz test to generate random SQL queries and to check that the server doesn’t die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
 
+We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.tech/blog/en/2021/fuzzing-clickhouse/).
+
+## Stress test
+
+Stress tests are another case of fuzzing. It runs all functional tests in parallel in random order with a single server. Results of the tests are not checked.
+
+It is checked that:
+- server does not crash, no debug or sanitizer traps are triggered;
+- there are no deadlocks;
+- the database structure is consistent;
+- server can successfully stop after the test and start again without exceptions.
+
+There are five variants (Debug, ASan, TSan, MSan, UBSan).
+
+## Thread Fuzzer
+
+Thread Fuzzer (please don't mix up with Thread Sanitizer) is another kind of fuzzing that allows to randomize thread order of execution. It helps to find even more special cases.
+
 ## Security Audit {#security-audit}
 
 People from Yandex Security Team do some basic overview of ClickHouse capabilities from the security standpoint.
 
 ## Static Analyzers {#static-analyzers}
 
-We run `PVS-Studio` on per-commit basis. We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. You will find instructions for usage in `tests/instructions/` directory. Also you can read [the article in russian](https://habr.com/company/yandex/blog/342018/).
+We run `clang-tidy` and `PVS-Studio` on per-commit basis. `clang-static-analyzer` checks are also enabled. `clang-tidy` is also used for some style checks.
+
+We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory. Also you can read [the article in russian](https://habr.com/company/yandex/blog/342018/).
 
 If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of the box.
 
+We also use `shellcheck` for static analysis of shell scripts.
+
 ## Hardening {#hardening}
 
-`FORTIFY_SOURCE` is used by default. It is almost useless, but still makes sense in rare cases and we don’t disable it.
+In debug build we are using custom allocator that does ASLR of user-level allocations.
+
+We also manually protect memory regions that are expected to be readonly after allocation.
+
+In debug build we also involve a customization of libc that ensures that no "harmful" (obsolete, insecure, not thread-safe) functions are called.
+
+Debug assertions are used extensively.
+
+In debug build, if exception with "logical error" code (implies a bug) is being thrown, the program is terminated prematurally. It allows to use exceptions in release build but make it an assertion in debug build.
+
+Debug version of jemalloc is used for debug builds.
+Debug version of libc++ is used for debug builds.
+
+## Runtime Integrity Checks
+
+Data stored on disk is checksummed. Data in MergeTree tables is checksummed in three ways simultaneously* (compressed data blocks, uncompressed data blocks, the total checksum across blocks). Data transferred over network between client and server or between servers is also checksummed. Replication ensures bit-identical data on replicas.
+
+It is required to protect from faulty hardware (bit rot on storage media, bit flips in RAM on server, bit flips in RAM of network controller, bit flips in RAM of network switch, bit flips in RAM of client, bit flips on the wire). Note that bit flips are common and likely to occur even for ECC RAM and in presense of TCP checksums (if you manage to run thousands of servers processing petabytes of data each day). [See the video (russian)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
+
+ClickHouse provides diagnostics that will help ops engineers to find faulty hardware.
+
+\* and it is not slow.
 
 ## Code Style {#code-style}
 
@@ -257,6 +302,8 @@ Alternatively you can try `uncrustify` tool to reformat your code. Configuration
 
 `CLion` has its own code formatter that has to be tuned for our code style.
 
+We also use `codespell` to find typos in code. It is automated as well.
+
 ## Metrica B2B Tests {#metrica-b2b-tests}
 
 Each ClickHouse release is tested with Yandex Metrica and AppMetrica engines. Testing and stable versions of ClickHouse are deployed on VMs and run with a small copy of Metrica engine that is processing fixed sample of input data. Then results of two instances of Metrica engine are compared together.
@@ -265,13 +312,25 @@ These tests are automated by separate team. Due to high number of moving parts, 
 
 ## Test Coverage {#test-coverage}
 
-As of July 2018 we don’t track test coverage.
+We also track test coverage but only for functional tests and only for clickhouse-server. It is performed on daily basis.
+
+## Tests for Tests
+
+There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
+
+## Testflows
+
+[Testflows](https://testflows.com/) is an enterprise-grade testing framework. It is used by Altinity for some of the tests and we run these tests in our CI.
+
+## Yandex Checks (only for Yandex employees)
+
+These checks are importing ClickHouse code into Yandex internal monorepository, so ClickHouse codebase can be used as a library by other products at Yandex (YT and YDB). Note that clickhouse-server itself is not being build from internal repo and unmodified open-source build is used for Yandex applications.
 
 ## Test Automation {#test-automation}
 
 We run tests with Yandex internal CI and job automation system named “Sandbox”.
 
-Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored eternally. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
+Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored for several months. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
 
 We don’t use Travis CI due to the limit on time and computational power.
 We don’t use Jenkins. It was used before and now we are happy we are not using Jenkins.

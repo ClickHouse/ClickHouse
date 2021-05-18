@@ -44,7 +44,7 @@ Ubuntuでこれを行うには、コマンドラインターミナルで実行�
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-注:、代理して下さい *your\_github\_username* 適切なもので！
+注:、代理して下さい *your_github_username* 適切なもので！
 
 このコマンドディレクトリの作成 `ClickHouse` プロジェクトの作業コピーを含む。
 
@@ -133,19 +133,19 @@ ArchまたはGentooを使用する場合は、おそらくCMakeのインスト�
 
 ClickHouseはビルドに複数の外部ライブラリを使用します。 それらのすべては、サブモジュールにあるソースからClickHouseと一緒に構築されているので、別々にインストールする必要はありません。 リストは次の場所で確認できます `contrib`.
 
-# C++コンパイラ {#c-compiler}
+## C++ Compiler {#c-compiler}
 
-ClickHouseのビルドには、バージョン9以降のGCCとClangバージョン8以降のコンパイラがサポートされます。
+Compilers Clang starting from version 11 is supported for building ClickHouse.
 
-公式のYandexビルドは、わずかに優れたパフォーマンスのマシンコードを生成するため、GCCを使用しています（私たちのベンチマークに応じて最大数パーセントの そしてClangは開発のために通常より便利です。 が、当社の継続的インテグレーション（CI)プラットフォームを運チェックのための十数の組み合わせとなります。
+Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
-UBUNTUにGCCをインストールするには: `sudo apt install gcc g++`
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-Gccのバージョンを確認する: `gcc --version`. の場合は下記9その指示に従う。https://clickhouse.tech/docs/ja/development/build/#install-gcc-9.
+```bash
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+```
 
-Mac OS XのビルドはClangでのみサポートされています。 ちょうど実行 `brew install llvm`
-
-Clangを使用する場合は、次のものもインストールできます `libc++` と `lld` あなたがそれが何であるか知っていれば。 を使用して `ccache` また、推奨されます。
+Mac OS X build is also supported. Just run `brew install llvm`
 
 # 建築プロセス {#the-building-process}
 
@@ -154,16 +154,9 @@ ClickHouseを構築する準備ができたので、別のディレクトリを�
     mkdir build
     cd build
 
-いくつかの異なるディレクトリ（build\_release、build\_debugなど）を持つことができます。）ビルドの異なるタイプのために。
+いくつかの異なるディレクトリ（build_release、build_debugなど）を持つことができます。）ビルドの異なるタイプのために。
 
 中の間 `build` cmakeを実行してビルドを構成します。 最初の実行の前に、コンパイラ（この例ではバージョン9gccコンパイラ）を指定する環境変数を定義する必要があります。
-
-Linux:
-
-    export CC=gcc-9 CXX=g++-9
-    cmake ..
-
-Mac OS X:
 
     export CC=clang CXX=clang++
     cmake ..
@@ -257,8 +250,8 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
     sudo apt install wget xz-utils
 
-    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
-    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

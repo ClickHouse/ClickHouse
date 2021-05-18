@@ -58,9 +58,44 @@
                     <port>9440</port>
                     <secure>1</secure>
                 </replica>
-	    </shard>
-	</replicated_cluster_secure>
-	<cluster23>
+            </shard>
+        </replicated_cluster_secure>
+        <cluster1>
+            <shard>
+                <replica>
+                    <host>clickhouse1</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </cluster1>
+        <sharded_cluster12>
+            <shard>
+                <replica>
+                    <host>clickhouse1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>clickhouse2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </sharded_cluster12>
+        <one_shard_cluster12>
+            <shard>
+                <replica>
+                    <host>clickhouse1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>clickhouse2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </one_shard_cluster12>
+        <sharded_cluster23>
             <shard>
                 <replica>
                     <host>clickhouse2</host>
@@ -73,8 +108,20 @@
                     <port>9000</port>
                 </replica>
             </shard>
-        </cluster23>
-	<sharded_cluster>
+        </sharded_cluster23>
+        <one_shard_cluster23>
+            <shard>
+                <replica>
+                    <host>clickhouse2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>clickhouse3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </one_shard_cluster23>
+        <sharded_cluster>
             <shard>
                 <replica>
                     <host>clickhouse1</host>
@@ -94,6 +141,22 @@
                 </replica>
             </shard>
         </sharded_cluster>
+        <one_shard_cluster>
+            <shard>
+                <replica>
+                    <host>clickhouse1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>clickhouse2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>clickhouse3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </one_shard_cluster>
         <sharded_cluster_secure>
             <shard>
                 <replica>

@@ -197,10 +197,13 @@ namespace
             boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
 
         /// Serialize the list of ATTACH queries to a string.
-        std::stringstream ss;
+        WriteBufferFromOwnString buf;
         for (const ASTPtr & query : queries)
-            ss << *query << ";\n";
-        String file_contents = std::move(ss).str();
+        {
+            formatAST(*query, buf, false, true);
+            buf.write(";\n", 2);
+        }
+        String file_contents = buf.str();
 
         /// First we save *.tmp file and then we rename if everything's ok.
         auto tmp_file_path = std::filesystem::path{file_path}.replace_extension(".tmp");
@@ -214,6 +217,7 @@ namespace
         /// Write the file.
         WriteBufferFromFile out{tmp_file_path.string()};
         out.write(file_contents.data(), file_contents.size());
+        out.close();
 
         /// Rename.
         std::filesystem::rename(tmp_file_path, file_path);
@@ -271,6 +275,7 @@ namespace
             writeStringBinary(name, out);
             writeUUIDText(id, out);
         }
+        out.close();
     }
 
 
@@ -350,9 +355,11 @@ String DiskAccessStorage::getStorageParamsJSON() const
     std::lock_guard lock{mutex};
     Poco::JSON::Object json;
     json.set("path", directory_path);
-    if (readonly)
-        json.set("readonly", readonly.load());
-    std::ostringstream oss;
+    bool readonly_loaded = readonly;
+    if (readonly_loaded)
+        json.set("readonly", Poco::Dynamic::Var{true});
+    std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
 }

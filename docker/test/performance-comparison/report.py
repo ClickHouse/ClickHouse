@@ -468,14 +468,14 @@ if args.report == 'main':
             return
 
         columns = [
-            'Test',                                               #0
-            'Wall clock time,&nbsp;s',                            #1
-            'Total client time,&nbsp;s',                          #2
-            'Total queries',                                      #3
-            'Longest query<br>(sum for all runs),&nbsp;s',        #4
-            'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #5
-            'Shortest query<br>(sum for all runs),&nbsp;s',       #6
-            '', # Runs                                            #7
+            'Test',                                                  #0
+            'Wall clock time, entire test,&nbsp;s',                  #1
+            'Total client time for measured query runs,&nbsp;s',     #2
+            'Queries',                                               #3
+            'Longest query, total for measured runs,&nbsp;s',        #4
+            'Wall clock time per query,&nbsp;s',                     #5
+            'Shortest query, total for measured runs,&nbsp;s',       #6
+            '', # Runs                                               #7
             ]
         attrs = ['' for c in columns]
         attrs[7] = None
@@ -520,12 +520,13 @@ if args.report == 'main':
     for t in tables:
         print(t)
 
-    print("""
+    print(f"""
     </div>
     <p class="links">
     <a href="all-queries.html">All queries</a>
     <a href="compare.log">Log</a>
     <a href="output.7z">Test output</a>
+    {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
     </p>
     </body>
     </html>
@@ -638,12 +639,13 @@ elif args.report == 'all-queries':
     for t in tables:
         print(t)
 
-    print("""
+    print(f"""
     </div>
     <p class="links">
     <a href="report.html">Main report</a>
     <a href="compare.log">Log</a>
     <a href="output.7z">Test output</a>
+    {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
     </p>
     </body>
     </html>

@@ -2,7 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Functions/TargetSpecific.h>
 #include <DataTypes/DataTypeString.h>
@@ -63,10 +63,10 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IColumn * haystack_column = block[arguments[0]].column.get();
-        const IColumn * needle_column = block[arguments[1]].column.get();
+        const IColumn * haystack_column = arguments[0].column.get();
+        const IColumn * needle_column = arguments[1].column.get();
 
         auto col_res = ColumnVector<UInt8>::create();
         typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
@@ -84,7 +84,7 @@ public:
         else
             throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block[result].column = std::move(col_res);
+        return col_res;
     }
 
 private:
@@ -142,7 +142,7 @@ template <typename Name>
 class FunctionStartsEndsWith : public TargetSpecific::Default::FunctionStartsEndsWith<Name>
 {
 public:
-    explicit FunctionStartsEndsWith(const Context & context) : selector(context)
+    explicit FunctionStartsEndsWith(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionStartsEndsWith<Name>>();
@@ -159,12 +159,12 @@ public:
     #endif
     }
 
-    void executeImpl(ColumnsWithTypeAndName & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionStartsEndsWith<Name>>(context);
     }

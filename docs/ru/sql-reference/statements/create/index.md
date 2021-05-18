@@ -1,7 +1,7 @@
 ---
 toc_folder_title: CREATE
-toc_priority: 35
-toc_title: Обзор
+toc_priority: 34
+toc_title: "Обзор"
 ---
 
 # Запросы CREATE {#create-queries}
@@ -18,4 +18,3 @@ toc_title: Обзор
 -   [QUOTA](../../../sql-reference/statements/create/quota.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/create/settings-profile.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/statements/create/) <!--hide-->

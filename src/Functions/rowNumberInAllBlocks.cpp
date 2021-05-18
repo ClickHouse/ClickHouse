@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -10,7 +10,7 @@ namespace DB
 namespace
 {
 
-/** Incremental number of row within all blocks passed to this function. */
+/** Incremental number of row within all columnss passed to this function. */
 class FunctionRowNumberInAllBlocks : public IFunction
 {
 private:
@@ -18,7 +18,7 @@ private:
 
 public:
     static constexpr auto name = "rowNumberInAllBlocks";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRowNumberInAllBlocks>();
     }
@@ -51,13 +51,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImplDryRun(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto column = ColumnUInt64::create(input_rows_count);
-        block[result].column = std::move(column);
+        return ColumnUInt64::create(input_rows_count);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t current_row_number = rows.fetch_add(input_rows_count);
 
@@ -67,7 +66,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             data[i] = current_row_number + i;
 
-        block[result].column = std::move(column);
+        return column;
     }
 };
 

@@ -7,23 +7,27 @@
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 function query_with_retry
 {
-    retry=0
+    local query="$1" && shift
+
+    local retry=0
     until [ $retry -ge 5 ]
     do
-        result=$($CLICKHOUSE_CLIENT $2 --query="$1" 2>&1)
+        local result
+        result="$($CLICKHOUSE_CLIENT "$@" --query="$query" 2>&1)"
         if [ "$?" == 0 ]; then
             echo -n "$result"
             return
         else
-            retry=$(($retry + 1))
+            retry=$((retry + 1))
             sleep 3
         fi
     done
-    echo "Query '$1' failed with '$result'"
+    echo "Query '$query' failed with '$result'"
 }
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS src;"
@@ -31,8 +35,8 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst_r1;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst_r2;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r1 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/test_00626/dst_1', '1') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r2 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/test_00626/dst_1', '2') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r1 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst_1', '1') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r2 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst_1', '2') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (0, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1);"
@@ -74,14 +78,14 @@ query_with_retry "ALTER TABLE dst_r1 DROP PARTITION 1;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO dst_r1 VALUES (1, '1', 2), (1, '2', 2);"
 
 $CLICKHOUSE_CLIENT --query="CREATE table test_block_numbers (m UInt64) ENGINE MergeTree() ORDER BY tuple();"
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database=currentDatabase() AND  table='dst_r1' AND active AND name LIKE '1_%';"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='$CLICKHOUSE_DATABASE' AND  table='dst_r1' AND active AND name LIKE '1_%';"
 
 query_with_retry "ALTER TABLE dst_r1 REPLACE PARTITION 1 FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database=currentDatabase() AND  table='dst_r1' AND active AND name LIKE '1_%';"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='$CLICKHOUSE_DATABASE' AND  table='dst_r1' AND active AND name LIKE '1_%';"
 $CLICKHOUSE_CLIENT --query="SELECT (max(m) - min(m) > 1) AS new_block_is_generated FROM test_block_numbers;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE test_block_numbers;"
 
@@ -138,7 +142,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE src;"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d), uniqExact(_part) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r1;"
-query_with_retry "OPTIMIZE TABLE dst_r1 PARTITION 1;" "--replication_alter_partitions_sync=0 --optimize_throw_if_noop=1"
+query_with_retry "OPTIMIZE TABLE dst_r1 PARTITION 1;" --replication_alter_partitions_sync=0 --optimize_throw_if_noop=1
 
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d), uniqExact(_part) FROM dst_r1;"
@@ -150,7 +154,7 @@ $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d), uniqExact(_part) FROM dst_r2
 
 $CLICKHOUSE_CLIENT --query="SELECT 'After restart';"
 $CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICA dst_r1;"
-$CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICAS;"
+$CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 

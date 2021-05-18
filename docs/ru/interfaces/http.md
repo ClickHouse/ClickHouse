@@ -1,9 +1,14 @@
+---
+toc_priority: 19
+toc_title: "HTTP-интерфейс"
+---
+
 # HTTP-интерфейс {#http-interface}
 
 HTTP интерфейс позволяет использовать ClickHouse на любой платформе, из любого языка программирования. У нас он используется для работы из Java и Perl, а также из shell-скриптов. В других отделах, HTTP интерфейс используется из Perl, Python и Go. HTTP интерфейс более ограничен по сравнению с родным интерфейсом, но является более совместимым.
 
 По умолчанию, clickhouse-server слушает HTTP на порту 8123 (это можно изменить в конфиге).
-Если запросить GET / без параметров, то вернётся строка заданная с помощью настройки [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response). Значение по умолчанию «Ok.» (с переводом строки на конце).
+Если запросить GET / без параметров, то вернётся строка заданная с помощью настройки [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response). Значение по умолчанию «Ok.» (с переводом строки на конце).
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -71,7 +76,10 @@ ECT 1
 ```
 
 По умолчанию, данные возвращаются в формате TabSeparated (подробнее смотри раздел «Форматы»).
+
 Можно попросить любой другой формат - с помощью секции FORMAT запроса.
+
+Кроме того, вы можете использовать параметр URL-адреса `default_format` или заголовок `X-ClickHouse-Format`, чтобы указать формат по умолчанию, отличный от `TabSeparated`.
 
 ``` bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -141,29 +149,49 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Для запросов, которые не возвращают таблицу с данными, в случае успеха, выдаётся пустое тело ответа.
 
-Вы можете использовать внутренний формат сжатия Clickhouse при передаче данных. Формат сжатых данных нестандартный, и вам придётся использовать для работы с ним специальную программу `clickhouse-compressor` (устанавливается вместе с пакетом `clickhouse-client`). Для повышения эффективности вставки данных можно отключить проверку контрольной суммы на стороне сервера с помощью настройки[http\_native\_compression\_disable\_checksumming\_on\_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress).
 
-Если вы указали `compress = 1` в URL, то сервер сжимает данные, которые он отправляет.
-Если вы указали `decompress = 1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
+## Сжатие {#compression}
 
-Также, можно использовать [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). Для отправки сжатого запроса `POST`, добавьте заголовок `Content-Encoding: compression_method`. Чтобы ClickHouse сжимал ответ, добавьте заголовок `Accept-Encoding: compression_method`. ClickHouse поддерживает следующие [методы сжатия](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens): `gzip`, `br`, and `deflate`. Чтобы включить HTTP compression, используйте настройку ClickHouse [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression). Уровень сжатия данных для всех методов сжатия можно настроить с помощью настройки [http\_zlib\_compression\_level](#settings-http_zlib_compression_level).
+Сжатие можно использовать для уменьшения трафика по сети при передаче большого количества данных, а также для создания сразу сжатых дампов.
 
-Это может быть использовано для уменьшения трафика по сети при передаче большого количества данных, а также для создания сразу сжатых дампов.
+Вы можете использовать внутренний формат сжатия Clickhouse при передаче данных. Формат сжатых данных нестандартный, и вам придётся использовать для работы с ним специальную программу `clickhouse-compressor`. Она устанавливается вместе с пакетом `clickhouse-client`. Для повышения эффективности вставки данных можно отключить проверку контрольной суммы на стороне сервера с помощью настройки [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress).
 
-Примеры отправки данных со сжатием:
+Если вы указали `compress=1` в URL, то сервер сжимает данные, которые он отправляет. Если вы указали `decompress=1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
 
-``` bash
-$ #Отправка данных на сервер:
-$ curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
+Также можно использовать [сжатие HTTP](https://en.wikipedia.org/wiki/HTTP_compression). ClickHouse поддерживает следующие [методы сжатия](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens): 
 
-$ #Отправка данных клиенту:
-$ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
-```
+- `gzip`
+- `br`
+- `deflate`
+- `xz`
+
+Для отправки сжатого запроса `POST`, добавьте заголовок `Content-Encoding: compression_method`. 
+Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level).
 
 !!! note "Примечание"
     Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
 
-В параметре URL database может быть указана БД по умолчанию.
+**Примеры**
+
+``` bash
+# Отправка сжатых данных на сервер
+$ echo "SELECT 1" | gzip -c | \
+  curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
+```
+
+``` bash
+# Получение сжатых данных с сервера
+$ curl -vsS "http://localhost:8123/?enable_http_compression=1" \
+    -H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
+$ zcat result.gz
+0
+1
+2
+```
+
+## База данных по умолчанию {#default-database}
+
+Вы можете использовать параметр URL `database` или заголовок `X-ClickHouse-Database`, чтобы указать БД по умолчанию.
 
 ``` bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
@@ -208,7 +236,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 ```
 
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.
-Также в параметрах URL вы можете указать любые настройки, которые будут использованы для обработки одного запроса, или целые профили настроек. Пример:http://localhost:8123/?profile=web&max\_rows\_to\_read=1000000000&query=SELECT+1
+Также в параметрах URL вы можете указать любые настройки, которые будут использованы для обработки одного запроса, или целые профили настроек. Пример:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 Подробнее смотрите в разделе [Настройки](../operations/settings/index.md).
 
@@ -230,7 +258,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 Аналогично можно использовать ClickHouse-сессии в HTTP-протоколе. Для этого необходимо добавить к запросу GET параметр `session_id`. В качестве идентификатора сессии можно использовать произвольную строку. По умолчанию через 60 секунд бездействия сессия будет прервана. Можно изменить этот таймаут, изменяя настройку `default_session_timeout` в конфигурации сервера, или добавив к запросу GET параметр `session_timeout`. Статус сессии можно проверить с помощью параметра `session_check=1`. В рамках одной сессии одновременно может исполняться только один запрос.
 
-Прогресс выполнения запроса можно отслеживать с помощью заголовков ответа `X-ClickHouse-Progress`. Для этого включите [send\_progress\_in\_http\_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Пример последовательности заголовков:
+Прогресс выполнения запроса можно отслеживать с помощью заголовков ответа `X-ClickHouse-Progress`. Для этого включите [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Пример последовательности заголовков:
 
 ``` text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
@@ -247,9 +275,9 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 -   `written_bytes` — объём записанных данных в байтах.
 
 Запущенные запросы не останавливаются автоматически при разрыве HTTP соединения. Парсинг и форматирование данных производится на стороне сервера и использование сети может быть неэффективным.
-Может быть передан необязательный параметр query\_id - идентификатор запроса, произвольная строка. Подробнее смотрите раздел «Настройки, replace\_running\_query».
+Может быть передан необязательный параметр query_id - идентификатор запроса, произвольная строка. Подробнее смотрите раздел «Настройки, replace_running_query».
 
-Может быть передан необязательный параметр quota\_key - ключ квоты, произвольная строка. Подробнее смотрите раздел «Квоты».
+Может быть передан необязательный параметр quota_key - ключ квоты, произвольная строка. Подробнее смотрите раздел «Квоты».
 
 HTTP интерфейс позволяет передать внешние данные (внешние временные таблицы) для использования запроса. Подробнее смотрите раздел «Внешние данные для обработки запроса»
 
@@ -607,4 +635,3 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 * Connection #0 to host localhost left intact
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/http_interface/) <!--hide-->

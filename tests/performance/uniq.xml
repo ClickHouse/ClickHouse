@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.9">
+<test>
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
@@ -9,6 +9,16 @@
 
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
+        <!--
+            Because of random distribution of data between threads, the number
+            of unique keys per thread might differ. This means that sometimes
+            we switch to two-level aggregation, and sometimes we don't, based on
+            the "bytes" threshold. Two-level aggregation turns out to be twice
+            as fast, because it merges aggregation states in multiple threads.
+            Lower the threshold here, to avoid jitter. It is unclear whether it
+            would be beneficial to lower the default as well.
+        -->
+        <group_by_two_level_threshold_bytes>10000000</group_by_two_level_threshold_bytes>
     </settings>
 
     <substitutions>

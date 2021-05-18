@@ -1,11 +1,12 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+
+#include <Functions/IFunction.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
 class ExternalModelsLoader;
-class Context;
 
 /// Evaluate external model.
 /// First argument - model name, the others - model arguments.
@@ -16,7 +17,7 @@ class FunctionModelEvaluate final : public IFunction
 public:
     static constexpr auto name = "modelEvaluate";
 
-    static FunctionPtr create(const Context & context);
+    static FunctionPtr create(ContextPtr context);
 
     explicit FunctionModelEvaluate(const ExternalModelsLoader & models_loader_) : models_loader(models_loader_) {}
 
@@ -32,7 +33,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     const ExternalModelsLoader & models_loader;

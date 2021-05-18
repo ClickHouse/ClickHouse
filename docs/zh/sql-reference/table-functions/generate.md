@@ -1,15 +1,13 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 47
 toc_title: generateRandom
 ---
 
 # generateRandom {#generaterandom}
 
-使用给定的模式生成随机数据。
-允许用数据填充测试表。
-支持可以存储在表中的所有数据类型，除了 `LowCardinality` 和 `AggregateFunction`.
+生成具用给定的模式的随机数据。
+允许用数据来填充测试表。
+支持所有可以存储在表中的数据类型， `LowCardinality` 和 `AggregateFunction`除外。
 
 ``` sql
 generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]);
@@ -17,15 +15,15 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 **参数**
 
--   `name` — Name of corresponding column.
--   `TypeName` — Type of corresponding column.
--   `max_array_length` — Maximum array length for all generated arrays. Defaults to `10`.
--   `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
--   `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
+-   `name` — 对应列的名称。
+-   `TypeName` — 对应列的类型。
+-   `max_array_length` — 生成数组的最大长度。 默认为10。
+-   `max_string_length` — 生成字符串的最大长度。 默认为10。
+-   `random_seed` — 手动指定随机种子以产生稳定的结果。 如果为NULL-种子是随机生成的。
 
 **返回值**
 
-具有请求架构的表对象。
+具有请求模式的表对象。
 
 ## 用法示例 {#usage-example}
 

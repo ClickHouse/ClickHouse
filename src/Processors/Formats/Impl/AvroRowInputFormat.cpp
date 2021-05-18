@@ -1,10 +1,13 @@
 #include "AvroRowInputFormat.h"
+#include "DataTypes/DataTypeLowCardinality.h"
 #if USE_AVRO
 
 #include <numeric>
 
 #include <Core/Defines.h>
 #include <Core/Field.h>
+
+#include <Common/LRUCache.h>
 
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -159,7 +162,8 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
 
 static std::string nodeToJson(avro::NodePtr root_node)
 {
-    std::ostringstream ss;
+    std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ss.exceptions(std::ios::failbit);
     root_node->printJson(ss, 0);
     return ss.str();
 }
@@ -174,7 +178,8 @@ static std::string nodeName(avro::NodePtr node)
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
-    WhichDataType target(target_type);
+    const WhichDataType target = removeLowCardinality(target_type);
+
     switch (root_node->type())
     {
         case avro::AVRO_STRING: [[fallthrough]];
@@ -185,7 +190,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
-                        throw Exception(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
+                        throw ParsingException(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
 
                     UUID uuid;
                     parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
@@ -384,7 +389,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
     }
 
     throw Exception(
-        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n" + nodeToJson(root_node),
+        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n"
+        + nodeToJson(root_node),
         ErrorCodes::ILLEGAL_COLUMN);
 }
 
@@ -548,7 +554,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, const FormatSettings & format_settings)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -559,7 +565,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root);
     // fail on missing fields when allow_missing_fields = false
-    if (!format_settings.avro.allow_missing_fields)
+    if (!allow_missing_fields)
     {
         for (size_t i = 0; i < header.columns(); ++i)
         {
@@ -586,19 +592,24 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 
 
 AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_)
-    , file_reader(std::make_unique<InputStreamReadBufferAdapter>(in_))
-    , deserializer(output.getHeader(), file_reader.dataSchema(), format_settings_)
+    : IRowInputFormat(header_, in_, params_),
+      allow_missing_fields(format_settings_.avro.allow_missing_fields)
 {
-    file_reader.init();
+}
+
+void AvroRowInputFormat::readPrefix()
+{
+    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
+    deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), allow_missing_fields);
+    file_reader_ptr->init();
 }
 
 bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
-    if (file_reader.hasMore())
+    if (file_reader_ptr->hasMore())
     {
-        file_reader.decr();
-        deserializer.deserializeRow(columns, file_reader.decoder(), ext);
+        file_reader_ptr->decr();
+        deserializer_ptr->deserializeRow(columns, file_reader_ptr->decoder(), ext);
         return true;
     }
     return false;
@@ -640,11 +651,21 @@ private:
                 request.setHost(url.getHost());
 
                 auto session = makePooledHTTPSession(url, timeouts, 1);
-                session->sendRequest(request);
+                std::istream * response_body{};
+                try
+                {
+                    session->sendRequest(request);
 
-                Poco::Net::HTTPResponse response;
-                auto * response_body = receiveResponse(*session, request, response, false);
-
+                    Poco::Net::HTTPResponse response;
+                    response_body = receiveResponse(*session, request, response, false);
+                }
+                catch (const Poco::Exception & e)
+                {
+                    /// We use session data storage as storage for exception text
+                    /// Depend on it we can deduce to reconnect session or reresolve session host
+                    session->attachSessionData(e.message());
+                    throw;
+                }
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");
@@ -765,7 +786,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(output.getHeader(), schema, format_settings);
+        AvroDeserializer deserializer(output.getHeader(), schema, format_settings.avro.allow_missing_fields);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;

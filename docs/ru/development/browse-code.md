@@ -1,3 +1,9 @@
+---
+toc_priority: 71
+toc_title: "Навигация по коду ClickHouse"
+---
+
+
 # Навигация по коду ClickHouse {#navigatsiia-po-kodu-clickhouse}
 
 Для навигации по коду онлайн доступен **Woboq**, он расположен [здесь](https://clickhouse.tech/codebrowser/html_report///ClickHouse/src/index.html). В нём реализовано удобное перемещение между исходными файлами, семантическая подсветка, подсказки, индексация и поиск. Слепок кода обновляется ежедневно.

@@ -3,7 +3,6 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 
 #include <Poco/MongoDB/Connection.h>
 
@@ -29,30 +28,32 @@ public:
         const std::string & password_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_);
+        const String & comment);
 
     std::string getName() const override { return "MongoDB"; }
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
-        const Context & context,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-
 private:
-    std::string host;
-    short unsigned int port;
-    std::string database_name;
-    std::string collection_name;
-    std::string username;
-    std::string password;
+    void connectIfNotConnected();
 
-    Context global_context;
+    const std::string host;
+    const short unsigned int port;
+    const std::string database_name;
+    const std::string collection_name;
+    const std::string username;
+    const std::string password;
+
     std::shared_ptr<Poco::MongoDB::Connection> connection;
+    bool authentified = false;
+    std::mutex connection_mutex; /// Protects the variables `connection` and `authentified`.
 };
 
 }

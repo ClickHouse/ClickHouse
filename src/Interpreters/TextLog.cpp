@@ -1,11 +1,14 @@
 #include <Interpreters/TextLog.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypesNumber.h>
+
+#include <Common/ClickHouseRevision.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/ClickHouseRevision.h>
+#include <DataTypes/DataTypesNumber.h>
+
 #include <array>
 
 namespace DB
@@ -52,7 +55,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(microseconds);
@@ -71,7 +74,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(source_line);
 }
 
-TextLog::TextLog(Context & context_, const String & database_name_,
+TextLog::TextLog(ContextPtr context_, const String & database_name_,
         const String & table_name_, const String & storage_def_,
         size_t flush_interval_milliseconds_)
   : SystemLog<TextLogElement>(context_, database_name_, table_name_,

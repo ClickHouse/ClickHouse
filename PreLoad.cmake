@@ -12,7 +12,7 @@
 # https://youtrack.jetbrains.com/issue/CPP-2659
 # https://youtrack.jetbrains.com/issue/CPP-870
 
-if (NOT DEFINED ENV{CLION_IDE})
+if (NOT DEFINED ENV{CLION_IDE} AND NOT DEFINED ENV{XCODE_IDE})
     find_program(NINJA_PATH ninja)
     if (NINJA_PATH)
         set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "" FORCE)

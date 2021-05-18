@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
+class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage, WithContext
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
@@ -26,18 +26,20 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
+    bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
         auto target_table = getTargetTable();
         auto metadata_snapshot = target_table->getInMemoryMetadataPtr();
         return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void drop() override;
+    void dropInnerTable(bool no_delay, ContextPtr context);
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -45,26 +47,27 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
-        const Context & context) override;
+        const Names & deduplicate_by_columns,
+        ContextPtr context) override;
 
-    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
-    Pipe alterPartition(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
+    Pipe alterPartition(const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr context) override;
 
     void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
 
-    void mutate(const MutationCommands & commands, const Context & context) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 
     void shutdown() override;
 
-    void checkTableCanBeDropped() const override;
-    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
-
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
@@ -74,8 +77,18 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
-        const Context & context,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -86,7 +99,6 @@ private:
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
 
-    Context & global_context;
     bool has_inner_table = false;
 
     void checkStatementCanBeForwarded() const;
@@ -94,7 +106,7 @@ private:
 protected:
     StorageMaterializedView(
         const StorageID & table_id_,
-        Context & local_context,
+        ContextPtr local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         bool attach_);

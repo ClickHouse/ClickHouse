@@ -1,11 +1,11 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 
 
 namespace DB
@@ -21,19 +21,19 @@ namespace
 {
 
 /** runningAccumulate(agg_state) - takes the states of the aggregate function and returns a column with values,
-  * are the result of the accumulation of these states for a set of block lines, from the first to the current line.
+  * are the result of the accumulation of these states for a set of columns lines, from the first to the current line.
   *
   * Quite unusual function.
   * Takes state of aggregate function (example runningAccumulate(uniqState(UserID))),
-  *  and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
+  *  and for each row of columns, return result of aggregate function on merge of states of all previous rows and current row.
   *
-  * So, result of function depends on partition of data to blocks and on order of data in block.
+  * So, result of function depends on partition of data to columnss and on order of data in columns.
   */
 class FunctionRunningAccumulate : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRunningAccumulate>();
     }
@@ -73,13 +73,13 @@ public:
         return type->getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnAggregateFunction * column_with_states
-            = typeid_cast<const ColumnAggregateFunction *>(&*block[arguments.at(0)].column);
+            = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
 
         if (!column_with_states)
-            throw Exception("Illegal column " + block[arguments.at(0)].column->getName()
+            throw Exception("Illegal column " + arguments.at(0).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -87,7 +87,7 @@ public:
         ColumnPtr column_with_groups;
 
         if (arguments.size() == 2)
-            column_with_groups = block[arguments[1]].column;
+            column_with_groups = arguments[1].column;
 
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
@@ -104,7 +104,7 @@ public:
         const auto & states = column_with_states->getData();
 
         bool state_created = false;
-        SCOPE_EXIT({
+        SCOPE_EXIT_MEMORY_SAFE({
             if (state_created)
                 agg_func.destroy(place.data());
         });
@@ -120,8 +120,8 @@ public:
                     state_created = false;
                 }
 
-                agg_func.create(place.data());
-                state_created = true;
+                agg_func.create(place.data()); /// This function can throw.
+                state_created = true; //-V519
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());
@@ -130,7 +130,7 @@ public:
             ++row_number;
         }
 
-        block[result].column = std::move(result_column_ptr);
+        return result_column_ptr;
     }
 };
 

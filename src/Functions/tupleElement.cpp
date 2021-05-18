@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/IDataType.h>
@@ -30,7 +30,7 @@ class FunctionTupleElement : public IFunction
 {
 public:
     static constexpr auto name = "tupleElement";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionTupleElement>();
     }
@@ -79,11 +79,11 @@ public:
         return out_return_type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         Columns array_offsets;
 
-        const auto & first_arg = block[arguments[0]];
+        const auto & first_arg = arguments[0];
 
         const IDataType * tuple_type = first_arg.type.get();
         const IColumn * tuple_col = first_arg.column.get();
@@ -101,14 +101,14 @@ public:
         if (!tuple_type_concrete || !tuple_col_concrete)
             throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        size_t index = getElementNum(block[arguments[1]].column, *tuple_type_concrete);
+        size_t index = getElementNum(arguments[1].column, *tuple_type_concrete);
         ColumnPtr res = tuple_col_concrete->getColumns()[index];
 
         /// Wrap into Arrays
         for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
             res = ColumnArray::create(res, *it);
 
-        block[result].column = res;
+        return res;
     }
 
 private:

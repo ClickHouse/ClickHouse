@@ -10,6 +10,7 @@
 #include <common/sleep.h>
 
 #include <IO/ReadHelpers.h>
+#include <common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -196,6 +197,7 @@ static void injection(
 
 void ThreadFuzzer::signalHandler(int)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;
 
     auto & fuzzer = ThreadFuzzer::instance();

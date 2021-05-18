@@ -1,6 +1,7 @@
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -26,7 +27,26 @@ namespace
     }
 
 
-    void formatAccessRightsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
+    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ON " << (settings.hilite ? IAST::hilite_none : "");
+        if (any_database)
+        {
+            settings.ostr << "*.*";
+        }
+        else
+        {
+            if (!database.empty())
+                settings.ostr << backQuoteIfNeed(database) << ".";
+            if (any_table)
+                settings.ostr << "*";
+            else
+                settings.ostr << backQuoteIfNeed(table);
+        }
+    }
+
+
+    void formatElementsWithoutOptions(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
     {
         bool no_output = true;
         for (size_t i = 0; i != elements.size(); ++i)
@@ -57,30 +77,13 @@ namespace
 
             if (!next_element_on_same_db_and_table)
             {
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON " << (settings.hilite ? IAST::hilite_none : "");
-                if (element.any_database)
-                    settings.ostr << "*.";
-                else if (!element.database.empty())
-                    settings.ostr << backQuoteIfNeed(element.database) + ".";
-
-                if (element.any_table)
-                    settings.ostr << "*";
-                else
-                    settings.ostr << backQuoteIfNeed(element.table);
+                settings.ostr << " ";
+                formatONClause(element.database, element.any_database, element.table, element.any_table, settings);
             }
         }
 
         if (no_output)
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (settings.hilite ? IAST::hilite_none : "") << "*.*";
-    }
-
-
-    void formatToRoles(const ASTRolesOrUsersSet & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
-    {
-        using Kind = ASTGrantQuery::Kind;
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? " TO " : " FROM ")
-                      << (settings.hilite ? IAST::hilite_none : "");
-        to_roles.format(settings);
     }
 }
 
@@ -99,12 +102,18 @@ ASTPtr ASTGrantQuery::clone() const
 
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach ? "ATTACH " : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
+    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "") << (is_revoke ? "REVOKE" : "GRANT")
                   << (settings.hilite ? IAST::hilite_none : "");
+
+    if (!access_rights_elements.sameOptions())
+        throw Exception("Elements of an ASTGrantQuery are expected to have the same options", ErrorCodes::LOGICAL_ERROR);
+    if (!access_rights_elements.empty() &&  access_rights_elements[0].is_partial_revoke && !is_revoke)
+        throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::LOGICAL_ERROR);
+    bool grant_option = !access_rights_elements.empty() && access_rights_elements[0].grant_option;
 
     formatOnCluster(settings);
 
-    if (kind == Kind::REVOKE)
+    if (is_revoke)
     {
         if (grant_option)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " GRANT OPTION FOR" << (settings.hilite ? hilite_none : "");
@@ -112,18 +121,21 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " ADMIN OPTION FOR" << (settings.hilite ? hilite_none : "");
     }
 
-    if (roles && !access_rights_elements.empty())
-        throw Exception("Either roles or access rights elements should be set", ErrorCodes::LOGICAL_ERROR);
-
     settings.ostr << " ";
     if (roles)
+    {
         roles->format(settings);
+        if (!access_rights_elements.empty())
+            throw Exception("ASTGrantQuery can contain either roles or access rights elements to grant or revoke, not both of them", ErrorCodes::LOGICAL_ERROR);
+    }
     else
-        formatAccessRightsElements(access_rights_elements, settings);
+        formatElementsWithoutOptions(access_rights_elements, settings);
 
-    formatToRoles(*to_roles, kind, settings);
+    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")
+                  << (settings.hilite ? IAST::hilite_none : "");
+    grantees->format(settings);
 
-    if (kind == Kind::GRANT)
+    if (!is_revoke)
     {
         if (grant_option)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
@@ -133,23 +145,16 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
 }
 
 
-void ASTGrantQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
+void ASTGrantQuery::replaceEmptyDatabase(const String & current_database)
 {
     access_rights_elements.replaceEmptyDatabase(current_database);
 }
 
 
-void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
+void ASTGrantQuery::replaceCurrentUserTag(const String & current_user_name) const
 {
-    if (to_roles)
-        to_roles->replaceCurrentUserTagWithName(current_user_name);
-}
-
-
-void ASTGrantQuery::removeNonGrantableFlags()
-{
-    if (kind == Kind::GRANT)
-        access_rights_elements.removeNonGrantableFlags();
+    if (grantees)
+        grantees->replaceCurrentUserTag(current_user_name);
 }
 
 }

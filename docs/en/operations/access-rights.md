@@ -27,6 +27,8 @@ We recommend using SQL-driven workflow. Both of the configuration methods work s
 !!! note "Warning"
     You can’t manage the same access entity by both configuration methods simultaneously.
 
+To see all users, roles, profiles, etc. and all their grants use [SHOW ACCESS](../sql-reference/statements/show.md#show-access-statement) statement.
+
 ## Usage {#access-control-usage}
 
 By default, the ClickHouse server provides the `default` user account which is not allowed using SQL-driven access control and account management but has all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster doesn’t specify the [user and password](../engines/table-engines/special/distributed.md) properties.
@@ -99,6 +101,9 @@ Privileges can be granted to a role by the [GRANT](../sql-reference/statements/g
 
 Row policy is a filter that defines which of the rows are available to a user or a role. Row policy contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 
+!!! note "Warning"
+    Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
+
 Management queries:
 
 -   [CREATE ROW POLICY](../sql-reference/statements/create/row-policy.md)
@@ -138,10 +143,10 @@ Management queries:
 
 -   Setup a directory for configurations storage.
 
-    ClickHouse stores access entity configurations in the folder set in the [access\_control\_path](../operations/server-configuration-parameters/settings.md#access_control_path) server configuration parameter.
+    ClickHouse stores access entity configurations in the folder set in the [access_control_path](../operations/server-configuration-parameters/settings.md#access_control_path) server configuration parameter.
 
 -   Enable SQL-driven access control and account management for at least one user account.
 
-    By default, SQL-driven access control and account management is disabled for all users. You need to configure at least one user in the `users.xml` configuration file and set the value of the [access\_management](../operations/settings/settings-users.md#access_management-user-setting) setting to 1.
+    By default, SQL-driven access control and account management is disabled for all users. You need to configure at least one user in the `users.xml` configuration file and set the value of the [access_management](../operations/settings/settings-users.md#access_management-user-setting) setting to 1.
 
 [Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

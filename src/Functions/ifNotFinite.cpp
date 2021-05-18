@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -17,9 +17,9 @@ class FunctionIfNotFinite : public IFunction
 public:
     static constexpr auto name = "ifNotFinite";
 
-    explicit FunctionIfNotFinite(const Context & context_) : context(context_) {}
+    explicit FunctionIfNotFinite(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionIfNotFinite>(context);
     }
@@ -36,32 +36,30 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto is_finite_type = FunctionFactory::instance().get("isFinite", context)->build({arguments[0]})->getReturnType();
-        auto if_type = FunctionFactory::instance().get("if", context)->build({{nullptr, is_finite_type, ""}, arguments[0], arguments[1]})->getReturnType();
+        auto is_finite_type = FunctionFactory::instance().get("isFinite", context)->build({arguments[0]})->getResultType();
+        auto if_type = FunctionFactory::instance().get("if", context)->build({{nullptr, is_finite_type, ""}, arguments[0], arguments[1]})->getResultType();
         return if_type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName temp_block = block;
+        ColumnsWithTypeAndName is_finite_columns{arguments[0]};
+        auto is_finite = FunctionFactory::instance().get("isFinite", context)->build(is_finite_columns);
+        auto res = is_finite->execute(is_finite_columns, is_finite->getResultType(), input_rows_count);
 
-        auto is_finite = FunctionFactory::instance().get("isFinite", context)->build({temp_block[arguments[0]]});
+        ColumnsWithTypeAndName if_columns
+        {
+            {res, is_finite->getResultType(), ""},
+            arguments[0],
+            arguments[1],
+        };
 
-        size_t is_finite_pos = temp_block.size();
-        temp_block.emplace_back(ColumnWithTypeAndName{nullptr, is_finite->getReturnType(), ""});
-
-        auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_block[is_finite_pos], temp_block[arguments[0]], temp_block[arguments[1]]});
-
-        is_finite->execute(temp_block, {arguments[0]}, is_finite_pos, input_rows_count);
-
-        func_if->execute(temp_block, {is_finite_pos, arguments[0], arguments[1]}, result, input_rows_count);
-
-        block[result].column = std::move(temp_block[result].column);
+        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
+        return func_if->execute(if_columns, result_type, input_rows_count);
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
 }

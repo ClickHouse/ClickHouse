@@ -53,7 +53,7 @@ namespace
                 return false;
 
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowAll().allowRoleNames().allowUserNames().allowCurrentUser().useIDMode(id_mode);
+            roles_p.allowAll().allowRoles().allowUsers().allowCurrentUser().useIDMode(id_mode);
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 

@@ -1,9 +1,12 @@
+#include <cassert>
 #include <Common/Exception.h>
 
 #include <DataStreams/IBlockInputStream.h>
 
-#include <Storages/StorageMemory.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/MemorySettings.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
@@ -21,24 +24,20 @@ namespace ErrorCodes
 
 class MemorySource : public SourceWithProgress
 {
-    using InitializerFunc = std::function<void(BlocksList::const_iterator &, size_t &)>;
+    using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
 public:
-    /// Blocks are stored in std::list which may be appended in another thread.
-    /// We use pointer to the beginning of the list and its current size.
-    /// We don't need synchronisation in this reader, because while we hold SharedLock on storage,
-    /// only new elements can be added to the back of the list, so our iterators remain valid
 
     MemorySource(
         Names column_names_,
-        BlocksList::const_iterator first_,
-        size_t num_blocks_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot,
-        InitializerFunc initializer_func_ = [](BlocksList::const_iterator &, size_t &) {})
+        std::shared_ptr<const Blocks> data_,
+        std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
+        InitializerFunc initializer_func_ = {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names(std::move(column_names_))
-        , current_it(first_)
-        , num_blocks(num_blocks_)
+        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
+        , data(data_)
+        , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
     {
     }
@@ -48,36 +47,55 @@ public:
 protected:
     Chunk generate() override
     {
-        if (!postponed_init_done)
+        if (initializer_func)
         {
-            initializer_func(current_it, num_blocks);
-            postponed_init_done = true;
+            initializer_func(data);
+            initializer_func = {};
         }
 
-        if (current_block_idx == num_blocks)
-            return {};
+        size_t current_index = getAndIncrementExecutionIndex();
 
-        const Block & src = *current_it;
+        if (!data || current_index >= data->size())
+        {
+            return {};
+        }
+
+        const Block & src = (*data)[current_index];
         Columns columns;
-        columns.reserve(column_names.size());
+        columns.reserve(columns.size());
 
         /// Add only required columns to `res`.
-        for (const auto & name : column_names)
-            columns.push_back(src.getByName(name).column);
+        for (const auto & elem : column_names_and_types)
+        {
+            auto current_column = src.getByName(elem.getNameInStorage()).column;
+            current_column = current_column->decompress();
 
-        if (++current_block_idx < num_blocks)
-            ++current_it;
+            if (elem.isSubcolumn())
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+            else
+                columns.emplace_back(std::move(current_column));
+        }
 
         return Chunk(std::move(columns), src.rows());
     }
 
 private:
-    const Names column_names;
-    BlocksList::const_iterator current_it;
-    size_t num_blocks;
-    size_t current_block_idx = 0;
+    size_t getAndIncrementExecutionIndex()
+    {
+        if (parallel_execution_index)
+        {
+            return (*parallel_execution_index)++;
+        }
+        else
+        {
+            return execution_index++;
+        }
+    }
 
-    bool postponed_init_done = false;
+    const NamesAndTypesList column_names_and_types;
+    size_t execution_index = 0;
+    std::shared_ptr<const Blocks> data;
+    std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
     InitializerFunc initializer_func;
 };
 
@@ -85,42 +103,75 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit MemoryBlockOutputStream(
+    MemoryBlockOutputStream(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-    {}
+    {
+    }
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override
     {
-        const auto size_bytes_diff = block.allocatedBytes();
-        const auto size_rows_diff = block.rows();
-
         metadata_snapshot->check(block, true);
-        {
-            std::lock_guard lock(storage.mutex);
-            storage.data.push_back(block);
 
-            storage.total_size_bytes.fetch_add(size_bytes_diff, std::memory_order_relaxed);
-            storage.total_size_rows.fetch_add(size_rows_diff, std::memory_order_relaxed);
+        if (storage.compress)
+        {
+            Block compressed_block;
+            for (const auto & elem : block)
+                compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
+
+            new_blocks.emplace_back(compressed_block);
+        }
+        else
+        {
+            new_blocks.emplace_back(block);
+        }
+    }
+
+    void writeSuffix() override
+    {
+        size_t inserted_bytes = 0;
+        size_t inserted_rows = 0;
+
+        for (const auto & block : new_blocks)
+        {
+            inserted_bytes += block.allocatedBytes();
+            inserted_rows += block.rows();
         }
 
+        std::lock_guard lock(storage.mutex);
+
+        auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
+        new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
+
+        storage.data.set(std::move(new_data));
+        storage.total_size_bytes.fetch_add(inserted_bytes, std::memory_order_relaxed);
+        storage.total_size_rows.fetch_add(inserted_rows, std::memory_order_relaxed);
     }
+
 private:
+    Blocks new_blocks;
+
     StorageMemory & storage;
     StorageMetadataPtr metadata_snapshot;
 };
 
 
-StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
-    : IStorage(table_id_)
+StorageMemory::StorageMemory(
+    const StorageID & table_id_,
+    ColumnsDescription columns_description_,
+    ConstraintsDescription constraints_,
+    const String & comment,
+    bool compress_)
+    : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -128,8 +179,8 @@ StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription col
 Pipe StorageMemory::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
@@ -146,53 +197,38 @@ Pipe StorageMemory::read(
         /// set for IN or hash table for JOIN, which can't be done concurrently.
         /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
 
-        return Pipe(
-                std::make_shared<MemorySource>(
-                        column_names, data.end(), 0, *this, metadata_snapshot,
-                        /// This hack is needed for global subqueries.
-                        /// It allows to set up this Source for read AFTER Storage::read() has been called and just before actual reading
-                        [this](BlocksList::const_iterator & current_it, size_t & num_blocks)
-                        {
-                            std::lock_guard guard(mutex);
-                            current_it = data.begin();
-                            num_blocks = data.size();
-                        }
-                ));
+        return Pipe(std::make_shared<MemorySource>(
+            column_names,
+            *this,
+            metadata_snapshot,
+            nullptr /* data */,
+            nullptr /* parallel execution index */,
+            [this](std::shared_ptr<const Blocks> & data_to_initialize)
+            {
+                data_to_initialize = data.get();
+            }));
     }
 
-    std::lock_guard lock(mutex);
-
-    size_t size = data.size();
+    auto current_data = data.get();
+    size_t size = current_data->size();
 
     if (num_streams > size)
         num_streams = size;
 
     Pipes pipes;
 
-    BlocksList::const_iterator it = data.begin();
+    auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
 
-    size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        size_t next_offset = (stream + 1) * size / num_streams;
-        size_t num_blocks = next_offset - offset;
-
-        assert(num_blocks > 0);
-
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, num_blocks, *this, metadata_snapshot));
-
-        while (offset < next_offset)
-        {
-            ++it;
-            ++offset;
-        }
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, *this, metadata_snapshot, current_data, parallel_execution_index));
     }
 
     return Pipe::unitePipes(std::move(pipes));
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
 }
@@ -200,47 +236,126 @@ BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const Storag
 
 void StorageMemory::drop()
 {
-    std::lock_guard lock(mutex);
-    data.clear();
+    data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
+}
+
+static inline void updateBlockData(Block & old_block, const Block & new_block)
+{
+    for (const auto & it : new_block)
+    {
+        auto col_name = it.name;
+        auto & col_with_type_name = old_block.getByName(col_name);
+        col_with_type_name.column = it.column;
+    }
+}
+
+void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    /// Some validation will be added
+}
+
+void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
+{
+    std::lock_guard lock(mutex);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
+    auto in = interpreter->execute();
+
+    in->readPrefix();
+    Blocks out;
+    while (Block block = in->read())
+    {
+        if (compress)
+            for (auto & elem : block)
+                elem.column = elem.column->compress();
+
+        out.push_back(block);
+    }
+    in->readSuffix();
+
+    std::unique_ptr<Blocks> new_data;
+
+    // all column affected
+    if (interpreter->isAffectingAllColumns())
+    {
+        new_data = std::make_unique<Blocks>(out);
+    }
+    else
+    {
+        /// just some of the column affected, we need update it with new column
+        new_data = std::make_unique<Blocks>(*(data.get()));
+        auto data_it = new_data->begin();
+        auto out_it = out.begin();
+
+        while (data_it != new_data->end())
+        {
+            /// Mutation does not change the number of blocks
+            assert(out_it != out.end());
+
+            updateBlockData(*data_it, *out_it);
+            ++data_it;
+            ++out_it;
+        }
+
+        assert(out_it == out.end());
+    }
+
+    size_t rows = 0;
+    size_t bytes = 0;
+    for (const auto & buffer : *new_data)
+    {
+        rows += buffer.rows();
+        bytes += buffer.bytes();
+    }
+    total_size_bytes.store(bytes, std::memory_order_relaxed);
+    total_size_rows.store(rows, std::memory_order_relaxed);
+    data.set(std::move(new_data));
 }
 
 
 void StorageMemory::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    std::lock_guard lock(mutex);
-    data.clear();
+    data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
 
-
-std::optional<UInt64> StorageMemory::totalRows() const
+std::optional<UInt64> StorageMemory::totalRows(const Settings &) const
 {
     /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency
     /// When run concurrently we are fine with any value: "before" or "after"
     return total_size_rows.load(std::memory_order_relaxed);
 }
 
-
-std::optional<UInt64> StorageMemory::totalBytes() const
+std::optional<UInt64> StorageMemory::totalBytes(const Settings &) const
 {
     return total_size_bytes.load(std::memory_order_relaxed);
 }
-
 
 void registerStorageMemory(StorageFactory & factory)
 {
     factory.registerStorage("Memory", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, args.engine_args.size());
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints);
+        bool has_settings = args.storage_def->settings;
+        MemorySettings settings;
+        if (has_settings)
+            settings.loadFromQuery(*args.storage_def);
+
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
+    },
+    {
+        .supports_settings = true,
+        .supports_parallel_insert = true,
     });
 }
 

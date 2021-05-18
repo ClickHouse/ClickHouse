@@ -29,7 +29,11 @@ public:
         size_t quorum_timeout_ms_,
         size_t max_parts_per_block_,
         bool quorum_parallel_,
-        bool deduplicate_);
+        bool deduplicate_,
+        ContextPtr context_,
+        // special flag to determine the ALTER TABLE ATTACH PART without the query context,
+        // needed to set the special LogEntryType::ATTACH_PART
+        bool is_attach_ = false);
 
     Block getHeader() const override;
     void writePrefix() override;
@@ -59,18 +63,27 @@ private:
     /// Rename temporary part and commit to ZooKeeper.
     void commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id);
 
+    /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
+    /// Also checks that replica still alive.
+    void waitForQuorum(
+        zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
+        const std::string & quorum_path, const std::string & is_active_node_value) const;
+
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
     size_t quorum;
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
 
+    bool is_attach = false;
     bool quorum_parallel = false;
     bool deduplicate = true;
     bool last_block_is_duplicate = false;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
+
+    ContextPtr context;
 };
 
 }

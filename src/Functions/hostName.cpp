@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/DNSResolver.h>
@@ -15,7 +15,7 @@ class FunctionHostName : public IFunction
 {
 public:
     static constexpr auto name = "hostName";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionHostName>();
     }
@@ -32,6 +32,8 @@ public:
         return false;
     }
 
+    bool isSuitableForConstantFolding() const override { return false; }
+
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -45,9 +47,9 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        block[result].column = block[result].type->createColumnConst(
+        return result_type->createColumnConst(
             input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
     }
 };

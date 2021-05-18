@@ -8,6 +8,8 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -19,32 +21,34 @@
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#include <Storages/SelectQueryInfo.h>
+
 namespace DB
 {
 
-StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_)
-    : IStorage(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
+StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_)
+    : StorageProxy(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
-    auto nested_memory_metadata = nested_storage->getInMemoryMetadata();
     StorageInMemoryMetadata in_memory_metadata;
-    in_memory_metadata.setColumns(nested_memory_metadata.getColumns());
+    in_memory_metadata = nested_storage->getInMemoryMetadata();
     setInMemoryMetadata(in_memory_metadata);
 }
 
 Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned int num_streams)
 {
     /// If the background synchronization thread has exception.
-    database->rethrowExceptionIfNeed();
+    rethrowSyncExceptionIfNeed(database);
 
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
-    auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto lock = nested_storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
     const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
     Block nested_header = nested_metadata->getSampleBlock();
@@ -82,12 +86,13 @@ Pipe StorageMaterializeMySQL::read(
     }
 
     Pipe pipe = nested_storage->read(require_columns_name, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);
+    pipe.addTableLock(lock);
 
     if (!expressions->children.empty() && !pipe.empty())
     {
         Block pipe_header = pipe.getHeader();
         auto syntax = TreeRewriter(context).analyze(expressions, pipe_header.getNamesAndTypesList());
-        ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true);
+        ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true /* add_aliases */, false /* project_result */);
 
         pipe.addSimpleTransform([&](const Block & header)
         {
@@ -101,7 +106,7 @@ Pipe StorageMaterializeMySQL::read(
 NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
 {
     /// If the background synchronization thread has exception.
-    database->rethrowExceptionIfNeed();
+    rethrowSyncExceptionIfNeed(database);
     return nested_storage->getVirtuals();
 }
 

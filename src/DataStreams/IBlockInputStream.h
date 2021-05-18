@@ -2,9 +2,8 @@
 
 #include <Core/Block.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
+#include <DataStreams/SizeLimits.h>
 #include <DataStreams/StreamLocalLimits.h>
 #include <IO/Progress.h>
 #include <Storages/TableLockHolder.h>
@@ -95,7 +94,7 @@ public:
     virtual void readSuffix();
 
     /// Must be called before `read()` and `readPrefix()`.
-    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1) const;
+    void dumpTree(WriteBuffer & ostr, size_t indent = 0, size_t multiplier = 1) const;
 
     /** Check the depth of the pipeline.
       * If max_depth is specified and the `depth` is greater - throw an exception.
@@ -159,7 +158,7 @@ public:
 
     /** Set the approximate total number of rows to read.
       */
-    virtual void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
+    void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
 
     /** Ask to abort the receipt of data as soon as possible.

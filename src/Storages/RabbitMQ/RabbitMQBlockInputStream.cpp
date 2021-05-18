@@ -1,6 +1,8 @@
-#include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
+
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
 namespace ErrorCodes
@@ -14,7 +16,7 @@ namespace DB
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const Context & context_,
+    ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
@@ -27,7 +29,7 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
     , sample_block(non_virtual_header)
     , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id"},
+                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"},
                 storage.getVirtuals(), storage.getStorageID()))
 {
     for (const auto & column : virtual_header)
@@ -52,22 +54,17 @@ Block RabbitMQBlockInputStream::getHeader() const
 
 void RabbitMQBlockInputStream::readPrefixImpl()
 {
-    auto timeout = std::chrono::milliseconds(context.getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+    auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
 }
 
 
 bool RabbitMQBlockInputStream::needChannelUpdate()
 {
-    if (!buffer || !buffer->isChannelUpdateAllowed())
+    if (!buffer)
         return false;
 
-    if (buffer->isChannelError())
-        return true;
-
-    ChannelPtr channel = buffer->getChannel();
-
-    return !channel || !channel->usable();
+    return buffer->needChannelUpdate();
 }
 
 
@@ -78,8 +75,8 @@ void RabbitMQBlockInputStream::updateChannel()
 
     buffer->updateAckTracker();
 
-    storage.updateChannel(buffer->getChannel());
-    buffer->setupChannel();
+    if (storage.updateChannel(buffer->getChannel()))
+        buffer->setupChannel();
 }
 
 
@@ -135,7 +132,6 @@ Block RabbitMQBlockInputStream::readImpl()
                 }
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
-                case IProcessor::Status::Wait:
                 case IProcessor::Status::ExpandPipeline:
                     throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
             }
@@ -158,6 +154,7 @@ Block RabbitMQBlockInputStream::readImpl()
             auto delivery_tag = buffer->getDeliveryTag();
             auto redelivered = buffer->getRedelivered();
             auto message_id = buffer->getMessageID();
+            auto timestamp = buffer->getTimestamp();
 
             buffer->updateAckTracker({delivery_tag, channel_id});
 
@@ -168,6 +165,7 @@ Block RabbitMQBlockInputStream::readImpl()
                 virtual_columns[2]->insert(delivery_tag);
                 virtual_columns[3]->insert(redelivered);
                 virtual_columns[4]->insert(message_id);
+                virtual_columns[5]->insert(timestamp);
             }
 
             total_rows = total_rows + new_rows;

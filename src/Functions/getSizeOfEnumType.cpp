@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -20,7 +20,7 @@ class FunctionGetSizeOfEnumType : public IFunction
 {
 public:
     static constexpr auto name = "getSizeOfEnumType";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionGetSizeOfEnumType>();
     }
@@ -49,16 +49,16 @@ public:
         throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block[result].column = getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments)->cloneResized(input_rows_count);
+        return getResultIfAlwaysReturnsConstantAndHasArguments(arguments)->cloneResized(input_rows_count);
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(columns[arguments[0]].type.get()))
+        if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(arguments[0].type.get()))
             return DataTypeUInt8().createColumnConst(1, type8->getValues().size());
-        else if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(columns[arguments[0]].type.get()))
+        else if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(arguments[0].type.get()))
             return DataTypeUInt16().createColumnConst(1, type16->getValues().size());
         else
             throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

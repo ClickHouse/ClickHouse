@@ -13,7 +13,6 @@
                <value>toMonday</value>
                <value>toRelativeDayNum</value>
                <value>toYYYYMMDDhhmmss</value>
-               <value>toUnixTimestamp</value>
            </values>
         </substitution>
         <substitution>
@@ -33,9 +32,16 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {date_transform}(t, '{time_zone}'))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDate('2017-01-01') + number % 1000 + rand() % 10 AS t, {date_transform}(t))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {binary_function}(t, 1))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toStartOfInterval(t, INTERVAL 1 month))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, date_trunc('month', t))</query>
+    <!-- date_transform -->
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {date_transform}(t, '{time_zone}'))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate('2017-01-01') + number % 1000 + rand() % 10 AS t, {date_transform}(t))</query>
+
+    <!-- toUnixTimestamp() -->
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toUnixTimestamp(t, '{time_zone}'))</query>
+    <!-- toUnixTimestamp(Date()) is pro5bit, wrap Date() with toUInt16() to overcome -->
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate('2017-01-01') + number % 1000 + rand() % 10 AS t, toUnixTimestamp(toUInt16(t)))</query>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {binary_function}(t, 1))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toStartOfInterval(t, INTERVAL 1 month))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, date_trunc('month', t))</query>
 </test>

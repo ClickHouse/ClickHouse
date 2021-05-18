@@ -11,11 +11,6 @@ if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 endif ()
 
-if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
-endif ()
-
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
 # Intended for exploration of new compiler warnings that may be found useful.
 # Applies to clang only
@@ -23,8 +18,8 @@ option (WEVERYTHING "Enable -Weverything option with some exceptions." ON)
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
 # Only in release build because debug has too large stack frames.
-if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE))
-    add_warning(frame-larger-than=32768)
+if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE) AND (NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang"))
+    add_warning(frame-larger-than=65536)
 endif ()
 
 if (COMPILER_CLANG)
@@ -91,6 +86,11 @@ if (COMPILER_CLANG)
         no_warning(vla)
         no_warning(weak-template-vtables)
         no_warning(weak-vtables)
+
+        # XXX: libstdc++ has some of these for 3way compare
+        if (NOT USE_LIBCXX)
+            no_warning(zero-as-null-pointer-constant)
+        endif()
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
@@ -171,6 +171,7 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wtrampolines)
     # Obvious
     add_cxx_compile_options(-Wunused)
+    add_cxx_compile_options(-Wundef)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
     # XXX: libstdc++ has some of these for 3way compare

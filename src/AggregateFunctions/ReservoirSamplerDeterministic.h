@@ -3,7 +3,6 @@
 #include <limits>
 #include <algorithm>
 #include <climits>
-#include <sstream>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <common/types.h>
 #include <Common/HashTable/Hash.h>
@@ -13,6 +12,7 @@
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
+
 
 namespace DB
 {
@@ -39,8 +39,8 @@ namespace ErrorCodes
 
 namespace detail
 {
-const size_t DEFAULT_SAMPLE_COUNT = 8192;
-const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
+    const size_t DEFAULT_MAX_SAMPLE_SIZE = 8192;
+    const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
 }
 
 /// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
@@ -50,18 +50,19 @@ enum class ReservoirSamplerDeterministicOnEmpty
     RETURN_NAN_OR_ZERO,
 };
 
+
 template <typename T,
     ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
 class ReservoirSamplerDeterministic
 {
     bool good(const UInt32 hash)
     {
-        return hash == ((hash >> skip_degree) << skip_degree);
+        return !(hash & skip_mask);
     }
 
 public:
-    ReservoirSamplerDeterministic(const size_t sample_count_ = DEFAULT_SAMPLE_COUNT)
-        : sample_count{sample_count_}
+    ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
+        : max_sample_size{max_sample_size_}
     {
     }
 
@@ -131,15 +132,12 @@ public:
 
     void merge(const ReservoirSamplerDeterministic & b)
     {
-        if (sample_count != b.sample_count)
-            throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different sample_count");
+        if (max_sample_size != b.max_sample_size)
+            throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different max sample size");
         sorted = false;
 
-        if (b.skip_degree > skip_degree)
-        {
-            skip_degree = b.skip_degree;
-            thinOut();
-        }
+        if (skip_degree < b.skip_degree)
+            setSkipDegree(b.skip_degree);
 
         for (const auto & sample : b.samples)
             if (good(sample.second))
@@ -150,80 +148,108 @@ public:
 
     void read(DB::ReadBuffer & buf)
     {
-        DB::readIntBinary<size_t>(sample_count, buf);
+        size_t size = 0;
+        DB::readIntBinary<size_t>(size, buf);
         DB::readIntBinary<size_t>(total_values, buf);
-        samples.resize(std::min(total_values, sample_count));
 
-        for (size_t i = 0; i < samples.size(); ++i)
+        /// Compatibility with old versions.
+        if (size > total_values)
+            size = total_values;
+
+        samples.resize(size);
+        for (size_t i = 0; i < size; ++i)
             DB::readPODBinary(samples[i], buf);
 
         sorted = false;
     }
 
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
+
     void write(DB::WriteBuffer & buf) const
     {
-        DB::writeIntBinary<size_t>(sample_count, buf);
+        size_t size = samples.size();
+        DB::writeIntBinary<size_t>(size, buf);
         DB::writeIntBinary<size_t>(total_values, buf);
 
-        for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
-            DB::writePODBinary(samples[i], buf);
+        for (size_t i = 0; i < size; ++i)
+        {
+            /// There was a mistake in this function.
+            /// Instead of correctly serializing the elements,
+            ///  it was writing them with uninitialized padding.
+            /// Here we ensure that padding is zero without changing the protocol.
+            /// TODO: After implementation of "versioning aggregate function state",
+            /// change the serialization format.
+
+            Element elem;
+            memset(&elem, 0, sizeof(elem));
+            elem = samples[i];
+
+            DB::writePODBinary(elem, buf);
+        }
     }
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
     using Element = std::pair<T, UInt32>;
     using Array = DB::PODArray<Element, 64>;
 
-    size_t sample_count;
-    size_t total_values{};
-    bool sorted{};
+    const size_t max_sample_size; /// Maximum amount of stored values.
+    size_t total_values = 0;   /// How many values were inserted (regardless if they remain in sample or not).
+    bool sorted = false;
     Array samples;
-    UInt8 skip_degree{};
+
+    /// The number N determining that we store only one per 2^N elements in average.
+    UInt8 skip_degree = 0;
+
+    /// skip_mask is calculated as (2 ^ skip_degree - 1). We store an element only if (hash & skip_mask) == 0.
+    /// For example, if skip_degree==0 then skip_mask==0 means we store each element;
+    /// if skip_degree==1 then skip_mask==0b0001 means we store one per 2 elements in average;
+    /// if skip_degree==4 then skip_mask==0b1111 means we store one per 16 elements in average.
+    UInt32 skip_mask = 0;
 
     void insertImpl(const T & v, const UInt32 hash)
     {
-        /// @todo why + 1? I don't quite recall
-        while (samples.size() + 1 >= sample_count)
-        {
-            if (++skip_degree > detail::MAX_SKIP_DEGREE)
-                throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
-            thinOut();
-        }
+        /// Make a room for plus one element.
+        while (samples.size() >= max_sample_size)
+            setSkipDegree(skip_degree + 1);
 
         samples.emplace_back(v, hash);
     }
 
+    void setSkipDegree(UInt8 skip_degree_)
+    {
+        if (skip_degree_ == skip_degree)
+            return;
+        if (skip_degree_ > detail::MAX_SKIP_DEGREE)
+            throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
+        skip_degree = skip_degree_;
+        if (skip_degree == detail::MAX_SKIP_DEGREE)
+            skip_mask = static_cast<UInt32>(-1);
+        else
+            skip_mask = (1 << skip_degree) - 1;
+        thinOut();
+    }
+
     void thinOut()
     {
-        auto size = samples.size();
-        for (size_t i = 0; i < size;)
-        {
-            if (!good(samples[i].second))
-            {
-                /// swap current element with the last one
-                std::swap(samples[size - 1], samples[i]);
-                --size;
-            }
-            else
-                ++i;
-        }
-
-        if (size != samples.size())
-        {
-            samples.resize(size);
-            sorted = false;
-        }
+        samples.resize(std::distance(samples.begin(),
+            std::remove_if(samples.begin(), samples.end(), [this](const auto & elem){ return !good(elem.second); })));
+        sorted = false;
     }
 
     void sortIfNeeded()
     {
         if (sorted)
             return;
+        std::sort(samples.begin(), samples.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
         sorted = true;
-        std::sort(samples.begin(), samples.end(), [] (const std::pair<T, UInt32> & lhs, const std::pair<T, UInt32> & rhs)
-        {
-            return lhs.first < rhs.first;
-        });
     }
 
     template <typename ResultType>

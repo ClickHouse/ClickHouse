@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 
 #include <memory>
@@ -14,12 +14,14 @@
 
 #include <Core/iostream_debug_helpers.h>
 
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -49,7 +51,7 @@ public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractAllGroups>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractAllGroups>(); }
 
     String getName() const override { return name; }
 
@@ -70,12 +72,12 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
-        const ColumnPtr column_haystack = block[arguments[0]].column;
-        const ColumnPtr column_needle = block[arguments[1]].column;
+        const ColumnPtr column_haystack = arguments[0].column;
+        const ColumnPtr column_needle = arguments[1].column;
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -145,11 +147,11 @@ public:
         }
         else
         {
-            std::vector<StringPiece> all_matches;
-            // number of times RE matched on each row of haystack column.
-            std::vector<size_t> number_of_matches_per_row;
+            PODArray<StringPiece, 0> all_matches;
+            /// Number of times RE matched on each row of haystack column.
+            PODArray<size_t, 0> number_of_matches_per_row;
 
-            // we expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
+            /// We expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
             all_matches.reserve(input_rows_count * groups_count * 8);
             number_of_matches_per_row.reserve(input_rows_count);
 
@@ -169,6 +171,13 @@ public:
                     // 1 is to exclude group #0 which is whole re match.
                     for (size_t group = 1; group <= groups_count; ++group)
                         all_matches.push_back(matched_groups[group]);
+
+                    /// Additional limit to fail fast on supposedly incorrect usage, arbitrary value.
+                    static constexpr size_t MAX_MATCHES_PER_ROW = 1000;
+                    if (matches_per_row > MAX_MATCHES_PER_ROW)
+                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                                "Too many matches per row (> {}) in the result of function {}",
+                                MAX_MATCHES_PER_ROW, getName());
 
                     pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
 
@@ -234,7 +243,7 @@ public:
 
         ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(data_col), std::move(nested_offsets_col));
         ColumnArray::MutablePtr root_array_col = ColumnArray::create(std::move(nested_array_col), std::move(root_offsets_col));
-        block[result].column = std::move(root_array_col);
+        return root_array_col;
     }
 };
 

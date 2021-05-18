@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
@@ -19,13 +19,13 @@ namespace
 {
 
 /// Get the value of a setting.
-class FunctionGetSetting : public IFunction
+class FunctionGetSetting : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "getSetting";
 
-    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionGetSetting>(context_); }
-    explicit FunctionGetSetting(const Context & context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
+    explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
@@ -43,21 +43,20 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN};
 
         std::string_view setting_name{column->getDataAt(0)};
-        value = context.getSettingsRef().get(setting_name);
+        value = getContext()->getSettingsRef().get(setting_name);
 
         DataTypePtr type = applyVisitor(FieldToDataType{}, value);
         value = convertFieldToType(value, *type);
         return type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        block[result].column = block[result].type->createColumnConst(input_rows_count, value);
+        return result_type->createColumnConst(input_rows_count, value);
     }
 
 private:
     mutable Field value;
-    const Context & context;
 };
 
 }

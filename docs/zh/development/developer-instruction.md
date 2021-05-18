@@ -32,7 +32,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
     git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-请注意，您需要将*your\_github\_username* 替换成实际使用的账户名!
+请注意，您需要将*your_github_username* 替换成实际使用的账户名!
 
 这个指令将创建一个包含项目副本的`ClickHouse`工作目录。
 
@@ -123,17 +123,13 @@ ClickHouse使用多个外部库进行构建。大多数外部库不需要单独�
 
 # C++ 编译器 {#c-bian-yi-qi}
 
-GCC编译器从版本9开始，以及Clang版本\>=8都可支持构建ClickHouse。
+We support clang starting from version 11.
 
-Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性能较好（根据测评，最多可以相差几个百分点）。Clang通常可以更加便捷的开发。我们的持续集成（CI）平台会运行大约十二种构建组合的检查。
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-在Ubuntu上安装GCC，请执行：`sudo apt install gcc g++`
-
-请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/zh/development/build/#an-zhuang-gcc-9 。
-
-在Mac OS X上安装GCC，请执行：`brew install gcc`
-
-如果您决定使用Clang，还可以同时安装 `libc++`以及`lld`，前提是您也熟悉它们。此外，也推荐使用`ccache`。
+```bash
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+```
 
 # 构建的过程 {#gou-jian-de-guo-cheng}
 
@@ -142,11 +138,11 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
     mkdir build
     cd build
 
-您也可以有多个不同类型的构建目录（例如，build\_release, build\_debug等等)。
+您也可以有多个不同类型的构建目录（例如，build_release, build_debug等等)。
 
 在`build`目录下，通过运行CMake配置构建。 在第一次运行之前，请定义用于指定编译器的环境变量（本示例中为gcc 9 编译器）。
 
-    export CC=gcc-9 CXX=g++-9
+    export CC=clang CXX=clang++
     cmake ..
 
 `CC`变量指代C的编译器（C Compiler的缩写），而`CXX`变量指代要使用哪个C++编译器进行编译。
@@ -193,7 +189,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 要以当前的用户身份运行服务，请进入到`ClickHouse/programs/server/` 目录（在`build`文件夹外）并运行：
 
-    ../../../build/programs/clickhouse server
+    ../../build/programs/clickhouse server
 
 在这种情况下，ClickHouse将使用位于当前目录中的配置文件。您可以从任何目录运行`Clickhouse server`，并将配置文件`--config-file`的路径指定为命令行参数。
 
@@ -242,8 +238,8 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en
 
     sudo apt install wget xz-utils
 
-    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
-    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

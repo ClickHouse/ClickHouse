@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<!-- Config for test server -->
+<!-- Config for test server in Arcadia -->
 <yandex>
     <logger>
         <level>trace</level>

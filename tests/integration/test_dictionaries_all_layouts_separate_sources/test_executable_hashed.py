@@ -77,6 +77,6 @@ def test_simple(started_cluster, layout_name):
 def test_complex(started_cluster, layout_name):
     complex_tester.execute(layout_name, node)
 
-@pytest.mark.parametrize("layout_name", LAYOUTS_RANGED)
+@pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
 def test_ranged(started_cluster, layout_name):
     ranged_tester.execute(layout_name, node)

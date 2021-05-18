@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 
@@ -13,7 +13,7 @@ class FunctionDefaultValueOfArgumentType : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfArgumentType";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionDefaultValueOfArgumentType>();
     }
@@ -36,15 +36,15 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IDataType & type = *block[arguments[0]].type;
-        block[result].column = type.createColumnConst(input_rows_count, type.getDefault());
+        const IDataType & type = *arguments[0].type;
+        return type.createColumnConst(input_rows_count, type.getDefault());
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const override
     {
-        const IDataType & type = *columns[arguments[0]].type;
+        const IDataType & type = *arguments[0].type;
         return type.createColumnConst(1, type.getDefault());
     }
 };

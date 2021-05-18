@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <Interpreters/Context.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 
 
@@ -12,7 +11,7 @@ class RabbitMQBlockOutputStream : public IBlockOutputStream
 {
 
 public:
-    explicit RabbitMQBlockOutputStream(StorageRabbitMQ & storage_, const StorageMetadataPtr & metadata_snapshot_, const Context & context_);
+    explicit RabbitMQBlockOutputStream(StorageRabbitMQ & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_);
 
     Block getHeader() const override;
 
@@ -23,7 +22,7 @@ public:
 private:
     StorageRabbitMQ & storage;
     StorageMetadataPtr metadata_snapshot;
-    Context context;
+    ContextPtr context;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
 };

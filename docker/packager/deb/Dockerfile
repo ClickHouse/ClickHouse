@@ -31,42 +31,28 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
-ENV APACHE_PUBKEY_HASH="bba6987b63c63f710fd4ed476121c588bc3812e99659d27a855f8c4d312783ee66ad6adfce238765691b04d62fa3688f"
-
-RUN  export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && wget -nv -O /tmp/arrow-keyring.deb "https://apache.bintray.com/arrow/ubuntu/apache-arrow-archive-keyring-latest-${CODENAME}.deb" \
-    && echo "${APACHE_PUBKEY_HASH} /tmp/arrow-keyring.deb" | sha384sum -c \
-    && dpkg -i /tmp/arrow-keyring.deb
-
-
 # Libraries from OS are only needed to test the "unbundled" build (this is not used in production).
 RUN apt-get update \
     && apt-get install \
-        gcc-9 \
-        g++-9 \
+        alien \
         clang-11 \
         clang-tidy-11 \
+        cmake \
+        debhelper \
+        devscripts \
+        gdb  \
+        git \
+        gperf \
         lld-11 \
         llvm-11 \
         llvm-11-dev \
-        clang-10 \
-        clang-tidy-10 \
-        lld-10 \
-        llvm-10 \
-        llvm-10-dev \
+        moreutils \
         ninja-build \
         perl \
-        pkg-config \
-        devscripts \
-        debhelper \
-        git \
-        tzdata \
-        gperf \
-        alien \
-        cmake \
-        gdb  \
-        moreutils \
         pigz \
+        pixz \
+        pkg-config \
+        tzdata \
         --yes --no-install-recommends
 
 # NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.

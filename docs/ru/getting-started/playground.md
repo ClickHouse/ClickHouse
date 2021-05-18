@@ -1,3 +1,8 @@
+---
+toc_priority: 14
+toc_title: Playground
+---
+
 # ClickHouse Playground {#clickhouse-playground}
 
 [ClickHouse Playground](https://play.clickhouse.tech) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.
@@ -31,10 +36,10 @@ ClickHouse Playground дает возможность поработать с  [
 - запрещены INSERT запросы
 
 Также установлены следующие опции:
-- [max\_result\_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
-- [max\_result\_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
-- [result\_overflow\_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
-- [max\_execution\_time=60000](../operations/settings/query_complexity/#max-execution-time)
+- [max_result_bytes=10485760](../operations/settings/query-complexity.md#max-result-bytes)
+- [max_result_rows=2000](../operations/settings/query-complexity.md#setting-max_result_rows)
+- [result_overflow_mode=break](../operations/settings/query-complexity.md#result-overflow-mode)
+- [max_execution_time=60000](../operations/settings/query-complexity.md#max-execution-time)
 
 ## Примеры {#examples}
 

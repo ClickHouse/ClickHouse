@@ -1,22 +1,20 @@
 ---
-toc_priority: 6
-toc_title: Роль
+toc_priority: 40
+toc_title: "Роль"
 ---
 
 # CREATE ROLE {#create-role-statement}
 
-Создает [роль](../../../operations/access-rights.md#role-management).
+Создает [роли](../../../operations/access-rights.md#role-management). Роль — это набор [привилегий](../grant.md#grant-privileges). Пользователь, которому назначена роль, получает все привилегии этой роли.
 
-### Синтаксис {#create-role-syntax}
+Синтаксис:
 
 ```sql
-CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 ...]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-### Описание {#create-role-description}
-
-Роль — это набор [привилегий](../grant.md#grant-privileges). Пользователь, которому назначена роль, получает все привилегии этой роли.
+## Управление ролями {#managing-roles}
 
 Одному пользователю можно назначить несколько ролей. Пользователи могут применять назначенные роли в произвольных комбинациях с помощью выражения [SET ROLE](../misc.md#set-role-statement). Конечный объем привилегий — это комбинация всех привилегий всех примененных ролей. Если у пользователя имеются привилегии, присвоенные его аккаунту напрямую, они также прибавляются к привилегиям, присвоенным через роли.
 
@@ -26,7 +24,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
 
 Для удаления роли используется выражение [DROP ROLE](../misc.md#drop-role-statement). Удаленная роль автоматически отзывается у всех пользователей, которым была назначена.
 
-### Примеры {#create-role-examples}
+## Примеры {#create-role-examples}
 
 ```sql
 CREATE ROLE accountant;
@@ -48,5 +46,4 @@ SET ROLE accountant;
 SELECT * FROM db.*;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/role) 
 <!--hide-->

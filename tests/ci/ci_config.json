@@ -72,16 +72,6 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
-            "build-type": "",
-            "sanitizer": "",
-            "package-type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": false
-        },
-        {
             "compiler": "clang-11",
             "build-type": "debug",
             "sanitizer": "",
@@ -92,7 +82,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-9",
+            "compiler": "gcc-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -225,6 +215,18 @@
                 "with_coverage": false
             }
         },
+        "Functional stateless tests (ANTLR debug)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "debug",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
         "Functional stateful tests (release)": {
             "required_build_properties": {
                 "compiler": "clang-11",
@@ -238,6 +240,18 @@
             }
         },
         "Functional stateful tests (release, DatabaseOrdinary)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Functional stateful tests (release, DatabaseReplicated)": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "deb",
@@ -321,9 +335,21 @@
                 "with_coverage": false
             }
         },
+        "Functional stateless tests (pytest)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
         "Functional stateless tests (unbundled)": {
             "required_build_properties": {
-                "compiler": "gcc-9",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -333,7 +359,7 @@
                 "with_coverage": false
             }
         },
-        "Functional stateless tests (release, polymorphic parts enabled)": {
+        "Functional stateless tests (release, wide parts enabled)": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "deb",
@@ -346,6 +372,18 @@
             }
         },
         "Functional stateless tests (release, DatabaseOrdinary)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Functional stateless tests (release, DatabaseReplicated)": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "deb",
@@ -405,6 +443,18 @@
                 "with_coverage": false
             }
         },
+        "Stress test (debug)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "debug",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
         "Integration tests (asan)": {
             "required_build_properties": {
                 "compiler": "clang-11",
@@ -435,6 +485,18 @@
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Integration tests (memory)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",
@@ -561,12 +623,60 @@
                 "with_coverage": false
             }
         },
-        "AST fuzzer": {
+        "AST fuzzer (debug)": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "debug",
                 "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "AST fuzzer (ASan)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "binary",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "address",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "AST fuzzer (MSan)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "binary",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "memory",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "AST fuzzer (TSan)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "binary",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "thread",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "AST fuzzer (UBSan)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "binary",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",
@@ -579,6 +689,18 @@
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Functional stateless tests flaky check (address)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",

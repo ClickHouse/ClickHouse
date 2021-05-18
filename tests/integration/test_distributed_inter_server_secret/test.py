@@ -97,12 +97,14 @@ def test_insecure():
     n1.query('SELECT * FROM dist_insecure')
 
 def test_insecure_insert_async():
+    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_insecure SELECT * FROM numbers(2)')
     n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER insecure dist_insecure')
     assert int(n1.query('SELECT count() FROM dist_insecure')) == 2
     n1.query('TRUNCATE TABLE data ON CLUSTER insecure')
 
 def test_insecure_insert_sync():
+    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_insecure SELECT * FROM numbers(2)', settings={'insert_distributed_sync': 1})
     assert int(n1.query('SELECT count() FROM dist_insecure')) == 2
     n1.query('TRUNCATE TABLE data ON CLUSTER secure')
@@ -111,12 +113,14 @@ def test_secure():
     n1.query('SELECT * FROM dist_secure')
 
 def test_secure_insert_async():
+    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_secure SELECT * FROM numbers(2)')
     n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure')
     assert int(n1.query('SELECT count() FROM dist_secure')) == 2
     n1.query('TRUNCATE TABLE data ON CLUSTER secure')
 
 def test_secure_insert_sync():
+    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_secure SELECT * FROM numbers(2)', settings={'insert_distributed_sync': 1})
     assert int(n1.query('SELECT count() FROM dist_secure')) == 2
     n1.query('TRUNCATE TABLE data ON CLUSTER secure')
@@ -126,6 +130,7 @@ def test_secure_insert_sync():
 # Buffer() flush happens with global context, that does not have user
 # And so Context::user/ClientInfo::current_user/ClientInfo::initial_user will be empty
 def test_secure_insert_buffer_async():
+    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_secure_buffer SELECT * FROM numbers(2)')
     n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure')
     # no Buffer flush happened
@@ -141,6 +146,7 @@ def test_secure_disagree():
         n1.query('SELECT * FROM dist_secure_disagree')
 
 def test_secure_disagree_insert():
+    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_secure_disagree SELECT * FROM numbers(2)')
     with pytest.raises(QueryRuntimeException, match='.*Hash mismatch.*'):
         n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure_disagree dist_secure_disagree')

@@ -3,6 +3,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/ForkProcessor.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -47,7 +48,7 @@ AggregatingStep::AggregatingStep(
 {
 }
 
-void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
+void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
@@ -143,8 +144,12 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                         }
                     }
 
-                    auto transform = std::make_shared<AggregatingSortedTransform>(
-                        pipeline.getHeader(), pipeline.getNumStreams(), group_by_sort_description, max_block_size);
+                    auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
+                        pipeline.getHeader(),
+                        pipeline.getNumStreams(),
+                        transform_params,
+                        group_by_sort_description,
+                        max_block_size);
 
                     pipeline.addTransform(std::move(transform));
                     aggregating_sorted = collector.detachProcessors(1);
@@ -201,6 +206,11 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
+}
+
+void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    params.explain(map);
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const

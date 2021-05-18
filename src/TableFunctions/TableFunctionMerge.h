@@ -16,8 +16,16 @@ public:
     static constexpr auto name = "merge";
     std::string getName() const override { return name; }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Merge"; }
+
+    const Strings & getSourceTables(ContextPtr context) const;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    String source_database;
+    String source_table_regexp;
+    mutable std::optional<Strings> source_tables;
 };
 
 

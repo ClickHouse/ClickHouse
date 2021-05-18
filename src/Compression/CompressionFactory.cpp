@@ -46,6 +46,9 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 
 void CompressionCodecFactory::validateCodec(const String & family_name, std::optional<int> level, bool sanity_check) const
 {
+    if (family_name.empty())
+        throw Exception("Compression codec name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
     if (level)
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
@@ -76,7 +79,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
             ASTPtr codec_arguments;
             if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
             {
-                codec_family_name = family_name->name;
+                codec_family_name = family_name->name();
                 codec_arguments = {};
             }
             else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
@@ -87,7 +90,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-            /// Default codec replaced with current default codec which may dependend on different
+            /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
             CompressionCodecPtr result_codec;
             if (codec_family_name == DEFAULT_CODEC_NAME)
@@ -104,9 +107,9 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
-                    IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
+                    IDataType::StreamCallbackWithType callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
                     {
-                        if (IDataType::isSpecialCompressionAllowed(substream_path))
+                        if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
                             result_codec = getImpl(codec_family_name, codec_arguments, &substream_type);
 
@@ -118,8 +121,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                         }
                     };
 
-                    IDataType::SubstreamPath stream_path;
-                    column_type->enumerateStreams(callback, stream_path);
+                    ISerialization::SubstreamPath stream_path;
+                    column_type->enumerateStreams(column_type->getDefaultSerialization(), callback, stream_path);
 
                     if (!result_codec)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find any substream with data type for type {}. It's a bug", column_type->getName());
@@ -207,7 +210,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IData
             ASTPtr codec_arguments;
             if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
             {
-                codec_family_name = family_name->name;
+                codec_family_name = family_name->name();
                 codec_arguments = {};
             }
             else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())

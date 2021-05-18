@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -19,6 +20,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
+        {"uuid",                                       std::make_shared<DataTypeUUID>()},
         {"part_type",                                  std::make_shared<DataTypeString>()},
         {"active",                                     std::make_shared<DataTypeUInt8>()},
         {"marks",                                      std::make_shared<DataTypeUInt64>()},
@@ -32,6 +34,8 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"refcount",                                   std::make_shared<DataTypeUInt32>()},
         {"min_date",                                   std::make_shared<DataTypeDate>()},
         {"max_date",                                   std::make_shared<DataTypeDate>()},
+        {"min_time",                                   std::make_shared<DataTypeDateTime>()},
+        {"max_time",                                   std::make_shared<DataTypeDateTime>()},
         {"partition_id",                               std::make_shared<DataTypeString>()},
         {"min_block_number",                           std::make_shared<DataTypeInt64>()},
         {"max_block_number",                           std::make_shared<DataTypeInt64>()},
@@ -60,7 +64,8 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
 {
 }
 
-void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, const StoragesInfo & info, bool has_state_column)
+void StorageSystemPartsColumns::processNextStorage(
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -94,8 +99,10 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
         auto use_count = part.use_count() - 1;
-        auto min_date = part->getMinDate();
-        auto max_date = part->getMaxDate();
+
+        auto min_max_date = part->getMinMaxDate();
+        auto min_max_time = part->getMinMaxTime();
+
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
@@ -105,67 +112,112 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
         for (const auto & column : part->getColumns())
         {
             ++column_position;
-            size_t j = 0;
+            size_t src_index = 0, res_index = 0;
+            if (columns_mask[src_index++])
             {
                 WriteBufferFromOwnString out;
                 part->partition.serializeText(*info.data, out, format_settings);
-                columns_[j++]->insert(out.str());
+                columns[res_index++]->insert(out.str());
             }
-            columns_[j++]->insert(part->name);
-            columns_[j++]->insert(part->getTypeName());
-            columns_[j++]->insert(part_state == State::Committed);
-            columns_[j++]->insert(part->getMarksCount());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->name);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->uuid);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->getTypeName());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part_state == State::Committed);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->getMarksCount());
 
-            columns_[j++]->insert(part->rows_count);
-            columns_[j++]->insert(part->getBytesOnDisk());
-            columns_[j++]->insert(columns_size.data_compressed);
-            columns_[j++]->insert(columns_size.data_uncompressed);
-            columns_[j++]->insert(columns_size.marks);
-            columns_[j++]->insert(UInt64(part->modification_time));
-            columns_[j++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->rows_count);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->getBytesOnDisk());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(columns_size.data_compressed);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(columns_size.data_uncompressed);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(columns_size.marks);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(UInt64(part->modification_time));
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
 
-            columns_[j++]->insert(UInt64(use_count));
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(UInt64(use_count));
 
-            columns_[j++]->insert(min_date);
-            columns_[j++]->insert(max_date);
-            columns_[j++]->insert(part->info.partition_id);
-            columns_[j++]->insert(part->info.min_block);
-            columns_[j++]->insert(part->info.max_block);
-            columns_[j++]->insert(part->info.level);
-            columns_[j++]->insert(UInt64(part->info.getDataVersion()));
-            columns_[j++]->insert(index_size_in_bytes);
-            columns_[j++]->insert(index_size_in_allocated_bytes);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(min_max_date.first);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(min_max_date.second);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(static_cast<UInt32>(min_max_time.first));
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
 
-            columns_[j++]->insert(info.database);
-            columns_[j++]->insert(info.table);
-            columns_[j++]->insert(info.engine);
-            columns_[j++]->insert(part->volume->getDisk()->getName());
-            columns_[j++]->insert(part->getFullPath());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->info.partition_id);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->info.min_block);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->info.max_block);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->info.level);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(UInt64(part->info.getDataVersion()));
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(index_size_in_bytes);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(index_size_in_allocated_bytes);
 
-            columns_[j++]->insert(column.name);
-            columns_[j++]->insert(column.type->getName());
-            columns_[j++]->insert(column_position);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(info.database);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(info.table);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(info.engine);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->volume->getDisk()->getName());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->getFullPath());
+
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column.name);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column.type->getName());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column_position);
 
             auto column_info_it = columns_info.find(column.name);
             if (column_info_it != columns_info.end())
             {
-                columns_[j++]->insert(column_info_it->second.default_kind);
-                columns_[j++]->insert(column_info_it->second.default_expression);
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insert(column_info_it->second.default_kind);
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insert(column_info_it->second.default_expression);
             }
             else
             {
-                columns_[j++]->insertDefault();
-                columns_[j++]->insertDefault();
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insertDefault();
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insertDefault();
             }
 
             ColumnSize column_size = part->getColumnSize(column.name, *column.type);
-            columns_[j++]->insert(column_size.data_compressed + column_size.marks);
-            columns_[j++]->insert(column_size.data_compressed);
-            columns_[j++]->insert(column_size.data_uncompressed);
-            columns_[j++]->insert(column_size.marks);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column_size.data_compressed);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column_size.data_uncompressed);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column_size.marks);
 
             if (has_state_column)
-                columns_[j++]->insert(part->stateString());
+                columns[res_index++]->insert(part->stateString());
         }
     }
 }

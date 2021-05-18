@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>
@@ -21,8 +22,9 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -32,8 +34,9 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -74,6 +77,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
     auto new_type = storage.choosePartTypeOnDisk(block.bytes(), rows_count);
     auto new_data_part = storage.createPart(name, new_type, info, volume, new_relative_path);
 
+    new_data_part->uuid = uuid;
     new_data_part->setColumns(columns);
     new_data_part->partition.value.assign(partition.value);
     new_data_part->minmax_idx = minmax_idx;
@@ -86,7 +90,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
 
     disk->createDirectories(destination_path);
 
-    auto compression_codec = storage.global_context.chooseCompressionCodec(0, 0);
+    auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec);
     out.writePrefix();
@@ -123,7 +127,7 @@ IMergeTreeDataPart::Checksum MergeTreeDataPartInMemory::calculateBlockChecksum()
         column.column->updateHashFast(hash);
 
     checksum.uncompressed_size = block.bytes();
-    hash.get128(checksum.uncompressed_hash.first, checksum.uncompressed_hash.second);
+    hash.get128(checksum.uncompressed_hash);
     return checksum;
 }
 

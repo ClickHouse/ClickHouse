@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.3">
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
     </settings>
@@ -77,7 +77,7 @@
 <!-- For this HT size, a single-threaded query that makes sense would be too slow (tens of seconds).
 <query>SELECT number % 100000000 AS k, count() FROM numbers(  100000000) GROUP BY k FORMAT Null</query>
 -->
-<query>SELECT number % toUInt32(1e8) AS k, count() FROM numbers_mt(toUInt32(1e8)) GROUP BY k FORMAT Null</query>
+<query>SELECT number % toUInt32(0.5e8) AS k, count() FROM numbers_mt(toUInt32(0.5e8)) GROUP BY k FORMAT Null</query>
 <!-- 35. Кэш-промахи, осуществляемые из многих процессорных ядер.  -->
 <!-- <query>SELECT number % (intDiv(100000000, {THREADS})) AS k, count() FROM numbers_mt(1600000000) GROUP BY k</query> -->
 <!-- 46. Запрос, требующий много бесполезных копирований. -->

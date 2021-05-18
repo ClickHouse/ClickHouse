@@ -62,14 +62,15 @@ namespace
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
+        bool has_kerberos = config.has(user_config + ".kerberos");
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap;
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos;
         if (num_password_fields > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap' are used to specify password for user " + user_name + ". Must be only one of them.",
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos' are used to specify password for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
         if (num_password_fields < 1)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password_plaintext)
         {
@@ -96,8 +97,15 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-            user->authentication = Authentication{Authentication::LDAP_SERVER};
-            user->authentication.setServerName(ldap_server_name);
+            user->authentication = Authentication{Authentication::LDAP};
+            user->authentication.setLDAPServerName(ldap_server_name);
+        }
+        else if (has_kerberos)
+        {
+            const auto realm = config.getString(user_config + ".kerberos.realm", "");
+
+            user->authentication = Authentication{Authentication::KERBEROS};
+            user->authentication.setKerberosRealm(realm);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -215,6 +223,8 @@ namespace
         String quota_config = "quotas." + quota_name;
         if (config.has(quota_config + ".keyed_by_ip"))
             quota->key_type = KeyType::IP_ADDRESS;
+        else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
+            quota->key_type = KeyType::FORWARDED_IP_ADDRESS;
         else if (config.has(quota_config + ".keyed"))
             quota->key_type = KeyType::CLIENT_KEY_OR_USER_NAME;
         else
@@ -460,7 +470,8 @@ String UsersConfigAccessStorage::getStorageParamsJSON() const
     Poco::JSON::Object json;
     if (!path.empty())
         json.set("path", path);
-    std::ostringstream oss;
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
 }
@@ -515,7 +526,7 @@ void UsersConfigAccessStorage::load(
         preprocessed_dir,
         zkutil::ZooKeeperNodeCache(get_zookeeper_function),
         std::make_shared<Poco::Event>(),
-        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config)
+        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {
             parseFromConfig(*new_config);
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);

@@ -24,7 +24,6 @@ namespace ErrorCodes
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_)
     : IInputFormat(header_, in_), stream{stream_}
 {
-    prepareReader();
 }
 
 Chunk ArrowBlockInputFormat::generate()
@@ -35,12 +34,18 @@ Chunk ArrowBlockInputFormat::generate()
 
     if (stream)
     {
+        if (!stream_reader)
+            prepareReader();
+
         batch_result = stream_reader->Next();
         if (batch_result.ok() && !(*batch_result))
             return res;
     }
     else
     {
+        if (!file_reader)
+            prepareReader();
+
         if (record_batch_current >= record_batch_total)
             return res;
 
@@ -48,12 +53,12 @@ Chunk ArrowBlockInputFormat::generate()
     }
 
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     ++record_batch_current;
@@ -71,14 +76,14 @@ void ArrowBlockInputFormat::resetParser()
         stream_reader.reset();
     else
         file_reader.reset();
-    prepareReader();
+    record_batch_current = 0;
 }
 
 void ArrowBlockInputFormat::prepareReader()
 {
     if (stream)
     {
-        auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(asArrowFile(in));
+        auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in));
         if (!stream_reader_status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", stream_reader_status.status().ToString());
@@ -101,7 +106,7 @@ void ArrowBlockInputFormat::prepareReader()
     record_batch_current = 0;
 }
 
-void registerInputFormatProcessorArrow(FormatFactory &factory)
+void registerInputFormatProcessorArrow(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor(
         "Arrow",
@@ -112,7 +117,7 @@ void registerInputFormatProcessorArrow(FormatFactory &factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false);
         });
-
+    factory.markFormatAsColumnOriented("Arrow");
     factory.registerInputFormatProcessor(
         "ArrowStream",
         [](ReadBuffer & buf,

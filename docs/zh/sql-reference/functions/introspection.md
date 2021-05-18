@@ -16,11 +16,11 @@ toc_title: "\u81EA\u7701"
 
 -   安装 `clickhouse-common-static-dbg` 包。
 
--   设置 [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 设置为1。
+-   设置 [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 设置为1。
 
-        For security reasons introspection functions are disabled by default.
+        出于安全考虑，内省函数默认是关闭的。
 
-ClickHouse将探查器报告保存到 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表. 确保正确配置了表和探查器。
+ClickHouse将探查器报告保存到 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表. 确保正确配置了表和探查器。
 
 ## addressToLine {#addresstoline}
 
@@ -36,17 +36,17 @@ addressToLine(address_of_binary_instruction)
 
 **参数**
 
--   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
+-   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 正在运行进程的指令地址。
 
 **返回值**
 
--   源代码文件名和此文件中用冒号分隔的行号。
+-   源代码文件名和行号（用冒号分隔的行号）
 
-        For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
+        示例, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
--   二进制文件的名称，如果函数找不到调试信息。
+-   如果函数找不到调试信息，返回二进制文件的名称。
 
--   空字符串，如果地址无效。
+-   如果地址无效，返回空字符串。
 
 类型: [字符串](../../sql-reference/data-types/string.md).
 
@@ -132,7 +132,7 @@ addressToSymbol(address_of_binary_instruction)
 **返回值**
 
 -   来自ClickHouse对象文件的符号。
--   空字符串，如果地址无效。
+-   如果地址无效，返回空字符串。
 
 类型: [字符串](../../sql-reference/data-types/string.md).
 

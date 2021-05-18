@@ -18,7 +18,7 @@ quantileExact(level)(expr)
 
 Alias: `medianExact`.
 
-**Parameters**
+**Arguments**
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
@@ -53,13 +53,13 @@ Result:
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
-To get exact value, all the passed values are combined into an array, which is then fully sorted.  The sorting [algorithm's](https://en.cppreference.com/w/cpp/algorithm/sort) complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
+To get the exact value, all the passed values are combined into an array, which is then fully sorted.  The sorting [algorithm's](https://en.cppreference.com/w/cpp/algorithm/sort) complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
 
-Depending on the level, i.e if the level is 0.5 then the exact lower median value is returned if there are even number of elements and the middle value is returned if there are odd number of elements. Median is calculated similar to the [median_low](https://docs.python.org/3/library/statistics.html#statistics.median_low) implementation which is used in python.
+The return value depends on the quantile level and the number of elements in the selection, i.e. if the level is 0.5, then the function returns the lower median value for an even number of elements and the middle median value for an odd number of elements. Median is calculated similarly to the [median_low](https://docs.python.org/3/library/statistics.html#statistics.median_low) implementation which is used in python.
 
-For all other levels, the element at the the index corresponding to the value of `level * size_of_array` is returned. For example:
+For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned. For example:
 
-```$sql
+``` sql
 SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 
 ┌─quantileExactLow(0.1)(number)─┐
@@ -77,7 +77,7 @@ quantileExact(level)(expr)
 
 Alias: `medianExactLow`.
 
-**Parameters**
+**Arguments**
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
@@ -111,9 +111,10 @@ Result:
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
-To get exact value, all the passed values are combined into an array, which is then fully sorted.  The sorting [algorithm's](https://en.cppreference.com/w/cpp/algorithm/sort) complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
+All the passed values are combined into an array, which is then fully sorted, 
+to get the exact value.  The sorting [algorithm's](https://en.cppreference.com/w/cpp/algorithm/sort) complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
 
-Depending on the level, i.e if the level is 0.5 then the exact higher median value is returned if there are even number of elements and the middle value is returned if there are odd number of elements. Median is calculated similar to the [median_high](https://docs.python.org/3/library/statistics.html#statistics.median_high) implementation which is used in python. For all other levels, the element at the the index corresponding to the value of `level * size_of_array` is returned. 
+The return value depends on the quantile level and the number of elements in the selection, i.e. if the level is 0.5, then the function returns the higher median value for an even number of elements and the middle median value for an odd number of elements. Median is calculated similarly to the [median_high](https://docs.python.org/3/library/statistics.html#statistics.median_high) implementation which is used in python. For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned. 
 
 This implementation behaves exactly similar to the current `quantileExact` implementation.
 
@@ -127,7 +128,7 @@ quantileExactHigh(level)(expr)
 
 Alias: `medianExactHigh`.
 
-**Parameters**
+**Arguments**
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).

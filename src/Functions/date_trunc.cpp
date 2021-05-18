@@ -25,9 +25,9 @@ class FunctionDateTrunc : public IFunction
 public:
     static constexpr auto name = "date_trunc";
 
-    explicit FunctionDateTrunc(const Context & context_) : context(context_) {}
+    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionDateTrunc>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
 
     String getName() const override { return name; }
 
@@ -117,33 +117,22 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName temp_block = block;
+        ColumnsWithTypeAndName temp_columns(arguments.size());
+        temp_columns[0] = arguments[1];
 
         const UInt16 interval_value = 1;
         const ColumnPtr interval_column = ColumnConst::create(ColumnInt64::create(1, interval_value), input_rows_count);
+        temp_columns[1] = {interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""};
 
-        const size_t interval_pos = temp_block.size();
-        temp_block.emplace_back(ColumnWithTypeAndName{interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""});
+        auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context);
 
         if (arguments.size() == 2)
-        {
-            auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context)->build(
-                {temp_block[arguments[1]], temp_block[interval_pos]});
+            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
 
-            to_start_of_interval->execute(temp_block, {arguments[1], interval_pos}, result, input_rows_count);
-        }
-        else
-        {
-            auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context)->build(
-                {temp_block[arguments[1]], temp_block[interval_pos],
-                    temp_block[arguments[2]]});
-
-            to_start_of_interval->execute(temp_block, {arguments[1], interval_pos, arguments[2]}, result, input_rows_count);
-        }
-
-        block[result].column = std::move(temp_block[result].column);
+        temp_columns[2] = arguments[2];
+        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -157,7 +146,7 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 };
 

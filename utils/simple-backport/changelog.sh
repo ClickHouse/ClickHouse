@@ -39,7 +39,7 @@ function github_download()
     local file=${2}
     if ! [ -f "$file" ]
     then
-        if ! curl -H "Authorization: token $GITHUB_TOKEN" \
+        if ! curl -u "$GITHUB_USER:$GITHUB_TOKEN" \
                 -sSf "$url" \
                 > "$file"
         then
@@ -66,7 +66,7 @@ do
 
     # Filter out PRs by bots.
     user_login=$(jq -r .user.login "$file")
-    
+
     filter_bot=$(echo "$user_login" | grep -q "\[bot\]$" && echo "Skip." || echo "Ok." ||:)
     filter_robot=$(echo "$user_login" | grep -q "robot-clickhouse" && echo "Skip." || echo "Ok." ||:)
 

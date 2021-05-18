@@ -23,6 +23,7 @@ protected:
     void writeRow(
         size_t row_num,
         const Block & header,
+        const Serializations & serializations,
         const Columns & columns,
         const WidthsPerColumn & widths,
         const Widths & max_widths);

@@ -144,8 +144,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /// doesn't check that parsed string is existing data type. In this way
     /// REMOVE keyword can be parsed as data type and further parsing will fail.
     /// So we just check this keyword and in case of success return column
-    /// column declaration with name only.
-    if (s_remove.checkWithoutMoving(pos, expected))
+    /// declaration with name only.
+    if (!require_type && s_remove.checkWithoutMoving(pos, expected))
     {
         if (!check_keywords_after_name)
             return false;
@@ -165,11 +165,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr codec_expression;
     ASTPtr ttl_expression;
 
-    if (!s_default.checkWithoutMoving(pos, expected) &&
-        !s_materialized.checkWithoutMoving(pos, expected) &&
-        !s_alias.checkWithoutMoving(pos, expected) &&
-        !s_comment.checkWithoutMoving(pos, expected) &&
-        !s_codec.checkWithoutMoving(pos, expected))
+    if (!s_default.checkWithoutMoving(pos, expected)
+        && !s_materialized.checkWithoutMoving(pos, expected)
+        && !s_alias.checkWithoutMoving(pos, expected)
+        && (require_type
+            || (!s_comment.checkWithoutMoving(pos, expected)
+                && !s_codec.checkWithoutMoving(pos, expected))))
     {
         if (!type_parser.parse(pos, type, expected))
             return false;
@@ -283,6 +284,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserProjectionDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "projection declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserTablePropertyDeclaration : public IParserBase
 {
 protected:
@@ -302,6 +310,13 @@ class ParserConstraintDeclarationList : public IParserBase
 {
 protected:
     const char * getName() const override { return "constraint declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserProjectionDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "projection declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -391,6 +406,7 @@ protected:
   *     ...
   *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
   *     ...
+  *     PRIMARY KEY expr
   * ) ENGINE = engine
   *
   * Or:

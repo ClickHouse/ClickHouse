@@ -17,6 +17,7 @@
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
 	url = https://github.com/ClickHouse-Extras/zlib-ng.git
+	branch = clickhouse-new
 [submodule "contrib/googletest"]
 	path = contrib/googletest
 	url = https://github.com/google/googletest.git
@@ -44,6 +45,7 @@
 [submodule "contrib/protobuf"]
 	path = contrib/protobuf
 	url = https://github.com/ClickHouse-Extras/protobuf.git
+	branch = v3.13.0.1
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse-Extras/boost.git
@@ -52,7 +54,8 @@
 	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
-	url = https://github.com/apache/arrow
+	url = https://github.com/ClickHouse-Extras/arrow
+	branch = clickhouse-arrow-2.0.0
 [submodule "contrib/thrift"]
 	path = contrib/thrift
 	url = https://github.com/apache/thrift.git
@@ -82,7 +85,7 @@
 	url = https://github.com/google/brotli.git
 [submodule "contrib/h3"]
 	path = contrib/h3
-	url = https://github.com/uber/h3
+	url = https://github.com/ClickHouse-Extras/h3
 [submodule "contrib/hyperscan"]
 	path = contrib/hyperscan
 	url = https://github.com/ClickHouse-Extras/hyperscan.git
@@ -91,7 +94,7 @@
 	url = https://github.com/ClickHouse-Extras/libunwind.git
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
-	url = https://github.com/ClickHouse-Extras/simdjson.git
+	url = https://github.com/simdjson/simdjson.git
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
 	url = https://github.com/ClickHouse-Extras/rapidjson
@@ -107,6 +110,7 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse-Extras/grpc.git
+	branch = v1.33.2
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse-Extras/aws-sdk-cpp.git
@@ -122,9 +126,6 @@
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
-[submodule "contrib/openssl"]
-	path = contrib/openssl
-	url = https://github.com/ClickHouse-Extras/openssl.git
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse-Extras/icudata.git
@@ -133,16 +134,13 @@
 	url = https://github.com/unicode-org/icu.git
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
-	url = https://github.com/google/flatbuffers.git
+	url = https://github.com/ClickHouse-Extras/flatbuffers.git
 [submodule "contrib/libc-headers"]
 	path = contrib/libc-headers
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
 [submodule "contrib/replxx"]
 	path = contrib/replxx
 	url = https://github.com/ClickHouse-Extras/replxx.git
-[submodule "contrib/ryu"]
-	path = contrib/ryu
-	url = https://github.com/ClickHouse-Extras/ryu.git
 [submodule "contrib/avro"]
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
@@ -155,7 +153,7 @@
 	url = https://github.com/ClickHouse-Extras/libcpuid.git
 [submodule "contrib/openldap"]
 	path = contrib/openldap
-	url = https://github.com/openldap/openldap.git
+	url = https://github.com/ClickHouse-Extras/openldap.git
 [submodule "contrib/AMQP-CPP"]
 	path = contrib/AMQP-CPP
 	url = https://github.com/ClickHouse-Extras/AMQP-CPP.git
@@ -170,6 +168,9 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git
+[submodule "contrib/antlr4-runtime"]
+	path = contrib/antlr4-runtime
+	url = https://github.com/ClickHouse-Extras/antlr4-runtime.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/ClickHouse-Extras/sentry-native.git
@@ -181,8 +182,49 @@
 	url = https://github.com/kthohr/stats.git
 [submodule "contrib/krb5"]
 	path = contrib/krb5
-	url = https://github.com/krb5/krb5
+	url = https://github.com/ClickHouse-Extras/krb5
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
-	url = https://github.com/cyrusimap/cyrus-sasl
+	url = https://github.com/ClickHouse-Extras/cyrus-sasl
 	branch = cyrus-sasl-2.1
+[submodule "contrib/croaring"]
+	path = contrib/croaring
+	url = https://github.com/RoaringBitmap/CRoaring
+	branch = v0.2.66
+[submodule "contrib/miniselect"]
+	path = contrib/miniselect
+	url = https://github.com/danlark1/miniselect
+[submodule "contrib/rocksdb"]
+	path = contrib/rocksdb
+	url = https://github.com/ClickHouse-Extras/rocksdb.git 
+[submodule "contrib/xz"]
+	path = contrib/xz
+	url = https://github.com/xz-mirror/xz
+[submodule "contrib/abseil-cpp"]
+	path = contrib/abseil-cpp
+	url = https://github.com/ClickHouse-Extras/abseil-cpp.git
+	branch = lts_2020_02_25
+[submodule "contrib/dragonbox"]
+	path = contrib/dragonbox
+	url = https://github.com/ClickHouse-Extras/dragonbox.git
+[submodule "contrib/fast_float"]
+	path = contrib/fast_float
+	url = https://github.com/fastfloat/fast_float
+[submodule "contrib/libpqxx"]
+	path = contrib/libpqxx
+	url = https://github.com/jtv/libpqxx
+[submodule "contrib/libpq"]
+	path = contrib/libpq
+	url = https://github.com/ClickHouse-Extras/libpq
+[submodule "contrib/boringssl"]
+	path = contrib/boringssl
+	url = https://github.com/ClickHouse-Extras/boringssl.git
+[submodule "contrib/NuRaft"]
+	path = contrib/NuRaft
+	url = https://github.com/ClickHouse-Extras/NuRaft.git
+[submodule "contrib/nanodbc"]
+	path = contrib/nanodbc
+	url = https://github.com/ClickHouse-Extras/nanodbc.git
+[submodule "contrib/datasketches-cpp"]
+	path = contrib/datasketches-cpp
+	url = https://github.com/ClickHouse-Extras/datasketches-cpp.git

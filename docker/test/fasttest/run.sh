@@ -8,6 +8,9 @@ trap 'kill $(jobs -pr) ||:' EXIT
 # that we can run the "everything else" stage from the cloned source.
 stage=${stage:-}
 
+# Compiler version, normally set by Dockerfile
+export LLVM_VERSION=${LLVM_VERSION:-11}
+
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
 # it being undefined. Also read it as array so that we can pass an empty list
@@ -15,11 +18,15 @@ stage=${stage:-}
 # empty parameter.
 read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
+# Run only matching tests.
+FASTTEST_FOCUS=${FASTTEST_FOCUS:-""}
+
 FASTTEST_WORKSPACE=$(readlink -f "${FASTTEST_WORKSPACE:-.}")
 FASTTEST_SOURCE=$(readlink -f "${FASTTEST_SOURCE:-$FASTTEST_WORKSPACE/ch}")
 FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/build}}")
 FASTTEST_DATA=$(readlink -f "${FASTTEST_DATA:-$FASTTEST_WORKSPACE/db-fasttest}")
 FASTTEST_OUTPUT=$(readlink -f "${FASTTEST_OUTPUT:-$FASTTEST_WORKSPACE}")
+PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
 
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
@@ -28,11 +35,18 @@ export FASTTEST_SOURCE
 export FASTTEST_BUILD
 export FASTTEST_DATA
 export FASTTEST_OUT
+export PATH
 
 server_pid=none
 
 function stop_server
 {
+    if ! kill -0 -- "$server_pid"
+    then
+        echo "ClickHouse server pid '$server_pid' is not running"
+        return 0
+    fi
+
     for _ in {1..60}
     do
         if ! pkill -f "clickhouse-server" && ! kill -- "$server_pid" ; then break ; fi
@@ -53,7 +67,15 @@ function stop_server
 function start_server
 {
     set -m # Spawn server in its own process groups
-    clickhouse-server --config-file="$FASTTEST_DATA/config.xml" -- --path "$FASTTEST_DATA" --user_files_path "$FASTTEST_DATA/user_files" &>> "$FASTTEST_OUTPUT/server.log" &
+    local opts=(
+        --config-file "$FASTTEST_DATA/config.xml"
+        --
+        --path "$FASTTEST_DATA"
+        --user_files_path "$FASTTEST_DATA/user_files"
+        --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
+        --keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
+    )
+    clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
     set +m
 
@@ -89,196 +111,300 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
+
+    echo "
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+handle SIGABRT stop print
+continue
+thread apply all backtrace
+continue
+" > script.gdb
+
+    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
 {
-git clone https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
+    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
-(
-cd "$FASTTEST_SOURCE"
-if [ "$PULL_REQUEST_NUMBER" != "0" ]; then
-    if git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
-        git checkout FETCH_HEAD
-        echo 'Clonned merge head'
-    else
-        git fetch
-        git checkout "$COMMIT_SHA"
-        echo 'Checked out to commit'
-    fi
-else
-    if [ -v COMMIT_SHA ]; then
-        git checkout "$COMMIT_SHA"
-    fi
-fi
-)
+    (
+        cd "$FASTTEST_SOURCE"
+        if [ "$PULL_REQUEST_NUMBER" != "0" ]; then
+            if git fetch --depth 1 origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
+                git checkout FETCH_HEAD
+                echo "Checked out pull/$PULL_REQUEST_NUMBER/merge ($(git rev-parse FETCH_HEAD))"
+            else
+                git fetch --depth 1 origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
+                git checkout "$COMMIT_SHA"
+                echo "Checked out nominal SHA $COMMIT_SHA for PR $PULL_REQUEST_NUMBER"
+            fi
+        else
+            if [ -v COMMIT_SHA ]; then
+                git fetch --depth 1 origin "$COMMIT_SHA"
+                git checkout "$COMMIT_SHA"
+                echo "Checked out nominal SHA $COMMIT_SHA for master"
+            else
+                echo  "Using default repository head $(git rev-parse HEAD)"
+            fi
+        fi
+    )
 }
 
 function clone_submodules
 {
-(
-cd "$FASTTEST_SOURCE"
+    (
+        cd "$FASTTEST_SOURCE"
 
-SUBMODULES_TO_UPDATE=(contrib/boost contrib/zlib-ng contrib/libxml2 contrib/poco contrib/libunwind contrib/ryu contrib/fmtlib contrib/base64 contrib/cctz contrib/libcpuid contrib/double-conversion contrib/libcxx contrib/libcxxabi contrib/libc-headers contrib/lz4 contrib/zstd contrib/fastops contrib/rapidjson contrib/re2 contrib/sparsehash-c11)
+        SUBMODULES_TO_UPDATE=(
+            contrib/abseil-cpp
+            contrib/antlr4-runtime
+            contrib/boost
+            contrib/zlib-ng
+            contrib/libxml2
+            contrib/poco
+            contrib/libunwind
+            contrib/fmtlib
+            contrib/base64
+            contrib/cctz
+            contrib/libcpuid
+            contrib/double-conversion
+            contrib/libcxx
+            contrib/libcxxabi
+            contrib/libc-headers
+            contrib/lz4
+            contrib/zstd
+            contrib/fastops
+            contrib/rapidjson
+            contrib/re2
+            contrib/sparsehash-c11
+            contrib/croaring
+            contrib/miniselect
+            contrib/xz
+            contrib/dragonbox
+            contrib/fast_float
+            contrib/NuRaft
+        )
 
-git submodule sync
-git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
-git submodule foreach git reset --hard
-git submodule foreach git checkout @ -f
-git submodule foreach git clean -xfd
-)
+        git submodule sync
+        git submodule update --depth 1 --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule foreach git reset --hard
+        git submodule foreach git checkout @ -f
+        git submodule foreach git clean -xfd
+    )
 }
 
 function run_cmake
 {
-CMAKE_LIBS_CONFIG=("-DENABLE_LIBRARIES=0" "-DENABLE_TESTS=0" "-DENABLE_UTILS=0" "-DENABLE_EMBEDDED_COMPILER=0" "-DENABLE_THINLTO=0" "-DUSE_UNWIND=1")
+    CMAKE_LIBS_CONFIG=(
+        "-DENABLE_LIBRARIES=0"
+        "-DENABLE_TESTS=0"
+        "-DENABLE_UTILS=0"
+        "-DENABLE_EMBEDDED_COMPILER=0"
+        "-DENABLE_THINLTO=0"
+        "-DUSE_UNWIND=1"
+        "-DENABLE_NURAFT=1"
+    )
 
-# TODO remove this? we don't use ccache anyway. An option would be to download it
-# from S3 simultaneously with cloning.
-export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
-export CCACHE_BASEDIR="$FASTTEST_SOURCE"
-export CCACHE_NOHASHDIR=true
-export CCACHE_COMPILERCHECK=content
-export CCACHE_MAXSIZE=15G
+    # TODO remove this? we don't use ccache anyway. An option would be to download it
+    # from S3 simultaneously with cloning.
+    export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
+    export CCACHE_BASEDIR="$FASTTEST_SOURCE"
+    export CCACHE_NOHASHDIR=true
+    export CCACHE_COMPILERCHECK=content
+    export CCACHE_MAXSIZE=15G
 
-ccache --show-stats ||:
-ccache --zero-stats ||:
+    ccache --show-stats ||:
+    ccache --zero-stats ||:
 
-mkdir "$FASTTEST_BUILD" ||:
+    mkdir "$FASTTEST_BUILD" ||:
 
-(
-cd "$FASTTEST_BUILD"
-cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
-)
+    (
+        cd "$FASTTEST_BUILD"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+    )
 }
 
 function build
 {
-(
-cd "$FASTTEST_BUILD"
-time ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
-ccache --show-stats ||:
-)
+    (
+        cd "$FASTTEST_BUILD"
+        time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
+            cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
+        fi
+        ccache --show-stats ||:
+    )
 }
 
 function configure
 {
-clickhouse-client --version
-clickhouse-test --help
+    clickhouse-client --version
+    clickhouse-test --help
 
-mkdir -p "$FASTTEST_DATA"{,/client-config}
-cp -a "$FASTTEST_SOURCE/programs/server/"{config,users}.xml "$FASTTEST_DATA"
-cp -a "$FASTTEST_SOURCE/programs/server/"{config,users}.xml "$FASTTEST_DATA"
-"$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config"
-# doesn't support SSL
-rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
+    mkdir -p "$FASTTEST_DATA"{,/client-config}
+    cp -a "$FASTTEST_SOURCE/programs/server/"{config,users}.xml "$FASTTEST_DATA"
+    "$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config"
+    cp -a "$FASTTEST_SOURCE/programs/server/config.d/log_to_console.xml" "$FASTTEST_DATA/config.d"
+    # doesn't support SSL
+    rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
 }
 
 function run_tests
 {
-clickhouse-server --version
-clickhouse-test --help
+    clickhouse-server --version
+    clickhouse-test --help
 
-# Kill the server in case we are running locally and not in docker
-stop_server ||:
-
-start_server
-
-TESTS_TO_SKIP=(
-    parquet
-    avro
-    h3
-    odbc
-    mysql
-    sha256
-    _orc_
-    arrow
-    01098_temporary_and_external_tables
-    01083_expressions_in_engine_arguments
-    hdfs
-    00911_tautological_compare
-    protobuf
-    capnproto
-    java_hash
-    hashing
-    secure
-    00490_special_line_separators_and_characters_outside_of_bmp
-    00436_convert_charset
-    00105_shard_collations
-    01354_order_by_tuple_collate_const
-    01292_create_user
-    01098_msgpack_format
-    00929_multi_match_edit_distance
-    00926_multimatch
-    00834_cancel_http_readonly_queries_on_client_close
-    brotli
-    parallel_alter
-    00302_http_compression
-    00417_kill_query
-    01294_lazy_database_concurrent
-    01193_metadata_loading
-    base64
-    01031_mutations_interpreter_and_context
-    json
-    client
-    01305_replica_create_drop_zookeeper
-    01092_memory_profiler
-    01355_ilike
-    01281_unsucceeded_insert_select_queries_counter
-    live_view
-    limit_memory
-    memory_limit
-    memory_leak
-    00110_external_sort
-    00682_empty_parts_merge
-    00701_rollup
-    00109_shard_totals_after_having
-    ddl_dictionaries
-    01251_dict_is_in_infinite_loop
-    01259_dictionary_custom_settings_ddl
-    01268_dictionary_direct_layout
-    01280_ssd_complex_key_dictionary
-    00652_replicated_mutations_zookeeper
-    01411_bayesian_ab_testing
-    01238_http_memory_tracking              # max_memory_usage_for_user can interfere another queries running concurrently
-    01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
-
-    # Not sure why these two fail even in sequential mode. Disabled for now
-    # to make some progress.
-    00646_url_engine
-    00974_query_profiler
-
-    # Look at DistributedFilesToInsert, so cannot run in parallel.
-    01460_DistributedFilesToInsert
-)
-
-time clickhouse-test -j 8 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
-
-# substr is to remove semicolon after test name
-readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
-
-# We will rerun sequentially any tests that have failed during parallel run.
-# They might have failed because there was some interference from other tests
-# running concurrently. If they fail even in seqential mode, we will report them.
-# FIXME All tests that require exclusive access to the server must be
-# explicitly marked as `sequential`, and `clickhouse-test` must detect them and
-# run them in a separate group after all other tests. This is faster and also
-# explicit instead of guessing.
-if [[ -n "${FAILED_TESTS[*]}" ]]
-then
+    # Kill the server in case we are running locally and not in docker
     stop_server ||:
-
-    # Clean the data so that there is no interference from the previous test run.
-    rm -rf "$FASTTEST_DATA"/{meta,}data ||:
 
     start_server
 
-    echo "Going to run again: ${FAILED_TESTS[*]}"
+    TESTS_TO_SKIP=(
+        00105_shard_collations
+        00109_shard_totals_after_having
+        00110_external_sort
+        00302_http_compression
+        00417_kill_query
+        00436_convert_charset
+        00490_special_line_separators_and_characters_outside_of_bmp
+        00652_replicated_mutations_zookeeper
+        00682_empty_parts_merge
+        00701_rollup
+        00834_cancel_http_readonly_queries_on_client_close
+        00911_tautological_compare
 
-    clickhouse-test --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
-else
-    echo "No failed tests"
-fi
+        # Hyperscan
+        00926_multimatch
+        00929_multi_match_edit_distance
+        01681_hyperscan_debug_assertion
+
+        01176_mysql_client_interactive          # requires mysql client
+        01031_mutations_interpreter_and_context
+        01053_ssd_dictionary # this test mistakenly requires acces to /var/lib/clickhouse -- can't run this locally, disabled
+        01083_expressions_in_engine_arguments
+        01092_memory_profiler
+        01098_msgpack_format
+        01098_temporary_and_external_tables
+        01103_check_cpu_instructions_at_startup # avoid dependency on qemu -- invonvenient when running locally
+        01193_metadata_loading
+        01238_http_memory_tracking              # max_memory_usage_for_user can interfere another queries running concurrently
+        01251_dict_is_in_infinite_loop
+        01259_dictionary_custom_settings_ddl
+        01268_dictionary_direct_layout
+        01280_ssd_complex_key_dictionary
+        01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
+        01318_encrypt                           # Depends on OpenSSL
+        01318_decrypt                           # Depends on OpenSSL
+        01663_aes_msan                          # Depends on OpenSSL
+        01667_aes_args_check                    # Depends on OpenSSL
+        01776_decrypt_aead_size_check           # Depends on OpenSSL
+        01811_filter_by_null                    # Depends on OpenSSL
+        01281_unsucceeded_insert_select_queries_counter
+        01292_create_user
+        01294_lazy_database_concurrent
+        01305_replica_create_drop_zookeeper
+        01354_order_by_tuple_collate_const
+        01355_ilike
+        01411_bayesian_ab_testing
+        01798_uniq_theta_sketch
+        01799_long_uniq_theta_sketch
+        collate
+        collation
+        _orc_
+        arrow
+        avro
+        base64
+        brotli
+        capnproto
+        client
+        ddl_dictionaries
+        h3
+        hashing
+        hdfs
+        java_hash
+        json
+        limit_memory
+        live_view
+        memory_leak
+        memory_limit
+        mysql
+        odbc
+        parallel_alter
+        parquet
+        protobuf
+        secure
+        sha256
+        xz
+
+        # Not sure why these two fail even in sequential mode. Disabled for now
+        # to make some progress.
+        00646_url_engine
+        00974_query_profiler
+
+         # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
+        01504_rocksdb
+        01686_rocksdb
+
+        # Look at DistributedFilesToInsert, so cannot run in parallel.
+        01460_DistributedFilesToInsert
+
+        01541_max_memory_usage_for_user_long
+
+        # Require python libraries like scipy, pandas and numpy
+        01322_ttest_scipy
+        01561_mann_whitney_scipy
+
+        01545_system_errors
+        # Checks system.errors
+        01563_distributed_query_finish
+
+        # nc - command not found
+        01601_proxy_protocol
+        01622_defaults_for_url_engine
+
+        # JSON functions
+        01666_blns
+
+        # Requires postgresql-client
+        01802_test_postgresql_protocol_with_row_policy
+
+        # Depends on AWS
+        01801_s3_cluster
+
+        # Depends on LLVM JIT
+        01852_jit_if
+        01865_jit_comparison_constant_result
+    )
+
+    (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+
+    # substr is to remove semicolon after test name
+    readarray -t FAILED_TESTS < <(awk '/\[ FAIL|TIMEOUT|ERROR \]/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
+
+    # We will rerun sequentially any tests that have failed during parallel run.
+    # They might have failed because there was some interference from other tests
+    # running concurrently. If they fail even in seqential mode, we will report them.
+    # FIXME All tests that require exclusive access to the server must be
+    # explicitly marked as `sequential`, and `clickhouse-test` must detect them and
+    # run them in a separate group after all other tests. This is faster and also
+    # explicit instead of guessing.
+    if [[ -n "${FAILED_TESTS[*]}" ]]
+    then
+        stop_server ||:
+
+        # Clean the data so that there is no interference from the previous test run.
+        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files,coordination} ||:
+
+        start_server
+
+        echo "Going to run again: ${FAILED_TESTS[*]}"
+
+        clickhouse-test --hung-check --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
+    else
+        echo "No failed tests"
+    fi
 }
 
 case "$stage" in
@@ -312,24 +438,25 @@ case "$stage" in
     # See the compatibility hacks in `clone_root` stage above. Remove at the same time,
     # after Nov 1, 2020.
     cd "$FASTTEST_WORKSPACE"
-    clone_submodules | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
+    clone_submodules 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
     ;&
 "run_cmake")
     run_cmake
     ;&
 "build")
     build
-    PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
-    export PATH
     ;&
 "configure")
     # The `install_log.txt` is also needed for compatibility with old CI task --
     # if there is no log, it will decide that build failed.
-    configure | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/install_log.txt"
+    configure 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/install_log.txt"
     ;&
 "run_tests")
     run_tests
-    ;&
+    ;;
+*)
+    echo "Unknown test stage '$stage'"
+    exit 1
 esac
 
 pstree -apgT

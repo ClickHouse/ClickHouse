@@ -30,11 +30,11 @@ public:
     RawBLOBRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        FormatFactory::WriteCallback callback);
+        const RowOutputFormatParams & params_);
 
     String getName() const override { return "RawBLOBRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType &, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization &, size_t row_num) override;
 };
 
 }

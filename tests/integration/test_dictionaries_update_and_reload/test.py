@@ -141,7 +141,8 @@ def test_reload_after_loading(started_cluster):
     time.sleep(1)  # see the comment above
     replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '81', '82')
     replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '101', '102')
-    query("SYSTEM RELOAD DICTIONARIES")
+    query("SYSTEM RELOAD DICTIONARY 'file'")
+    query("SYSTEM RELOAD DICTIONARY 'executable'")
     assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "82\n"
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "102\n"
 
@@ -186,8 +187,6 @@ def test_reload_after_fail_by_system_reload(started_cluster):
 
 
 def test_reload_after_fail_by_timer(started_cluster):
-    query = instance.query
-
     # dictionaries_lazy_load == false, so this dictionary is not loaded.
     assert get_status("no_file_2") == "NOT_LOADED"
 
@@ -204,14 +203,18 @@ def test_reload_after_fail_by_timer(started_cluster):
     # Creating the file source makes the dictionary able to load.
     instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/file.txt"),
                                     "/etc/clickhouse-server/config.d/no_file_2.txt")
-    time.sleep(6);
-    query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
+    # Check that file appears in container and wait if needed.
+    while not instance.file_exists("/etc/clickhouse-server/config.d/no_file_2.txt"):
+        time.sleep(1)
+    assert("9\t10\n" == instance.exec_in_container("cat /etc/clickhouse-server/config.d/no_file_2.txt"))
+    instance.query("SYSTEM RELOAD DICTIONARY no_file_2")
+    instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file_2") == "LOADED"
 
     # Removing the file source should not spoil the loaded dictionary.
     instance.exec_in_container("rm /etc/clickhouse-server/config.d/no_file_2.txt")
     time.sleep(6);
-    query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
+    instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file_2") == "LOADED"
 
 
@@ -221,6 +224,7 @@ def test_reload_after_fail_in_cache_dictionary(started_cluster):
 
     # Can't get a value from the cache dictionary because the source (table `test.xypairs`) doesn't respond.
     expected_error = "Table test.xypairs doesn't exist"
+    update_error = "Could not update cache dictionary cache_xypairs now"
     assert expected_error in query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(1))")
     assert get_status("cache_xypairs") == "LOADED"
     assert expected_error in get_last_exception("cache_xypairs")
@@ -250,17 +254,21 @@ def test_reload_after_fail_in_cache_dictionary(started_cluster):
     assert expected_error in get_last_exception("cache_xypairs")
 
     # Passed time should not spoil the cache.
-    time.sleep(5);
+    time.sleep(5)
     query("SELECT dictGet('cache_xypairs', 'y', toUInt64(1))") == "56"
     query("SELECT dictGet('cache_xypairs', 'y', toUInt64(2))") == "0"
-    assert expected_error in query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(3))")
-    assert expected_error in get_last_exception("cache_xypairs")
+    error = query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(3))")
+    assert (expected_error in error) or (update_error in error)
+    last_exception = get_last_exception("cache_xypairs")
+    assert (expected_error in last_exception) or (update_error in last_exception)
 
     # Create table `test.xypairs` again with changed values.
     query('''
         CREATE TABLE test.xypairs (x UInt64, y UInt64) ENGINE=Log;
         INSERT INTO test.xypairs VALUES (1, 57), (3, 79);
         ''')
+
+    query('SYSTEM RELOAD DICTIONARY cache_xypairs')
 
     # The cache dictionary returns new values now.
     assert_eq_with_retry(instance, "SELECT dictGet('cache_xypairs', 'y', toUInt64(1))", "57")

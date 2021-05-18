@@ -4,6 +4,7 @@
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 cur_name=$(basename "${BASH_SOURCE[0]}")
@@ -64,7 +65,7 @@ echo '5.1'
 
 # wait until the query in background will start (max: 10 seconds as sleepEachRow)
 for _ in {1..100}; do
-    $CLICKHOUSE_CLIENT --query="SHOW PROCESSLIST" --log_queries=0 >"$tmp_file" 2>&1
+    $CLICKHOUSE_CLIENT --query="SELECT * FROM system.processes WHERE current_database = currentDatabase()" --log_queries=0 >"$tmp_file" 2>&1
     grep -q -F 'fwerkh_that_magic_string_make_me_unique' "$tmp_file" && break
     sleep 0.1
 done
@@ -96,7 +97,7 @@ echo 7
 # and finally querylog
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
-  --query="select * from system.query_log where event_time > now() - 10 and query like '%TOPSECRET%';"
+  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() and query like '%TOPSECRET%';"
 
 
 rm -f "$tmp_file" >/dev/null 2>&1
@@ -117,8 +118,8 @@ $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS" --server_logs_file=/dev/null
 echo 9
 $CLICKHOUSE_CLIENT \
    --server_logs_file=/dev/null \
-   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_time>now() - 60 and message like '%find_me%';
-   select * from system.text_log where event_time > now() - 60 and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
+   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_date >= yesterday() and message like '%find_me%';
+   select * from system.text_log where event_date >= yesterday() and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
 
 echo 'finish'
 rm -f "$tmp_file" >/dev/null 2>&1

@@ -11,7 +11,6 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTAssignment.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
 
@@ -44,6 +43,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_add_constraint("ADD CONSTRAINT");
     ParserKeyword s_drop_constraint("DROP CONSTRAINT");
 
+    ParserKeyword s_add_projection("ADD PROJECTION");
+    ParserKeyword s_drop_projection("DROP PROJECTION");
+    ParserKeyword s_clear_projection("CLEAR PROJECTION");
+    ParserKeyword s_materialize_projection("MATERIALIZE PROJECTION");
+
     ParserKeyword s_add("ADD");
     ParserKeyword s_drop("DROP");
     ParserKeyword s_suspend("SUSPEND");
@@ -52,16 +56,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify("MODIFY");
 
     ParserKeyword s_attach_partition("ATTACH PARTITION");
+    ParserKeyword s_attach_part("ATTACH PART");
     ParserKeyword s_detach_partition("DETACH PARTITION");
+    ParserKeyword s_detach_part("DETACH PART");
     ParserKeyword s_drop_partition("DROP PARTITION");
+    ParserKeyword s_drop_part("DROP PART");
     ParserKeyword s_move_partition("MOVE PARTITION");
+    ParserKeyword s_move_part("MOVE PART");
     ParserKeyword s_drop_detached_partition("DROP DETACHED PARTITION");
     ParserKeyword s_drop_detached_part("DROP DETACHED PART");
-    ParserKeyword s_attach_part("ATTACH PART");
-    ParserKeyword s_move_part("MOVE PART");
     ParserKeyword s_fetch_partition("FETCH PARTITION");
+    ParserKeyword s_fetch_part("FETCH PART");
     ParserKeyword s_replace_partition("REPLACE PARTITION");
     ParserKeyword s_freeze("FREEZE");
+    ParserKeyword s_unfreeze("UNFREEZE");
     ParserKeyword s_partition("PARTITION");
 
     ParserKeyword s_first("FIRST");
@@ -77,7 +85,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_to_volume("TO VOLUME");
     ParserKeyword s_to_table("TO TABLE");
 
-    ParserKeyword s_delete_where("DELETE WHERE");
+    ParserKeyword s_delete("DELETE");
     ParserKeyword s_update("UPDATE");
     ParserKeyword s_where("WHERE");
     ParserKeyword s_to("TO");
@@ -98,6 +106,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
     ParserConstraintDeclaration parser_constraint_decl;
+    ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
     ParserPartition parser_partition;
     ParserExpression parser_exp_elem;
@@ -160,6 +169,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->type = ASTAlterCommand::DROP_PARTITION;
+        }
+        else if (s_drop_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_PARTITION;
+            command->part = true;
         }
         else if (s_drop_detached_partition.ignore(pos, expected))
         {
@@ -244,10 +261,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->clear_index = true;
             command->detach = false;
 
-            if (!s_in_partition.ignore(pos, expected))
-                return false;
-            if (!parser_partition.parse(pos, command->partition, expected))
-                return false;
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
         }
         else if (s_materialize_index.ignore(pos, expected))
         {
@@ -258,6 +276,70 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->type = ASTAlterCommand::MATERIALIZE_INDEX;
+            command->detach = false;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
+        }
+        else if (s_add_projection.ignore(pos, expected))
+        {
+            if (s_if_not_exists.ignore(pos, expected))
+                command->if_not_exists = true;
+
+            if (!parser_projection_decl.parse(pos, command->projection_decl, expected))
+                return false;
+
+            if (s_first.ignore(pos, expected))
+                command->first = true;
+            else if (s_after.ignore(pos, expected))
+            {
+                if (!parser_name.parse(pos, command->projection, expected))
+                    return false;
+            }
+
+            command->type = ASTAlterCommand::ADD_PROJECTION;
+        }
+        else if (s_drop_projection.ignore(pos, expected))
+        {
+            if (s_if_exists.ignore(pos, expected))
+                command->if_exists = true;
+
+            if (!parser_name.parse(pos, command->projection, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_PROJECTION;
+            command->detach = false;
+        }
+        else if (s_clear_projection.ignore(pos, expected))
+        {
+            if (s_if_exists.ignore(pos, expected))
+                command->if_exists = true;
+
+            if (!parser_name.parse(pos, command->projection, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_PROJECTION;
+            command->clear_projection = true;
+            command->detach = false;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
+        }
+        else if (s_materialize_projection.ignore(pos, expected))
+        {
+            if (s_if_exists.ignore(pos, expected))
+                command->if_exists = true;
+
+            if (!parser_name.parse(pos, command->projection, expected))
+                return false;
+
+            command->type = ASTAlterCommand::MATERIALIZE_PROJECTION;
             command->detach = false;
 
             if (s_in_partition.ignore(pos, expected))
@@ -354,6 +436,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->type = ASTAlterCommand::DROP_PARTITION;
             command->detach = true;
         }
+        else if (s_detach_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_PARTITION;
+            command->part = true;
+            command->detach = true;
+        }
         else if (s_attach_partition.ignore(pos, expected))
         {
             if (!parser_partition.parse(pos, command->partition, expected))
@@ -409,6 +500,21 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
             command->type = ASTAlterCommand::FETCH_PARTITION;
         }
+        else if (s_fetch_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            if (!s_from.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast_from;
+            if (!parser_string_literal.parse(pos, ast_from, expected))
+                return false;
+            command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
+            command->part = true;
+            command->type = ASTAlterCommand::FETCH_PARTITION;
+        }
         else if (s_freeze.ignore(pos, expected))
         {
             if (s_partition.ignore(pos, expected))
@@ -434,6 +540,37 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
+            }
+        }
+        else if (s_unfreeze.ignore(pos, expected))
+        {
+            if (s_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::UNFREEZE_PARTITION;
+            }
+            else
+            {
+                command->type = ASTAlterCommand::UNFREEZE_ALL;
+            }
+
+            /// WITH NAME 'name' - remove local backup to directory with specified name
+            if (s_with.ignore(pos, expected))
+            {
+                if (!s_name.ignore(pos, expected))
+                    return false;
+
+                ASTPtr ast_with_name;
+                if (!parser_string_literal.parse(pos, ast_with_name, expected))
+                    return false;
+
+                command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
+            }
+            else
+            {
+                return false;
             }
         }
         else if (s_modify_column.ignore(pos, expected))
@@ -487,8 +624,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
         }
-        else if (s_delete_where.ignore(pos, expected))
+        else if (s_delete.ignore(pos, expected))
         {
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
+
+            if (!s_where.ignore(pos, expected))
+                return false;
+
             if (!parser_exp_elem.parse(pos, command->predicate, expected))
                 return false;
 
@@ -498,6 +644,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
                 return false;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
 
             if (!s_where.ignore(pos, expected))
                 return false;
@@ -554,7 +706,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else
             return false;
-
     }
 
     if (command->col_decl)
@@ -567,6 +718,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->order_by);
     if (command->sample_by)
         command->children.push_back(command->sample_by);
+    if (command->index_decl)
+        command->children.push_back(command->index_decl);
+    if (command->index)
+        command->children.push_back(command->index);
+    if (command->constraint_decl)
+        command->children.push_back(command->constraint_decl);
+    if (command->constraint)
+        command->children.push_back(command->constraint);
     if (command->predicate)
         command->children.push_back(command->predicate);
     if (command->update_assignments)
@@ -579,6 +738,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->ttl);
     if (command->settings_changes)
         command->children.push_back(command->settings_changes);
+    if (command->select)
+        command->children.push_back(command->select);
+    if (command->rename_to)
+        command->children.push_back(command->rename_to);
 
     return true;
 }
@@ -586,7 +749,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto command_list = std::make_shared<ASTAlterCommandList>();
+    auto command_list = std::make_shared<ASTExpressionList>();
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
@@ -598,36 +761,9 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!p_command.parse(pos, command, expected))
             return false;
 
-        command_list->add(command);
+        command_list->children.push_back(command);
     }
     while (s_comma.ignore(pos, expected));
-
-    return true;
-}
-
-
-bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto assignment = std::make_shared<ASTAssignment>();
-    node = assignment;
-
-    ParserIdentifier p_identifier;
-    ParserToken s_equals(TokenType::Equals);
-    ParserExpression p_expression;
-
-    ASTPtr column;
-    if (!p_identifier.parse(pos, column, expected))
-        return false;
-
-    if (!s_equals.ignore(pos, expected))
-        return false;
-
-    if (!p_expression.parse(pos, assignment->expression, expected))
-        return false;
-
-    tryGetIdentifierNameInto(column, assignment->column_name);
-    if (assignment->expression)
-        assignment->children.push_back(assignment->expression);
 
     return true;
 }

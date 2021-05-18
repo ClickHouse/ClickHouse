@@ -1,5 +1,5 @@
 ---
-toc_priority: 44
+toc_priority: 42
 toc_title: DESCRIBE
 ---
 
@@ -21,4 +21,3 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Вложенные структуры данных выводятся в «развёрнутом» виде. То есть, каждый столбец - по отдельности, с именем через точку.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/describe-table/) <!--hide-->

@@ -1,5 +1,5 @@
 #include <common/memory.h>
-#include <Common/MemoryTracker.h>
+#include <Common/CurrentMemoryTracker.h>
 
 #include <iostream>
 #include <new>

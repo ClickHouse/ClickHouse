@@ -2,6 +2,7 @@
 
 #include <string>
 #include <Columns/IColumn.h>
+#include <Dictionaries/DictionaryStructure.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 
@@ -16,11 +17,11 @@ class WriteBuffer;
   */
 struct ExternalQueryBuilder
 {
-    const DictionaryStructure & dict_struct;
-    std::string db;
-    std::string schema;
-    std::string table;
-    const std::string & where;
+    const DictionaryStructure dict_struct;
+    const std::string db;
+    const std::string schema;
+    const std::string table;
+    const std::string where;
 
     IdentifierQuotingStyle quoting_style;
 

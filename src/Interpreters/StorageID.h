@@ -28,6 +28,7 @@ class ASTQueryWithTableAndOutput;
 class ASTIdentifier;
 class Context;
 
+// TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
 struct StorageID
 {
     String database_name;
@@ -88,7 +89,7 @@ struct StorageID
                                           const String & config_prefix);
 
     /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
-    /// DatabaseCatalog::resolveDictionaryName(...) should be used to access such dictionaries by name.
+    /// ExternalDictnariesLoader::resolveDictionaryName(...) should be used to access such dictionaries by name.
     String getInternalDictionaryName() const;
 
 private:

@@ -107,7 +107,7 @@ def test_RELOAD_CONFIG_AND_MACROS(started_cluster):
     assert TSV(instance.query("select * from system.macros")) == TSV("instance\tch1\nmac\tro\n")
 
 
-def test_SYSTEM_FLUSH_LOGS(started_cluster):
+def test_system_flush_logs(started_cluster):
     instance = cluster.instances['ch1']
     instance.query('''
         SET log_queries = 0;

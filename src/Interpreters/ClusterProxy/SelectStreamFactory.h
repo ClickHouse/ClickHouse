@@ -8,8 +8,6 @@
 namespace DB
 {
 
-using Scalars = std::map<String, Block>;
-
 namespace ClusterProxy
 {
 
@@ -36,10 +34,13 @@ public:
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
-        const String & query, const ASTPtr & query_ast,
-        const Context & context, const ThrottlerPtr & throttler,
+        const ASTPtr & query_ast,
+        ContextPtr context, const ThrottlerPtr & throttler,
         const SelectQueryInfo & query_info,
-        Pipes & pipes) override;
+        std::vector<QueryPlanPtr> & plans,
+        Pipes & remote_pipes,
+        Pipes & delayed_pipes,
+        Poco::Logger * log) override;
 
 private:
     const Block header;

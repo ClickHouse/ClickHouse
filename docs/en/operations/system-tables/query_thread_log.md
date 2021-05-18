@@ -1,13 +1,13 @@
 # system.query_thread_log {#system_tables-query_thread_log}
 
-Contains information about threads which execute queries, for example, thread name, thread start time, duration of query processing.
+Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
 To start logging:
 
-1.  Configure parameters in the [query\_thread\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
-2.  Set [log\_query\_threads](../../operations/settings/settings.md#settings-log-query-threads) to 1.
+1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
+2.  Set [log_query_threads](../../operations/settings/settings.md#settings-log-query-threads) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query\_thread\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse doesn’t delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
@@ -113,6 +113,6 @@ ProfileEvents.Values:          [1,1,11,11,591,148,3,71,29,6533808,1,11,72,18,47,
 
 **See Also**
 
--   [system.query\_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+-   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_thread_log) <!--hide-->

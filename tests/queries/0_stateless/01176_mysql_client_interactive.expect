@@ -1,0 +1,26 @@
+#!/usr/bin/expect -f
+
+log_user 0
+set timeout 5
+match_max 100000
+# A default timeout action is to do nothing, change it to fail
+expect_after {
+    timeout {
+        exit 1
+    }
+}
+
+set basedir [file dirname $argv0]
+spawn bash -c "source $basedir/../shell_config.sh ; \$MYSQL_CLIENT_BINARY \$MYSQL_CLIENT_OPT"
+expect "mysql> "
+
+send -- "USE system;\r"
+expect "Database changed"
+
+send -- "SELECT * FROM one;\r"
+expect "| dummy |"
+expect "|     0 |"
+expect "1 row in set"
+
+send -- "quit;\r"
+expect eof

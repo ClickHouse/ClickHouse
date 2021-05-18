@@ -13,7 +13,7 @@ using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
 {
-    std::stringstream ss(xml_data);
+    std::stringstream ss(xml_data);         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
@@ -168,11 +168,11 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
     throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 }
 
-/// Wraps only identifiers with backticks. 
+/// Wraps only identifiers with backticks.
 std::string wrapIdentifiersWithBackticks(const ASTPtr & root)
 {
     if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(root))
-        return backQuote(identifier->name);
+        return backQuote(identifier->name());
 
     if (auto function = std::dynamic_pointer_cast<ASTFunction>(root))
         return function->name + '(' + wrapIdentifiersWithBackticks(function->arguments) + ')';
@@ -214,7 +214,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
         /// Column name could be represented as a f_1(f_2(...f_n(column_name))).
-        /// Each f_i could take one or more parameters. 
+        /// Each f_i could take one or more parameters.
         /// We will wrap identifiers with backticks to allow non-standart identifier names.
         String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
 
@@ -222,8 +222,8 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
         {
             String pk_column = primary_key_expr_list->children[i]->getColumnName();
             if (pk_column != sorting_key_column)
-                throw Exception("Primary key must be a prefix of the sorting key, but in position "
-                                + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
+                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
+                                + toString(i) + " is " + sorting_key_column +", not " + pk_column,
                                 ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)

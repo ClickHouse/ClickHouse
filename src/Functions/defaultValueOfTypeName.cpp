@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <Columns/ColumnConst.h>
@@ -21,7 +21,7 @@ class FunctionDefaultValueOfTypeName : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfTypeName";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionDefaultValueOfTypeName>();
     }
@@ -49,10 +49,10 @@ public:
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IDataType & type = *block[result].type;
-        block[result].column = type.createColumnConst(input_rows_count, type.getDefault());
+        const IDataType & type = *result_type;
+        return type.createColumnConst(input_rows_count, type.getDefault());
     }
 };
 

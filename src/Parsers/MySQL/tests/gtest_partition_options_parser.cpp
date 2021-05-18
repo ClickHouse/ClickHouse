@@ -18,14 +18,14 @@ TEST(ParserPartitionOptions, HashPatitionOptions)
 
     ASTDeclarePartitionOptions * declare_partition_options_01 = ast_01->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_01->partition_type, "hash");
-    EXPECT_EQ(declare_partition_options_01->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options_01->partition_expression->as<ASTIdentifier>()->name(), "col_01");
 
     String linear_hash_partition = "PARTITION BY LINEAR HASH(col_01)";
     ASTPtr ast_02 = parseQuery(p_partition_options, linear_hash_partition.data(), linear_hash_partition.data() + linear_hash_partition.size(), "", 0, 0);
 
     ASTDeclarePartitionOptions * declare_partition_options_02 = ast_02->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_02->partition_type, "linear_hash");
-    EXPECT_EQ(declare_partition_options_02->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options_02->partition_expression->as<ASTIdentifier>()->name(), "col_01");
 }
 
 TEST(ParserPartitionOptions, KeyPatitionOptions)
@@ -37,7 +37,7 @@ TEST(ParserPartitionOptions, KeyPatitionOptions)
 
     ASTDeclarePartitionOptions * declare_partition_options_01 = ast_01->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_01->partition_type, "key");
-    EXPECT_EQ(declare_partition_options_01->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options_01->partition_expression->as<ASTIdentifier>()->name(), "col_01");
 
     String linear_key_partition = "PARTITION BY LINEAR KEY(col_01, col_02)";
     ASTPtr ast_02 = parseQuery(p_partition_options, linear_key_partition.data(), linear_key_partition.data() + linear_key_partition.size(), "", 0, 0);
@@ -45,15 +45,15 @@ TEST(ParserPartitionOptions, KeyPatitionOptions)
     ASTDeclarePartitionOptions * declare_partition_options_02 = ast_02->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_02->partition_type, "linear_key");
     ASTPtr columns_list = declare_partition_options_02->partition_expression->as<ASTFunction>()->arguments;
-    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name, "col_01");
-    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name, "col_02");
+    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name(), "col_01");
+    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name(), "col_02");
 
     String key_partition_with_algorithm = "PARTITION BY KEY ALGORITHM=1 (col_01)";
     ASTPtr ast_03 = parseQuery(p_partition_options, key_partition_with_algorithm.data(), key_partition_with_algorithm.data() + key_partition_with_algorithm.size(), "", 0, 0);
 
     ASTDeclarePartitionOptions * declare_partition_options_03 = ast_03->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_03->partition_type, "key_1");
-    EXPECT_EQ(declare_partition_options_03->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options_03->partition_expression->as<ASTIdentifier>()->name(), "col_01");
 }
 
 TEST(ParserPartitionOptions, RangePatitionOptions)
@@ -65,7 +65,7 @@ TEST(ParserPartitionOptions, RangePatitionOptions)
 
     ASTDeclarePartitionOptions * declare_partition_options_01 = ast_01->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_01->partition_type, "range");
-    EXPECT_EQ(declare_partition_options_01->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options_01->partition_expression->as<ASTIdentifier>()->name(), "col_01");
 
     String range_columns_partition = "PARTITION BY RANGE COLUMNS(col_01, col_02)";
     ASTPtr ast_02 = parseQuery(p_partition_options, range_columns_partition.data(), range_columns_partition.data() + range_columns_partition.size(), "", 0, 0);
@@ -73,8 +73,8 @@ TEST(ParserPartitionOptions, RangePatitionOptions)
     ASTDeclarePartitionOptions * declare_partition_options_02 = ast_02->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_02->partition_type, "range");
     ASTPtr columns_list = declare_partition_options_02->partition_expression->as<ASTFunction>()->arguments;
-    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name, "col_01");
-    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name, "col_02");
+    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name(), "col_01");
+    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name(), "col_02");
 }
 
 TEST(ParserPartitionOptions, ListPatitionOptions)
@@ -86,7 +86,7 @@ TEST(ParserPartitionOptions, ListPatitionOptions)
 
     ASTDeclarePartitionOptions * declare_partition_options_01 = ast_01->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_01->partition_type, "list");
-    EXPECT_EQ(declare_partition_options_01->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options_01->partition_expression->as<ASTIdentifier>()->name(), "col_01");
 
     String range_columns_partition = "PARTITION BY LIST COLUMNS(col_01, col_02)";
     ASTPtr ast_02 = parseQuery(p_partition_options, range_columns_partition.data(), range_columns_partition.data() + range_columns_partition.size(), "", 0, 0);
@@ -94,8 +94,8 @@ TEST(ParserPartitionOptions, ListPatitionOptions)
     ASTDeclarePartitionOptions * declare_partition_options_02 = ast_02->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_02->partition_type, "list");
     ASTPtr columns_list = declare_partition_options_02->partition_expression->as<ASTFunction>()->arguments;
-    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name, "col_01");
-    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name, "col_02");
+    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name(), "col_01");
+    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name(), "col_02");
 }
 
 TEST(ParserPartitionOptions, PatitionNumberOptions)
@@ -107,7 +107,7 @@ TEST(ParserPartitionOptions, PatitionNumberOptions)
 
     ASTDeclarePartitionOptions * declare_partition_options = ast->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options->partition_type, "key");
-    EXPECT_EQ(declare_partition_options->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options->partition_expression->as<ASTIdentifier>()->name(), "col_01");
     EXPECT_EQ(declare_partition_options->partition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 2);
 }
 
@@ -120,10 +120,10 @@ TEST(ParserPartitionOptions, PatitionWithSubpartitionOptions)
 
     ASTDeclarePartitionOptions * declare_partition_options = ast->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options->partition_type, "key");
-    EXPECT_EQ(declare_partition_options->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options->partition_expression->as<ASTIdentifier>()->name(), "col_01");
     EXPECT_EQ(declare_partition_options->partition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
     EXPECT_EQ(declare_partition_options->subpartition_type, "hash");
-    EXPECT_EQ(declare_partition_options->subpartition_expression->as<ASTIdentifier>()->name, "col_02");
+    EXPECT_EQ(declare_partition_options->subpartition_expression->as<ASTIdentifier>()->name(), "col_02");
     EXPECT_EQ(declare_partition_options->subpartition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 4);
 }
 
@@ -138,10 +138,10 @@ TEST(ParserPartitionOptions, PatitionOptionsWithDeclarePartition)
 
     ASTDeclarePartitionOptions * declare_partition_options = ast->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options->partition_type, "key");
-    EXPECT_EQ(declare_partition_options->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options->partition_expression->as<ASTIdentifier>()->name(), "col_01");
     EXPECT_EQ(declare_partition_options->partition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
     EXPECT_EQ(declare_partition_options->subpartition_type, "hash");
-    EXPECT_EQ(declare_partition_options->subpartition_expression->as<ASTIdentifier>()->name, "col_02");
+    EXPECT_EQ(declare_partition_options->subpartition_expression->as<ASTIdentifier>()->name(), "col_02");
     EXPECT_EQ(declare_partition_options->subpartition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 4);
     EXPECT_TRUE(declare_partition_options->declare_partitions->as<ASTExpressionList>()->children[0]->as<ASTDeclarePartition>());
 }
@@ -157,10 +157,10 @@ TEST(ParserPartitionOptions, PatitionOptionsWithDeclarePartitions)
 
     ASTDeclarePartitionOptions * declare_partition_options = ast->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options->partition_type, "key");
-    EXPECT_EQ(declare_partition_options->partition_expression->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_partition_options->partition_expression->as<ASTIdentifier>()->name(), "col_01");
     EXPECT_EQ(declare_partition_options->partition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
     EXPECT_EQ(declare_partition_options->subpartition_type, "hash");
-    EXPECT_EQ(declare_partition_options->subpartition_expression->as<ASTIdentifier>()->name, "col_02");
+    EXPECT_EQ(declare_partition_options->subpartition_expression->as<ASTIdentifier>()->name(), "col_02");
     EXPECT_EQ(declare_partition_options->subpartition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 4);
     EXPECT_TRUE(declare_partition_options->declare_partitions->as<ASTExpressionList>()->children[0]->as<ASTDeclarePartition>());
     EXPECT_TRUE(declare_partition_options->declare_partitions->as<ASTExpressionList>()->children[1]->as<ASTDeclarePartition>());

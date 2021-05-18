@@ -1,5 +1,5 @@
 ---
-toc_priority: 38
+toc_priority: 37
 toc_title: SHOW
 ---
 
@@ -15,12 +15,83 @@ Returns a single `String`-type ‘statement’ column, which contains a single v
 
 ## SHOW DATABASES {#show-databases}
 
-``` sql
-SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
+Prints a list of all databases.
+
+```sql
+SHOW DATABASES [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Prints a list of all databases.
-This query is identical to `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
+This statement is identical to the query:
+
+```sql
+SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+```
+
+### Examples {#examples}
+
+Getting database names, containing the symbols sequence 'de' in their names:
+
+``` sql
+SHOW DATABASES LIKE '%de%'
+```
+
+Result:
+
+``` text
+┌─name────┐
+│ default │
+└─────────┘
+```
+
+Getting database names, containing symbols sequence 'de' in their names, in the case insensitive manner:
+
+``` sql
+SHOW DATABASES ILIKE '%DE%'
+```
+
+Result:
+
+``` text
+┌─name────┐
+│ default │
+└─────────┘
+```
+
+Getting database names, not containing the symbols sequence 'de' in their names:
+
+``` sql
+SHOW DATABASES NOT LIKE '%de%'
+```
+
+Result:
+
+``` text
+┌─name───────────────────────────┐
+│ _temporary_and_external_tables │
+│ system                         │
+│ test                           │
+│ tutorial                       │
+└────────────────────────────────┘
+```
+
+Getting the first two rows from database names:
+
+``` sql
+SHOW DATABASES LIMIT 2
+```
+
+Result:
+
+``` text
+┌─name───────────────────────────┐
+│ _temporary_and_external_tables │
+│ default                        │
+└────────────────────────────────┘
+```
+
+### See Also {#see-also}
+
+-   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -42,32 +113,85 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 Displays a list of tables.
 
-``` sql
-SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```sql
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
 
-You can get the same results as the `SHOW TABLES` query in the following way:
+This statement is identical to the query:
 
-``` sql
-SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```sql
+SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-**Example**
+### Examples {#examples}
 
-The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
+Getting table names, containing the symbols sequence 'user' in their names:
 
 ``` sql
-SHOW TABLES FROM system LIKE '%co%' LIMIT 2
+SHOW TABLES FROM system LIKE '%user%'
 ```
+
+Result:
+
+``` text
+┌─name─────────────┐
+│ user_directories │
+│ users            │
+└──────────────────┘
+```
+
+Getting table names, containing sequence 'user' in their names, in the case insensitive manner:
+
+``` sql
+SHOW TABLES FROM system ILIKE '%USER%'
+```
+
+Result:
+
+``` text
+┌─name─────────────┐
+│ user_directories │
+│ users            │
+└──────────────────┘
+```
+
+Getting table names, not containing the symbol sequence 's' in their names:
+
+``` sql
+SHOW TABLES FROM system NOT LIKE '%s%'
+```
+
+Result:
+
+``` text
+┌─name─────────┐
+│ metric_log   │
+│ metric_log_0 │
+│ metric_log_1 │
+└──────────────┘
+```
+
+Getting the first two rows from table names:
+
+``` sql
+SHOW TABLES FROM system LIMIT 2
+```
+
+Result:
 
 ``` text
 ┌─name───────────────────────────┐
 │ aggregate_function_combinators │
-│ collations                     │
+│ asynchronous_metric_log        │
 └────────────────────────────────┘
 ```
+
+### See Also {#see-also}
+
+-   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -107,7 +231,7 @@ Shows privileges for a user.
 ### Syntax {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user]
+SHOW GRANTS [FOR user1 [, user2 ...]]
 ```
 
 If user is not specified, the query returns privileges for the current user.
@@ -121,7 +245,7 @@ Shows parameters that were used at a [user creation](../../sql-reference/stateme
 ### Syntax {#show-create-user-syntax}
 
 ``` sql
-SHOW CREATE USER [name | CURRENT_USER]
+SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ```
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
@@ -131,7 +255,7 @@ Shows parameters that were used at a [role creation](../../sql-reference/stateme
 ### Syntax {#show-create-role-syntax}
 
 ``` sql
-SHOW CREATE ROLE name
+SHOW CREATE ROLE name1 [, name2 ...]
 ```
 
 ## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
@@ -141,7 +265,7 @@ Shows parameters that were used at a [row policy creation](../../sql-reference/s
 ### Syntax {#show-create-row-policy-syntax}
 
 ``` sql
-SHOW CREATE [ROW] POLICY name ON [database.]table
+SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ```
 
 ## SHOW CREATE QUOTA {#show-create-quota-statement}
@@ -151,7 +275,7 @@ Shows parameters that were used at a [quota creation](../../sql-reference/statem
 ### Syntax {#show-create-quota-syntax}
 
 ``` sql
-SHOW CREATE QUOTA [name | CURRENT]
+SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ```
 
 ## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
@@ -161,7 +285,7 @@ Shows parameters that were used at a [settings profile creation](../../sql-refer
 ### Syntax {#show-create-settings-profile-syntax}
 
 ``` sql
-SHOW CREATE [SETTINGS] PROFILE name
+SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ```
 
 ## SHOW USERS {#show-users-statement}
@@ -183,7 +307,6 @@ Returns a list of [roles](../../operations/access-rights.md#role-management). To
 ``` sql
 SHOW [CURRENT|ENABLED] ROLES
 ```
-
 ## SHOW PROFILES {#show-profiles-statement}
 
 Returns a list of [setting profiles](../../operations/access-rights.md#settings-profiles-management). To view user accounts parameters, see the system table [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
@@ -223,5 +346,151 @@ Returns a [quota](../../operations/quotas.md) consumption for all users or for c
 ``` sql
 SHOW [CURRENT] QUOTA
 ```
+## SHOW ACCESS {#show-access-statement}
 
-[Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
+Shows all [users](../../operations/access-rights.md#user-account-management), [roles](../../operations/access-rights.md#role-management), [profiles](../../operations/access-rights.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
+
+### Syntax {#show-access-syntax}
+
+``` sql
+SHOW ACCESS
+```
+## SHOW CLUSTER(s) {#show-cluster-statement}
+
+Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
+
+!!! info "Note"
+    `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
+
+### Syntax {#show-cluster-syntax}
+
+``` sql
+SHOW CLUSTER '<name>'
+SWOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
+```
+### Examples 
+
+Query:
+
+``` sql
+SHOW CLUSTERS;
+```
+
+Result:
+
+```text
+┌─cluster──────────────────────────────────────┐
+│ test_cluster_two_shards                      │
+│ test_cluster_two_shards_internal_replication │
+│ test_cluster_two_shards_localhost            │
+│ test_shard_localhost                         │
+│ test_shard_localhost_secure                  │
+│ test_unavailable_shard                       │
+└──────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SHOW CLUSTERS LIKE 'test%' LIMIT 1;
+```
+
+Result:
+
+```text
+┌─cluster─────────────────┐
+│ test_cluster_two_shards │
+└─────────────────────────┘
+```
+
+Query:
+
+``` sql
+SHOW CLUSTER 'test_shard_localhost' FORMAT Vertical;
+```
+
+Result:
+
+```text
+Row 1:
+──────
+cluster:                 test_shard_localhost
+shard_num:               1
+shard_weight:            1
+replica_num:             1
+host_name:               localhost
+host_address:            127.0.0.1
+port:                    9000
+is_local:                1
+user:                    default
+default_database:
+errors_count:            0
+estimated_recovery_time: 0
+```
+
+## SHOW SETTINGS {#show-settings}
+
+Returns a list of system settings and their values. Selects data from the [system.settings](../../operations/system-tables/settings.md) table.
+
+**Syntax**
+
+```sql
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
+```
+
+**Clauses**
+
+`LIKE|ILIKE` allow to specify a matching pattern for the setting name. It can contain globs such as `%` or `_`. `LIKE` clause is case-sensitive, `ILIKE` — case insensitive.
+
+When the `CHANGED` clause is used, the query returns only settings changed from their default values.
+
+**Examples**
+
+Query with the `LIKE` clause:
+
+```sql
+SHOW SETTINGS LIKE 'send_timeout';
+```
+Result:
+
+```text
+┌─name─────────┬─type────┬─value─┐
+│ send_timeout │ Seconds │ 300   │
+└──────────────┴─────────┴───────┘
+```
+
+Query with the `ILIKE` clause:
+
+```sql
+SHOW SETTINGS ILIKE '%CONNECT_timeout%'
+```
+
+Result:
+
+```text
+┌─name────────────────────────────────────┬─type─────────┬─value─┐
+│ connect_timeout                         │ Seconds      │ 10    │
+│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
+│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
+└─────────────────────────────────────────┴──────────────┴───────┘
+```
+
+Query with the `CHANGED` clause:
+
+```sql
+SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
+```
+
+Result:
+
+```text
+┌─name─────────────┬─type───┬─value───────┐
+│ max_memory_usage │ UInt64 │ 10000000000 │
+└──────────────────┴────────┴─────────────┘
+```
+
+**See Also**
+
+-   [system.settings](../../operations/system-tables/settings.md) table
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/show/) <!--hide-->

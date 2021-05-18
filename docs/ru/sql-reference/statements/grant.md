@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: GRANT
+---
+
 # GRANT
 
 - Присваивает [привилегии](#grant-privileges) пользователям или ролям ClickHouse.
@@ -79,6 +84,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             - `ALTER RENAME COLUMN`
         - `ALTER INDEX`
             - `ALTER ORDER BY`
+            - `ALTER SAMPLE BY`			
             - `ALTER ADD INDEX`
             - `ALTER DROP INDEX`
             - `ALTER MATERIALIZE INDEX`
@@ -87,7 +93,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             - `ALTER ADD CONSTRAINT`
             - `ALTER DROP CONSTRAINT`
         - `ALTER TTL`
-        - `ALTER MATERIALIZE TTL`
+            - `ALTER MATERIALIZE TTL`
         - `ALTER SETTINGS`
         - `ALTER MOVE PARTITION`
         - `ALTER FETCH PARTITION`
@@ -98,9 +104,9 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 - [CREATE](#grant-create)
     - `CREATE DATABASE`
     - `CREATE TABLE`
+        - `CREATE TEMPORARY TABLE`
     - `CREATE VIEW`
     - `CREATE DICTIONARY`
-    - `CREATE TEMPORARY TABLE`
 - [DROP](#grant-drop)
     - `DROP DATABASE`
     - `DROP TABLE`
@@ -146,7 +152,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     - `SYSTEM RELOAD`
         - `SYSTEM RELOAD CONFIG`
         - `SYSTEM RELOAD DICTIONARY`
-        - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+            - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
     - `SYSTEM MERGES`
     - `SYSTEM TTL MERGES`
     - `SYSTEM FETCHES`
@@ -264,6 +270,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER RENAME COLUMN`. Уровень: `COLUMN`. Алиасы: `RENAME COLUMN`
         - `ALTER INDEX`. Уровень: `GROUP`. Алиасы: `INDEX`
             - `ALTER ORDER BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+            - `ALTER SAMPLE BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`			
             - `ALTER ADD INDEX`. Уровень: `TABLE`. Алиасы: `ADD INDEX`
             - `ALTER DROP INDEX`. Уровень: `TABLE`. Алиасы: `DROP INDEX`
             - `ALTER MATERIALIZE INDEX`. Уровень: `TABLE`. Алиасы: `MATERIALIZE INDEX`
@@ -272,7 +279,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER ADD CONSTRAINT`. Уровень: `TABLE`. Алиасы: `ADD CONSTRAINT`
             - `ALTER DROP CONSTRAINT`. Уровень: `TABLE`. Алиасы: `DROP CONSTRAINT`
         - `ALTER TTL`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY TTL`, `MODIFY TTL`
-        - `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Алиасы: `MATERIALIZE TTL`
+            - `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Алиасы: `MATERIALIZE TTL`
         - `ALTER SETTINGS`. Уровень: `TABLE`. Алиасы: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
         - `ALTER MOVE PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
         - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `FETCH PARTITION`
@@ -300,9 +307,9 @@ GRANT INSERT(x,y) ON db.table TO john
 - `CREATE`. Уровень: `GROUP`
     - `CREATE DATABASE`. Уровень: `DATABASE`
     - `CREATE TABLE`. Уровень: `TABLE`
+        - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
     - `CREATE VIEW`. Уровень: `VIEW`
     - `CREATE DICTIONARY`. Уровень: `DICTIONARY`
-    - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
 
 **Дополнительно**
 
@@ -400,7 +407,7 @@ GRANT INSERT(x,y) ON db.table TO john
     - `SYSTEM RELOAD`. Уровень: `GROUP`
         - `SYSTEM RELOAD CONFIG`. Уровень: `GLOBAL`. Алиасы: `RELOAD CONFIG`
         - `SYSTEM RELOAD DICTIONARY`. Уровень: `GLOBAL`. Алиасы: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
-        - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Уровень: `GLOBAL`. Алиасы: `RELOAD EMBEDDED DICTIONARIES`
+            - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Уровень: `GLOBAL`. Алиасы: `RELOAD EMBEDDED DICTIONARIES`
     - `SYSTEM MERGES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
     - `SYSTEM TTL MERGES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
     - `SYSTEM FETCHES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
@@ -476,4 +483,3 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/grant/) <!--hide-->

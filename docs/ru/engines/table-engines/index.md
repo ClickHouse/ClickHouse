@@ -1,3 +1,10 @@
+---
+toc_folder_title: "Движки таблиц"
+toc_priority: 26
+toc_title: "Введение"
+---
+
+
 # Движки таблиц {#table_engines}
 
 Движок таблицы (тип таблицы) определяет:
@@ -9,7 +16,7 @@
 -   Возможно ли многопоточное выполнение запроса.
 -   Параметры репликации данных.
 
-## Семейства движков {#semeistva-dvizhkov}
+## Семейства движков {#engine-families}
 
 ### MergeTree {#mergetree}
 
@@ -35,7 +42,7 @@
 -   [StripeLog](log-family/stripelog.md#stripelog)
 -   [Log](log-family/log.md#log)
 
-### Движки для интеграции {#dvizhki-dlia-integratsii}
+### Движки для интеграции {#integration-engines}
 
 Движки для связи с другими системами хранения и обработки данных.
 
@@ -45,8 +52,21 @@
 -   [MySQL](integrations/mysql.md#mysql)
 -   [ODBC](integrations/odbc.md#table-engine-odbc)
 -   [JDBC](integrations/jdbc.md#table-engine-jdbc)
+-   [S3](integrations/s3.md#table-engine-s3)
 
 ### Специальные движки {#spetsialnye-dvizhki}
+
+-   [ODBC](../../engines/table-engines/integrations/odbc.md)
+-   [JDBC](../../engines/table-engines/integrations/jdbc.md)
+-   [MySQL](../../engines/table-engines/integrations/mysql.md)
+-   [MongoDB](../../engines/table-engines/integrations/mongodb.md)
+-   [HDFS](../../engines/table-engines/integrations/hdfs.md)
+-   [Kafka](../../engines/table-engines/integrations/kafka.md)
+-   [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md)
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md)
+-   [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
+
+### Специальные движки {#special-engines}
 
 Движки семейства:
 
@@ -72,5 +92,3 @@
 Чтобы получить данные из виртуального столбца, необходимо указать его название в запросе `SELECT`. `SELECT *` не отображает данные из виртуальных столбцов.
 
 При создании таблицы со столбцом, имя которого совпадает с именем одного из виртуальных столбцов таблицы, виртуальный столбец становится недоступным. Не делайте так. Чтобы помочь избежать конфликтов, имена виртуальных столбцов обычно предваряются подчеркиванием.
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/) <!--hide-->

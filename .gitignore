@@ -27,6 +27,7 @@
 /docs/zh/single.md
 /docs/ja/single.md
 /docs/fa/single.md
+/docs/en/development/cmake-in-clickhouse.md
 
 # callgrind files
 callgrind.out.*
@@ -118,8 +119,28 @@ website/package-lock.json
 
 # clangd cache
 /.clangd
+/.cache
 
 /compile_commands.json
 
 # Toolchains
 /cmake/toolchain/*
+
+# ANTLR extension cache
+.antlr
+
+# ANTLR generated files
+/src/Parsers/New/*.interp
+/src/Parsers/New/*.tokens
+/src/Parsers/New/ClickHouseParserBaseVisitor.*
+
+# pytest-profiling
+/prof
+
+*.iml
+
+# data store
+/programs/server/data
+/programs/server/metadata
+/programs/server/store
+

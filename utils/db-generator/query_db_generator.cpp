@@ -1,7 +1,8 @@
 #include <map>
-#include <boost/algorithm/string.hpp>
 #include <cstdlib>
+#include <stdio.h>
 #include <iostream>
+#include <string>
 
 #include <pcg_random.hpp>
 #include <Core/Field.h>
@@ -15,7 +16,12 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <IO/WriteBufferFromString.h>
 
+#include <boost/algorithm/string.hpp>
+#include <boost/program_options.hpp>
+
+namespace po = boost::program_options;
 
 using ColumnType = uint32_t;
 using TableAndColumn = std::pair<std::string, std::string>;
@@ -50,9 +56,9 @@ std::string randomDate()
     int32_t year = rng() % 136 + 1970;
     int32_t month = rng() % 12 + 1;
     int32_t day = rng() % 12 + 1;
-    char ans[13];
-    sprintf(ans, "'%04u-%02u-%02u'", year, month, day);
-    return std::string(ans);
+    char answer[13];
+    sprintf(answer, "'%04u-%02u-%02u'", year, month, day);
+    return std::string(answer);
 }
 
 std::string randomDatetime()
@@ -63,9 +69,9 @@ std::string randomDatetime()
     int32_t hours = rng() % 24;
     int32_t minutes = rng() % 60;
     int32_t seconds = rng() % 60;
-    char ans[22];
+    char answer[22];
     sprintf(
-            ans,
+            answer,
             "'%04u-%02u-%02u %02u:%02u:%02u'",
             year,
             month,
@@ -73,7 +79,7 @@ std::string randomDatetime()
             hours,
             minutes,
             seconds);
-    return std::string(ans);
+    return std::string(answer);
 }
 TableAndColumn get_table_a_column(const std::string & c)
 {
@@ -617,7 +623,7 @@ FuncRet arrayJoinFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
         }
         for (const auto & indent : indents)
         {
@@ -649,7 +655,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
             {
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -729,7 +735,7 @@ FuncRet arrayFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -779,7 +785,7 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -823,9 +829,9 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         FuncRet r(ret_type, "");
         if (no_indent)
         {
-            std::ostringstream ss;
-            formatAST(*ch, ss);
-            r.value = ss.str();
+            DB::WriteBufferFromOwnString buf;
+            formatAST(*ch, buf);
+            r.value = buf.str();
         }
         return r;
     }
@@ -843,7 +849,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
@@ -900,7 +906,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (ident)
             {
                 no_indent = false;
-                indents.insert(ident->name);
+                indents.insert(ident->name());
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
@@ -985,10 +991,10 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             if (no_indent)
             {
-                std::ostringstream ss;
-                formatAST(*ch, ss);
+                DB::WriteBufferFromOwnString buf;
+                formatAST(*ch, buf);
                 auto r = func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
-                r.value = ss.str();
+                r.value = buf.str();
                 return r;
             }
             return func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
@@ -998,11 +1004,11 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             if (no_indent)
             {
-                std::ostringstream ss;
-                formatAST(*ch, ss);
+                DB::WriteBufferFromOwnString buf;
+                formatAST(*ch, buf);
                 return FuncRet(
                         func_to_param_type[boost::algorithm::to_lower_copy(x->name)],
-                        ss.str());
+                        buf.str());
             }
             return FuncRet(
                     func_to_param_type[boost::algorithm::to_lower_copy(x->name)],
@@ -1041,7 +1047,7 @@ std::set<std::string> getIndent(DB::ASTPtr ch)
     std::set<std::string> ret = {};
     auto x = std::dynamic_pointer_cast<DB::ASTIdentifier>(ch);
     if (x)
-        ret.insert(x->name);
+        ret.insert(x->name());
     for (const auto & child : (*ch).children)
     {
         auto child_ind = getIndent(child);
@@ -1249,10 +1255,10 @@ void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
 
 TableList getTablesFromSelect(std::vector<std::string> queries)
 {
-    DB::ParserQueryWithOutput parser;
     TableList result;
     for (std::string & query : queries)
     {
+        DB::ParserQueryWithOutput parser(query.data() + query.size());
         DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
         for (auto & select : getSelect(ast))
         {
@@ -1264,8 +1270,43 @@ TableList getTablesFromSelect(std::vector<std::string> queries)
     return result;
 }
 
-int main(int, char **)
+int main(int argc, const char *argv[])
 {
+    try
+    {
+        po::options_description desc("Allowed options");
+        desc.add_options()
+            ("help,h", "Display greeting and allowed options.")
+            ("input,i", po::value<std::string>(), "Input filename.")
+            ("output,o", po::value<std::string>(), "Output filename.");
+
+        po::variables_map vm;
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+        po::notify(vm);
+
+        if (vm.count("help") || vm.count("h"))
+        {
+            std::cout << "Hello! It is datasets generator for ClickHouse's queries." << std::endl;
+            std::cout << "Put some query as an input and it will produce queries for table creating and filling." << std::endl;
+            std::cout << "After that your query could be executed on this tables." << std::endl;
+            std::cout << desc << std::endl;
+            return 1;
+        }
+        if (vm.count("input"))
+            if (!freopen(vm["input"].as<std::string>().c_str(), "r", stdin))
+                std::cout << "Error while input." << std::endl;
+        if (vm.count("output"))
+            if (!freopen(vm["output"].as<std::string>().c_str(), "w", stdout))
+                std::cout << "Error while output." << std::endl;
+        if (vm.empty())
+            std::cout << "Copy your queries (with semicolons) here, press Enter and Ctrl+D." << std::endl;
+    }
+    catch (...)
+    {
+        std::cerr << "Got error while parse command line arguments: " << DB::getCurrentExceptionMessage(true) << std::endl;
+        throw;
+    }
+
     handlers["plus"] = arithmeticFunc;
     handlers["minus"] = arithmeticFunc;
     handlers["like"] = likeFunc;

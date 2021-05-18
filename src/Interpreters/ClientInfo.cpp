@@ -49,15 +49,44 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
     {
         writeBinary(UInt8(http_method), out);
         writeBinary(http_user_agent, out);
+
+        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO)
+            writeBinary(forwarded_for, out);
+
+        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
+            writeBinary(http_referer, out);
     }
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
         writeBinary(quota_key, out);
 
+    if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH)
+        writeVarUInt(distributed_depth, out);
+
     if (interface == Interface::TCP)
     {
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             writeVarUInt(client_version_patch, out);
+    }
+
+    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
+    {
+        if (client_trace_context.trace_id != UUID())
+        {
+            // Have OpenTelemetry header.
+            writeBinary(uint8_t(1), out);
+            // No point writing these numbers with variable length, because they
+            // are random and will probably require the full length anyway.
+            writeBinary(client_trace_context.trace_id, out);
+            writeBinary(client_trace_context.span_id, out);
+            writeBinary(client_trace_context.tracestate, out);
+            writeBinary(client_trace_context.trace_flags, out);
+        }
+        else
+        {
+            // Don't have OpenTelemetry header.
+            writeBinary(uint8_t(0), out);
+        }
     }
 }
 
@@ -100,10 +129,19 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         http_method = HTTPMethod(read_http_method);
 
         readBinary(http_user_agent, in);
+
+        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO)
+            readBinary(forwarded_for, in);
+
+        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
+            readBinary(http_referer, in);
     }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
         readBinary(quota_key, in);
+
+    if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH)
+        readVarUInt(distributed_depth, in);
 
     if (interface == Interface::TCP)
     {
@@ -111,6 +149,19 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
             readVarUInt(client_version_patch, in);
         else
             client_version_patch = client_tcp_protocol_version;
+    }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
+    {
+        uint8_t have_trace_id = 0;
+        readBinary(have_trace_id, in);
+        if (have_trace_id)
+        {
+            readBinary(client_trace_context.trace_id, in);
+            readBinary(client_trace_context.span_id, in);
+            readBinary(client_trace_context.tracestate, in);
+            readBinary(client_trace_context.trace_flags, in);
+        }
     }
 }
 

@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -31,7 +37,7 @@ class FunctionH3EdgeLengthM : public IFunction
 public:
     static constexpr auto name = "h3EdgeLengthM";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3EdgeLengthM>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeLengthM>(); }
 
     std::string getName() const override { return name; }
 
@@ -49,9 +55,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block[arguments[0]].column.get();
+        const auto * col_hindex = arguments[0].column.get();
 
         auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
@@ -69,7 +75,7 @@ public:
             dst_data[row] = res;
         }
 
-        block[result].column = std::move(dst);
+        return dst;
     }
 };
 
@@ -81,3 +87,5 @@ void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
 }
 
 }
+
+#endif

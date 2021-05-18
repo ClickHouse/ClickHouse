@@ -34,7 +34,7 @@ struct BitTestImpl
 };
 
 struct NameBitTest { static constexpr auto name = "bitTest"; };
-using FunctionBitTest = BinaryArithmeticOverloadResolver<BitTestImpl, NameBitTest>;
+using FunctionBitTest = BinaryArithmeticOverloadResolver<BitTestImpl, NameBitTest, true, false>;
 
 }
 

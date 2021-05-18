@@ -156,6 +156,9 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
 {
     const String & setting_name = change.name;
 
+    if (setting_name == "profile")
+        return true;
+
     bool cannot_cast;
     auto cast_value = [&](const Field & x) -> Field
     {

@@ -1,6 +1,6 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/SymbolIndex.h>
@@ -18,7 +18,7 @@ class FunctionBuildId : public IFunction
 {
 public:
     static constexpr auto name = "buildId";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBuildId>();
     }
@@ -38,9 +38,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block[result].column = DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance().getBuildIDHex());
+        return DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance()->getBuildIDHex());
     }
 };
 

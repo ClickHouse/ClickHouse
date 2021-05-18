@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -52,7 +52,7 @@ public:
     /// It is needed to perform type analysis without creation of set.
     static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionIn>();
     }
@@ -80,16 +80,13 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (ignore_set)
-        {
-            block[result].column = ColumnUInt8::create(input_rows_count, 0u);
-            return;
-        }
+            return ColumnUInt8::create(input_rows_count, 0u);
 
         /// Second argument must be ColumnSet.
-        ColumnPtr column_set_ptr = block[arguments[1]].column;
+        ColumnPtr column_set_ptr = arguments[1].column;
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
@@ -97,10 +94,10 @@ public:
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        DB::Block block_of_key_columns;
+        DB::Block columns_of_key_columns;
 
         /// First argument may be a tuple or a single column.
-        const ColumnWithTypeAndName & left_arg = block[arguments[0]];
+        const ColumnWithTypeAndName & left_arg = arguments[0];
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(left_arg.column.get());
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
@@ -120,12 +117,12 @@ public:
             const DataTypes & tuple_types = type_tuple->getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
-                block_of_key_columns.insert({ tuple_columns[i], tuple_types[i], "" });
+                columns_of_key_columns.insert({ tuple_columns[i], tuple_types[i], "" });
         }
         else
-            block_of_key_columns.insert(left_arg);
+            columns_of_key_columns.insert(left_arg);
 
-        block[result].column = set->execute(block_of_key_columns, negative);
+        return set->execute(columns_of_key_columns, negative);
     }
 };
 

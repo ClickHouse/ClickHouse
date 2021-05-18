@@ -15,9 +15,13 @@ currently being supported with security updates:
 | 20.4   | :x: |
 | 20.5   | :x: |
 | 20.6   | :x: |
-| 20.7   | :white_check_mark: |
+| 20.7   | :x: |
 | 20.8   | :white_check_mark: |
-| 20.9   | :white_check_mark: |
+| 20.9   | :x: |
+| 20.10  | :x: |
+| 20.11  | :white_check_mark: |
+| 20.12  | :white_check_mark: |
+| 21.1   | :white_check_mark: |
 
 ## Reporting a Vulnerability
 

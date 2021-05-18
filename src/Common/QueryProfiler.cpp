@@ -176,11 +176,12 @@ template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCpu>;
 
 QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period)
-    : QueryProfilerBase(thread_id, CLOCK_REALTIME, period, SIGUSR1)
+    : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
 {}
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
@@ -190,6 +191,7 @@ QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
 
 void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::CPU, sig, info, context);
 }
 

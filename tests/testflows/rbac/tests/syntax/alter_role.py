@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("alter role")
@@ -38,13 +38,13 @@ def feature(self, node="clickhouse1"):
         with Given(f"I ensure that role {role} does not exist"):
             node.query(f"DROP ROLE IF EXISTS {role}")
 
-    with Scenario("I alter role with no options", flags=TE, requirements=[
+    with Scenario("I alter role with no options", requirements=[
             RQ_SRS_006_RBAC_Role_Alter("1.0")]):
         with setup("role0"):
             with When("I alter role"):
                 node.query("ALTER ROLE role0")
 
-    with Scenario("I alter role that does not exist, throws exception", flags=TE, requirements=[
+    with Scenario("I alter role that does not exist, throws exception", requirements=[
             RQ_SRS_006_RBAC_Role_Alter("1.0")]):
         role = "role0"
         cleanup_role(role)
@@ -53,13 +53,13 @@ def feature(self, node="clickhouse1"):
             node.query(f"ALTER ROLE {role}", exitcode=exitcode, message=message)
         del role
 
-    with Scenario("I alter role if exists, role does exist", flags=TE, requirements=[
+    with Scenario("I alter role if exists, role does exist", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_IfExists("1.0")]):
         with setup("role1"):
             with When("I alter role with if exists"):
                 node.query("ALTER ROLE IF EXISTS role1")
 
-    with Scenario("I alter role if exists, role does not exist", flags=TE, requirements=[
+    with Scenario("I alter role if exists, role does not exist", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_IfExists("1.0")]):
         role = "role0"
         cleanup_role(role)
@@ -67,7 +67,7 @@ def feature(self, node="clickhouse1"):
             node.query(f"ALTER ROLE IF EXISTS {role}")
         del role
 
-    with Scenario("I alter role on cluster", flags=TE, requirements=[
+    with Scenario("I alter role on cluster", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Cluster("1.0")]):
         try:
             with Given("I have a role on a cluster"):
@@ -82,13 +82,13 @@ def feature(self, node="clickhouse1"):
             with Finally("I drop the role"):
                 node.query("DROP ROLE IF EXISTS role1,role2 ON CLUSTER sharded_cluster")
 
-    with Scenario("I alter role on nonexistent cluster, throws exception", flags=TE, requirements=[
+    with Scenario("I alter role on nonexistent cluster, throws exception", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Cluster("1.0")]):
         with When("I run alter role on a cluster"):
             exitcode, message = errors.cluster_not_found("fake_cluster")
             node.query("ALTER ROLE role1 ON CLUSTER fake_cluster", exitcode=exitcode, message=message)
 
-    with Scenario("I alter role to rename, new name is available", flags=TE, requirements=[
+    with Scenario("I alter role to rename, new name is available", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Rename("1.0")]):
         with setup("role2"):
             new_role = "role3"
@@ -102,7 +102,7 @@ def feature(self, node="clickhouse1"):
                     node.query(f"DROP ROLE IF EXISTS {new_role}")
             del new_role
 
-    with Scenario("I alter role to rename, new name is not available, throws exception", flags=TE, requirements=[
+    with Scenario("I alter role to rename, new name is not available, throws exception", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Rename("1.0")]):
         with setup("role2a"):
             new_role = "role3a"
@@ -117,13 +117,13 @@ def feature(self, node="clickhouse1"):
                     node.query(f"DROP ROLE IF EXISTS {new_role}")
             del new_role
 
-    with Scenario("I alter role settings profile", flags=TE, requirements=[
+    with Scenario("I alter role settings profile", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role4"):
             with When("I alter role with settings profile"):
                 node.query("ALTER ROLE role4 SETTINGS PROFILE default, max_memory_usage=10000000 READONLY")
 
-    with Scenario("I alter role settings profile, profile does not exist, throws exception", flags=TE, requirements=[
+    with Scenario("I alter role settings profile, profile does not exist, throws exception", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role4a"):
             with Given("I ensure profile profile0 does not exist"):
@@ -132,20 +132,20 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.settings_profile_not_found_in_disk("profile0")
                 node.query("ALTER ROLE role4a SETTINGS PROFILE profile0", exitcode=exitcode, message=message)
 
-    with Scenario("I alter role settings profile multiple", flags=TE, requirements=[
+    with Scenario("I alter role settings profile multiple", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role4b", profile="profile0"):
             with When("I alter role with multiple profiles"):
                 node.query("ALTER ROLE role4b SETTINGS PROFILE default, PROFILE profile0, \
                     max_memory_usage=10000000 READONLY")
 
-    with Scenario("I alter role settings without profile", flags=TE, requirements=[
+    with Scenario("I alter role settings without profile", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role5"):
             with When("I alter role with settings and no profile"):
                 node.query("ALTER ROLE role5 SETTINGS max_memory_usage=10000000 READONLY")
 
-    with Scenario("I alter role settings, variable does not exist, throws exception", flags=TE, requirements=[
+    with Scenario("I alter role settings, variable does not exist, throws exception", requirements=[
                 RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role5a"):
             with When("I alter role using settings and nonexistent value"):
@@ -153,33 +153,33 @@ def feature(self, node="clickhouse1"):
                 node.query("ALTER ROLE role5a SETTINGS fake_setting = 100000001", exitcode=exitcode, message=message)
 
 
-    with Scenario("I alter role settings without profile multiple", flags=TE, requirements=[
+    with Scenario("I alter role settings without profile multiple", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role6"):
             with When("I alter role with multiple settings and no profile"):
                 node.query("ALTER ROLE role6 SETTINGS max_memory_usage=10000000 READONLY, \
                     max_rows_to_read MIN 20 MAX 25")
 
-    with Scenario("I alter role settings with multiple profiles multiple variables", flags=TE, requirements=[
+    with Scenario("I alter role settings with multiple profiles multiple variables", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role7", profile="profile1"):
             with When("I alter role with multiple settings and profiles"):
                 node.query("ALTER ROLE role7 SETTINGS PROFILE default, PROFILE profile1, \
                     max_memory_usage=10000000 READONLY, max_rows_to_read MIN 20 MAX 25")
 
-    with Scenario("I alter role settings readonly", flags=TE, requirements=[
+    with Scenario("I alter role settings readonly", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role8"):
             with When("I alter role with readonly"):
                 node.query("ALTER ROLE role8 SETTINGS max_memory_usage READONLY")
 
-    with Scenario("I alter role settings writable", flags=TE, requirements=[
+    with Scenario("I alter role settings writable", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role9"):
             with When("I alter role with writable"):
                 node.query("ALTER ROLE role9 SETTINGS max_memory_usage WRITABLE")
 
-    with Scenario("I alter role settings min, with and without = sign", flags=TE, requirements=[
+    with Scenario("I alter role settings min, with and without = sign", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role10"):
             with When("I set min, no equals"):
@@ -187,7 +187,7 @@ def feature(self, node="clickhouse1"):
             with When("I set min, yes equals"):
                 node.query("ALTER ROLE role10 SETTINGS max_memory_usage MIN = 200")
 
-    with Scenario("I alter role settings max, with and without = sign", flags=TE, requirements=[
+    with Scenario("I alter role settings max, with and without = sign", requirements=[
             RQ_SRS_006_RBAC_Role_Alter_Settings("1.0")]):
         with setup("role11"):
             with When("I set max, no equals"):

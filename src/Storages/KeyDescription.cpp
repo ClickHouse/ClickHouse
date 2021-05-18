@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
@@ -25,7 +27,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , additional_column(other.additional_column)
 {
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
 }
 
 KeyDescription & KeyDescription::operator=(const KeyDescription & other)
@@ -45,7 +47,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
 
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
     else
         expression.reset();
 
@@ -64,14 +66,14 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
-    const Context & context)
+    ContextPtr context)
 {
     *this = getSortingKeyFromAST(new_ast, columns, context, additional_column);
 }
 
 void KeyDescription::recalculateWithNewColumns(
     const ColumnsDescription & new_columns,
-    const Context & context)
+    ContextPtr context)
 {
     *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
 }
@@ -79,7 +81,7 @@ void KeyDescription::recalculateWithNewColumns(
 KeyDescription KeyDescription::getKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    const Context & context)
+    ContextPtr context)
 {
     return getSortingKeyFromAST(definition_ast, columns, context, {});
 }
@@ -87,7 +89,7 @@ KeyDescription KeyDescription::getKeyFromAST(
 KeyDescription KeyDescription::getSortingKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    const Context & context,
+    ContextPtr context,
     const std::optional<String> & additional_column)
 {
     KeyDescription result;
@@ -115,7 +117,13 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    {
         result.data_types.emplace_back(result.sample_block.getByPosition(i).type);
+        if (!result.data_types.back()->isComparable())
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
+                            "Column {} with type {} is not allowed in key expression, it's not comparable",
+                            backQuote(result.sample_block.getByPosition(i).name), result.data_types.back()->getName());
+    }
 
     return result;
 }

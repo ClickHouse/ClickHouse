@@ -46,24 +46,41 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     if (&inside_main)
         assert(inside_main);
 
-    size_t i = 0;
-    time_t start_of_day = 0;
-
     cctz::time_zone cctz_time_zone;
     if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
         throw Poco::Exception("Cannot load time zone " + time_zone_);
 
-    cctz::time_zone::absolute_lookup start_of_epoch_lookup = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(start_of_day));
-    offset_at_start_of_epoch = start_of_epoch_lookup.offset;
-    offset_is_whole_number_of_hours_everytime = true;
+    constexpr cctz::civil_day epoch{1970, 1, 1};
+    constexpr cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
+    time_t start_of_day;
 
-    cctz::civil_day date{1970, 1, 1};
+    /// Note: it's validated against all timezones in the system.
+    static_assert((epoch - lut_start) == daynum_offset_epoch);
 
+    offset_at_start_of_epoch = cctz_time_zone.lookup(cctz_time_zone.lookup(epoch).pre).offset;
+    offset_at_start_of_lut = cctz_time_zone.lookup(cctz_time_zone.lookup(lut_start).pre).offset;
+    offset_is_whole_number_of_hours_during_epoch = true;
+
+    cctz::civil_day date = lut_start;
+
+    UInt32 i = 0;
     do
     {
         cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
 
-        start_of_day = std::chrono::system_clock::to_time_t(lookup.pre);    /// Ambiguity is possible.
+        /// Ambiguity is possible if time was changed backwards at the midnight
+        /// or after midnight time has been changed back to midnight, for example one hour backwards at 01:00
+        /// or after midnight time has been changed to the previous day, for example two hours backwards at 01:00
+        /// Then midnight appears twice. Usually time change happens exactly at 00:00 or 01:00.
+
+        /// If transition did not involve previous day, we should use the first midnight as the start of the day,
+        /// otherwise it's better to use the second midnight.
+
+        std::chrono::time_point start_of_day_time_point = lookup.trans < lookup.post
+            ? lookup.post /* Second midnight appears after transition, so there was a piece of previous day after transition */
+            : lookup.pre;
+
+        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point);
 
         Values & values = lut[i];
         values.year = date.year();
@@ -72,7 +89,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
 
-        assert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR);
+        assert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
         assert(values.month >= 1 && values.month <= 12);
         assert(values.day_of_month >= 1 && values.day_of_month <= 31);
         assert(values.day_of_week >= 1 && values.day_of_week <= 7);
@@ -85,50 +102,42 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         else
             values.days_in_month = i != 0 ? lut[i - 1].days_in_month : 31;
 
-        values.time_at_offset_change = 0;
-        values.amount_of_offset_change = 0;
+        values.time_at_offset_change_value = 0;
+        values.amount_of_offset_change_value = 0;
 
-        if (start_of_day % 3600)
-            offset_is_whole_number_of_hours_everytime = false;
+        if (offset_is_whole_number_of_hours_during_epoch && start_of_day > 0 && start_of_day % 3600)
+            offset_is_whole_number_of_hours_during_epoch = false;
 
-        /// If UTC offset was changed in previous day.
-        if (i != 0)
+        /// If UTC offset was changed this day.
+        /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
+        cctz::time_zone::civil_transition transition{};
+        if (cctz_time_zone.next_transition(start_of_day_time_point - std::chrono::seconds(1), &transition)
+            && (cctz::civil_day(transition.from) == date || cctz::civil_day(transition.to) == date)
+            && transition.from != transition.to)
         {
-            auto amount_of_offset_change_at_prev_day = 86400 - (lut[i].date - lut[i - 1].date);
-            if (amount_of_offset_change_at_prev_day)
-            {
-                lut[i - 1].amount_of_offset_change = amount_of_offset_change_at_prev_day;
+            values.time_at_offset_change_value = (transition.from - cctz::civil_second(date)) / Values::OffsetChangeFactor;
+            values.amount_of_offset_change_value = (transition.to - transition.from) / Values::OffsetChangeFactor;
 
-                const auto utc_offset_at_beginning_of_day = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(lut[i - 1].date)).offset;
+//            std::cerr << time_zone << ", " << date << ": change from " << transition.from << " to " << transition.to << "\n";
+//            std::cerr << time_zone << ", " << date << ": change at " << values.time_at_offset_change() << " with " << values.amount_of_offset_change() << "\n";
 
-                /// Find a time (timestamp offset from beginning of day),
-                ///  when UTC offset was changed. Search is performed with 15-minute granularity, assuming it is enough.
+            /// We don't support too large changes.
+            if (values.amount_of_offset_change_value > 24 * 4)
+                values.amount_of_offset_change_value = 24 * 4;
+            else if (values.amount_of_offset_change_value < -24 * 4)
+                values.amount_of_offset_change_value = -24 * 4;
 
-                time_t time_at_offset_change = 900;
-                while (time_at_offset_change < 86400)
-                {
-                    auto utc_offset_at_current_time = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(
-                        lut[i - 1].date + time_at_offset_change)).offset;
-
-                    if (utc_offset_at_current_time != utc_offset_at_beginning_of_day)
-                        break;
-
-                    time_at_offset_change += 900;
-                }
-
-                lut[i - 1].time_at_offset_change = time_at_offset_change;
-
-                /// We doesn't support cases when time change results in switching to previous day.
-                if (static_cast<int>(lut[i - 1].time_at_offset_change) + static_cast<int>(lut[i - 1].amount_of_offset_change) < 0)
-                    lut[i - 1].time_at_offset_change = -lut[i - 1].amount_of_offset_change;
-            }
+            /// We don't support cases when time change results in switching to previous day.
+            /// Shift the point of time change later.
+            if (values.time_at_offset_change_value + values.amount_of_offset_change_value < 0)
+                values.time_at_offset_change_value = -values.amount_of_offset_change_value;
         }
 
         /// Going to next day.
         ++date;
         ++i;
     }
-    while (start_of_day <= DATE_LUT_MAX && i <= DATE_LUT_MAX_DAY_NUM);
+    while (i < DATE_LUT_SIZE && lut[i - 1].year <= DATE_LUT_MAX_YEAR);
 
     /// Fill excessive part of lookup table. This is needed only to simplify handling of overflow cases.
     while (i < DATE_LUT_SIZE)

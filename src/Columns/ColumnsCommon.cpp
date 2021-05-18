@@ -12,7 +12,58 @@
 namespace DB
 {
 
+#if defined(__SSE2__) && defined(__POPCNT__)
+/// Transform 64-byte mask to 64-bit mask.
+static UInt64 toBits64(const Int8 * bytes64)
+{
+    static const __m128i zero16 = _mm_setzero_si128();
+    UInt64 res =
+        static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16)))
+        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 16)), zero16))) << 16)
+        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16))) << 32)
+        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48);
+
+    return ~res;
+}
+#endif
+
+size_t countBytesInFilter(const UInt8 * filt, size_t sz)
+{
+    size_t count = 0;
+
+    /** NOTE: In theory, `filt` should only contain zeros and ones.
+      * But, just in case, here the condition > 0 (to signed bytes) is used.
+      * It would be better to use != 0, then this does not allow SSE2.
+      */
+
+    const Int8 * pos = reinterpret_cast<const Int8 *>(filt);
+    const Int8 * end = pos + sz;
+
+#if defined(__SSE2__) && defined(__POPCNT__)
+    const Int8 * end64 = pos + sz / 64 * 64;
+
+    for (; pos < end64; pos += 64)
+        count += __builtin_popcountll(toBits64(pos));
+
+    /// TODO Add duff device for tail?
+#endif
+
+    for (; pos < end; ++pos)
+        count += *pos != 0;
+
+    return count;
+}
+
 size_t countBytesInFilter(const IColumn::Filter & filt)
+{
+    return countBytesInFilter(filt.data(), filt.size());
+}
+
+size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map)
 {
     size_t count = 0;
 
@@ -22,32 +73,20 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
       */
 
     const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data());
+    const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map);
     const Int8 * end = pos + filt.size();
 
 #if defined(__SSE2__) && defined(__POPCNT__)
-    const __m128i zero16 = _mm_setzero_si128();
     const Int8 * end64 = pos + filt.size() / 64 * 64;
 
-    for (; pos < end64; pos += 64)
-        count += __builtin_popcountll(
-            static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
-                zero16)))
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 16)),
-                zero16))) << 16)
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 32)),
-                zero16))) << 32)
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
-                zero16))) << 48));
+    for (; pos < end64; pos += 64, pos2 += 64)
+        count += __builtin_popcountll(toBits64(pos) & ~toBits64(pos2));
 
-    /// TODO Add duff device for tail?
+        /// TODO Add duff device for tail?
 #endif
 
     for (; pos < end; ++pos)
-        count += *pos > 0;
+        count += (*pos & ~*pos2) != 0;
 
     return count;
 }
@@ -197,9 +236,10 @@ namespace
 
         while (filt_pos < filt_end_aligned)
         {
-            const auto mask = _mm_movemask_epi8(_mm_cmpgt_epi8(
+            UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
                 zero_vec));
+            mask = ~mask;
 
             if (mask == 0)
             {

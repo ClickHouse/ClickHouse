@@ -6,6 +6,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -43,6 +44,7 @@ ASTPtr ASTSelectQuery::clone() const
     CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::HAVING);
+    CLONE(Expression::WINDOW);
     CLONE(Expression::ORDER_BY);
     CLONE(Expression::LIMIT_BY_OFFSET);
     CLONE(Expression::LIMIT_BY_LENGTH);
@@ -133,6 +135,13 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "HAVING " << (s.hilite ? hilite_none : "");
         having()->formatImpl(s, state, frame);
+    }
+
+    if (window())
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str <<
+            "WINDOW" << (s.hilite ? hilite_none : "");
+        window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (orderBy())
@@ -301,10 +310,11 @@ bool ASTSelectQuery::final() const
 
 bool ASTSelectQuery::withFill() const
 {
-    if (!orderBy())
+    const ASTPtr order_by = orderBy();
+    if (!order_by)
         return false;
 
-    for (const auto & order_expression_element : orderBy()->children)
+    for (const auto & order_expression_element : order_by->children)
         if (order_expression_element->as<ASTOrderByElement &>().with_fill)
             return true;
 

@@ -17,6 +17,7 @@ int main(int argc, char ** argv)
                 "addresses of ZooKeeper instances, comma separated. Example: example01e.yandex.ru:2181")
             ("path,p", boost::program_options::value<std::string>()->default_value("/"),
                 "where to start")
+            ("ctime,c", "print node ctime")
         ;
 
         boost::program_options::variables_map options;
@@ -30,6 +31,8 @@ int main(int argc, char ** argv)
             return 1;
         }
 
+        bool dump_ctime = options.count("ctime");
+
         zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(options.at("address").as<std::string>());
 
         std::string initial_path = options.at("path").as<std::string>();
@@ -40,7 +43,7 @@ int main(int argc, char ** argv)
         size_t num_reconnects = 0;
         constexpr size_t max_reconnects = 100;
 
-        auto ensureSession = [&]
+        auto ensure_session = [&]
         {
             if (zookeeper->expired())
             {
@@ -70,7 +73,7 @@ int main(int argc, char ** argv)
                 else if (Coordination::isHardwareError(e.code))
                 {
                     /// Reinitialize the session and move the node to the end of the queue for later retry.
-                    if (!ensureSession())
+                    if (!ensure_session())
                         throw;
                     list_futures.emplace_back(it->first, zookeeper->asyncGetChildren(it->first));
                     continue;
@@ -79,13 +82,16 @@ int main(int argc, char ** argv)
                     throw;
             }
 
-            std::cout << it->first << '\t' << response.stat.numChildren << '\t' << response.stat.dataLength << '\n';
+            std::cout << it->first << '\t' << response.stat.numChildren << '\t' << response.stat.dataLength;
+            if (dump_ctime)
+                std::cout << '\t' << response.stat.ctime;
+            std::cout << '\n';
 
             for (const auto & name : response.names)
             {
                 std::string child_path = it->first == "/" ? it->first + name : it->first + '/' + name;
 
-                ensureSession();
+                ensure_session();
                 list_futures.emplace_back(child_path, zookeeper->asyncGetChildren(child_path));
             }
         }

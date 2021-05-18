@@ -14,8 +14,8 @@ namespace DB
   * This name will be parsed as an expression with an operator minus - not at all what you need.
   * Therefore, consider this case separately.
   */
-String getClusterName(const IAST & node);
+std::string getClusterName(const IAST & node);
 
-String getClusterNameAndMakeLiteral(ASTPtr & node);
+std::string getClusterNameAndMakeLiteral(ASTPtr & node);
 
 }

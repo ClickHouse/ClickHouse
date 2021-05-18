@@ -89,4 +89,12 @@ void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
     writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
 }
 
+void writePointerHex(const void * ptr, WriteBuffer & buf)
+{
+    writeString("0x", buf);
+    char hex_str[2 * sizeof(ptr)];
+    writeHexUIntLowercase(reinterpret_cast<uintptr_t>(ptr), hex_str);
+    buf.write(hex_str, 2 * sizeof(ptr));
+}
+
 }

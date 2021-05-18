@@ -4,6 +4,7 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 
@@ -12,29 +13,7 @@ namespace DB
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
     if (auto * node_select = ast->as<ASTSelectQuery>())
-    {
-        std::optional<Data> new_data;
-        if (auto with = node_select->with())
-        {
-            for (auto & child : with->children)
-                visit(child, data);
-            for (auto & child : with->children)
-            {
-                if (auto * ast_with_elem = child->as<ASTWithElement>())
-                {
-                    if (!new_data)
-                        new_data = data;
-                    new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
-                }
-            }
-        }
-
-        for (auto & child : node_select->children)
-        {
-            if (child != node_select->with())
-                visit(child, new_data ? *new_data : data);
-        }
-    }
+        visit(*node_select, data);
     else
     {
         for (auto & child : ast->children)
@@ -44,6 +23,36 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
         else if (auto * node_table = ast->as<ASTTableExpression>())
             visit(*node_table, data);
     }
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
+{
+    std::optional<Data> new_data;
+    if (auto with = ast.with())
+    {
+        for (auto & child : with->children)
+        {
+            visit(child, new_data ? *new_data : data);
+            if (auto * ast_with_elem = child->as<ASTWithElement>())
+            {
+                if (!new_data)
+                    new_data = data;
+                new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+            }
+        }
+    }
+
+    for (auto & child : ast.children)
+    {
+        if (child != ast.with())
+            visit(child, new_data ? *new_data : data);
+    }
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & ast, const Data & data)
+{
+    for (auto & child : ast.children)
+        visit(child, data);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & data)
@@ -56,10 +65,13 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
             auto subquery_it = data.subqueries.find(table_id.table_name);
             if (subquery_it != data.subqueries.end())
             {
+                auto old_alias = table.database_and_table_name->tryGetAlias();
                 table.children.clear();
                 table.database_and_table_name.reset();
                 table.subquery = subquery_it->second->clone();
-                dynamic_cast<ASTWithAlias &>(*table.subquery).alias = table_id.table_name;
+                table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
+                if (!old_alias.empty())
+                    table.subquery->setAlias(old_alias);
                 table.children.emplace_back(table.subquery);
             }
         }
@@ -79,8 +91,11 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 auto subquery_it = data.subqueries.find(table_id.table_name);
                 if (subquery_it != data.subqueries.end())
                 {
+                    auto old_alias = func.arguments->children[1]->tryGetAlias();
                     func.arguments->children[1] = subquery_it->second->clone();
-                    dynamic_cast<ASTWithAlias &>(*func.arguments->children[1]).alias = table_id.table_name;
+                    func.arguments->children[1]->as<ASTSubquery &>().cte_name = table_id.table_name;
+                    if (!old_alias.empty())
+                        func.arguments->children[1]->setAlias(old_alias);
                 }
             }
         }

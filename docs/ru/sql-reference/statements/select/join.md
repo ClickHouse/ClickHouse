@@ -1,3 +1,7 @@
+---
+toc_title: JOIN
+---
+
 # Секция JOIN {#select-join}
 
 Join создаёт новую таблицу путем объединения столбцов из одной или нескольких таблиц с использованием общих для каждой из них значений. Это обычная операция в базах данных с поддержкой SQL, которая соответствует join из [реляционной алгебры](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators). Частный случай соединения одной таблицы часто называют «self-join».
@@ -35,7 +39,7 @@ FROM <left_table>
 ## Настройки {#join-settings}
 
 !!! note "Примечание"
-    Значение строгости по умолчанию может быть переопределено с помощью настройки [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
+    Значение строгости по умолчанию может быть переопределено с помощью настройки [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
 
 Поведение сервера ClickHouse для операций `ANY JOIN` зависит от параметра [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys).
 
@@ -89,7 +93,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
 !!! note "Примечание"
     `ASOF JOIN` не поддержан для движка таблиц [Join](../../../engines/table-engines/special/join.md).
 
-Чтобы задать значение строгости по умолчанию, используйте сессионный параметр [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
+Чтобы задать значение строгости по умолчанию, используйте сессионный параметр [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
 
 #### Распределённый join {#global-join}
 
@@ -98,13 +102,13 @@ USING (equi_column1, ... equi_columnN, asof_column)
 -   При использовании обычного `JOIN` , запрос отправляется на удалённые серверы. На каждом из них выполняются подзапросы для формирования «правой» таблицы, и с этой таблицей выполняется соединение. То есть, «правая» таблица формируется на каждом сервере отдельно.
 -   При использовании `GLOBAL ... JOIN`, сначала сервер-инициатор запроса запускает подзапрос для вычисления правой таблицы. Эта временная таблица передаётся на каждый удалённый сервер, и на них выполняются запросы с использованием переданных временных данных.
 
-Будьте аккуратны при использовании `GLOBAL`. За дополнительной информацией обращайтесь в раздел [Распределенные подзапросы](#select-distributed-subqueries).
+Будьте аккуратны при использовании `GLOBAL`. За дополнительной информацией обращайтесь в раздел [Распределенные подзапросы](../../../sql-reference/operators/in.md#select-distributed-subqueries).
 
 ## Рекомендации по использованию {#usage-recommendations}
 
 ### Обработка пустых ячеек и NULL {#processing-of-empty-or-null-cells}
 
-При соединении таблиц могут появляться пустые ячейки. Настройка [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) определяет, как ClickHouse заполняет эти ячейки.
+При соединении таблиц могут появляться пустые ячейки. Настройка [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) определяет, как ClickHouse заполняет эти ячейки.
 
 Если ключами `JOIN` выступают поля типа [Nullable](../../../sql-reference/data-types/nullable.md), то строки, где хотя бы один из ключей имеет значение [NULL](../../../sql-reference/syntax.md#null-literal), не соединяются.
 
@@ -140,10 +144,10 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 По умолчанию ClickHouse использует алгоритм [hash join](https://en.wikipedia.org/wiki/Hash_join). ClickHouse берет `<right_table>` и создает для него хэш-таблицу в оперативной памяти. После некоторого порога потребления памяти ClickHouse переходит к алгоритму merge join.
 
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — ограничивает количество строк в хэш-таблице.
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — ограничивает размер хэш-таблицы.
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — ограничивает количество строк в хэш-таблице.
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — ограничивает размер хэш-таблицы.
 
-По достижении любого из этих ограничений, ClickHouse действует в соответствии с настройкой [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode).
+По достижении любого из этих ограничений, ClickHouse действует в соответствии с настройкой [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode).
 
 ## Примеры {#examples}
 

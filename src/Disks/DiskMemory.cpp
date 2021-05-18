@@ -314,12 +314,7 @@ void DiskMemory::replaceFileImpl(const String & from_path, const String & to_pat
     files.insert(std::move(node));
 }
 
-void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path*/)
-{
-    throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t, MMappedFileCache *) const
 {
     std::lock_guard lock(mutex);
 
@@ -330,7 +325,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path
     return std::make_unique<ReadIndirectBuffer>(path, iter->second.data);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t, size_t)
+std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     std::lock_guard lock(mutex);
 
@@ -348,7 +343,21 @@ std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & pa
     return std::make_unique<WriteIndirectBuffer>(this, path, mode, buf_size);
 }
 
-void DiskMemory::remove(const String & path)
+void DiskMemory::removeFile(const String & path)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+    if (file_it->second.type == FileType::Directory)
+        throw Exception("Path '" + path + "' is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+    else
+        files.erase(file_it);
+}
+
+void DiskMemory::removeDirectory(const String & path)
 {
     std::lock_guard lock(mutex);
 
@@ -364,8 +373,22 @@ void DiskMemory::remove(const String & path)
     }
     else
     {
-        files.erase(file_it);
+        throw Exception("Path '" + path + "' is not a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
     }
+}
+
+void DiskMemory::removeFileIfExists(const String & path)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        return;
+
+    if (file_it->second.type == FileType::Directory)
+        throw Exception("Path '" + path + "' is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+    else
+        files.erase(file_it);
 }
 
 void DiskMemory::removeRecursive(const String & path)
@@ -408,21 +431,6 @@ void DiskMemory::setReadOnly(const String &)
     throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-int DiskMemory::open(const String & /*path*/, mode_t /*mode*/) const
-{
-    throw Exception("Method open is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::close(int /*fd*/) const
-{
-    throw Exception("Method close is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::sync(int /*fd*/) const
-{
-    throw Exception("Method sync is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 void DiskMemory::truncateFile(const String & path, size_t size)
 {
     std::lock_guard lock(mutex);
@@ -443,7 +451,7 @@ void registerDiskMemory(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & /*config*/,
                       const String & /*config_prefix*/,
-                      const Context & /*context*/) -> DiskPtr { return std::make_shared<DiskMemory>(name); };
+                      ContextConstPtr /*context*/) -> DiskPtr { return std::make_shared<DiskMemory>(name); };
     factory.registerDiskType("memory", creator);
 }
 

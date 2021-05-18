@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,9 +16,9 @@ class FunctionCurrentDatabase : public IFunction
 
 public:
     static constexpr auto name = "currentDatabase";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionCurrentDatabase>(context.getCurrentDatabase());
+        return std::make_shared<FunctionCurrentDatabase>(context->getCurrentDatabase());
     }
 
     explicit FunctionCurrentDatabase(const String & db_name_) : db_name{db_name_}
@@ -41,9 +41,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block[result].column = DataTypeString().createColumnConst(input_rows_count, db_name);
+        return DataTypeString().createColumnConst(input_rows_count, db_name);
     }
 };
 

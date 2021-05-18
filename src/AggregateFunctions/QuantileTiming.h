@@ -1,11 +1,12 @@
 #pragma once
 
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <common/sort.h>
 
 
 namespace DB
@@ -31,6 +32,8 @@ namespace ErrorCodes
   * - a histogram (that is, value -> number), consisting of two parts
   * -- for values from 0 to 1023 - in increments of 1;
   * -- for values from 1024 to 30,000 - in increments of 16;
+  *
+  * NOTE: 64-bit integer weight can overflow, see also QantileExactWeighted.h::get()
   */
 
 #define TINY_MAX_ELEMS 31
@@ -137,7 +140,7 @@ namespace detail
         using Array = PODArray<UInt16, 128>;
         mutable Array elems;    /// mutable because array sorting is not considered a state change.
 
-        QuantileTimingMedium() {}
+        QuantileTimingMedium() = default;
         QuantileTimingMedium(const UInt16 * begin, const UInt16 * end) : elems(begin, end) {}
 
         void insert(UInt64 x)
@@ -179,7 +182,7 @@ namespace detail
 
                 /// Sorting an array will not be considered a violation of constancy.
                 auto & array = elems;
-                std::nth_element(array.begin(), array.begin() + n, array.end());
+                nth_element(array.begin(), array.begin() + n, array.end());
                 quantile = array[n];
             }
 
@@ -200,7 +203,7 @@ namespace detail
                     ? level * elems.size()
                     : (elems.size() - 1);
 
-                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+                nth_element(array.begin() + prev_n, array.begin() + n, array.end());
 
                 result[level_index] = array[n];
                 prev_n = n;
@@ -271,7 +274,7 @@ namespace detail
             }
 
         public:
-            Iterator(const QuantileTimingLarge & parent)
+            explicit Iterator(const QuantileTimingLarge & parent)
                 : begin(parent.count_small), pos(begin), end(&parent.count_big[BIG_SIZE])
             {
                 adjust();
@@ -395,9 +398,9 @@ namespace detail
         /// Get the value of the `level` quantile. The level must be between 0 and 1.
         UInt16 get(double level) const
         {
-            UInt64 pos = std::ceil(count * level);
+            double pos = std::ceil(count * level);
 
-            UInt64 accumulated = 0;
+            double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
@@ -418,12 +421,12 @@ namespace detail
         template <typename ResultType>
         void getMany(const double * levels, const size_t * indices, size_t size, ResultType * result) const
         {
-            const auto indices_end = indices + size;
-            auto index = indices;
+            const auto * indices_end = indices + size;
+            const auto * index = indices;
 
-            UInt64 pos = std::ceil(count * levels[*index]);
+            double pos = std::ceil(count * levels[*index]);
 
-            UInt64 accumulated = 0;
+            double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())

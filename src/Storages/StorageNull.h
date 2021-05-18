@@ -24,8 +24,8 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo &,
-        const Context & /*context*/,
+        SelectQueryInfo &,
+        ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
         size_t,
         unsigned) override
@@ -36,20 +36,20 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &) override
+    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
     {
         return std::make_shared<NullBlockOutputStream>(metadata_snapshot->getSampleBlock());
     }
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows() const override
+    std::optional<UInt64> totalRows(const Settings &) const override
     {
         return {0};
     }
-    std::optional<UInt64> totalBytes() const override
+    std::optional<UInt64> totalBytes(const Settings &) const override
     {
         return {0};
     }
@@ -57,12 +57,14 @@ public:
 private:
 
 protected:
-    StorageNull(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
+    StorageNull(
+        const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
         : IStorage(table_id_)
     {
         StorageInMemoryMetadata metadata_;
         metadata_.setColumns(columns_description_);
         metadata_.setConstraints(constraints_);
+        metadata_.setComment(comment);
         setInMemoryMetadata(metadata_);
     }
 };

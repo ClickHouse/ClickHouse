@@ -1,7 +1,9 @@
-DROP TABLE IF EXISTS test.cast1;
-DROP TABLE IF EXISTS test.cast2;
+SET database_atomic_wait_for_drop_and_detach_synchronously=1;
 
-CREATE TABLE test.cast1
+DROP TABLE IF EXISTS cast1;
+DROP TABLE IF EXISTS cast2;
+
+CREATE TABLE cast1
 (
     x UInt8,
     e Enum8
@@ -22,17 +24,17 @@ CREATE TABLE test.cast1
     )
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00643/cast', 'r1') ORDER BY e;
 
-SHOW CREATE TABLE test.cast1 FORMAT TSVRaw;
-DESC TABLE test.cast1;
+SHOW CREATE TABLE cast1 FORMAT TSVRaw;
+DESC TABLE cast1;
 
-INSERT INTO test.cast1 (x) VALUES (1);
-SELECT * FROM test.cast1;
+INSERT INTO cast1 (x) VALUES (1);
+SELECT * FROM cast1;
 
-CREATE TABLE test.cast2 AS test.cast1 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00643/cast', 'r2') ORDER BY e;
+CREATE TABLE cast2 AS cast1 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00643/cast', 'r2') ORDER BY e;
 
-SYSTEM SYNC REPLICA test.cast2;
+SYSTEM SYNC REPLICA cast2;
 
-SELECT * FROM test.cast2;
+SELECT * FROM cast2;
 
-DROP TABLE test.cast1;
-DROP TABLE test.cast2;
+DROP TABLE cast1;
+DROP TABLE cast2;

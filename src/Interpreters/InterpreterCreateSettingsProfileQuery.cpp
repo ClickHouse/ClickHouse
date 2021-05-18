@@ -2,7 +2,7 @@
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessFlags.h>
@@ -42,16 +42,16 @@ namespace
 BlockIO InterpreterCreateSettingsProfileQuery::execute()
 {
     auto & query = query_ptr->as<ASTCreateSettingsProfileQuery &>();
-    auto & access_control = context.getAccessControlManager();
+    auto & access_control = getContext()->getAccessControlManager();
     if (query.alter)
-        context.checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
+        getContext()->checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
     else
-        context.checkAccess(AccessType::CREATE_SETTINGS_PROFILE);
+        getContext()->checkAccess(AccessType::CREATE_SETTINGS_PROFILE);
 
     if (!query.cluster.empty())
     {
-        query.replaceCurrentUserTagWithName(context.getUserName());
-        return executeDDLQueryOnCluster(query_ptr, context);
+        query.replaceCurrentUserTag(getContext()->getUserName());
+        return executeDDLQueryOnCluster(query_ptr, getContext());
     }
 
     std::optional<SettingsProfileElements> settings_from_query;
@@ -60,7 +60,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.to_roles)
-        roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, context.getUserID()};
+        roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, getContext()->getUserID()};
 
     if (query.alter)
     {

@@ -118,7 +118,7 @@ for (auto & stream : streams)
     stream.second->finalize();
 ```
 
-**18.** 行的某尾不应该包含空格。
+**18.** 行的末尾不应该包含空格。
 
 **19.** 源文件应该用 UTF-8 编码。
 
@@ -267,7 +267,7 @@ void executeQuery(
 
 **9.** 多行注释的开头和结尾不得有空行（关闭多行注释的行除外）。
 
-**10.** 要注释掉代码，请使用基本注释，而不是«记录»注释。
+**10.** 要注释掉代码，请使用基本注释，而不是“文档”注释。
 
 **11.** 在提交之前删除代码的无效注释部分。
 
@@ -317,7 +317,7 @@ std::string getName() const override { return "Memory"; }
 class StorageMemory : public IStorage
 ```
 
-**4.** `using` 的命名方式与类相同，或者以\_\_t\`命名。
+**4.** `using` 的命名方式与类相同，或者以__t\`命名。
 
 **5.** 模板类型参数的名称：在简单的情况下，使用`T`; `T`，`U`; `T1`，`T2`。
 
@@ -335,7 +335,7 @@ template <bool without_www>
 struct ExtractDomain
 ```
 
-**7.** 对于抽象类型（接口），用 `I` 前缀。
+**7.** 对于抽象类（接口），用 `I` 前缀。
 
 ``` cpp
 class IBlockInputStream
@@ -349,7 +349,7 @@ class IBlockInputStream
 bool info_successfully_loaded = false;
 ```
 
-**9.** `define` 和全局常量的名称使用带下划线的 `ALL_CAPS`。
+**9.** `define` 和全局常量的名称使用全大写带下划线的形式，如 `ALL_CAPS`。
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -357,14 +357,14 @@ bool info_successfully_loaded = false;
 
 **10.** 文件名应使用与其内容相同的样式。
 
-如果文件包含单个类，则以与该类名称相同的方式命名该文件。
+如果文件包含单个类，则以与该类名称相同的方式命名该文件（CamelCase）。
 
-如果文件包含单个函数，则以与函数名称相同的方式命名文件。
+如果文件包含单个函数，则以与函数名称相同的方式命名文件（camelCase）。
 
 **11.** 如果名称包含缩写，则：
 
 -   对于变量名，缩写应使用小写字母 `mysql_connection`（不是 `mySQL_connection` ）。
--   对于类和函数的名称，请将大写字母保留在缩写 `MySQLConnection`（不是 `MySqlConnection` 。
+-   对于类和函数的名称，请将大写字母保留在缩写 `MySQLConnection`（不是 `MySqlConnection`）。
 
 **12.** 仅用于初始化类成员的构造方法参数的命名方式应与类成员相同，但最后使用下划线。
 
@@ -389,7 +389,7 @@ FileQueueProcessor(
 timer (not m_timer)
 ```
 
-**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL\_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
+**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
 
 ``` cpp
 enum class CompressionMethod
@@ -411,7 +411,7 @@ enum class CompressionMethod
 
 如果缩短版本是常用的，则可以接受不完整的单词。
 
-如果注释中旁边包含全名，您也可以使用缩写。
+如果旁边有注释包含全名，您也可以使用缩写。
 
 **17.** C++ 源码文件名称必须为 `.cpp` 拓展名。 头文件必须为 `.h` 拓展名。
 
@@ -441,7 +441,7 @@ enum class CompressionMethod
 
 在离线数据处理应用程序中，通常可以接受不捕获异常。
 
-在处理用户请求的服务器中，通常足以捕获连接处理程序顶层的异常。
+在处理用户请求的服务器中，捕获连接处理程序顶层的异常通常就足够了。
 
 在线程函数中，你应该在 `join` 之后捕获并保留所有异常以在主线程中重新抛出它们。
 
@@ -548,7 +548,7 @@ Fork不用于并行化。
 
 **10.** 常量。
 
-使用 const 引用，指向常量的指针，`const_iterator`和 const 指针。
+使用 const 引用、指针，指向常量、`const_iterator`和 const 方法。
 
 将 `const` 视为默认值，仅在必要时使用非 `const`。
 
@@ -560,7 +560,7 @@ Fork不用于并行化。
 
 **12.** 数值类型。
 
-使用 `UInt8`， `UInt16`， `UInt32`， `UInt64`， `Int8`， `Int16`， `Int32`， 以及 `Int64`， `size_t`， `ssize_t` 还有 `ptrdiff_t`。
+使用 `UInt8`， `UInt16`， `UInt32`， `UInt64`， `Int8`， `Int16`， `Int32` 和 `Int64`，同样还有 `size_t`， `ssize_t` 和 `ptrdiff_t`。
 
 不要使用这些类型：`signed / unsigned long`，`long long`，`short`，`signed / unsigned char`，`char`。
 
@@ -572,7 +572,7 @@ Fork不用于并行化。
 
 **14.** 返回值
 
-大部分情况下使用 `return`。不要使用 `[return std::move(res)]{.strike}`。
+大部分情况下使用 `return`。不要使用 `return std::move(res)`。
 
 如果函数在堆上分配对象并返回它，请使用 `shared_ptr` 或 `unique_ptr`。
 
@@ -666,7 +666,7 @@ Loader() {}
 **24.** 不要使用 `trailing return type` 为必要的功能。
 
 ``` cpp
-[auto f() -&gt; void;]{.strike}
+auto f() -> void
 ```
 
 **25.** 声明和初始化变量。
@@ -696,13 +696,13 @@ auto s = std::string{"Hello"};
 
 **2.** 语言： C++20.
 
-**3.** 编译器： `gcc`。 此时（2020年08月），代码使用9.3版编译。（它也可以使用`clang 8` 编译）
+**3.** 编译器： `clang`。 此时（2021年03月），代码使用11版编译。（它也可以使用`gcc` 编译 but it is not suitable for production）
 
 使用标准库 (`libc++`)。
 
 **4.** 操作系统：Linux Ubuntu，不比 Precise 早。
 
-**5.** 代码是为x86\_64 CPU架构编写的。
+**5.** 代码是为x86_64 CPU架构编写的。
 
 CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2。
 
@@ -732,11 +732,11 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 **8.** 尽可能经常地进行提交，即使代码只是部分准备好了。
 
-目的明确的功能，使用分支。
+为了这种目的可以创建分支。
 
-如果 `master` 分支中的代码尚不可构建，请在 `push` 之前将其从构建中排除。您需要在几天内完成或删除它。
+如果您的代码在 `master` 分支中尚不可构建，在 `push` 之前需要将其从构建中排除。您需要在几天内完成或删除它。
 
-**9.** 对于不重要的更改，请使用分支并在服务器上发布它们。
+**9.** 对于非一般的更改，请使用分支并在服务器上发布它们。
 
 **10.** 未使用的代码将从 repo 中删除。
 

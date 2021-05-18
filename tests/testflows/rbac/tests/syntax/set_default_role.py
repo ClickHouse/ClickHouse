@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("set default role")
@@ -56,7 +56,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.user_not_found_in_disk(name="user0")
                 node.query("SET DEFAULT ROLE role0 TO user0", exitcode=exitcode, message=message)
 
-    # In SET DEFAULT ROLE, the nonexistent user is noticed first and becomes the thrown exception
+    #in SET DEFAULT ROLE, the nonexistent user is noticed first and becomes the thrown exception
     with Scenario("I set default a nonexistent role to a nonexistent user", requirements=[
             RQ_SRS_006_RBAC_SetDefaultRole("1.0")]):
         with setup(0,0):
@@ -71,43 +71,43 @@ def feature(self, node="clickhouse1"):
                 node.query(f"CREATE USER user{i}")
             node.query(f"GRANT role0, role1 TO user0, user1")
 
-        with Scenario("I set default role for a user to none", flags = TE, requirements=[
+        with Scenario("I set default role for a user to none", requirements=[
                 RQ_SRS_006_RBAC_SetDefaultRole_None("1.0")]):
             with When("I set no roles default for user"):
                 node.query("SET DEFAULT ROLE NONE TO user0")
 
-        with Scenario("I set one default role for a user", flags = TE, requirements=[
+        with Scenario("I set one default role for a user", requirements=[
                 RQ_SRS_006_RBAC_SetDefaultRole("1.0")]):
             with When("I set a default role for user "):
                 node.query("SET DEFAULT ROLE role0 TO user0")
 
-        with Scenario("I set one default role for user default, throws exception", flags = TE, requirements=[
+        with Scenario("I set one default role for user default, throws exception", requirements=[
                 RQ_SRS_006_RBAC_SetDefaultRole("1.0")]):
             with When("I set a default role for default"):
                 exitcode, message = errors.cannot_update_default()
                 node.query("SET DEFAULT ROLE role0 TO default", exitcode=exitcode, message=message)
 
-        with Scenario("I set multiple default roles for a user", flags = TE, requirements=[
+        with Scenario("I set multiple default roles for a user", requirements=[
                 RQ_SRS_006_RBAC_SetDefaultRole("1.0")]):
             with When("I set multiple default roles to user"):
                 node.query("SET DEFAULT ROLE role0, role1 TO user0")
 
-        with Scenario("I set multiple default roles for multiple users", flags = TE, requirements=[
+        with Scenario("I set multiple default roles for multiple users", requirements=[
                 RQ_SRS_006_RBAC_SetDefaultRole("1.0")]):
             with When("I set multiple default roles to multiple users"):
                 node.query("SET DEFAULT ROLE role0, role1 TO user0, user1")
 
-        with Scenario("I set all roles as default for a user", flags = TE, requirements=[
+        with Scenario("I set all roles as default for a user", requirements=[
                 RQ_SRS_006_RBAC_SetDefaultRole_All("1.0")]):
             with When("I set all roles default to user"):
                 node.query("SET DEFAULT ROLE ALL TO user0")
 
-        with Scenario("I set all roles except one for a user", flags = TE, requirements=[
+        with Scenario("I set all roles except one for a user", requirements=[
                 RQ_SRS_006_RBAC_SetDefaultRole_AllExcept("1.0")]):
             with When("I set all except one role default to user"):
                 node.query("SET DEFAULT ROLE ALL EXCEPT role0 TO user0")
 
-        with Scenario("I set default role for current user", flags = TE, requirements=[
+        with Scenario("I set default role for current user", requirements=[
                 RQ_SRS_006_RBAC_SetDefaultRole_CurrentUser("1.0")]):
             with When("I set default role to current user"):
                 node.query("GRANT ACCESS MANAGEMENT ON *.* TO user0")

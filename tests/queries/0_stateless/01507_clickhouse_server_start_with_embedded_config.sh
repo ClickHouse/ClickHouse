@@ -4,13 +4,14 @@ CLICKHOUSE_PORT_TCP=50111
 CLICKHOUSE_DATABASE=default
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 echo "Starting clickhouse-server"
 
 $PORT
 
-$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" > server.log 2>&1 &
+$CLICKHOUSE_BINARY-server -- --tcp_port "$CLICKHOUSE_PORT_TCP" > server.log 2>&1 &
 PID=$!
 
 function finish {

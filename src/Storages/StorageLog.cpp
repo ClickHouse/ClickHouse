@@ -39,6 +39,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int TIMEOUT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
@@ -46,11 +47,9 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
 }
 
-
 class LogSource final : public SourceWithProgress
 {
 public:
-
     static Block getHeader(const NamesAndTypesList & columns)
     {
         Block res;
@@ -58,7 +57,7 @@ public:
         for (const auto & name_type : columns)
             res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        return Nested::flatten(res);
+        return res;
     }
 
     LogSource(
@@ -88,11 +87,13 @@ private:
     size_t rows_read = 0;
     size_t max_read_buffer_size;
 
+    std::unordered_map<String, SerializationPtr> serializations;
+
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
-            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path)))),
-            compressed(*plain)
+            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path))))
+            , compressed(*plain)
         {
             if (offset)
                 plain->seek(offset, SEEK_SET);
@@ -105,24 +106,125 @@ private:
     using FileStreams = std::map<String, Stream>;
     FileStreams streams;
 
-    using DeserializeState = IDataType::DeserializeBinaryBulkStatePtr;
+    using DeserializeState = ISerialization::DeserializeBinaryBulkStatePtr;
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
-    void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read);
+    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
 };
+
+
+Chunk LogSource::generate()
+{
+    Block res;
+
+    if (rows_read == rows_limit)
+        return {};
+
+    if (storage.file_checker.empty())
+        return {};
+
+    /// How many rows to read for the next block.
+    size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
+    std::unordered_map<String, ISerialization::SubstreamsCache> caches;
+
+    for (const auto & name_type : columns)
+    {
+        ColumnPtr column;
+        try
+        {
+            column = name_type.type->createColumn();
+            readData(name_type, column, max_rows_to_read, caches[name_type.getNameInStorage()]);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
+            throw;
+        }
+
+        if (!column->empty())
+            res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
+    }
+
+    if (res)
+        rows_read += res.rows();
+
+    if (!res || rows_read == rows_limit)
+    {
+        /** Close the files (before destroying the object).
+          * When many sources are created, but simultaneously reading only a few of them,
+          * buffers don't waste memory.
+          */
+        streams.clear();
+    }
+
+    UInt64 num_rows = res.rows();
+    return Chunk(res.getColumns(), num_rows);
+}
+
+
+void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
+    size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
+{
+    ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
+    const auto & [name, type] = name_and_type;
+    auto serialization = IDataType::getSerialization(name_and_type);
+
+    auto create_stream_getter = [&](bool stream_for_prefix)
+    {
+        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
+        {
+            if (cache.count(ISerialization::getSubcolumnNameForStream(path)))
+                return nullptr;
+
+            String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
+            const auto & file_it = storage.files.find(stream_name);
+            if (storage.files.end() == file_it)
+                throw Exception("Logical error: no information about file " + stream_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
+
+            UInt64 offset = 0;
+            if (!stream_for_prefix && mark_number)
+                offset = file_it->second.marks[mark_number].offset;
+
+            auto & data_file_path = file_it->second.data_file_path;
+            auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
+
+            return &it->second.compressed;
+        };
+    };
+
+    if (deserialize_states.count(name) == 0)
+    {
+        settings.getter = create_stream_getter(true);
+        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+    }
+
+    settings.getter = create_stream_getter(false);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
+}
 
 
 class LogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit LogBlockOutputStream(StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
+    explicit LogBlockOutputStream(
+        StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_, std::unique_lock<std::shared_timed_mutex> && lock_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , lock(storage.rwlock)
+        , lock(std::move(lock_))
         , marks_stream(
             storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
     {
+        if (!lock)
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+        /// If there were no files, add info to rollback in case of error.
+        if (storage.file_checker.empty())
+        {
+            for (const auto & file : storage.files)
+                storage.file_checker.setEmpty(file.second.data_file_path);
+            storage.file_checker.save();
+        }
     }
 
     ~LogBlockOutputStream() override
@@ -149,7 +251,7 @@ public:
 private:
     StorageLog & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::unique_lock<std::shared_mutex> lock;
+    std::unique_lock<std::shared_timed_mutex> lock;
     bool done = false;
 
     struct Stream
@@ -183,102 +285,20 @@ private:
 
     std::unique_ptr<WriteBuffer> marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
 
-    using SerializeState = IDataType::SerializeBinaryBulkStatePtr;
+    using SerializeState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializeStates = std::map<String, SerializeState>;
     SerializeStates serialize_states;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenStreams & written_streams);
+    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type, WrittenStreams & written_streams);
 
-    void writeData(const String & name, const IDataType & type, const IColumn & column,
+    void writeData(
+        const NameAndTypePair & name_and_type,
+        const IColumn & column,
         MarksForColumns & out_marks,
         WrittenStreams & written_streams);
 
     void writeMarks(MarksForColumns && marks);
 };
-
-
-Chunk LogSource::generate()
-{
-    Block res;
-
-    if (rows_read == rows_limit)
-        return {};
-
-    if (storage.disk->isDirectoryEmpty(storage.table_path))
-        return {};
-
-    /// How many rows to read for the next block.
-    size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
-
-    for (const auto & name_type : columns)
-    {
-        MutableColumnPtr column = name_type.type->createColumn();
-
-        try
-        {
-            readData(name_type.name, *name_type.type, *column, max_rows_to_read);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
-            throw;
-        }
-
-        if (!column->empty())
-            res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
-    }
-
-    if (res)
-        rows_read += res.rows();
-
-    if (!res || rows_read == rows_limit)
-    {
-        /** Close the files (before destroying the object).
-          * When many sources are created, but simultaneously reading only a few of them,
-          * buffers don't waste memory.
-          */
-        streams.clear();
-    }
-
-    res = Nested::flatten(res);
-    UInt64 num_rows = res.rows();
-    return Chunk(res.getColumns(), num_rows);
-}
-
-
-void LogSource::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
-{
-    IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
-
-    auto create_string_getter = [&](bool stream_for_prefix)
-    {
-        return [&, stream_for_prefix] (const IDataType::SubstreamPath & path) -> ReadBuffer *
-        {
-            String stream_name = IDataType::getFileNameForStream(name, path);
-
-            const auto & file_it = storage.files.find(stream_name);
-            if (storage.files.end() == file_it)
-                throw Exception("Logical error: no information about file " + stream_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
-
-            UInt64 offset = 0;
-            if (!stream_for_prefix && mark_number)
-                offset = file_it->second.marks[mark_number].offset;
-
-            auto & data_file_path = file_it->second.data_file_path;
-            auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
-            return &it->second.compressed;
-        };
-    };
-
-    if (deserialize_states.count(name) == 0)
-    {
-        settings.getter = create_string_getter(true);
-        type.deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
-    }
-
-    settings.getter = create_string_getter(false);
-    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name]);
-}
 
 
 void LogBlockOutputStream::write(const Block & block)
@@ -294,7 +314,7 @@ void LogBlockOutputStream::write(const Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
-        writeData(column.name, *column.type, *column.column, marks, written_streams);
+        writeData(NameAndTypePair(column.name, column.type), *column.column, marks, written_streams);
     }
 
     writeMarks(std::move(marks));
@@ -307,14 +327,15 @@ void LogBlockOutputStream::writeSuffix()
         return;
 
     WrittenStreams written_streams;
-    IDataType::SerializeBinaryBulkSettings settings;
+    ISerialization::SerializeBinaryBulkSettings settings;
     for (const auto & column : getHeader())
     {
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
         {
-            settings.getter = createStreamGetter(column.name, written_streams);
-            column.type->serializeBinaryBulkStateSuffix(settings, it->second);
+            settings.getter = createStreamGetter(NameAndTypePair(column.name, column.type), written_streams);
+            auto serialization = column.type->getDefaultSerialization();
+            serialization->serializeBinaryBulkStateSuffix(settings, it->second);
         }
     }
 
@@ -336,15 +357,20 @@ void LogBlockOutputStream::writeSuffix()
 
     streams.clear();
     done = true;
+
+    /// unlock should be done from the same thread as lock, and dtor may be
+    /// called from different thread, so it should be done here (at least in
+    /// case of no exceptions occurred)
+    lock.unlock();
 }
 
 
-IDataType::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const String & name,
+ISerialization::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const NameAndTypePair & name_and_type,
                                                                        WrittenStreams & written_streams)
 {
-    return [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
+    return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return nullptr;
 
@@ -357,14 +383,16 @@ IDataType::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const Str
 }
 
 
-void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
+void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, const IColumn & column,
     MarksForColumns & out_marks, WrittenStreams & written_streams)
 {
-    IDataType::SerializeBinaryBulkSettings settings;
+    ISerialization::SerializeBinaryBulkSettings settings;
+    const auto & [name, type] = name_and_type;
+    auto serialization = type->getDefaultSerialization();
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
+    serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return;
 
@@ -373,18 +401,18 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
             stream_name,
             storage.disk,
             storage.files[stream_name].data_file_path,
-            columns.getCodecOrDefault(name),
+            columns.getCodecOrDefault(name_and_type.name),
             storage.max_compress_block_size);
     }, settings.path);
 
-    settings.getter = createStreamGetter(name, written_streams);
+    settings.getter = createStreamGetter(name_and_type, written_streams);
 
     if (serialize_states.count(name) == 0)
-         type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+         serialization->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
+    serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         if (written_streams.count(stream_name))
             return;
 
@@ -398,11 +426,11 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         out_marks.emplace_back(file.column_index, mark);
     }, settings.path);
 
-    type.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
+    serialization->serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path, const IDataType & /* substream_type */)
+    serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, path);
         if (!written_streams.emplace(stream_name).second)
             return;
 
@@ -437,6 +465,7 @@ StorageLog::StorageLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -448,6 +477,7 @@ StorageLog::StorageLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -471,25 +501,21 @@ StorageLog::StorageLog(
     }
 
     for (const auto & column : storage_metadata.getColumns().getAllPhysical())
-        addFiles(column.name, *column.type);
+        addFiles(column);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
-
-    if (!attach)
-        for (const auto & file : files)
-            file_checker.setEmpty(file.second.data_file_path);
 }
 
 
-void StorageLog::addFiles(const String & column_name, const IDataType & type)
+void StorageLog::addFiles(const NameAndTypePair & column)
 {
-    if (files.end() != files.find(column_name))
-        throw Exception("Duplicate column with name " + column_name + " in constructor of StorageLog.",
+    if (files.end() != files.find(column.name))
+        throw Exception("Duplicate column with name " + column.name + " in constructor of StorageLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         if (!files.count(stream_name))
         {
@@ -502,14 +528,16 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
         }
     };
 
-    IDataType::SubstreamPath substream_path;
-    type.enumerateStreams(stream_callback, substream_path);
+    auto serialization = column.type->getDefaultSerialization();
+    serialization->enumerateStreams(stream_callback);
 }
 
 
-void StorageLog::loadMarks()
+void StorageLog::loadMarks(std::chrono::seconds lock_timeout)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock lock(rwlock, lock_timeout);
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     if (loaded_marks)
         return;
@@ -552,8 +580,6 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 {
     assert(table_path != new_path_to_table_data);
     {
-        std::unique_lock<std::shared_mutex> lock(rwlock);
-
         disk->moveDirectory(table_path, new_path_to_table_data);
 
         table_path = new_path_to_table_data;
@@ -567,10 +593,8 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
     renameInMemory(new_table_id);
 }
 
-void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
+void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    std::shared_lock<std::shared_mutex> lock(rwlock);
-
     files.clear();
     file_count = 0;
     loaded_marks = false;
@@ -578,7 +602,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     disk->clearDirectory(table_path);
 
     for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-        addFiles(column.name, *column.type);
+        addFiles(column);
 
     file_checker = FileChecker{disk, table_path + "sizes.json"};
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
@@ -588,19 +612,19 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMetadataPtr & metadata_snapshot) const
 {
     /// There should be at least one physical column
-    const String column_name = metadata_snapshot->getColumns().getAllPhysical().begin()->name;
-    const auto column_type = metadata_snapshot->getColumns().getAllPhysical().begin()->type;
+    auto column = *metadata_snapshot->getColumns().getAllPhysical().begin();
     String filename;
 
     /** We take marks from first column.
       * If this is a data type with multiple stream, get the first stream, that we assume have real row count.
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
-    IDataType::SubstreamPath substream_root_path;
-    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    ISerialization::SubstreamPath substream_root_path;
+    auto serialization = column.type->getDefaultSerialization();
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (filename.empty())
-            filename = IDataType::getFileNameForStream(column_name, substream_path);
+            filename = ISerialization::getFileNameForStream(column, substream_path);
     }, substream_root_path);
 
     Files::const_iterator it = files.find(filename);
@@ -610,21 +634,37 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
     return it->second.marks;
 }
 
+
+static std::chrono::seconds getLockTimeout(ContextPtr context)
+{
+    const Settings & settings = context->getSettingsRef();
+    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
+    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
+        lock_timeout = settings.max_execution_time.totalSeconds();
+    return std::chrono::seconds{lock_timeout};
+}
+
+
 Pipe StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
-    loadMarks();
 
-    NamesAndTypesList all_columns = Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names));
+    auto lock_timeout = getLockTimeout(context);
+    loadMarks(lock_timeout);
 
-    std::shared_lock<std::shared_mutex> lock(rwlock);
+    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
+    all_columns = Nested::convertToSubcolumns(all_columns);
+
+    std::shared_lock lock(rwlock, lock_timeout);
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     Pipes pipes;
 
@@ -634,7 +674,7 @@ Pipe StorageLog::read(
     if (num_streams > marks_size)
         num_streams = marks_size;
 
-    size_t max_read_buffer_size = context.getSettingsRef().max_read_buffer_size;
+    size_t max_read_buffer_size = context->getSettingsRef().max_read_buffer_size;
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
@@ -653,18 +693,28 @@ Pipe StorageLog::read(
             max_read_buffer_size));
     }
 
+    /// No need to hold lock while reading because we read fixed range of data that does not change while appending more data.
     return Pipe::unitePipes(std::move(pipes));
 }
 
-BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    loadMarks();
-    return std::make_shared<LogBlockOutputStream>(*this, metadata_snapshot);
+    auto lock_timeout = getLockTimeout(context);
+    loadMarks(lock_timeout);
+
+    std::unique_lock lock(rwlock, lock_timeout);
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    return std::make_shared<LogBlockOutputStream>(*this, metadata_snapshot, std::move(lock));
 }
 
-CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
+CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr context)
 {
-    std::shared_lock<std::shared_mutex> lock(rwlock);
+    std::shared_lock lock(rwlock, getLockTimeout(context));
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
     return file_checker.check();
 }
 
@@ -683,11 +733,17 @@ void registerStorageLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         String disk_name = getDiskName(*args.storage_def);
-        DiskPtr disk = args.context.getDisk(disk_name);
+        DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return StorageLog::create(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
-            args.attach, args.context.getSettings().max_compress_block_size);
+            disk,
+            args.relative_data_path,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.attach,
+            args.getContext()->getSettings().max_compress_block_size);
     }, features);
 }
 

@@ -12,13 +12,13 @@ toc_priority: 109
 topKWeighted(N)(x, weight)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `N` — Количество элементов для выдачи.
+-   `N` — количество элементов для выдачи.
 
 **Аргументы**
 
--   `x` – значение.
+-   `x` — значение.
 -   `weight` — вес. [UInt8](../../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемое значение**
@@ -41,4 +41,3 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 └───────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topkweighted/) <!--hide-->

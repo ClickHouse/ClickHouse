@@ -9,7 +9,7 @@ toc_title: DELETE
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 ```
 
-Позволяет удалить данные, соответствующие указанному выражению фильтрации. Реализовано как [мутация](../../../sql-reference/statements/alter/index.md#mutations).
+Удаляет данные, соответствующие указанному выражению фильтрации. Реализовано как [мутация](../../../sql-reference/statements/alter/index.md#mutations).
 
 !!! note "Note"
     Префикс `ALTER TABLE` делает этот синтаксис отличным от большинства других систем, поддерживающих SQL. Он предназначен для обозначения того, что в отличие от аналогичных запросов в базах данных OLTP это тяжелая операция, не предназначенная для частого использования.
@@ -26,4 +26,3 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 -   [Синхронность запросов ALTER](../../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/delete/) <!--hide-->

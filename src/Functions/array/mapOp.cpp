@@ -6,7 +6,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include "Core/ColumnWithTypeAndName.h"
+#include <common/arithmeticOverflow.h>
+#include <Core/ColumnWithTypeAndName.h>
+
 
 namespace DB
 {
@@ -28,20 +30,20 @@ struct TupArg
     const IColumn::Offsets & val_offsets;
     bool is_const;
 };
-using TupleMaps = std::vector<struct TupArg>;
+using TupleMaps = std::vector<TupArg>;
 
-namespace OpTypes
+enum class OpTypes
 {
-    extern const int ADD = 0;
-    extern const int SUBTRACT = 1;
-}
+    ADD = 0,
+    SUBTRACT = 1
+};
 
-template <int op_type>
+template <OpTypes op_type>
 class FunctionMapOp : public IFunction
 {
 public:
     static constexpr auto name = (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapOp>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapOp>(); }
 
 private:
     String getName() const override { return name; }
@@ -121,7 +123,7 @@ private:
     }
 
     template <typename KeyType, bool is_str_key, typename ValType>
-    void execute2(Block & block, const size_t result, size_t row_count, TupleMaps & args, const DataTypeTuple & res_type) const
+    ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypeTuple & res_type) const
     {
         MutableColumnPtr res_tuple = res_type.createColumn();
 
@@ -158,28 +160,28 @@ private:
                     KeyType key;
                     if constexpr (is_str_key)
                     {
-                        // have to use Field structs to get strings
-                        key = arg.key_column.operator[](offset + j).get<KeyType>();
+                        // have to use Field to get strings
+                        key = arg.key_column[offset + j].get<KeyType>();
                     }
                     else
                     {
                         key = assert_cast<const ColumnVector<KeyType> &>(arg.key_column).getData()[offset + j];
                     }
 
-                    auto value = arg.val_column.operator[](offset + j).get<ValType>();
+                    ValType value = arg.val_column[offset + j].get<ValType>();
 
                     if constexpr (op_type == OpTypes::ADD)
                     {
                         const auto [it, inserted] = summing_map.insert({key, value});
                         if (!inserted)
-                            it->second += value;
+                            it->second = common::addIgnoreOverflow(it->second, value);
                     }
                     else
                     {
                         static_assert(op_type == OpTypes::SUBTRACT);
-                        const auto [it, inserted] = summing_map.insert({key, first ? value : -value});
+                        const auto [it, inserted] = summing_map.insert({key, first ? value : common::negateIgnoreOverflow(value)});
                         if (!inserted)
-                            it->second -= value;
+                            it->second = common::subIgnoreOverflow(it->second, value);
                     }
                 }
 
@@ -199,18 +201,19 @@ private:
         // same offsets as in keys
         to_vals_arr.getOffsets().insert(to_keys_offset.begin(), to_keys_offset.end());
 
-        block[result].column = std::move(res_tuple);
+        return res_tuple;
     }
 
     template <typename KeyType, bool is_str_key>
-    void execute1(Block & block, const size_t result, size_t row_count, const DataTypeTuple & res_type, TupleMaps & args) const
+    ColumnPtr execute1(size_t row_count, const DataTypeTuple & res_type, TupleMaps & args) const
     {
         const auto & promoted_type = (assert_cast<const DataTypeArray *>(res_type.getElements()[1].get()))->getNestedType();
 #define MATCH_EXECUTE(is_str) \
-        switch (promoted_type->getTypeId()) { \
-            case TypeIndex::Int64: execute2<KeyType, is_str, Int64>(block, result, row_count, args, res_type); break; \
-            case TypeIndex::UInt64: execute2<KeyType, is_str, UInt64>(block, result, row_count, args, res_type); break; \
-            case TypeIndex::Float64: execute2<KeyType, is_str, Float64>(block, result, row_count, args, res_type); break; \
+        switch (promoted_type->getTypeId()) \
+        { \
+            case TypeIndex::Int64: return execute2<KeyType, is_str, Int64>(row_count, args, res_type); \
+            case TypeIndex::UInt64: return execute2<KeyType, is_str, UInt64>(row_count, args, res_type); \
+            case TypeIndex::Float64: return execute2<KeyType, is_str, Float64>(row_count, args, res_type); \
             default: \
                 throw Exception{"Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN}; \
         }
@@ -226,9 +229,9 @@ private:
 #undef MATCH_EXECUTE
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((block[arguments[0]]).type.get());
+        const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((arguments[0]).type.get());
         const DataTypeArray * key_array_type = checkAndGetDataType<DataTypeArray>(tup_type->getElements()[0].get());
         const DataTypeArray * val_array_type = checkAndGetDataType<DataTypeArray>(tup_type->getElements()[1].get());
 
@@ -241,9 +244,8 @@ private:
         args.reserve(arguments.size());
 
         //prepare columns, extract data columns for direct access and put them to the vector
-        for (auto arg : arguments)
+        for (const auto & col : arguments)
         {
-            auto & col = block[arg];
             const ColumnTuple * tup;
             bool is_const = isColumnConst(*col.column);
             if (is_const)
@@ -274,46 +276,44 @@ private:
             args.push_back({key_column, val_column, key_offsets, val_offsets, is_const});
         }
 
-        size_t row_count = block[arguments[0]].column->size();
+        size_t row_count = arguments[0].column->size();
         auto key_type_id = key_array_type->getNestedType()->getTypeId();
 
         switch (key_type_id)
         {
             case TypeIndex::Enum8:
             case TypeIndex::Int8:
-                execute1<Int8, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<Int8, false>(row_count, res_type, args);
             case TypeIndex::Enum16:
             case TypeIndex::Int16:
-                execute1<Int16, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<Int16, false>(row_count, res_type, args);
             case TypeIndex::Int32:
-                execute1<Int32, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<Int32, false>(row_count, res_type, args);
             case TypeIndex::Int64:
-                execute1<Int64, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<Int64, false>(row_count, res_type, args);
+            case TypeIndex::Int128:
+                return execute1<Int128, false>(row_count, res_type, args);
+            case TypeIndex::Int256:
+                return execute1<Int256, false>(row_count, res_type, args);
             case TypeIndex::UInt8:
-                execute1<UInt8, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<UInt8, false>(row_count, res_type, args);
             case TypeIndex::Date:
             case TypeIndex::UInt16:
-                execute1<UInt16, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<UInt16, false>(row_count, res_type, args);
             case TypeIndex::DateTime:
             case TypeIndex::UInt32:
-                execute1<UInt32, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<UInt32, false>(row_count, res_type, args);
             case TypeIndex::UInt64:
-                execute1<UInt64, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<UInt64, false>(row_count, res_type, args);
+            case TypeIndex::UInt128:
+                return execute1<UInt128, false>(row_count, res_type, args);
+            case TypeIndex::UInt256:
+                return execute1<UInt256, false>(row_count, res_type, args);
             case TypeIndex::UUID:
-                execute1<UInt128, false>(block, result, row_count, res_type, args);
-                break;
+                return execute1<UUID, false>(row_count, res_type, args);
             case TypeIndex::FixedString:
             case TypeIndex::String:
-                execute1<String, true>(block, result, row_count, res_type, args);
-                break;
+                return execute1<String, true>(row_count, res_type, args);
             default:
                 throw Exception{"Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }

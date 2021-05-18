@@ -4,21 +4,21 @@ USE test_01190;
 
 CREATE TABLE test_01190.table_for_dict (key UInt64, col UInt8) ENGINE = Memory;
 
-CREATE DICTIONARY test_01190.dict (key UInt64 DEFAULT 0, col UInt8 DEFAULT 1) PRIMARY KEY key SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'test_01190')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());
+CREATE DICTIONARY test_01190.dict (key UInt64 DEFAULT 0, col UInt8 DEFAULT 1) PRIMARY KEY key SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'test_01190')) LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());
 
 SHOW CREATE DICTIONARY test_01190.dict;
 
 DETACH DICTIONARY test_01190.dict;
 ATTACH TABLE test_01190.dict; -- { serverError 80 }
 -- Full ATTACH syntax is not allowed for dictionaries
-ATTACH DICTIONARY test_01190.dict (key UInt64 DEFAULT 0, col UInt8 DEFAULT 42) PRIMARY KEY key SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'test_01190')) LIFETIME(MIN 1 MAX 100) LAYOUT(FLAT()); -- { clientError 62 }
+ATTACH DICTIONARY test_01190.dict (key UInt64 DEFAULT 0, col UInt8 DEFAULT 42) PRIMARY KEY key SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'test_01190')) LIFETIME(MIN 1 MAX 100) LAYOUT(FLAT()); -- { clientError 62 }
 ATTACH DICTIONARY test_01190.dict;
 SHOW CREATE DICTIONARY test_01190.dict;
 
 CREATE TABLE log ENGINE = Log AS SELECT 'test' AS s;
 SHOW CREATE log;
 DETACH TABLE log;
-ATTACH DICTIONARY log; -- { serverError 487 }
+ATTACH DICTIONARY log; -- { serverError 80 }
 ATTACH TABLE log (s String) ENGINE = Log();
 SHOW CREATE log;
 SELECT * FROM log;

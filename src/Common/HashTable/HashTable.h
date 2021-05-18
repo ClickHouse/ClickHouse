@@ -4,6 +4,7 @@
 
 #include <math.h>
 
+#include <new>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
@@ -11,6 +12,7 @@
 #include <Core/Defines.h>
 #include <common/types.h>
 #include <Common/Exception.h>
+#include <Common/MemorySanitizer.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -68,10 +70,10 @@ namespace ZeroTraits
 {
 
 template <typename T>
-bool check(const T x) { return x == 0; }
+bool check(const T x) { return x == T{}; }
 
 template <typename T>
-void set(T & x) { x = 0; }
+void set(T & x) { x = {}; }
 
 }
 
@@ -193,9 +195,6 @@ struct HashTableCell
     /// Do the hash table need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
-    /// Whether the cell is deleted.
-    bool isDeleted() const { return false; }
-
     /// Set the mapped value, if any (for HashMap), to the corresponding `value`.
     void setMapped(const value_type & /*value*/) {}
 
@@ -206,6 +205,13 @@ struct HashTableCell
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)        { DB::readBinary(key, rb); }
     void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
+
+    /// When cell pointer is moved during erase, reinsert or resize operations
+
+    static constexpr bool need_to_notify_cell_during_move = false;
+
+    static void move(HashTableCell * /* old_location */, HashTableCell * /* new_location */) {}
+
 };
 
 /**
@@ -228,6 +234,9 @@ struct HashTableGrower
 
     UInt8 size_degree = initial_size_degree;
     static constexpr auto initial_count = 1ULL << initial_size_degree;
+
+    /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
+    static constexpr auto performs_linear_probing_with_single_step = true;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -276,6 +285,9 @@ template <size_t key_bits>
 struct HashTableFixedGrower
 {
     static constexpr auto initial_count = 1ULL << key_bits;
+
+    static constexpr auto performs_linear_probing_with_single_step = true;
+
     size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
@@ -293,7 +305,7 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell>
+struct ZeroValueStorage<true, Cell> //-V730
 {
 private:
     bool has_zero = false;
@@ -314,8 +326,8 @@ public:
         zeroValue()->~Cell();
     }
 
-    Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
-    const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
+    Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
+    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
 };
 
 template <typename Cell>
@@ -327,6 +339,32 @@ struct ZeroValueStorage<false, Cell>
 
     Cell * zeroValue()             { return nullptr; }
     const Cell * zeroValue() const { return nullptr; }
+};
+
+
+template <bool enable, typename Allocator, typename Cell>
+struct AllocatorBufferDeleter;
+
+template <typename Allocator, typename Cell>
+struct AllocatorBufferDeleter<false, Allocator, Cell>
+{
+    AllocatorBufferDeleter(Allocator &, size_t) {}
+
+    void operator()(Cell *) const {}
+
+};
+
+template <typename Allocator, typename Cell>
+struct AllocatorBufferDeleter<true, Allocator, Cell>
+{
+    AllocatorBufferDeleter(Allocator & allocator_, size_t size_)
+        : allocator(allocator_)
+        , size(size_) {}
+
+    void operator()(Cell * buffer) const { allocator.free(buffer, size); }
+
+    Allocator & allocator;
+    size_t size;
 };
 
 
@@ -423,7 +461,6 @@ protected:
         }
     }
 
-
     /// Increase the size of the buffer.
     void resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
     {
@@ -456,7 +493,24 @@ protected:
             new_grower.increaseSize();
 
         /// Expand the space.
-        buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, getBufferSizeInBytes(), new_grower.bufSize() * sizeof(Cell)));
+
+        size_t old_buffer_size = getBufferSizeInBytes();
+
+        /** If cell required to be notified during move we need to temporary keep old buffer
+         * because realloc does not quarantee for reallocated buffer to have same base address
+         */
+        using Deleter = AllocatorBufferDeleter<Cell::need_to_notify_cell_during_move, Allocator, Cell>;
+        Deleter buffer_deleter(*this, old_buffer_size);
+        std::unique_ptr<Cell, Deleter> old_buffer(buf, buffer_deleter);
+
+        if constexpr (Cell::need_to_notify_cell_during_move)
+        {
+            buf = reinterpret_cast<Cell *>(Allocator::alloc(new_grower.bufSize() * sizeof(Cell)));
+            memcpy(reinterpret_cast<void *>(buf), reinterpret_cast<const void *>(old_buffer.get()), old_buffer_size);
+        }
+        else
+            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, new_grower.bufSize() * sizeof(Cell)));
+
         grower = new_grower;
 
         /** Now some items may need to be moved to a new location.
@@ -465,8 +519,13 @@ protected:
           */
         size_t i = 0;
         for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this) && !buf[i].isDeleted())
-                reinsert(buf[i], buf[i].getHash(*this));
+            if (!buf[i].isZero(*this))
+            {
+                size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
+
+                if constexpr (Cell::need_to_notify_cell_during_move)
+                    Cell::move(&(old_buffer.get())[i], &buf[updated_place_value]);
+            }
 
         /** There is also a special case:
           *    if the element was to be at the end of the old buffer,                  [        x]
@@ -476,8 +535,15 @@ protected:
           *    after transferring all the elements from the old halves you need to     [         o   x    ]
           *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
-        for (; !buf[i].isZero(*this) && !buf[i].isDeleted(); ++i)
-            reinsert(buf[i], buf[i].getHash(*this));
+        size_t new_size = grower.bufSize();
+        for (; i < new_size && !buf[i].isZero(*this); ++i)
+        {
+            size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
+
+            if constexpr (Cell::need_to_notify_cell_during_move)
+                if (&buf[i] != &buf[updated_place_value])
+                    Cell::move(&buf[i], &buf[updated_place_value]);
+        }
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
@@ -491,20 +557,20 @@ protected:
     /** Paste into the new buffer the value that was in the old buffer.
       * Used when increasing the buffer size.
       */
-    void reinsert(Cell & x, size_t hash_value)
+    size_t reinsert(Cell & x, size_t hash_value)
     {
         size_t place_value = grower.place(hash_value);
 
         /// If the element is in its place.
         if (&x == &buf[place_value])
-            return;
+            return place_value;
 
         /// Compute a new location, taking into account the collision resolution chain.
         place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
 
         /// If the item remains in its place in the old collision resolution chain.
         if (!buf[place_value].isZero(*this))
-            return;
+            return place_value;
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
@@ -512,14 +578,26 @@ protected:
         x.setZero();
 
         /// Then the elements that previously were in collision with this can move to the old place.
+        return place_value;
     }
 
 
     void destroyElements()
     {
         if (!std::is_trivially_destructible_v<Cell>)
+        {
             for (iterator it = begin(), it_end = end(); it != it_end; ++it)
+            {
                 it.ptr->~Cell();
+                /// In case of poison_in_dtor=1 it will be poisoned,
+                /// but it maybe used later, during iteration.
+                ///
+                /// NOTE, that technically this is UB [1], but OK for now.
+                ///
+                ///   [1]: https://github.com/google/sanitizers/issues/854#issuecomment-329661378
+                __msan_unpoison(it.ptr, sizeof(*it.ptr));
+            }
+        }
     }
 
 
@@ -828,6 +906,7 @@ protected:
                   */
                 --m_size;
                 buf[place_value].setZero();
+                inserted = false;
                 throw;
             }
 
@@ -850,6 +929,11 @@ protected:
 
 
 public:
+    void reserve(size_t num_elements)
+    {
+        resize(num_elements);
+    }
+
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
@@ -871,7 +955,11 @@ public:
     /// Reinsert node pointed to by iterator
     void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
     {
-        reinsert(*it.getPtr(), hash_value);
+        size_t place_value = reinsert(*it.getPtr(), hash_value);
+
+        if constexpr (Cell::need_to_notify_cell_during_move)
+            if (it.getPtr() != &buf[place_value])
+                Cell::move(it.getPtr(), &buf[place_value]);
     }
 
 
@@ -946,6 +1034,122 @@ public:
     ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
+    }
+
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
+    ALWAYS_INLINE erase(const Key & x)
+    {
+        return erase(x, hash(x));
+    }
+
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, bool>
+    ALWAYS_INLINE erase(const Key & x, size_t hash_value)
+    {
+        /** Deletion from open addressing hash table without tombstones
+          *
+          * https://en.wikipedia.org/wiki/Linear_probing
+          * https://en.wikipedia.org/wiki/Open_addressing
+          * Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
+          * in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
+          *
+          * Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing
+          */
+
+        if (Cell::isZero(x, *this))
+        {
+            if (this->hasZero())
+            {
+                --m_size;
+                this->clearHasZero();
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));
+
+        /// Key is not found
+        if (buf[erased_key_position].isZero(*this))
+            return false;
+
+        /// We need to guarantee loop termination because there will be empty position
+        assert(m_size < grower.bufSize());
+
+        size_t next_position = erased_key_position;
+
+        /**
+         * During element deletion there is a possibility that the search will be broken for one
+         * of the following elements, because this place erased_key_position is empty. We will check
+         * next_element. Consider a sequence from (erased_key_position, next_element], if the
+         * optimal_position of next_element falls into it, then removing erased_key_position
+         * will not break search for next_element.
+         * If optimal_position of the element does not fall into the sequence (erased_key_position, next_element]
+         * then deleting a erased_key_position will break search for it, so we need to move next_element
+         * to erased_key_position. Now we have empty place at next_element, so we apply the identical
+         * procedure for it.
+         * If an empty element is encountered then means that there is no more next elements for which we can
+         * break the search so we can exit.
+        */
+
+        /// Walk to the right through collision resolution chain and move elements to better positions
+        while (true)
+        {
+            next_position = grower.next(next_position);
+
+            /// If there's no more elements in the chain
+            if (buf[next_position].isZero(*this))
+                break;
+
+            /// The optimal position of the element in the cell at next_position
+            size_t optimal_position = grower.place(buf[next_position].getHash(*this));
+
+            /// If position of this element is already optimal - proceed to the next element.
+            if (optimal_position == next_position)
+                continue;
+
+            /// Cannot move this element because optimal position is after the freed place
+            /// The second condition is tricky - if the chain was overlapped before erased_key_position,
+            ///  and the optimal position is actually before in collision resolution chain:
+            ///
+            /// [*xn***----------------***]
+            ///   ^^-next elem          ^
+            ///   |                     |
+            ///   erased elem           the optimal position of the next elem
+            ///
+            /// so, the next elem should be moved to position of erased elem
+
+            /// The case of non overlapping part of chain
+            if (next_position > erased_key_position
+               && (optimal_position > erased_key_position) && (optimal_position < next_position))
+            {
+                continue;
+            }
+
+            /// The case of overlapping chain
+            if (next_position < erased_key_position
+                /// Cannot move this element because optimal position is after the freed place
+                && ((optimal_position > erased_key_position) || (optimal_position < next_position)))
+            {
+                continue;
+            }
+
+            /// Move the element to the freed place
+            memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
+
+            if constexpr (Cell::need_to_notify_cell_during_move)
+                Cell::move(&buf[next_position], &buf[erased_key_position]);
+
+            /// Now we have another freed place
+            erased_key_position = next_position;
+        }
+
+        buf[erased_key_position].setZero();
+        --m_size;
+
+        return true;
     }
 
     bool ALWAYS_INLINE has(const Key & x) const
@@ -1096,6 +1300,17 @@ public:
     size_t getBufferSizeInCells() const
     {
         return grower.bufSize();
+    }
+
+    /// Return offset for result in internal buffer.
+    /// Result can have value up to `getBufferSizeInCells() + 1`
+    /// because offset for zero value considered to be 0
+    /// and for other values it will be `offset in buffer + 1`
+    size_t offsetInternal(ConstLookupResult ptr) const
+    {
+        if (ptr->isZero(*this))
+            return 0;
+        return ptr - buf + 1;
     }
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS

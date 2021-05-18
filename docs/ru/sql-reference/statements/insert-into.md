@@ -1,5 +1,5 @@
 ---
-toc_priority: 34
+toc_priority: 33
 toc_title: INSERT INTO
 ---
 
@@ -13,12 +13,55 @@ toc_title: INSERT INTO
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-В запросе можно указать список столбцов для вставки `[(c1, c2, c3)]`. В этом случае, в остальные столбцы записываются:
+Вы можете указать список столбцов для вставки, используя синтаксис `(c1, c2, c3)`. Также можно использовать выражение cо [звездочкой](../../sql-reference/statements/select/index.md#asterisk) и/или модификаторами, такими как [APPLY](../../sql-reference/statements/select/index.md#apply-modifier), [EXCEPT](../../sql-reference/statements/select/index.md#except-modifier), [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier).
+
+В качестве примера рассмотрим таблицу:
+
+``` sql
+SHOW CREATE insert_select_testtable
+```
+
+```
+┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE insert_select_testtable
+(
+    `a` Int8,
+    `b` String,
+    `c` Int8
+)
+ENGINE = MergeTree()
+ORDER BY a │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1)
+```
+
+Если вы хотите вставить данные во все столбцы, кроме 'b', вам нужно передать столько значений, сколько столбцов вы указали в скобках:
+
+``` sql
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2)
+```
+
+``` sql
+SELECT * FROM insert_select_testtable
+```
+
+```
+┌─a─┬─b─┬─c─┐
+│ 2 │   │ 2 │
+└───┴───┴───┘
+┌─a─┬─b─┬─c─┐
+│ 1 │ a │ 1 │
+└───┴───┴───┘
+```
+
+В этом примере мы видим, что вторая строка содержит столбцы `a` и `c`, заполненные переданными значениями и `b`, заполненный значением по умолчанию.
+Если список столбцов не включает все существующие столбцы, то все остальные столбцы заполняются следующим образом:
 
 -   Значения, вычисляемые из `DEFAULT` выражений, указанных в определении таблицы.
 -   Нули и пустые строки, если `DEFAULT` не определены.
-
-Если [strict\_insert\_defaults=1](../../operations/settings/settings.md), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
 
 В INSERT можно передавать данные любого [формата](../../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 
@@ -76,4 +119,3 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 -   Данные поступают в режиме реального времени.
 -   Вы загружаете данные, которые как правило отсортированы по времени.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/insert_into/) <!--hide-->

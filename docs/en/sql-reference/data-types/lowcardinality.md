@@ -15,7 +15,7 @@ LowCardinality(data_type)
 
 **Parameters**
 
--   `data_type` — [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), and numbers excepting [Decimal](../../sql-reference/data-types/decimal.md). `LowCardinality` is not efficient for some data types, see the [allow\_suspicious\_low\_cardinality\_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types) setting description.
+-   `data_type` — [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), and numbers excepting [Decimal](../../sql-reference/data-types/decimal.md). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types) setting description.
 
 ## Description {#lowcardinality-dscr}
 
@@ -43,10 +43,10 @@ ORDER BY id
 
 Settings:
 
--   [low\_cardinality\_max\_dictionary\_size](../../operations/settings/settings.md#low_cardinality_max_dictionary_size)
--   [low\_cardinality\_use\_single\_dictionary\_for\_part](../../operations/settings/settings.md#low_cardinality_use_single_dictionary_for_part)
--   [low\_cardinality\_allow\_in\_native\_format](../../operations/settings/settings.md#low_cardinality_allow_in_native_format)
--   [allow\_suspicious\_low\_cardinality\_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types)
+-   [low_cardinality_max_dictionary_size](../../operations/settings/settings.md#low_cardinality_max_dictionary_size)
+-   [low_cardinality_use_single_dictionary_for_part](../../operations/settings/settings.md#low_cardinality_use_single_dictionary_for_part)
+-   [low_cardinality_allow_in_native_format](../../operations/settings/settings.md#low_cardinality_allow_in_native_format)
+-   [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types)
 
 Functions:
 
@@ -57,3 +57,5 @@ Functions:
 -   [A Magical Mystery Tour of the LowCardinality Data Type](https://www.altinity.com/blog/2019/3/27/low-cardinality).
 -   [Reducing Clickhouse Storage Cost with the Low Cardinality Type – Lessons from an Instana Engineer](https://www.instana.com/blog/reducing-clickhouse-storage-cost-with-the-low-cardinality-type-lessons-from-an-instana-engineer/).
 -   [String Optimization (video presentation in Russian)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [Slides in English](https://github.com/yandex/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf).
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/data-types/lowcardinality/) <!--hide-->

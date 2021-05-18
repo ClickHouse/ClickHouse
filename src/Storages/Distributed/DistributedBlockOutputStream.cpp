@@ -10,6 +10,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
@@ -57,38 +58,44 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
 }
 
-static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
+static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
 {
-    if (!blocksHaveEqualStructure(out->getHeader(), block))
-    {
-        ConvertingBlockInputStream convert(
-            std::make_shared<OneBlockInputStream>(block),
-            out->getHeader(),
-            ConvertingBlockInputStream::MatchColumnsMode::Name);
-        auto adopted_block = convert.read();
+    if (blocksHaveEqualStructure(header, block))
+        return block;
 
-        for (size_t i = 0; i < repeats; ++i)
-            out->write(adopted_block);
-    }
-    else
-    {
-        for (size_t i = 0; i < repeats; ++i)
-            out->write(block);
-    }
+    LOG_WARNING(log,
+        "Structure does not match (remote: {}, local: {}), implicit conversion will be done.",
+        header.dumpStructure(), block.dumpStructure());
+
+    ConvertingBlockInputStream convert(
+        std::make_shared<OneBlockInputStream>(block),
+        header,
+        ConvertingBlockInputStream::MatchColumnsMode::Name);
+    return convert.read();
+}
+
+
+static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, size_t repeats, Poco::Logger * log)
+{
+    Block adopted_block = adoptBlock(out->getHeader(), block, log);
+    for (size_t i = 0; i < repeats; ++i)
+        out->write(adopted_block);
 }
 
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(
-    const Context & context_,
+    ContextPtr context_,
     StorageDistributed & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
-    UInt64 insert_timeout_)
-    : context(context_)
+    UInt64 insert_timeout_,
+    StorageID main_table_)
+    : context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(query_ast_)
@@ -96,8 +103,13 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , insert_timeout(insert_timeout_)
+    , main_table(main_table_)
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
+    const auto & settings = context->getSettingsRef();
+    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth > settings.max_distributed_depth)
+        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+    context->getClientInfo().distributed_depth += 1;
 }
 
 
@@ -109,6 +121,7 @@ Block DistributedBlockOutputStream::getHeader() const
 
 void DistributedBlockOutputStream::writePrefix()
 {
+    storage.delayInsertOrThrowIfNeeded();
 }
 
 
@@ -137,17 +150,29 @@ void DistributedBlockOutputStream::write(const Block & block)
 
 void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
-    if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-        return writeSplitAsync(block);
+    const Settings & settings = context->getSettingsRef();
+    bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
 
-    writeAsyncImpl(block);
-    ++inserted_blocks;
+    if (random_shard_insert)
+    {
+        writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo()));
+        ++inserted_blocks;
+    }
+    else
+    {
+
+        if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
+            return writeSplitAsync(block);
+
+        writeAsyncImpl(block);
+        ++inserted_blocks;
+    }
 }
 
 
 std::string DistributedBlockOutputStream::getCurrentStateDescription()
 {
-    std::stringstream buffer;
+    WriteBufferFromOwnString buffer;
     const auto & addresses = cluster->getShardsAddresses();
 
     buffer << "Insertion status:\n";
@@ -174,18 +199,18 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 }
 
 
-void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
+void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, size_t start, size_t end)
 {
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
-    size_t num_shards = shards_info.size();
+    size_t num_shards = end - start;
 
     remote_jobs_count = 0;
     local_jobs_count = 0;
     per_shard_jobs.resize(shards_info.size());
 
-    for (size_t shard_index : ext::range(0, shards_info.size()))
+    for (size_t shard_index : ext::range(start, end))
     {
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
@@ -241,10 +266,11 @@ void DistributedBlockOutputStream::waitForJobs()
 }
 
 
-ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
+ThreadPool::Job
+DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards)
 {
     auto thread_group = CurrentThread::getGroup();
-    return [this, thread_group, &job, &current_block]()
+    return [this, thread_group, &job, &current_block, num_shards]()
     {
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -261,7 +287,6 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         });
 
         const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
-        size_t num_shards = cluster->getShardsInfo().size();
         auto & shard_job = per_shard_jobs[job.shard_index];
         const auto & addresses = cluster->getShardsAddresses();
 
@@ -285,7 +310,11 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings & settings = context.getSettingsRef();
+        const Settings & settings = context->getSettingsRef();
+
+        /// Do not initiate INSERT for empty block.
+        if (shard_block.rows() == 0)
+            return;
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
@@ -299,11 +328,11 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                         throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
-                    if (connections.empty() || connections.front().isNull())
+                    auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
+                    if (results.empty() || results.front().entry.isNull())
                         throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
 
-                    job.connection_entry = std::move(connections.front());
+                    job.connection_entry = std::move(results.front().entry);
                 }
                 else
                 {
@@ -321,28 +350,39 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, settings, context.getClientInfo());
+                job.stream = std::make_shared<RemoteBlockOutputStream>(
+                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo());
                 job.stream->writePrefix();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
-            job.stream->write(shard_block);
+
+            Block adopted_shard_block = adoptBlock(job.stream->getHeader(), shard_block, log);
+            job.stream->write(adopted_shard_block);
         }
         else // local
         {
             if (!job.stream)
             {
                 /// Forward user settings
-                job.local_context = std::make_unique<Context>(context);
+                job.local_context = Context::createCopy(context);
 
-                InterpreterInsertQuery interp(query_ast, *job.local_context);
+                /// Copying of the query AST is required to avoid race,
+                /// in case of INSERT into multiple local shards.
+                ///
+                /// Since INSERT into local node uses AST,
+                /// and InterpreterInsertQuery::execute() is modifying it,
+                /// to resolve tables (in InterpreterInsertQuery::getTable())
+                auto copy_query_ast = query_ast->clone();
+
+                InterpreterInsertQuery interp(copy_query_ast, job.local_context);
                 auto block_io = interp.execute();
 
                 job.stream = block_io.out;
                 job.stream->writePrefix();
             }
 
-            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount());
+            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount(), log);
         }
 
         job.blocks_written += 1;
@@ -353,14 +393,29 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
 void DistributedBlockOutputStream::writeSync(const Block & block)
 {
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
-    size_t num_shards = shards_info.size();
+    bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
+    size_t start = 0;
+    size_t end = shards_info.size();
+
+    if (settings.insert_shard_id)
+    {
+        start = settings.insert_shard_id - 1;
+        end = settings.insert_shard_id;
+    }
+    else if (random_shard_insert)
+    {
+        start = storage.getRandomShardIndex(shards_info);
+        end = start + 1;
+    }
+
+    size_t num_shards = end - start;
 
     if (!pool)
     {
         /// Deferred initialization. Only for sync insertion.
-        initWritingJobs(block);
+        initWritingJobs(block, start, end);
 
         pool.emplace(remote_jobs_count + local_jobs_count);
 
@@ -393,7 +448,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         finished_jobs_count = 0;
         for (size_t shard_index : ext::range(0, shards_info.size()))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block));
+                pool->scheduleOrThrowOnError(runWritingJob(job, block, num_shards));
     }
     catch (...)
     {
@@ -424,7 +479,9 @@ void DistributedBlockOutputStream::writeSuffix()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
-    if (insert_sync && pool)
+    /// Pool finished means that some exception had been thrown before,
+    /// and scheduling new jobs will return "Cannot schedule a task" error.
+    if (insert_sync && pool && !pool->finished())
     {
         finished_jobs_count = 0;
         try
@@ -512,10 +569,10 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
 }
 
 
-void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const size_t shard_id)
+void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     if (shard_info.hasInternalReplication())
     {
@@ -523,7 +580,14 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
             /// Prefer insert into current instance directly
             writeToLocal(block, shard_info.getLocalNodeCount());
         else
-            writeToShard(block, {shard_info.pathForInsert(settings.prefer_localhost_replica)});
+        {
+            const auto & path = shard_info.insertPathForInternalReplication(
+                settings.prefer_localhost_replica,
+                settings.use_compact_format_in_distributed_parts_names);
+            if (path.empty())
+                throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
+            writeToShard(block, {path});
+        }
     }
     else
     {
@@ -541,7 +605,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
 }
 
 
-void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_t repeats)
+void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repeats)
 {
     /// Async insert does not support settings forwarding yet whereas sync one supports
     InterpreterInsertQuery interp(query_ast, context);
@@ -549,26 +613,53 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
     auto block_io = interp.execute();
 
     block_io.out->writePrefix();
-    writeBlockConvert(block_io.out, block, repeats);
+    writeBlockConvert(block_io.out, block, repeats, log);
     block_io.out->writeSuffix();
 }
 
 
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
+    const auto & settings = context->getSettingsRef();
+    const auto & distributed_settings = storage.getDistributedSettingsRef();
+
+    bool fsync = distributed_settings.fsync_after_insert;
+    bool dir_fsync = distributed_settings.fsync_directories;
+
+    std::string compression_method = Poco::toUpper(settings.network_compression_method.toString());
+    std::optional<int> compression_level;
+
+    if (compression_method == "ZSTD")
+        compression_level = settings.network_zstd_compression_level;
+
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs);
+    CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
+
     /// tmp directory is used to ensure atomicity of transactions
     /// and keep monitor thread out from reading incomplete data
-    std::string first_file_tmp_path{};
+    std::string first_file_tmp_path;
 
-    auto reservation = storage.getStoragePolicy()->reserve(block.bytes());
-    auto disk = reservation->getDisk()->getPath();
+    auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
+    const auto disk = reservation->getDisk();
+    auto disk_path = disk->getPath();
     auto data_path = storage.getRelativeDataPath();
+
+    auto make_directory_sync_guard = [&](const std::string & current_path)
+    {
+        SyncGuardPtr guard;
+        if (dir_fsync)
+        {
+            const std::string relative_path(data_path + current_path);
+            guard = disk->getDirectorySyncGuard(relative_path);
+        }
+        return guard;
+    };
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
     /// hardlinking to ensure the inode is not freed until we're done
     {
-        const std::string path(disk + data_path + *it);
+        const std::string path(disk_path + data_path + *it);
         Poco::File(path).createDirectory();
 
         const std::string tmp_path(path + "/tmp/");
@@ -580,21 +671,35 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
         /// Write batch to temporary location
         {
+            auto tmp_dir_sync_guard = make_directory_sync_guard(*it + "/tmp/");
+
             WriteBufferFromFile out{first_file_tmp_path};
-            CompressedWriteBuffer compress{out};
+            CompressedWriteBuffer compress{out, compression_codec};
             NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
+            /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
+            ///
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.
             WriteBufferFromOwnString header_buf;
             writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
-            context.getSettingsRef().write(header_buf);
-            context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            context->getSettingsRef().write(header_buf);
+            context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            writeVarUInt(block.rows(), header_buf);
+            writeVarUInt(block.bytes(), header_buf);
+            writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf); /// obsolete
+            /// Write block header separately in the batch header.
+            /// It is required for checking does conversion is required or not.
+            {
+                NativeBlockOutputStream header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                header_stream.write(block.cloneEmpty());
+            }
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
+            /// And note that it is safe, because we have checksum and size for header.
 
             /// Write the header.
             const StringRef header = header_buf.stringRef();
@@ -605,36 +710,42 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
+
+            out.finalize();
+            if (fsync)
+                out.sync();
         }
 
         // Create hardlink here to reuse increment number
         const std::string block_file_path(path + '/' + file_name);
         createHardLink(first_file_tmp_path, block_file_path);
+        auto dir_sync_guard = make_directory_sync_guard(*it);
     }
     ++it;
 
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(disk + data_path + *it);
+        const std::string path(disk_path + data_path + *it);
         Poco::File(path).createDirectory();
-        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
 
+        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
         createHardLink(first_file_tmp_path, block_file_path);
+        auto dir_sync_guard = make_directory_sync_guard(*it);
     }
 
+    auto file_size = Poco::File(first_file_tmp_path).getSize();
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
     /// have removed their corresponding files
     Poco::File(first_file_tmp_path).remove();
 
     /// Notify
-    auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+    auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
     for (const auto & dir_name : dir_names)
     {
         auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
-        directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
+        directory_monitor.addAndSchedule(file_size, sleep_ms.totalMilliseconds());
     }
 }
-
 
 }

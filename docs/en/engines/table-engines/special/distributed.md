@@ -25,10 +25,39 @@ The Distributed engine accepts parameters:
     -   [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
     -   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
+Also it accept the following settings:
+
+- `fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
+
+- `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
+
+- `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for async INSERT, an exception will be thrown. 0 - do not throw. Default 0.
+
+- `bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for async INSERT, the query will be delayed. 0 - do not delay. Default 0.
+
+- `max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for async send. Default 60.
+
+!!! note "Note"
+
+    **Durability settings** (`fsync_...`):
+
+    - Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
+    - May significantly decrease the inserts' performance
+    - Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
+
+    For **Insert limit settings** (`..._insert`) see also:
+
+    - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
+    - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
+    - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
+
 Example:
 
 ``` sql
 Distributed(logs, default, hits[, sharding_key[, policy_name]])
+SETTINGS
+    fsync_after_insert=0,
+    fsync_directories=0;
 ```
 
 Data will be read from all servers in the `logs` cluster, from the default.hits table located on every server in the cluster.
@@ -44,19 +73,18 @@ Clusters are set like this:
 ``` xml
 <remote_servers>
     <logs>
+        <!-- Inter-server per-cluster secret for Distributed queries
+             default: no secret (no authentication will be performed)
+
+             If set, then Distributed queries will be validated on shards, so at least:
+             - such cluster should exist on the shard,
+             - such cluster should have the same secret.
+
+             And also (and which is more important), the initial_user will
+             be used as current user for the query.
+        -->
+        <!-- <secret></secret> -->
         <shard>
-            <!-- Inter-server per-cluster secret for Distributed queries
-                 default: no secret (no authentication will be performed)
-
-                 If set, then Distributed queries will be validated on shards, so at least:
-                 - such cluster should exist on the shard,
-                 - such cluster should have the same secret.
-
-                 And also (and which is more important), the initial_user will
-                 be used as current user for the query.
-            -->
-            <!-- <secret></secret> -->
-
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>
             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
@@ -97,13 +125,13 @@ Cluster names must not contain dots.
 
 The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `compression` are specified for each server:
 - `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn’t start. If you change the DNS record, restart the server.
-- `port` – The TCP port for messenger activity (`tcp_port` in the config, usually set to 9000). Do not confuse it with http\_port.
+- `port` – The TCP port for messenger activity (`tcp_port` in the config, usually set to 9000). Do not confuse it with http_port.
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [Access rights](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
 - `secure` - Use ssl for connection, usually you also should define `port` = 9440. Server should listen on `<tcp_port_secure>9440</tcp_port_secure>` and have correct certificates.
 - `compression` - Use data compression. Default value: true.
 
-When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load\_balancing](../../../operations/settings/settings.md#settings-load_balancing) setting.
+When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../../../operations/settings/settings.md#settings-load_balancing) setting.
 If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times.
 This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
 
@@ -144,11 +172,11 @@ You should be concerned about the sharding scheme in the following cases:
 -   Queries are used that require joining data (IN or JOIN) by a specific key. If data is sharded by this key, you can use local IN or JOIN instead of GLOBAL IN or GLOBAL JOIN, which is much more efficient.
 -   A large number of servers is used (hundreds or more) with a large number of small queries (queries of individual clients - websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, as we’ve done in Yandex.Metrica, you can set up bi-level sharding: divide the entire cluster into “layers”, where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. Distributed tables are created for each layer, and a single shared distributed table is created for global queries.
 
-Data is written asynchronously. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The period for sending data is managed by the [distributed\_directory\_monitor\_sleep\_time\_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms) and [distributed\_directory\_monitor\_max\_sleep\_time\_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed\_directory\_monitor\_batch\_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background\_distributed\_schedule\_pool\_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting.
+Data is written asynchronously. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The period for sending data is managed by the [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms) and [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting.
 
 If the server ceased to exist or had a rough restart (for example, after a device failure) after an INSERT to a Distributed table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the `broken` subdirectory and no longer used.
 
-When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max\_parallel\_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
+When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
 
 ## Virtual Columns {#virtual-columns}
 
@@ -160,6 +188,6 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
--   [background\_distributed\_schedule\_pool\_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)
+-   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/distributed/) <!--hide-->

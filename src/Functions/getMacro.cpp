@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -30,9 +30,9 @@ private:
 
 public:
     static constexpr auto name = "getMacro";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionGetMacro>(context.getMacros());
+        return std::make_shared<FunctionGetMacro>(context->getMacros());
     }
 
     explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_) : macros(std::move(macros_)) {}
@@ -64,15 +64,15 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IColumn * arg_column = block[arguments[0]].column.get();
+        const IColumn * arg_column = arguments[0].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         if (!arg_string)
             throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
-        block[result].column = block[result].type->createColumnConst(
+        return result_type->createColumnConst(
             input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()))->convertToFullColumnIfConst();
     }
 };

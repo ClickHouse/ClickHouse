@@ -1,5 +1,5 @@
 #include <IO/WriteBufferFromOStream.h>
-#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -42,14 +42,9 @@ WriteBufferFromOStream::WriteBufferFromOStream(
 
 WriteBufferFromOStream::~WriteBufferFromOStream()
 {
-    try
-    {
-        next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    next();
 }
 
 }

@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.3">
+<test>
     <create_query>
         CREATE TABLE jit_test (
             a UInt64,
@@ -28,8 +28,8 @@
                 number,
                 number
             FROM
-                system.numbers
-            LIMIT 10000000
+                system.numbers_mt
+            LIMIT 200000000
     </fill_query>
     <query>
         SELECT
@@ -41,7 +41,7 @@
         SETTINGS
             compile_expressions = 0;
     </query>
-    <query short="1">
+    <query>
         SELECT
             COUNT()
         FROM

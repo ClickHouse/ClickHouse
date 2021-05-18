@@ -1,7 +1,9 @@
 #include <Access/MultipleAccessStorage.h>
+#include <Access/Credentials.h>
 #include <Common/Exception.h>
 #include <ext/range.h>
 #include <boost/range/adaptor/map.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/find.hpp>
 
@@ -27,6 +29,15 @@ MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
 {
 }
 
+MultipleAccessStorage::~MultipleAccessStorage()
+{
+    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    const auto storages = getStoragesPtr();
+    for (const auto & storage : *storages | boost::adaptors::reversed)
+    {
+        removeStorage(storage);
+    }
+}
 
 void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages)
 {
@@ -372,6 +383,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 
     /// Lock the mutex again to store added subscriptions to the nested storages.
     lock.lock();
+
     for (auto type : ext::range(EntityType::MAX))
     {
         if (!added_subscriptions[static_cast<size_t>(type)].empty())
@@ -389,25 +401,24 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
     }
 
     lock.unlock();
-    added_subscriptions->clear();
 }
 
 
-UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+UUID MultipleAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
         try
         {
-            auto id = storage->login(user_name, password, address, external_authenticators);
+            auto id = storage->login(credentials, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
             std::lock_guard lock{mutex};
             ids_cache.set(id, storage);
             return id;
         }
         catch (...)
         {
-            if (!storage->find(EntityType::USER, user_name))
+            if (!storage->find(EntityType::USER, credentials.getUserName()))
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
@@ -416,7 +427,7 @@ UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & p
             throw;
         }
     }
-    throwCannotAuthenticate(user_name);
+    throwNotFound(EntityType::USER, credentials.getUserName());
 }
 
 

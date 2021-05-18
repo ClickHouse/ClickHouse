@@ -15,7 +15,10 @@
 
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -28,13 +31,12 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
-    const StorageID & table_id_,
-    const ASTCreateQuery & query,
-    const ColumnsDescription & columns_)
+    const StorageID & table_id_, const ASTCreateQuery & query, const ColumnsDescription & columns_, const String & comment)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -50,14 +52,29 @@ StorageView::StorageView(
 Pipe StorageView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
 {
-    Pipes pipes;
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
+}
 
+void StorageView::read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        const size_t /*max_block_size*/,
+        const unsigned /*num_streams*/)
+{
     ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
 
     if (query_info.view_query)
@@ -68,29 +85,34 @@ Pipe StorageView::read(
     }
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
-
-    auto pipeline = interpreter.execute().pipeline;
+    interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    pipeline.addSimpleTransform([](const Block & header)
-    {
-        return std::make_shared<MaterializingTransform>(header);
-    });
+    auto materializing_actions = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    materializing_actions->addMaterializingOutputActions();
+
+    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
+    materializing->setStepDescription("Materialize constants after VIEW subquery");
+    query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    pipeline.addSimpleTransform([&](const Block & header)
-    {
-        return std::make_shared<ConvertingTransform>(
-            header, metadata_snapshot->getSampleBlockForColumns(
-                column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
-    });
+    auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
 
-    return QueryPipeline::getPipe(std::move(pipeline));
+    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
+    converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
+    query_plan.addStep(std::move(converting));
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
+    if (!select_query.tables() || select_query.tables()->children.empty())
+        throw Exception("Logical error: no table expression in view select AST", ErrorCodes::LOGICAL_ERROR);
+
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
@@ -150,7 +172,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_id, args.query, args.columns);
+        return StorageView::create(args.table_id, args.query, args.columns, args.comment);
     });
 }
 

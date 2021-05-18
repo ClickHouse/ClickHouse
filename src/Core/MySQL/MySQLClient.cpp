@@ -6,6 +6,9 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLReplication.h>
+#include <Common/DNSResolver.h>
+#include <Poco/String.h>
+
 
 namespace DB
 {
@@ -65,6 +68,7 @@ void MySQLClient::disconnect()
         socket->close();
     socket = nullptr;
     connected = false;
+    seq = 0;
 }
 
 /// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html
@@ -132,11 +136,19 @@ void MySQLClient::ping()
     writeCommand(Command::COM_PING, "");
 }
 
-void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid_str)
+void MySQLClient::setBinlogChecksum(const String & binlog_checksum)
 {
-    /// Set binlog checksum to CRC32.
-    String checksum = "CRC32";
-    writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = '" + checksum + "'");
+    replication.setChecksumSignatureLength(Poco::toUpper(binlog_checksum) == "NONE" ? 0 : 4);
+}
+
+void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid_str, const String & binlog_checksum)
+{
+    /// Maybe CRC32 or NONE. mysqlbinlog.cc use NONE, see its below comments:
+    /// Make a notice to the server that this client is checksum-aware.
+    /// It does not need the first fake Rotate necessary checksummed.
+    writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = 'CRC32'");
+
+    setBinlogChecksum(binlog_checksum);
 
     /// Set heartbeat 1s.
     UInt64 period_ns = (1 * 1e9);

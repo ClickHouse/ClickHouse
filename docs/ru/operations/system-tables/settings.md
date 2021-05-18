@@ -48,5 +48,5 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Настройки](../settings/index.md#settings)
 -   [Разрешения для запросов](../settings/permissions-for-queries.md#settings_readonly)
 -   [Ограничения для значений настроек](../settings/constraints-on-settings.md)
+-   Выражение [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/settings) <!--hide-->

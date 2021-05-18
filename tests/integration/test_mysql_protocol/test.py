@@ -3,14 +3,13 @@
 import datetime
 import math
 import os
-import subprocess
 import time
 
 import docker
 import pymysql.connections
 import pytest
 from docker.models.containers import Container
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
@@ -35,7 +34,7 @@ def server_address():
 @pytest.fixture(scope='module')
 def mysql_client():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_client.yml')
-    subprocess.check_call(
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_mysql1_1')
 
@@ -62,7 +61,7 @@ def mysql_server(mysql_client):
 @pytest.fixture(scope='module')
 def golang_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_golang_client.yml')
-    subprocess.check_call(
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_golang1_1')
 
@@ -70,7 +69,7 @@ def golang_container():
 @pytest.fixture(scope='module')
 def php_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_php_client.yml')
-    subprocess.check_call(
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_php1_1')
 
@@ -78,7 +77,7 @@ def php_container():
 @pytest.fixture(scope='module')
 def nodejs_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_js_client.yml')
-    subprocess.check_call(
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_mysqljs1_1')
 
@@ -86,7 +85,7 @@ def nodejs_container():
 @pytest.fixture(scope='module')
 def java_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_java_client.yml')
-    subprocess.check_call(
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.from_env().containers.get(cluster.project_name + '_java1_1')
 
@@ -150,8 +149,38 @@ def test_mysql_client_exception(mysql_client, server_address):
         -e "CREATE TABLE default.t1_remote_mysql AS mysql('127.0.0.1:10086','default','t1_local','default','');"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stderr[0:266].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
-                            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 2002, e.displayText() = mysqlxx::ConnectionFailed: Can't connect to MySQL server on '127.0.0.1' (115) ((nullptr):0)"
+    assert stderr[0:258].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 0, e.displayText() = Exception: Connections to all replicas failed: default@127.0.0.1:10086 as user default"
+
+
+def test_mysql_affected_rows(mysql_client, server_address):
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "CREATE TABLE IF NOT EXISTS default.t1 (n UInt64) ENGINE MergeTree() ORDER BY tuple();"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql -vvv --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "INSERT INTO default.t1(n) VALUES(1);"
+    '''.format(host=server_address, port=server_port), demux=True)
+
+    assert code == 0
+    assert "1 row affected" in stdout.decode()
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql -vvv --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "INSERT INTO default.t1(n) SELECT * FROM numbers(1000)"
+    '''.format(host=server_address, port=server_port), demux=True)
+
+    assert code == 0
+    assert "1000 rows affected" in stdout.decode()
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "DROP TABLE default.t1;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
 
 
 def test_mysql_replacement_query(mysql_client, server_address):
@@ -188,7 +217,7 @@ def test_mysql_replacement_query(mysql_client, server_address):
         --password=123 -e "select database();"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    assert stdout.decode() == 'database()\ndefault\n'
+    assert stdout.decode() == 'DATABASE()\ndefault\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default

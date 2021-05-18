@@ -1,7 +1,6 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
-#include <Common/UInt128.h>
 
 namespace DB
 {
@@ -24,6 +23,7 @@ public:
     virtual const ColumnPtr & getNestedNotNullableColumn() const = 0;
 
     virtual bool nestedColumnIsNullable() const = 0;
+    virtual void nestedToNullable() = 0;
 
     /// Returns array with StringRefHash calculated for each row of getNestedNotNullableColumn() column.
     /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
@@ -82,7 +82,7 @@ public:
      * @see DB::ColumnUnique
      *
      * The most common example uses https://clickhouse.tech/docs/en/sql-reference/data-types/lowcardinality/ columns.
-     * Consider data type @e LC(String). The inner type here is @e String which is more or less a contigous memory
+     * Consider data type @e LC(String). The inner type here is @e String which is more or less a contiguous memory
      * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.
      */
@@ -171,6 +171,11 @@ public:
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throw Exception("Method compareColumn is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    bool hasEqualValues() const override
+    {
+        throw Exception("Method hasEqualValues is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 

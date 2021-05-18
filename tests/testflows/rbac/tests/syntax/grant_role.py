@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("grant role")
@@ -33,7 +33,7 @@ def feature(self, node="clickhouse1"):
                 for j in range(roles):
                     node.query(f"DROP ROLE IF EXISTS role{j}")
 
-    with Scenario("I grant a role to a user",flags=TE, requirements=[
+    with Scenario("I grant a role to a user", requirements=[
             RQ_SRS_006_RBAC_Grant_Role("1.0")]):
         with setup(1,1):
             with When("I grant a role"):
@@ -61,19 +61,19 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.role_not_found_in_disk(name="role0")
                 node.query("GRANT role0 TO user0", exitcode=exitcode, message=message)
 
-    with Scenario("I grant a role to multiple users", flags=TE, requirements=[
+    with Scenario("I grant a role to multiple users", requirements=[
             RQ_SRS_006_RBAC_Grant_Role("1.0")]):
         with setup(2,1):
             with When("I grant role to a multiple users"):
                 node.query("GRANT role0 TO user0, user1")
 
-    with Scenario("I grant multiple roles to multiple users", flags=TE, requirements=[
+    with Scenario("I grant multiple roles to multiple users", requirements=[
             RQ_SRS_006_RBAC_Grant_Role("1.0")]):
         with setup(2,2):
             with When("I grant multiple roles to multiple users"):
                 node.query("GRANT role0, role1 TO user0, user1")
 
-    with Scenario("I grant role to current user", flags=TE, requirements=[
+    with Scenario("I grant role to current user", requirements=[
             RQ_SRS_006_RBAC_Grant_Role_CurrentUser("1.0")]):
         with setup(1,1):
             with Given("I have a user with access management privilege"):
@@ -81,33 +81,33 @@ def feature(self, node="clickhouse1"):
             with When("I grant role to current user"):
                 node.query("GRANT role0 TO CURRENT_USER", settings = [("user","user0")])
 
-    with Scenario("I grant role to default user, throws exception", flags=TE, requirements=[
+    with Scenario("I grant role to default user, throws exception", requirements=[
             RQ_SRS_006_RBAC_Grant_Role_CurrentUser("1.0")]):
         with setup(1,1):
             with When("I grant role to default user"):
                 exitcode, message = errors.cannot_update_default()
                 node.query("GRANT role0 TO CURRENT_USER", exitcode=exitcode, message=message)
 
-    with Scenario("I grant role to user with admin option", flags=TE, requirements=[
+    with Scenario("I grant role to user with admin option", requirements=[
             RQ_SRS_006_RBAC_Grant_Role_AdminOption("1.0")]):
         with setup(1,1):
             with When("I grant role to a user with admin option"):
                 node.query("GRANT role0 TO user0 WITH ADMIN OPTION")
 
-    with Scenario("I grant role to user on cluster", flags=TE, requirements=[
+    with Scenario("I grant role to user on cluster", requirements=[
             RQ_SRS_006_RBAC_Grant_Role_OnCluster("1.0")]):
         try:
             with Given("I have a user and a role on a cluster"):
-                node.query("CREATE USER user0 ON CLUSTER sharded_cluster")
-                node.query("CREATE ROLE role0 ON CLUSTER sharded_cluster")
+                node.query("CREATE USER OR REPLACE user0 ON CLUSTER sharded_cluster")
+                node.query("CREATE ROLE OR REPLACE role0 ON CLUSTER sharded_cluster")
             with When("I grant the role to the user"):
                 node.query("GRANT ON CLUSTER sharded_cluster role0 TO user0")
         finally:
             with Finally("I drop the user and role"):
-                node.query("DROP USER user0 ON CLUSTER sharded_cluster")
-                node.query("DROP ROLE role0 ON CLUSTER sharded_cluster")
+                node.query("DROP USER IF EXISTS user0 ON CLUSTER sharded_cluster")
+                node.query("DROP ROLE IF EXISTS role0 ON CLUSTER sharded_cluster")
 
-    with Scenario("I grant role to user on fake cluster, throws exception", flags=TE, requirements=[
+    with Scenario("I grant role to user on fake cluster, throws exception", requirements=[
             RQ_SRS_006_RBAC_Grant_Role_OnCluster("1.0")]):
         with setup(1,1):
             with When("I grant the role to the user"):

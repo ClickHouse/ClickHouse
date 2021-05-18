@@ -4,6 +4,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include "registerAggregateFunctions.h"
 
 
@@ -20,6 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
+/// TODO Proper support for Decimal256.
 template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {

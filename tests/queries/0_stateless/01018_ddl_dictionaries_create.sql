@@ -32,7 +32,7 @@ CREATE DICTIONARY db_01018.dict1
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
@@ -87,11 +87,11 @@ CREATE DICTIONARY memory_db.dict2
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
 LIFETIME(MIN 1 MAX 10)
-LAYOUT(FLAT()); -- {serverError 48}
+LAYOUT(FLAT());
 
-SHOW CREATE DICTIONARY memory_db.dict2; -- {serverError 487}
+SHOW CREATE DICTIONARY memory_db.dict2;
 
 SHOW DICTIONARIES FROM memory_db LIKE 'dict2';
 
@@ -112,9 +112,9 @@ CREATE DICTIONARY lazy_db.dict3
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column, second_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
 LIFETIME(MIN 1 MAX 10)
-LAYOUT(COMPLEX_KEY_HASHED()); -- {serverError 48}
+LAYOUT(COMPLEX_KEY_HASHED()); --{serverError 1}
 
 DROP DATABASE IF EXISTS lazy_db;
 
@@ -131,7 +131,7 @@ CREATE DICTIONARY db_01018.dict4
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
@@ -150,7 +150,7 @@ CREATE DICTIONARY db_01018.dict4
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 

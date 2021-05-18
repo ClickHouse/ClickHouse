@@ -1,3 +1,5 @@
+set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/poco")
+
 add_subdirectory (Crypto)
 add_subdirectory (Data)
 add_subdirectory (Data/ODBC)

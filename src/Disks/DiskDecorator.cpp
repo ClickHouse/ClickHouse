@@ -103,11 +103,6 @@ void DiskDecorator::replaceFile(const String & from_path, const String & to_path
     delegate->replaceFile(from_path, to_path);
 }
 
-void DiskDecorator::copyFile(const String & from_path, const String & to_path)
-{
-    delegate->copyFile(from_path, to_path);
-}
-
 void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     delegate->copy(from_path, to_disk, to_path);
@@ -119,25 +114,46 @@ void DiskDecorator::listFiles(const String & path, std::vector<String> & file_na
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
-DiskDecorator::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
+DiskDecorator::readFile(
+    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return delegate->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
+    return delegate->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
+DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    return delegate->writeFile(path, buf_size, mode, estimated_size, aio_threshold);
+    return delegate->writeFile(path, buf_size, mode);
 }
 
-void DiskDecorator::remove(const String & path)
+void DiskDecorator::removeFile(const String & path)
 {
-    delegate->remove(path);
+    delegate->removeFile(path);
+}
+
+void DiskDecorator::removeFileIfExists(const String & path)
+{
+    delegate->removeFileIfExists(path);
+}
+
+void DiskDecorator::removeDirectory(const String & path)
+{
+    delegate->removeDirectory(path);
 }
 
 void DiskDecorator::removeRecursive(const String & path)
 {
     delegate->removeRecursive(path);
+}
+
+void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
+{
+    delegate->removeSharedFile(path, keep_s3);
+}
+
+void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)
+{
+    delegate->removeSharedRecursive(path, keep_s3);
 }
 
 void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp & timestamp)
@@ -165,19 +181,34 @@ void DiskDecorator::truncateFile(const String & path, size_t size)
     delegate->truncateFile(path, size);
 }
 
-int DiskDecorator::open(const String & path, mode_t mode) const
+Executor & DiskDecorator::getExecutor()
 {
-    return delegate->open(path, mode);
+    return delegate->getExecutor();
 }
 
-void DiskDecorator::close(int fd) const
+SyncGuardPtr DiskDecorator::getDirectorySyncGuard(const String & path) const
 {
-    delegate->close(fd);
+    return delegate->getDirectorySyncGuard(path);
 }
 
-void DiskDecorator::sync(int fd) const
+void DiskDecorator::onFreeze(const String & path)
 {
-    delegate->sync(fd);
+    delegate->onFreeze(path);
+}
+
+void DiskDecorator::shutdown()
+{
+    delegate->shutdown();
+}
+
+void DiskDecorator::startup()
+{
+    delegate->startup();
+}
+
+void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context)
+{
+    delegate->applyNewSettings(config, context);
 }
 
 }

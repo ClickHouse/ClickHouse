@@ -10,7 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
 #include <ext/chrono_io.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int DICTIONARIES_WAS_NOT_LOADED;
 }
 
 
@@ -624,6 +625,12 @@ public:
         return collectLoadResults<ReturnType>(filter);
     }
 
+    bool has(const String & name) const
+    {
+        std::lock_guard lock{mutex};
+        return infos.contains(name);
+    }
+
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
@@ -811,12 +818,11 @@ private:
             if (!min_id)
                 min_id = getMinIDToFinishLoading(forced_to_reload);
 
-            if (info->state_id >= min_id)
-                return true; /// stop
-
             if (info->loading_id < min_id)
                 startLoading(*info, forced_to_reload, *min_id);
-            return false; /// wait for the next event
+
+            /// Wait for the next event if loading wasn't completed, or stop otherwise.
+            return (info->state_id >= min_id);
         };
 
         if (timeout == WAIT)
@@ -841,12 +847,10 @@ private:
                 if (filter && !filter(name))
                     continue;
 
-                if (info.state_id >= min_id)
-                    continue;
-
-                all_ready = false;
                 if (info.loading_id < min_id)
                     startLoading(info, forced_to_reload, *min_id);
+
+                all_ready &= (info.state_id >= min_id);
             }
             return all_ready;
         };
@@ -906,7 +910,7 @@ private:
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true};
+            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
             loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
@@ -943,8 +947,16 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async)
+    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupStatusPtr thread_group = {})
     {
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
+
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
+
         LOG_TRACE(log, "Start loading object '{}'", name);
         try
         {
@@ -1390,6 +1402,11 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
     return loadOrReload<ReturnType>([&names](const String & name) { return names.count(name); });
 }
 
+bool ExternalLoader::has(const String & name) const
+{
+    return loading_dispatcher->has(name);
+}
+
 Strings ExternalLoader::getAllTriedToLoadNames() const
 {
     return loading_dispatcher->getAllTriedToLoadNames();
@@ -1404,7 +1421,29 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.status == ExternalLoader::Status::LOADING)
         throw Exception(type_name + " '" + result.name + "' is still loading", ErrorCodes::BAD_ARGUMENTS);
     if (result.exception)
-        std::rethrow_exception(result.exception);
+    {
+        // Exception is shared for multiple threads.
+        // Don't just rethrow it, because sharing the same exception object
+        // between multiple threads can lead to weird effects if they decide to
+        // modify it, for example, by adding some error context.
+        try
+        {
+            std::rethrow_exception(result.exception);
+        }
+        catch (const Poco::Exception & e)
+        {
+            /// This will create a copy for Poco::Exception and DB::Exception
+            e.rethrow();
+        }
+        catch (...)
+        {
+            throw DB::Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
+                                "Failed to load dictionary '{}': {}",
+                                result.name,
+                                getCurrentExceptionMessage(true /*with stack trace*/,
+                                                           true /*check embedded stack trace*/));
+        }
+    }
     if (result.status == ExternalLoader::Status::NOT_EXIST)
         throw Exception(type_name + " '" + result.name + "' not found", ErrorCodes::BAD_ARGUMENTS);
     if (result.status == ExternalLoader::Status::NOT_LOADED)

@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -10,15 +10,15 @@ namespace DB
 namespace
 {
 
-/** Incremental block number among calls of this function. */
+/** Incremental columns number among calls of this function. */
 class FunctionBlockNumber : public IFunction
 {
 private:
-    mutable std::atomic<size_t> block_number{0};
+    mutable std::atomic<size_t> columns_number{0};
 
 public:
     static constexpr auto name = "blockNumber";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBlockNumber>();
     }
@@ -51,10 +51,10 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        size_t current_block_number = block_number++;
-        block[result].column = ColumnUInt64::create(input_rows_count, current_block_number);
+        size_t current_columns_number = columns_number++;
+        return ColumnUInt64::create(input_rows_count, current_columns_number);
     }
 };
 

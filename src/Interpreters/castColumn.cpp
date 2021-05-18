@@ -1,15 +1,12 @@
-#include <Core/Field.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeString.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionsConversion.h>
 
+#include <Functions/FunctionsConversion.h>
 
 namespace DB
 {
 
-ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+template <CastType cast_type = CastType::nonAccurate>
+static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
 {
     if (arg.type->equals(*type))
         return arg.column;
@@ -24,14 +21,33 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
         }
     };
 
-    FunctionOverloadResolverPtr func_builder_cast =
-        std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver::createImpl(false));
+    FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<cast_type>::createImpl(false);
 
     auto func_cast = func_builder_cast->build(arguments);
-    arguments.emplace_back(ColumnWithTypeAndName{nullptr, type, ""});
 
-    func_cast->execute(arguments, {0, 1}, 2, arg.column->size());
-    return arguments[2].column;
+    if constexpr (cast_type == CastType::accurateOrNull)
+    {
+        return func_cast->execute(arguments, makeNullable(type), arg.column->size());
+    }
+    else
+    {
+        return func_cast->execute(arguments, type, arg.column->size());
+    }
+}
+
+ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+{
+    return castColumn<CastType::nonAccurate>(arg, type);
+}
+
+ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+{
+    return castColumn<CastType::accurate>(arg, type);
+}
+
+ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+{
+    return castColumn<CastType::accurateOrNull>(arg, type);
 }
 
 }

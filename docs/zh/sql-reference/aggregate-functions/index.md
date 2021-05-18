@@ -1,11 +1,12 @@
 ---
+toc_folder_title: 聚合函数
 toc_priority: 33
-toc_title: 聚合函数
+toc_title: 简介
 ---
 
 # 聚合函数 {#aggregate-functions}
 
-聚合函数在 [正常](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) 方式如预期的数据库专家。
+聚合函数如数据库专家预期的方式 [正常](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) 工作。
 
 ClickHouse还支持:
 
@@ -14,7 +15,7 @@ ClickHouse还支持:
 
 ## 空处理 {#null-processing}
 
-在聚合过程中，所有 `NULL`s被跳过。
+在聚合过程中，所有 `NULL` 被跳过。
 
 **例:**
 
@@ -30,7 +31,7 @@ ClickHouse还支持:
 └───┴──────┘
 ```
 
-比方说，你需要在总的值 `y` 列:
+比方说，你需要计算 `y` 列的总数:
 
 ``` sql
 SELECT sum(y) FROM t_null_big
@@ -40,9 +41,8 @@ SELECT sum(y) FROM t_null_big
     │      7 │
     └────────┘
 
-该 `sum` 函数解释 `NULL` 作为 `0`. 特别是，这意味着，如果函数接收输入的选择，其中所有的值 `NULL`，那么结果将是 `0`，不 `NULL`.
 
-现在你可以使用 `groupArray` 函数从创建一个数组 `y` 列:
+现在你可以使用 `groupArray` 函数用 `y` 列创建一个数组:
 
 ``` sql
 SELECT groupArray(y) FROM t_null_big
@@ -54,6 +54,6 @@ SELECT groupArray(y) FROM t_null_big
 └───────────────┘
 ```
 
-`groupArray` 不包括 `NULL` 在生成的数组中。
+在 `groupArray` 生成的数组中不包括 `NULL`。
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/) <!--hide-->

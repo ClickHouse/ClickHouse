@@ -13,7 +13,7 @@
             <host>zoo3</host>
             <port>2181</port>
         </node>
-        <session_timeout_ms>2000</session_timeout_ms>
+        <session_timeout_ms>20000</session_timeout_ms>
     </zookeeper>
 </yandex>
     

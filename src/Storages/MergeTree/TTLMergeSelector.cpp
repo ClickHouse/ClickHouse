@@ -25,6 +25,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
     ssize_t partition_to_merge_index = -1;
     time_t partition_to_merge_min_ttl = 0;
 
+    /// Find most old TTL.
     for (size_t i = 0; i < parts_ranges.size(); ++i)
     {
         const auto & mergeable_parts_in_partition = parts_ranges[i];
@@ -56,6 +57,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
     Iterator best_end = best_begin + 1;
     size_t total_size = 0;
 
+    /// Find begin of range with most old TTL.
     while (true)
     {
         time_t ttl = getTTLForPart(*best_begin);
@@ -63,6 +65,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
         if (!ttl || isTTLAlreadySatisfied(*best_begin) || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
         {
+            /// This condition can not be satisfied on first iteration.
             ++best_begin;
             break;
         }
@@ -74,6 +77,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
         --best_begin;
     }
 
+    /// Find end of range with most old TTL.
     while (best_end != best_partition.end())
     {
         time_t ttl = getTTLForPart(*best_end);
@@ -97,6 +101,19 @@ time_t TTLDeleteMergeSelector::getTTLForPart(const IMergeSelector::Part & part) 
     return only_drop_parts ? part.ttl_infos->part_max_ttl : part.ttl_infos->part_min_ttl;
 }
 
+bool TTLDeleteMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
+{
+    /// N.B. Satisfied TTL means that TTL is NOT expired.
+    /// return true -- this part can not be selected
+    /// return false -- this part can be selected
+
+    /// Dropping whole part is an exception to `shall_participate_in_merges` logic.
+    if (only_drop_parts)
+        return false;
+
+    return !part.shall_participate_in_merges;
+}
+
 time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
 {
     return part.ttl_infos->getMinimalMaxRecompressionTTL();
@@ -104,6 +121,13 @@ time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & pa
 
 bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
 {
+    /// N.B. Satisfied TTL means that TTL is NOT expired.
+    /// return true -- this part can not be selected
+    /// return false -- this part can be selected
+
+    if (!part.shall_participate_in_merges)
+        return true;
+
     if (recompression_ttls.empty())
         return false;
 

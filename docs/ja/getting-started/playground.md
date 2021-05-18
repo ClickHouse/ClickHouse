@@ -41,10 +41,10 @@ ClickHouse をサポートするソフトウェア製品の詳細情報は[こ�
 
 また、以下の設定がなされています。
 
-- [max\_result\_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
-- [max\_result\_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
-- [result\_overflow\_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
-- [max\_execution\_time=60000](../operations/settings/query_complexity/#max-execution-time)
+- [max_result_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
+- [max_result_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
+- [result_overflow_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
+- [max_execution_time=60000](../operations/settings/query_complexity/#max-execution-time)
 
 ## 例 {#examples}
 

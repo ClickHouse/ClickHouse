@@ -17,11 +17,11 @@ class WriteBuffer;
 class BinaryRowOutputFormat: public IRowOutputFormat
 {
 public:
-    BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, FormatFactory::WriteCallback callback);
+    BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const RowOutputFormatParams & params_);
 
     String getName() const override { return "BinaryRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writePrefix() override;
 
     String getContentType() const override { return "application/octet-stream"; }

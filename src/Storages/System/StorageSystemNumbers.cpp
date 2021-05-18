@@ -125,8 +125,8 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
 Pipe StorageSystemNumbers::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo &,
-    const Context & /*context*/,
+    SelectQueryInfo &,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
@@ -144,7 +144,7 @@ Pipe StorageSystemNumbers::read(
 
     Pipe pipe;
 
-    if (num_streams > 1 && !even_distribution && *limit)
+    if (num_streams > 1 && !even_distribution && limit)
     {
         auto state = std::make_shared<NumbersMultiThreadedState>(offset);
         UInt64 max_counter = offset + *limit;

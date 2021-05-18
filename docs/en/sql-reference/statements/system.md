@@ -1,5 +1,5 @@
 ---
-toc_priority: 37
+toc_priority: 36
 toc_title: SYSTEM
 ---
 
@@ -47,12 +47,12 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries\_lazy\_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
 ## RELOAD DICTIONARY {#query_language-system-reload-dictionary}
 
-Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT\_LOADED / FAILED).
+Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT_LOADED / FAILED).
 Always returns `Ok.` regardless of the result of updating the dictionary.
 The status of the dictionary can be checked by querying the `system.dictionaries` table.
 
@@ -64,7 +64,7 @@ SELECT name, status FROM system.dictionaries;
 
 Resets ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
-For more convenient (automatic) cache management, see disable\_internal\_dns\_cache, dns\_cache\_update\_period parameters.
+For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_update_period parameters.
 
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
@@ -81,17 +81,17 @@ SYSTEM DROP REPLICA 'replica_name';
 SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 ```
 
-Queries will remove the replica path in ZooKeeper. It’s useful when replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it can’t drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
+Queries will remove the replica path in ZooKeeper. It is useful when the replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it cannot drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
 
 The first one removes metadata of `'replica_name'` replica of `database.table` table.
 The second one does the same for all replicated tables in the database.
-The third one does the same for all replicated tables on local server.
-The forth one is useful to remove metadata of dead replica when all other replicas of a table were dropped. It requires the table path to be specified explicitly. It must be the same path as was passed to the first argument of `ReplicatedMergeTree` engine on table creation.
+The third one does the same for all replicated tables on the local server.
+The fourth one is useful to remove metadata of dead replica when all other replicas of a table were dropped. It requires the table path to be specified explicitly. It must be the same path as was passed to the first argument of `ReplicatedMergeTree` engine on table creation.
 
 ## DROP UNCOMPRESSED CACHE {#query_language-system-drop-uncompressed-cache}
 
 Reset the uncompressed data cache. Used in development of ClickHouse and performance tests.
-For manage uncompressed data cache parameters use following server level settings [uncompressed\_cache\_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) and query/user/profile level settings [use\_uncompressed\_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
+For manage uncompressed data cache parameters use following server level settings [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) and query/user/profile level settings [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
 
 ## DROP COMPILED EXPRESSION CACHE {#query_language-system-drop-compiled-expression-cache}
 
@@ -100,7 +100,7 @@ Complied expression cache used when query/user/profile enable option [compile](.
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
-Flushes buffers of log messages to system tables (e.g. system.query\_log). Allows you to not wait 7.5 seconds when debugging.
+Flushes buffers of log messages to system tables (e.g. system.query_log). Allows you to not wait 7.5 seconds when debugging.
 This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
@@ -152,7 +152,7 @@ ClickHouse can manage background processes in [MergeTree](../../engines/table-en
 Provides possibility to stop background merges for tables in the MergeTree family:
 
 ``` sql
-SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
+SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 !!! note "Note"
@@ -163,13 +163,13 @@ SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 Provides possibility to start background merges for tables in the MergeTree family:
 
 ``` sql
-SYSTEM START MERGES [[db.]merge_tree_family_table_name]
+SYSTEM START MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 ### STOP TTL MERGES {#query_language-stop-ttl-merges}
 
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
-Return `Ok.` even table doesn’t exists or table have not MergeTree engine. Return error when database doesn’t exists:
+Returns `Ok.` even if table doesn’t exist or table has not MergeTree engine. Returns error when database doesn’t exist:
 
 ``` sql
 SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
@@ -178,7 +178,7 @@ SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
 ### START TTL MERGES {#query_language-start-ttl-merges}
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
-Return `Ok.` even table doesn’t exists. Return error when database doesn’t exists:
+Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
 
 ``` sql
 SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
@@ -187,7 +187,7 @@ SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
 ### STOP MOVES {#query_language-stop-moves}
 
 Provides possibility to stop background move data according to [TTL table expression with TO VOLUME or TO DISK clause](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) for tables in the MergeTree family:
-Return `Ok.` even table doesn’t exists. Return error when database doesn’t exists:
+Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
 
 ``` sql
 SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
@@ -196,7 +196,7 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 ### START MOVES {#query_language-start-moves}
 
 Provides possibility to start background move data according to [TTL table expression with TO VOLUME and TO DISK clause](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) for tables in the MergeTree family:
-Return `Ok.` even table doesn’t exists. Return error when database doesn’t exists:
+Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
 
 ``` sql
 SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
@@ -204,12 +204,12 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
 
-ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables.
+ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) tables.
 
 ### STOP FETCHES {#query_language-system-stop-fetches}
 
 Provides possibility to stop background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
-Always returns `Ok.` regardless of the table engine and even table or database doesn’t exists.
+Always returns `Ok.` regardless of the table engine and even if table or database doesn’t exist.
 
 ``` sql
 SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
@@ -218,7 +218,7 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ### START FETCHES {#query_language-system-start-fetches}
 
 Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
-Always returns `Ok.` regardless of the table engine and even table or database doesn’t exists.
+Always returns `Ok.` regardless of the table engine and even if table or database doesn’t exist.
 
 ``` sql
 SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
@@ -264,6 +264,8 @@ Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
+After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
+
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
 Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
@@ -276,5 +278,3 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 
 Provides possibility to reinitialize Zookeeper sessions state for all `ReplicatedMergeTree` tables, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
-
-[Original article](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->

@@ -1,5 +1,6 @@
 #include <Access/IAccessStorage.h>
 #include <Access/User.h>
+#include <Access/Credentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -14,6 +15,8 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
+    extern const int WRONG_PASSWORD;
+    extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
 }
@@ -415,36 +418,60 @@ void IAccessStorage::notify(const Notifications & notifications)
 
 
 UUID IAccessStorage::login(
-    const String & user_name,
-    const String & password,
+    const Credentials & credentials,
     const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators) const
+    const ExternalAuthenticators & external_authenticators,
+    bool replace_exception_with_cannot_authenticate) const
 {
-    return loginImpl(user_name, password, address, external_authenticators);
+    try
+    {
+        return loginImpl(credentials, address, external_authenticators);
+    }
+    catch (...)
+    {
+        if (!replace_exception_with_cannot_authenticate)
+            throw;
+
+        tryLogCurrentException(getLogger(), credentials.getUserName() + ": Authentication failed");
+        throwCannotAuthenticate(credentials.getUserName());
+    }
 }
 
 
 UUID IAccessStorage::loginImpl(
-    const String & user_name,
-    const String & password,
+    const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators) const
 {
-    if (auto id = find<User>(user_name))
+    if (auto id = find<User>(credentials.getUserName()))
     {
         if (auto user = tryRead<User>(*id))
         {
-            if (isPasswordCorrectImpl(*user, password, external_authenticators) && isAddressAllowedImpl(*user, address))
-                return *id;
+            if (!isAddressAllowedImpl(*user, address))
+                throwAddressNotAllowed(address);
+
+            if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+                throwInvalidCredentials();
+
+            return *id;
         }
     }
-    throwCannotAuthenticate(user_name);
+    throwNotFound(EntityType::USER, credentials.getUserName());
 }
 
 
-bool IAccessStorage::isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const
+bool IAccessStorage::areCredentialsValidImpl(
+    const User & user,
+    const Credentials & credentials,
+    const ExternalAuthenticators & external_authenticators) const
 {
-    return user.authentication.isCorrectPassword(password, user.getName(), external_authenticators);
+    if (!credentials.isReady())
+        return false;
+
+    if (credentials.getUserName() != user.getName())
+        return false;
+
+    return user.authentication.areCredentialsValid(credentials, external_authenticators);
 }
 
 
@@ -452,6 +479,7 @@ bool IAccessStorage::isAddressAllowedImpl(const User & user, const Poco::Net::IP
 {
     return user.allowed_client_hosts.contains(address);
 }
+
 
 UUID IAccessStorage::getIDOfLoggedUser(const String & user_name) const
 {
@@ -554,10 +582,19 @@ void IAccessStorage::throwReadonlyCannotRemove(EntityType type, const String & n
         ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 
+void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
+{
+    throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+}
+
+void IAccessStorage::throwInvalidCredentials()
+{
+    throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);
+}
 
 void IAccessStorage::throwCannotAuthenticate(const String & user_name)
 {
-    /// We use the same message for all authentification failures because we don't want to give away any unnecessary information for security reasons,
+    /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
     /// only the log will show the exact reason.
     throw Exception(user_name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 }

@@ -6,8 +6,11 @@
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Parsers/parseQuery.h>
@@ -58,34 +61,41 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
-
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
     using namespace DB;
+    namespace po = boost::program_options;
 
-    boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
+        ("input", po::value<std::string>()->value_name("INPUT"), "input file")
+        ("output", po::value<std::string>()->value_name("OUTPUT"), "output file")
         ("decompress,d", "decompress")
-        ("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
+        ("offset-in-compressed-file", po::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
+        ("offset-in-decompressed-block", po::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
+        ("block-size,b", po::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
-        ("codec", boost::program_options::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
-        ("level", boost::program_options::value<int>(), "compression level for codecs specified via flags")
+        ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
+        ("level", po::value<int>(), "compression level for codecs specified via flags")
         ("none", "use no compression instead of LZ4")
         ("stat", "print block statistics of compressed data")
     ;
 
-    boost::program_options::variables_map options;
-    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+    po::positional_options_description positional_desc;
+    positional_desc.add("input", 1);
+    positional_desc.add("output", 1);
+
+    po::variables_map options;
+    po::store(po::command_line_parser(argc, argv).options(desc).positional(positional_desc).run(), options);
 
     if (options.count("help"))
     {
-        std::cout << "Usage: " << argv[0] << " [options] < in > out" << std::endl;
+        std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
+        std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
         std::cout << desc << std::endl;
-        return 1;
+        return 0;
     }
 
     try
@@ -132,30 +142,53 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             codec = CompressionCodecFactory::instance().get(method_family, level);
 
 
-        ReadBufferFromFileDescriptor rb(STDIN_FILENO);
-        WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
+        std::unique_ptr<ReadBufferFromFileBase> rb;
+        std::unique_ptr<WriteBufferFromFileBase> wb;
+
+        if (options.count("input"))
+            rb = std::make_unique<ReadBufferFromFile>(options["input"].as<std::string>());
+        else
+            rb = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+
+        if (options.count("output"))
+            wb = std::make_unique<WriteBufferFromFile>(options["output"].as<std::string>());
+        else
+            wb = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
 
         if (stat_mode)
         {
             /// Output statistic for compressed file.
-            checkAndWriteHeader(rb, wb);
+            checkAndWriteHeader(*rb, *wb);
         }
         else if (decompress)
         {
             /// Decompression
-            CompressedReadBuffer from(rb);
-            copyData(from, wb);
+
+            size_t offset_in_compressed_file = options["offset-in-compressed-file"].as<size_t>();
+            size_t offset_in_decompressed_block = options["offset-in-decompressed-block"].as<size_t>();
+
+            if (offset_in_compressed_file || offset_in_decompressed_block)
+            {
+                CompressedReadBufferFromFile compressed_file(std::move(rb));
+                compressed_file.seek(offset_in_compressed_file, offset_in_decompressed_block);
+                copyData(compressed_file, *wb);
+            }
+            else
+            {
+                CompressedReadBuffer from(*rb);
+                copyData(from, *wb);
+            }
         }
         else
         {
             /// Compression
-            CompressedWriteBuffer to(wb, codec, block_size);
-            copyData(rb, to);
+            CompressedWriteBuffer to(*wb, codec, block_size);
+            copyData(*rb, to);
         }
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(true);
+        std::cerr << getCurrentExceptionMessage(true) << '\n';
         return getCurrentExceptionCode();
     }
 

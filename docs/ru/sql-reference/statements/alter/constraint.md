@@ -1,6 +1,6 @@
 ---
 toc_priority: 43
-toc_title: CONSTRAINT
+toc_title: "Манипуляции с ограничениями"
 ---
 
 # Манипуляции с ограничениями (constraints) {#manipuliatsii-s-ogranicheniiami-constraints}
@@ -20,4 +20,3 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 
 Запрос на изменение ограничений для Replicated таблиц реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/constraint/) <!--hide-->

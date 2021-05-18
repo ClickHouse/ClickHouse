@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -27,7 +27,7 @@ class FunctionRandomPrintableASCII : public IFunction
 {
 public:
     static constexpr auto name = "randomPrintableASCII";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomPrintableASCII>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomPrintableASCII>(); }
 
     String getName() const override
     {
@@ -57,7 +57,7 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
@@ -66,7 +66,7 @@ public:
 
         pcg64_fast rng(randomSeed());
 
-        const IColumn & length_column = *block[arguments[0]].column;
+        const IColumn & length_column = *arguments[0].column;
 
         IColumn::Offset offset = 0;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
@@ -106,7 +106,7 @@ public:
             offset = next_offset;
         }
 
-        block[result].column = std::move(col_to);
+        return col_to;
     }
 };
 

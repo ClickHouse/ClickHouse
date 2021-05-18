@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -25,16 +25,16 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction
+class FunctionHasColumnInTable : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
+        return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
     }
 
-    explicit FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
+    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
     {
     }
 
@@ -56,10 +56,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
-
-private:
-    const Context & global_context;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 };
 
 
@@ -85,12 +82,11 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 }
 
 
-void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
-    auto get_string_from_block = [&](size_t column_pos) -> String
+    auto get_string_from_columns = [&](const ColumnWithTypeAndName & column) -> String
     {
-        ColumnPtr column = block[column_pos].column;
-        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.get());
+        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.column.get());
         return const_column->getValue<String>();
     };
 
@@ -100,17 +96,17 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     String password;
 
     if (arguments.size() > 3)
-        host_name = get_string_from_block(arguments[arg++]);
+        host_name = get_string_from_columns(arguments[arg++]);
 
     if (arguments.size() > 4)
-        user_name = get_string_from_block(arguments[arg++]);
+        user_name = get_string_from_columns(arguments[arg++]);
 
     if (arguments.size() > 5)
-        password = get_string_from_block(arguments[arg++]);
+        password = get_string_from_columns(arguments[arg++]);
 
-    String database_name = get_string_from_block(arguments[arg++]);
-    String table_name = get_string_from_block(arguments[arg++]);
-    String column_name = get_string_from_block(arguments[arg++]);
+    String database_name = get_string_from_columns(arguments[arg++]);
+    String table_name = get_string_from_columns(arguments[arg++]);
+    String column_name = get_string_from_columns(arguments[arg++]);
 
     if (table_name.empty())
         throw Exception("Table name is empty", ErrorCodes::UNKNOWN_TABLE);
@@ -118,7 +114,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     bool has_column;
     if (host_name.empty())
     {
-        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, global_context);
+        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, getContext());
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
     }
@@ -127,18 +123,18 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
         std::vector<std::vector<String>> host_names = {{ host_name }};
 
         auto cluster = std::make_shared<Cluster>(
-            global_context.getSettings(),
+            getContext()->getSettings(),
             host_names,
             !user_name.empty() ? user_name : "default",
             password,
-            global_context.getTCPPort(),
+            getContext()->getTCPPort(),
             false);
 
-        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, global_context);
+        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, getContext());
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    block[result].column = DataTypeUInt8().createColumnConst(input_rows_count, Field(has_column));
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field{UInt64(has_column)});
 }
 
 }

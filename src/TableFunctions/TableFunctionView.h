@@ -1,8 +1,8 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <common/types.h>
-
 
 namespace DB
 {
@@ -17,10 +17,13 @@ public:
     static constexpr auto name = "view";
     std::string getName() const override { return name; }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "View"; }
 
-    UInt64 evaluateArgument(const Context & context, ASTPtr & argument) const;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+
+    ASTCreateQuery create;
 };
 
 
