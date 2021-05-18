@@ -110,7 +110,7 @@ public:
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override
     {
-	IDisk::copy(from_path, to_disk, to_path);
+        IDisk::copy(from_path, to_disk, to_path);
     }
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
@@ -204,7 +204,7 @@ public:
     void onFreeze(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);
-	delegate->onFreeze(wrapped_path);
+        delegate->onFreeze(wrapped_path);
     }
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context, const String & config_prefix, const DisksMap & map) override;

@@ -128,7 +128,7 @@ public:
         , block_size(CipherIVLength(evp_cipher))
     {
         assert(iv_.size() == CipherIVLength(evp_cipher));
-	assert(key_.Size() == CipherKeyLength(evp_cipher));
+        assert(key_.Size() == CipherKeyLength(evp_cipher));
 
         offset = BlockOffset(offset_);
     }
@@ -164,7 +164,7 @@ protected:
 class Encryptor : public Encryption
 {
 public:
-	Encryptor(const String & iv_, const EncryptionKey & key_, size_t off)
+    Encryptor(const String & iv_, const EncryptionKey & key_, size_t off)
         : Encryption(iv_, key_, off) { }
 
     void Encrypt(const char * plaintext, DB::WriteBuffer & buf, size_t size)
@@ -173,8 +173,8 @@ public:
             return;
 
         auto iv = InitVector(init_vector);
-	auto off = BlockOffset(offset);
-	iv.Set(Blocks(offset));
+        auto off = BlockOffset(offset);
+        iv.Set(Blocks(offset));
 
         size_t part_size = PartBlockSize(size, off);
         if (off)
@@ -182,14 +182,14 @@ public:
             buf.write(EncryptPartialBlock(plaintext, part_size, iv, off).data(), part_size);
             offset += part_size;
             size -= part_size;
-	    plaintext += part_size;
+            plaintext += part_size;
             iv.Inc();
         }
 
         if (size)
         {
             buf.write(EncryptNBytes(plaintext + part_size, size, iv).data(), size);
-	    offset += size;
+            offset += size;
         }
     }
 
@@ -257,15 +257,15 @@ public:
             return;
 
         auto iv = InitVector(init_vector);
-	iv.Set(Blocks(off));
-	off = BlockOffset(off);
+        iv.Set(Blocks(off));
+        off = BlockOffset(off);
 
         size_t part_size = PartBlockSize(size, off);
         if (off)
         {
             DecryptPartialBlock(buf, ciphertext, part_size, iv, off);
             size -= part_size;
-	    if (part_size + off == block_size)
+            if (part_size + off == block_size)
                 iv.Inc();
         }
 

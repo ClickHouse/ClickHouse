@@ -152,7 +152,7 @@ void registerDiskEncrypted(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       ContextConstPtr /*context*/,
-		      const DisksMap & map) -> DiskPtr {
+                      const DisksMap & map) -> DiskPtr {
 
         String wrapped_disk_name = config.getString(config_prefix + ".disk", "");
         if (wrapped_disk_name.empty())
@@ -162,9 +162,9 @@ void registerDiskEncrypted(DiskFactory & factory)
         String key = config.getString(config_prefix + ".key", "");
         if (key.empty())
             throw Exception("Encrypted disk key can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-	if (key.size() != CipherKeyLength(DefaultCipher()))
+        if (key.size() != CipherKeyLength(DefaultCipher()))
             throw Exception("Expected key with size " + std::to_string(CipherKeyLength(DefaultCipher())) + ", got key with size " + std::to_string(key.size()),
-			    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
         auto wrapped_disk = map.find(wrapped_disk_name);
         if (wrapped_disk == map.end())

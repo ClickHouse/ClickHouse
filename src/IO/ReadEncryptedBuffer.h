@@ -18,12 +18,12 @@ public:
         std::unique_ptr<ReadBufferFromFileBase> in_,
         const String & init_vector_,
         const EncryptionKey & key_,
-	const size_t iv_offset_)
+        const size_t iv_offset_)
         : ReadBufferFromFileBase(buf_size_, nullptr, 0)
         , in(std::move(in_))
         , buf_size(buf_size_)
         , decryptor(Decryptor(init_vector_, key_))
-	, iv_offset(iv_offset_)
+        , iv_offset(iv_offset_)
     { }
 
     off_t seek(off_t off, int whence) override
@@ -83,7 +83,7 @@ private:
         size_t in_pos = start_pos + iv_offset;
 
         String data;
-	data.resize(buf_size);
+        data.resize(buf_size);
         size_t data_size = 0;
 
         in->seek(in_pos, SEEK_SET);
@@ -96,11 +96,11 @@ private:
         }
 
         data.resize(data_size);
-	working_buffer.resize(data_size);
+        working_buffer.resize(data_size);
 
         decryptor.Decrypt(data.data(), working_buffer.begin(), data_size, start_pos);
 
-	pos = working_buffer.begin();
+        pos = working_buffer.begin();
         initialized = true;
     }
 
