@@ -61,7 +61,10 @@ struct FutureMergedMutatedPart
 class MergeTreeDataMergerMutator
 {
 public:
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
+    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &,
+                                                        const MergeTreeData::DataPartPtr &,
+                                                        const MergeTreeTransaction *,
+                                                        String *)>;
 
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 

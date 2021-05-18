@@ -30,6 +30,8 @@ public:
     MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
 
 private:
+    Poco::Logger * log;
+
     std::atomic<CSN> latest_snapshot;
     std::atomic<CSN> csn_counter;
     std::atomic<LocalTID> local_tid_counter;

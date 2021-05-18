@@ -698,8 +698,18 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     CurrentlyMergingPartsTaggerPtr merging_tagger;
     MergeList::EntryPtr merge_entry;
 
-    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
+    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, String *) -> bool
     {
+        if (tx)
+        {
+            /// Cannot merge parts if some of them is not visible in current snapshot
+            /// TODO We can use simplified visibility rules (without CSN lookup) here
+            if (left && !left->versions.isVisible(*tx))
+                return false;
+            if (right && !right->versions.isVisible(*tx))
+                return false;
+        }
+
         /// This predicate is checked for the first part of each range.
         /// (left = nullptr, right = "first part of partition")
         if (!left)
@@ -1022,28 +1032,35 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
     if (merger_mutator.merges_blocker.isCancelled())
         return {};
 
-    /// FIXME Transactions: do not begin transaction if we don't need it
-    auto txn = TransactionLog::instance().beginTransaction();
-    MergeTreeTransactionHolder autocommit{txn, true};
-
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-    merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, txn);
+    merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, nullptr);
     if (!merge_entry)
         mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
 
     if (merge_entry || mutate_entry)
     {
-        return JobAndPool{[this, metadata_snapshot, merge_entry, mutate_entry, share_lock, holder = std::move(autocommit)] () mutable
+        return JobAndPool{[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
         {
+            merge_entry = {};
+            mutate_entry = {};
+            /// FIXME Transactions: do not begin transaction if we don't need it
+            auto txn = TransactionLog::instance().beginTransaction();
+            MergeTreeTransactionHolder autocommit{txn, true};
+
+            merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, txn);
+            if (!merge_entry)
+                mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
+
             if (merge_entry)
-                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock, holder.getTransaction());
+                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock, txn);
             else if (mutate_entry)
                 return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
 
-            __builtin_unreachable();
+            return true;
+            //__builtin_unreachable();
         }, PoolType::MERGE_MUTATE};
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))

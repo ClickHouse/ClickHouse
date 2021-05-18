@@ -787,7 +787,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     /// Setup signal handlers.
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
+    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler, &handled_signals);
     addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 

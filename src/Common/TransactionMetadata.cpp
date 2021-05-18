@@ -123,9 +123,12 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
         return false;
 
     /// Otherwise, part is definitely visible if:
-    /// - creation was committed after we took the snapshot and nobody tried to remove the part
+    /// - creation was committed before we took the snapshot and nobody tried to remove the part
+    /// - creation was committed before and removal was committed after
     /// - current transaction is creating it
-    if (!max_lock && min && min <= snapshot_version)
+    if (min && min <= snapshot_version && !max_lock)
+        return true;
+    if (min && min <= snapshot_version && max && snapshot_version < max)
         return true;
     if (mintid == txn.tid)
         return true;

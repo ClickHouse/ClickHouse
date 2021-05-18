@@ -39,6 +39,8 @@ public:
 
     void onException();
 
+    String dumpDescription() const;
+
 private:
     void beforeCommit();
     void afterCommit(CSN assigned_csn) noexcept;

@@ -451,6 +451,7 @@ public:
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
     bool operator()(const MergeTreeData::DataPartPtr & left,
                     const MergeTreeData::DataPartPtr & right,
+                    const MergeTreeTransaction * txn,
                     String * out_reason = nullptr) const;
 
     /// Can we assign a merge with these two parts?

@@ -1084,7 +1084,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         {
             (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             modifyPartState(it, DataPartState::Outdated);
-            (*it)->versions.maxtid = Tx::PrehistoricTID;
+            (*it)->versions.lockMaxTID(Tx::PrehistoricTID);
             (*it)->versions.maxcsn.store(Tx::PrehistoricCSN, std::memory_order_relaxed);
             removePartContributionToDataVolume(*it);
         };
@@ -3225,10 +3225,13 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(const Me
 
     auto it = maybe_visible_parts.begin();
     auto it_last = maybe_visible_parts.end() - 1;
+    String visible_parts_str;
     while (it <= it_last)
     {
         if ((*it)->versions.isVisible(*txn))
         {
+            visible_parts_str += (*it)->name;
+            visible_parts_str += " ";
             ++it;
         }
         else
@@ -3239,6 +3242,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(const Me
     }
 
     size_t new_size = it_last - maybe_visible_parts.begin() + 1;
+    LOG_TRACE(log, "Got {} parts visible for {}: {}", new_size, txn->tid, visible_parts_str);
     maybe_visible_parts.resize(new_size);
     return maybe_visible_parts;
 }
