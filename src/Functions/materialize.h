@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
