@@ -13,7 +13,9 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
+
 #include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries/HierarchyDictionariesUtils.h>
 
 namespace ProfileEvents
 {
@@ -39,7 +41,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CACHE_DICTIONARY_UPDATE_FAIL;
-    extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -69,9 +70,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
-
-    setupHierarchicalAttribute();
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -121,164 +120,6 @@ const IDictionarySource * CacheDictionary<dictionary_key_type>::getSource() cons
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void CacheDictionary<dictionary_key_type>::toParent(const PaddedPODArray<UInt64> & ids [[maybe_unused]], PaddedPODArray<UInt64> & out [[maybe_unused]]) const
-{
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-    {
-        /// Run update on requested keys before fetch from storage
-        const auto & attribute_name = hierarchical_attribute->name;
-
-        auto result_type = std::make_shared<DataTypeUInt64>();
-        auto input_column = result_type->createColumn();
-        auto & input_column_typed = assert_cast<ColumnVector<UInt64> &>(*input_column);
-        auto & data = input_column_typed.getData();
-        data.insert(ids.begin(), ids.end());
-
-        auto column = getColumn({attribute_name}, result_type, {std::move(input_column)}, {result_type}, {nullptr});
-        const auto & result_column_typed = assert_cast<const ColumnVector<UInt64> &>(*column);
-        const auto & result_data = result_column_typed.getData();
-
-        out.assign(result_data);
-    }
-    else
-        throw Exception("Hierarchy is not supported for complex key CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD);
-}
-
-
-/// Allow to use single value in same way as array.
-static inline UInt64 getAt(const PaddedPODArray<UInt64> & arr, const size_t idx)
-{
-    return arr[idx];
-}
-static inline UInt64 getAt(const UInt64 & value, const size_t)
-{
-    return value;
-}
-
-template <DictionaryKeyType dictionary_key_type>
-template <typename AncestorType>
-void CacheDictionary<dictionary_key_type>::isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    /// Transform all children to parents until ancestor id or null_value will be reached.
-
-    size_t out_size = out.size();
-    memset(out.data(), 0xFF, out_size); /// 0xFF means "not calculated"
-
-    const auto null_value = hierarchical_attribute->null_value.get<UInt64>();
-
-    PaddedPODArray<Key> children(out_size, 0);
-    PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
-
-    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
-    {
-        size_t out_idx = 0;
-        size_t parents_idx = 0;
-        size_t new_children_idx = 0;
-
-        while (out_idx < out_size)
-        {
-            /// Already calculated
-            if (out[out_idx] != 0xFF)
-            {
-                ++out_idx;
-                continue;
-            }
-
-            /// No parent
-            if (parents[parents_idx] == null_value)
-            {
-                out[out_idx] = 0;
-            }
-            /// Found ancestor
-            else if (parents[parents_idx] == getAt(ancestor_ids, parents_idx))
-            {
-                out[out_idx] = 1;
-            }
-            /// Loop detected
-            else if (children[new_children_idx] == parents[parents_idx])
-            {
-                out[out_idx] = 1;
-            }
-            /// Found intermediate parent, add this value to search at next loop iteration
-            else
-            {
-                children[new_children_idx] = parents[parents_idx];
-                ++new_children_idx;
-            }
-
-            ++out_idx;
-            ++parents_idx;
-        }
-
-        if (new_children_idx == 0)
-            break;
-
-        /// Transform all children to its parents.
-        children.resize(new_children_idx);
-        parents.resize(new_children_idx);
-
-        toParent(children, parents);
-    }
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void CacheDictionary<dictionary_key_type>::isInVectorVector(
-    const PaddedPODArray<UInt64> & child_ids, const PaddedPODArray<UInt64> & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_ids, ancestor_ids, out);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void CacheDictionary<dictionary_key_type>::isInVectorConstant(const PaddedPODArray<UInt64> & child_ids, const UInt64 ancestor_id, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_ids, ancestor_id, out);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void CacheDictionary<dictionary_key_type>::isInConstantVector(const UInt64 child_id, const PaddedPODArray<UInt64> & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    /// Special case with single child value.
-
-    const auto null_value = hierarchical_attribute->null_value.get<UInt64>();
-
-    PaddedPODArray<Key> child(1, child_id);
-    PaddedPODArray<Key> parent(1);
-    std::vector<Key> ancestors(1, child_id);
-
-    /// Iteratively find all ancestors for child.
-    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
-    {
-        toParent(child, parent);
-
-        if (parent[0] == null_value)
-            break;
-
-        child[0] = parent[0];
-        ancestors.push_back(parent[0]);
-    }
-
-    /// Assuming short hierarchy, so linear search is Ok.
-    for (size_t i = 0, out_size = out.size(); i < out_size; ++i)
-        out[i] = std::find(ancestors.begin(), ancestors.end(), ancestor_ids[i]) != ancestors.end();
-}
-
-template <DictionaryKeyType dictionary_key_type>
-void CacheDictionary<dictionary_key_type>::setupHierarchicalAttribute()
-{
-    /// TODO: Move this to DictionaryStructure
-    for (const auto & attribute : dict_struct.attributes)
-    {
-        if (attribute.hierarchical)
-        {
-            hierarchical_attribute = &attribute;
-
-            if (attribute.underlying_type != AttributeUnderlyingType::utUInt64)
-                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
-        }
-    }
-}
-
-template <DictionaryKeyType dictionary_key_type>
 ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & result_type,
@@ -292,26 +133,9 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
 template <DictionaryKeyType dictionary_key_type>
 Columns CacheDictionary<dictionary_key_type>::getColumns(
     const Strings & attribute_names,
-    const DataTypes &,
+    const DataTypes & result_types,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const Columns & default_values_columns) const
-{
-    if (dictionary_key_type == DictionaryKeyType::complex)
-        dict_struct.validateKeyTypes(key_types);
-
-    Arena complex_keys_arena;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
-    auto & keys = extractor.getKeys();
-
-    return getColumnsImpl(attribute_names, key_columns, keys, default_values_columns);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
-    const Strings & attribute_names,
-    const Columns & key_columns,
-    const PaddedPODArray<KeyType> & keys,
     const Columns & default_values_columns) const
 {
     /**
@@ -328,7 +152,14 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
     * use default value.
     */
 
-    DictionaryStorageFetchRequest request(dict_struct, attribute_names, default_values_columns);
+    if (dictionary_key_type == DictionaryKeyType::complex)
+        dict_struct.validateKeyTypes(key_types);
+
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
+    auto keys = extractor.extractAllKeys();
+
+    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, default_values_columns);
 
     FetchResult result_of_fetch_from_storage;
 
@@ -345,8 +176,9 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
 
-    query_count.fetch_add(keys.size());
-    hit_count.fetch_add(found_keys_size);
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(found_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
 
     MutableColumns & fetched_columns_from_storage = result_of_fetch_from_storage.fetched_columns;
     const PaddedPODArray<KeyState> & key_index_to_state_from_storage = result_of_fetch_from_storage.key_index_to_state;
@@ -440,12 +272,13 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     if (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
-    Arena complex_keys_arena;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
-    const auto & keys = extractor.getKeys();
+
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
+    const auto keys = extractor.extractAllKeys();
 
     /// We make empty request just to fetch if keys exists
-    DictionaryStorageFetchRequest request(dict_struct, {}, {});
+    DictionaryStorageFetchRequest request(dict_struct, {}, {}, {});
 
     FetchResult result_of_fetch_from_storage;
 
@@ -464,8 +297,9 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
 
-    query_count.fetch_add(keys.size());
-    hit_count.fetch_add(found_keys_size);
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(found_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
 
     size_t keys_to_update_size = expired_keys_size + not_found_keys_size;
     auto update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(key_columns, result_of_fetch_from_storage.key_index_to_state, request, keys_to_update_size);
@@ -524,6 +358,41 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     }
 
     return result;
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
+    ColumnPtr key_column [[maybe_unused]],
+    const DataTypePtr & key_type [[maybe_unused]]) const
+{
+    if (dictionary_key_type == DictionaryKeyType::simple)
+    {
+        size_t keys_found;
+        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
+        query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
+        return result;
+    }
+    else
+        return nullptr;
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
+    ColumnPtr key_column [[maybe_unused]],
+    ColumnPtr in_key_column [[maybe_unused]],
+    const DataTypePtr & key_type [[maybe_unused]]) const
+{
+    if (dictionary_key_type == DictionaryKeyType::simple)
+    {
+        size_t keys_found;
+        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
+        query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
+        return result;
+    }
+    else
+        return nullptr;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -618,19 +487,18 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
 template <DictionaryKeyType dictionary_key_type>
 BlockInputStreamPtr CacheDictionary<dictionary_key_type>::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<Key>;
-    std::shared_ptr<BlockInputStreamType> stream;
+    std::shared_ptr<DictionaryBlockInputStream> stream;
 
     {
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-            stream = std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, cache_storage_ptr->getCachedSimpleKeys(), column_names);
+            stream = std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, cache_storage_ptr->getCachedSimpleKeys(), column_names);
         else
         {
             auto keys = cache_storage_ptr->getCachedComplexKeys();
-            stream = std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
+            stream = std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, keys, column_names);
         }
     }
 
@@ -658,15 +526,19 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     */
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
 
-    size_t found_keys_size = 0;
-
-    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, update_unit_ptr->complex_key_arena);
-    const auto & requested_keys = requested_keys_extractor.getKeys();
+    Arena * complex_key_arena = update_unit_ptr->complex_keys_arena_holder.getComplexKeyArena();
+    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, complex_key_arena);
+    auto requested_keys = requested_keys_extractor.extractAllKeys();
 
     HashSet<KeyType> not_found_keys;
 
     std::vector<UInt64> requested_keys_vector;
     std::vector<size_t> requested_complex_key_rows;
+
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        requested_keys_vector.reserve(requested_keys.size());
+    else
+        requested_complex_key_rows.reserve(requested_keys.size());
 
     auto & key_index_to_state_from_storage = update_unit_ptr->key_index_to_state;
 
@@ -727,8 +599,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                     block_columns.erase(block_columns.begin());
                 }
 
-                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, update_unit_ptr->complex_key_arena);
-                const auto & keys_extracted_from_block = keys_extractor.getKeys();
+                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, complex_key_arena);
+                auto keys_extracted_from_block = keys_extractor.extractAllKeys();
 
                 for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
                 {
@@ -740,10 +612,10 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                 for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
                 {
                     auto fetched_key_from_source = keys_extracted_from_block[i];
+
                     not_found_keys.erase(fetched_key_from_source);
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_size;
+                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
                     found_keys_in_source.emplace_back(fetched_key_from_source);
-                    ++found_keys_size;
                 }
             }
 
@@ -797,9 +669,13 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             }
         }
 
+        /// The underlying source can have duplicates, so count only unique keys this formula is used.
+        size_t found_keys_size = requested_keys_size - not_found_keys.size();
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, requested_keys_size - found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheRequests);
+
+        found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
     }
     else
     {

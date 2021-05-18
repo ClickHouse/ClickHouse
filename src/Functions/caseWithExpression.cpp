@@ -1,6 +1,6 @@
-#include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -20,9 +20,9 @@ class FunctionCaseWithExpression : public IFunction
 {
 public:
     static constexpr auto name = "caseWithExpression";
-    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
 
-    explicit FunctionCaseWithExpression(const Context & context_) : context(context_) {}
+    explicit FunctionCaseWithExpression(ContextPtr context_) : context(context_) {}
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
@@ -98,7 +98,7 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
 }

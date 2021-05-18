@@ -260,22 +260,12 @@ public:
     template <typename ... TAllocatorParams>
     void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params)
     {
-        push_back_raw_many(1, ptr, std::forward<TAllocatorParams>(allocator_params)...);
-    }
-
-    template <typename ... TAllocatorParams>
-    void push_back_raw_many(size_t number_of_items, const void * ptr, TAllocatorParams &&... allocator_params)
-    {
-        size_t required_capacity = size() + number_of_items;
+        size_t required_capacity = size() + ELEMENT_SIZE;
         if (unlikely(required_capacity > capacity()))
             reserve(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
-        size_t items_byte_size = byte_size(number_of_items);
-        if (items_byte_size)
-        {
-            memcpy(c_end, ptr, items_byte_size);
-            c_end += items_byte_size;
-        }
+        memcpy(c_end, ptr, ELEMENT_SIZE);
+        c_end += ELEMENT_SIZE;
     }
 
     void protect()
@@ -528,6 +518,31 @@ public:
         memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
 
         this->c_end += bytes_to_copy;
+    }
+
+    template <typename ... TAllocatorParams>
+    void insertFromItself(iterator from_begin, iterator from_end, TAllocatorParams && ... allocator_params)
+    {
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+
+        /// Convert iterators to indexes because reserve can invalidate iterators
+        size_t start_index = from_begin - begin();
+        size_t end_index = from_end - begin();
+        size_t copy_size = end_index - start_index;
+
+        assert(start_index <= end_index);
+
+        size_t required_capacity = this->size() + copy_size;
+        if (required_capacity > this->capacity())
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+
+        size_t bytes_to_copy = this->byte_size(copy_size);
+        if (bytes_to_copy)
+        {
+            auto begin = this->c_start + this->byte_size(start_index);
+            memcpy(this->c_end, reinterpret_cast<const void *>(&*begin), bytes_to_copy);
+            this->c_end += bytes_to_copy;
+        }
     }
 
     template <typename It1, typename It2>

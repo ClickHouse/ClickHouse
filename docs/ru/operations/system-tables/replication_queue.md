@@ -14,7 +14,17 @@
 
 -   `node_name` ([String](../../sql-reference/data-types/string.md)) — имя узла в ZooKeeper.
 
--   `type` ([String](../../sql-reference/data-types/string.md)) — тип задачи в очереди: `GET_PARTS`, `MERGE_PARTS`, `DETACH_PARTS`, `DROP_PARTS` или `MUTATE_PARTS`.
+-   `type` ([String](../../sql-reference/data-types/string.md)) — тип задачи в очереди:
+
+    -   `GET_PART` — скачать кусок с другой реплики.
+    -   `ATTACH_PART` — присоединить кусок. Задача может быть выполнена и с куском из нашей собственной реплики (если он находится в папке `detached`). Эта задача практически идентична задаче `GET_PART`, лишь немного оптимизирована.
+    -   `MERGE_PARTS` — выполнить слияние кусков.
+    -   `DROP_RANGE` — удалить куски в партициях из указнного диапазона.
+    -   `CLEAR_COLUMN` — удалить указанный столбец из указанной партиции. Примечание: не используется с 20.4.
+    -   `CLEAR_INDEX` — удалить указанный индекс из указанной партиции. Примечание: не используется с 20.4. 
+    -   `REPLACE_RANGE` — удалить указанный диапазон кусков и заменить их на новые.
+    -   `MUTATE_PART` — применить одну или несколько мутаций к куску.
+    -   `ALTER_METADATA` — применить изменения структуры таблицы в результате запросов с выражением `ALTER`.
 
 -   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — дата и время отправки задачи на выполнение.
 
@@ -77,4 +87,3 @@ last_postpone_time:     1970-01-01 03:00:00
 **Смотрите также**
 
 -   [Управление таблицами ReplicatedMergeTree](../../sql-reference/statements/system.md#query-language-system-replicated)
-

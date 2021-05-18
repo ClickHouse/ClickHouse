@@ -1,4 +1,4 @@
-(defproject jepsen.nukeeper "0.1.0-SNAPSHOT"
+(defproject jepsen.keeper "0.1.0-SNAPSHOT"
   :injections [(.. System (setProperty "zookeeper.request.timeout" "10000"))]
   :description "A jepsen tests for ClickHouse Keeper"
   :url "https://clickhouse.tech/"

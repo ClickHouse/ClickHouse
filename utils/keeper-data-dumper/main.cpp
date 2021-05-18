@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
         Poco::Logger::root().setChannel(channel);
         Poco::Logger::root().setLevel("trace");
     }
-    auto * logger = &Poco::Logger::get("nukeeper-dumper");
+    auto * logger = &Poco::Logger::get("keeper-dumper");
     ResponsesQueue queue;
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();

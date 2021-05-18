@@ -1,7 +1,9 @@
 #include <Common/ZooKeeper/Types.h>
+#include "Access/IAccessEntity.h"
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -50,6 +52,11 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     {
         case GET_PART:
             out << "get\n" << new_part_name;
+            break;
+
+        case ATTACH_PART:
+            out << "attach\n" << new_part_name << "\n"
+                << "part_checksum: " << part_checksum;
             break;
 
         case MERGE_PARTS:
@@ -136,7 +143,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             break;
 
         default:
-            throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", static_cast<int>(type));
     }
 
     out << '\n';
@@ -156,7 +163,8 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     in >> "format version: " >> format_version >> "\n";
 
     if (format_version < 1 || format_version >= FORMAT_LAST)
-        throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown ReplicatedMergeTreeLogEntry format version: {}",
+                DB::toString(format_version));
 
     if (format_version >= FORMAT_WITH_CREATE_TIME)
     {
@@ -177,10 +185,16 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     in >> type_str >> "\n";
 
     bool trailing_newline_found = false;
+
     if (type_str == "get")
     {
         type = GET_PART;
         in >> new_part_name;
+    }
+    else if (type_str == "attach")
+    {
+        type = ATTACH_PART;
+        in >> new_part_name >> "\npart_checksum: " >> part_checksum;
     }
     else if (type_str == "merge")
     {
@@ -353,6 +367,12 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
     in >> "columns_version: " >> columns_version;
 }
 
+bool ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info)
+{
+    assert(drop_range_info.getBlocksCount() != 0);
+    return drop_range_info.getBlocksCount() == 1;
+}
+
 String ReplicatedMergeTreeLogEntryData::toString() const
 {
     WriteBufferFromOwnString out;
@@ -371,6 +391,35 @@ ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String
         res->create_time = stat.ctime / 1000;
 
     return res;
+}
+
+Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormatVersion format_version) const
+{
+    /// Doesn't produce any part
+    if (type == ALTER_METADATA)
+        return {};
+
+    /// DROP_RANGE does not add a real part, but we must disable merges in that range
+    if (type == DROP_RANGE)
+        return {new_part_name};
+
+    /// CLEAR_COLUMN and CLEAR_INDEX are deprecated since 20.3
+    if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
+        return {};
+
+    if (type == REPLACE_RANGE)
+    {
+        Strings res = replace_range_entry->new_part_names;
+        auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
+        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
+        {
+            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
+            res.emplace_back(replace_range_entry->drop_range_part_name);
+        }
+        return res;
+    }
+
+    return {new_part_name};
 }
 
 }

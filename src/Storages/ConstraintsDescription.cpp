@@ -41,7 +41,7 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
     return res;
 }
 
-ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context & context,
+ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
     ConstraintsExpressions res;

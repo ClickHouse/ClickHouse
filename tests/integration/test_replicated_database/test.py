@@ -35,8 +35,17 @@ def started_cluster():
         cluster.shutdown()
 
 def test_create_replicated_table(started_cluster):
+    assert "Explicit zookeeper_path and replica_name are specified" in \
+           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+                                         "ENGINE=ReplicatedMergeTree('/test/tmp', 'r') ORDER BY k PARTITION BY toYYYYMM(d);")
+
+    assert "Explicit zookeeper_path and replica_name are specified" in \
+           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+                                         "ENGINE=ReplicatedMergeTree('/test/tmp', 'r', d, k, 8192);")
+
     assert "Old syntax is not allowed" in \
-           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/test/tmp', 'r', d, k, 8192);")
+           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+                                         "ENGINE=ReplicatedMergeTree('/test/tmp/{shard}', '{replica}', d, k, 8192);")
 
     main_node.query("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);")
 

@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Disks/IDisk.h>
 
 #include <mutex>
@@ -18,6 +19,7 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 class ReplicatedMergeTreeQueue;
+struct MergeTreePartInfo;
 
 namespace ErrorCodes
 {
@@ -30,29 +32,32 @@ struct ReplicatedMergeTreeLogEntryData
 {
     enum Type
     {
-        EMPTY,             /// Not used.
-        GET_PART,          /// Get the part from another replica.
-        MERGE_PARTS,       /// Merge the parts.
-        DROP_RANGE,        /// Delete the parts in the specified partition in the specified number range.
-        CLEAR_COLUMN,      /// NOTE: Deprecated. Drop specific column from specified partition.
-        CLEAR_INDEX,       /// NOTE: Deprecated. Drop specific index from specified partition.
-        REPLACE_RANGE,     /// Drop certain range of partitions and replace them by new ones
-        MUTATE_PART,       /// Apply one or several mutations to the part.
-        ALTER_METADATA,    /// Apply alter modification according to global /metadata and /columns paths
+        EMPTY,          /// Not used.
+        GET_PART,       /// Get the part from another replica.
+        ATTACH_PART,    /// Attach the part, possibly from our own replica (if found in /detached folder).
+                        /// You may think of it as a GET_PART with some optimisations as they're nearly identical.
+        MERGE_PARTS,    /// Merge the parts.
+        DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
+        CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
+        CLEAR_INDEX,    /// NOTE: Deprecated. Drop specific index from specified partition.
+        REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
+        MUTATE_PART,    /// Apply one or several mutations to the part.
+        ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
     };
 
     static String typeToString(Type type)
     {
         switch (type)
         {
-            case ReplicatedMergeTreeLogEntryData::GET_PART:          return "GET_PART";
-            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:       return "MERGE_PARTS";
-            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:        return "DROP_RANGE";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:      return "CLEAR_COLUMN";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:       return "CLEAR_INDEX";
-            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:     return "REPLACE_RANGE";
-            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:       return "MUTATE_PART";
-            case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:    return "ALTER_METADATA";
+            case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
+            case ReplicatedMergeTreeLogEntryData::ATTACH_PART:      return "ATTACH_PART";
+            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
+            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
+            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
+            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
+            case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -71,6 +76,8 @@ struct ReplicatedMergeTreeLogEntryData
 
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
+
+    String part_checksum; /// Part checksum for ATTACH_PART, empty otherwise.
 
     /// The name of resulting part for GET_PART and MERGE_PARTS
     /// Part range for DROP_RANGE and CLEAR_COLUMN
@@ -104,6 +111,8 @@ struct ReplicatedMergeTreeLogEntryData
 
         void writeText(WriteBuffer & out) const;
         void readText(ReadBuffer & in);
+
+        static bool isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info);
     };
 
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
@@ -116,6 +125,7 @@ struct ReplicatedMergeTreeLogEntryData
     int alter_version = -1; /// May be equal to -1, if it's normal mutation, not metadata update.
 
     /// only ALTER METADATA command
+    /// NOTE It's never used
     bool have_mutation = false; /// If this alter requires additional mutation step, for data update
 
     String columns_str; /// New columns data corresponding to alter_version
@@ -123,36 +133,13 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// Returns a set of parts that will appear after executing the entry + parts to block
     /// selection of merges. These parts are added to queue.virtual_parts.
-    Strings getVirtualPartNames() const
-    {
-        /// Doesn't produce any part
-        if (type == ALTER_METADATA)
-            return {};
-
-        /// DROP_RANGE does not add a real part, but we must disable merges in that range
-        if (type == DROP_RANGE)
-            return {new_part_name};
-
-        /// Return {} because selection of merges in the partition where the column is cleared
-        /// should not be blocked (only execution of merges should be blocked).
-        if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
-            return {};
-
-        if (type == REPLACE_RANGE)
-        {
-            Strings res = replace_range_entry->new_part_names;
-            res.emplace_back(replace_range_entry->drop_range_part_name);
-            return res;
-        }
-
-        return {new_part_name};
-    }
+    Strings getVirtualPartNames(MergeTreeDataFormatVersion format_version) const;
 
     /// Returns set of parts that denote the block number ranges that should be blocked during the entry execution.
     /// These parts are added to future_parts.
-    Strings getBlockingPartNames() const
+    Strings getBlockingPartNames(MergeTreeDataFormatVersion format_version) const
     {
-        Strings res = getVirtualPartNames();
+        Strings res = getVirtualPartNames(format_version);
 
         if (type == CLEAR_COLUMN)
             res.emplace_back(new_part_name);

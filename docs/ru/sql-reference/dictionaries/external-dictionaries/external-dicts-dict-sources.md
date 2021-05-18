@@ -69,6 +69,7 @@ SETTINGS(format_csv_allow_single_quotes = 0)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)      
 
 ## Локальный файл {#dicts-external_dicts_dict_sources-local_file}
 

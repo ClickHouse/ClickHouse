@@ -12,7 +12,7 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const String & config_prefix,
                                    Block & sample_block,
-                                   const Context & /* context */,
+                                   ContextPtr /* context */,
                                    const std::string & /* default_database */,
                                    bool /* check_config */) -> DictionarySourcePtr {
         return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
@@ -30,7 +30,6 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitors.h>
 
 #include "RedisBlockInputStream.h"
 
@@ -66,25 +65,27 @@ namespace DB
             , client{std::make_shared<Poco::Redis::Client>(host, port)}
     {
         if (dict_struct.attributes.size() != 1)
-            throw Exception{"Invalid number of non key columns for Redis source: " +
-                            DB::toString(dict_struct.attributes.size()) + ", expected 1",
-                            ErrorCodes::INVALID_CONFIG_PARAMETER};
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "Invalid number of non key columns for Redis source: {}, expected 1",
+                DB::toString(dict_struct.attributes.size()));
 
         if (storage_type == RedisStorageType::HASH_MAP)
         {
             if (!dict_struct.key)
-                throw Exception{"Redis source with storage type \'hash_map\' must have key",
-                                ErrorCodes::INVALID_CONFIG_PARAMETER};
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Redis source with storage type \'hash_map\' must have key");
 
             if (dict_struct.key->size() != 2)
-                throw Exception{"Redis source with storage type \'hash_map\' requires 2 keys",
-                                ErrorCodes::INVALID_CONFIG_PARAMETER};
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Redis source with storage type \'hash_map\' requires 2 keys");
             // suppose key[0] is primary key, key[1] is secondary key
 
             for (const auto & key : *dict_struct.key)
                 if (!isInteger(key.type) && !isString(key.type))
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                        "Redis source supports only integer or string key, but key '{}' of type {} given", key.name, key.type->getName());
+                        "Redis source supports only integer or string key, but key '{}' of type {} given",
+                        key.name,
+                        key.type->getName());
         }
 
         if (!password.empty())
@@ -93,8 +94,9 @@ namespace DB
             command << password;
             String reply = client->execute<String>(command);
             if (reply != "OK")
-                throw Exception{"Authentication failed with reason "
-                     + reply, ErrorCodes::INTERNAL_REDIS_ERROR};
+                throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
+                    "Authentication failed with reason {}",
+                    reply);
         }
 
         if (db_index != 0)
@@ -103,8 +105,10 @@ namespace DB
             command << std::to_string(db_index);
             String reply = client->execute<String>(command);
             if (reply != "OK")
-                throw Exception{"Selecting database with index " + DB::toString(db_index)
-                    + " failed with reason " + reply, ErrorCodes::INTERNAL_REDIS_ERROR};
+                throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
+                    "Selecting database with index {} failed with reason {}",
+                    DB::toString(db_index),
+                    reply);
         }
     }
 
@@ -215,10 +219,10 @@ namespace DB
             client->connect(host, port);
 
         if (storage_type == RedisStorageType::HASH_MAP)
-            throw Exception{"Cannot use loadIds with 'hash_map' storage type", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use loadIds with 'hash_map' storage type");
 
         if (!dict_struct.id)
-            throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
 
         RedisArray keys;
 
@@ -234,7 +238,7 @@ namespace DB
             client->connect(host, port);
 
         if (key_columns.size() != dict_struct.key->size())
-            throw Exception{"The size of key_columns does not equal to the size of dictionary key", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
         RedisArray keys;
         for (auto row : requested_rows)
@@ -268,7 +272,7 @@ namespace DB
         if (storage_type_str == "hash_map")
             return RedisStorageType::HASH_MAP;
         else if (!storage_type_str.empty() && storage_type_str != "simple")
-            throw Exception("Unknown storage type " + storage_type_str + " for Redis dictionary", ErrorCodes::INVALID_CONFIG_PARAMETER);
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown storage type {} for Redis dictionary", storage_type_str);
 
         return RedisStorageType::SIMPLE;
     }

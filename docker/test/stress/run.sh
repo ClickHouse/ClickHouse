@@ -20,6 +20,14 @@ function configure()
 
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
+
+    # Set more frequent update period of asynchronous metrics to more frequently update information about real memory usage (less chance of OOM).
+    echo "<yandex><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></yandex>" \
+        > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
+
+    # Set maximum memory usage as half of total memory (less chance of OOM).
+    echo "<yandex><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></yandex>" \
+        > /etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml
 }
 
 function stop()
@@ -108,6 +116,11 @@ zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" > /dev
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
 rm -f /test_output/tmp
 
+# OOM
+zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
+    && echo -e 'OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
+    || echo -e 'No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
+
 # Logical errors
 zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'Logical error thrown (see clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
@@ -118,7 +131,7 @@ zgrep -Fa "########################################" /var/log/clickhouse-server/
     && echo -e 'Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'Not crashed\tOK' >> /test_output/test_results.tsv
 
-# It also checks for OOM or crash without stacktrace (printed by watchdog)
+# It also checks for crash without stacktrace (printed by watchdog)
 zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'Fatal message in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
@@ -131,6 +144,7 @@ pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhous
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
+tar -chf /test_output/trace_log_dump.tar /var/lib/clickhouse/data/system/trace_log ||:
 
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%') LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv

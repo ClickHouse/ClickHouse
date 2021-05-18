@@ -105,7 +105,8 @@
         "00604_show_create_database",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
-        "00738_lock_for_inner_table"
+        "00738_lock_for_inner_table",
+        "01153_attach_mv_uuid"
     ],
     "database-replicated": [
         "memory_tracking",
@@ -118,6 +119,17 @@
         "01148_zookeeper_path_macros_unfolding",
         "01294_system_distributed_on_cluster",
         "01269_create_with_null",
+        "01451_replicated_detach_drop_and_quorum",
+        "01188_attach_table_from_path",
+        "01149_zookeeper_mutation_stuck_after_replace_partition",
+        /// user_files
+        "01721_engine_file_truncate_on_insert",
+        /// Fails due to additional replicas or shards
+        "quorum",
+        "01650_drop_part_and_deduplication_zookeeper",
+        "01532_execute_merges_on_single_replica",
+        "00652_replicated_mutations_default_database_zookeeper",
+        "00620_optimize_on_nonleader_replica_zookeeper",
         /// grep -c
         "01018_ddl_dictionaries_bad_queries",
         "00908_bloom_filter_index",
@@ -136,6 +148,8 @@
         "00626_replace_partition_from_table_zookeeper",
         "00626_replace_partition_from_table",
         "00152_insert_different_granularity",
+        "00054_merge_tree_partitions",
+        "01781_merge_tree_deduplication",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
@@ -151,7 +165,10 @@
         "00083_create_merge_tree_zookeeper",
         "00062_replicated_merge_tree_alter_zookeeper",
         /// Does not support renaming of multiple tables in single query
-        "00634_rename_view"
+        "00634_rename_view",
+        "00140_rename",
+        "01783_http_chunk_size",
+        "01710_projection_fetch"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -332,6 +349,7 @@
         "01508_partition_pruning_long",
         "01509_check_parallel_quorum_inserts_long",
         "01509_parallel_quorum_and_merge_long",
+        "01509_dictionary_preallocate",
         "01515_mv_and_array_join_optimisation_bag",
         "01516_create_table_primary_key",
         "01517_drop_mv_with_inner_table",
@@ -375,7 +393,16 @@
         "01655_plan_optimizations",
         "01475_read_subcolumns_storages",
         "01674_clickhouse_client_query_param_cte",
-        "01666_merge_tree_max_query_limit"
+        "01666_merge_tree_max_query_limit",
+        "01710_projections",
+        "01710_normal_projections",
+        "01710_aggregate_projections",
+        "01786_explain_merge_tree",
+        "01666_merge_tree_max_query_limit",
+        "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
+        "01823_explain_json",
+        "01852_cast_operator",
+        "01852_cast_operator_bad_cases"
     ],
     "parallel":
     [
@@ -542,6 +569,9 @@
         "01135_default_and_alter_zookeeper",
         "01148_zookeeper_path_macros_unfolding",
         "01150_ddl_guard_rwr",
+        "01153_attach_mv_uuid",
+        "01152_cross_replication",
+        "01154_move_partition_long",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
@@ -628,6 +658,7 @@
         "01542_dictionary_load_exception_race",
         "01545_system_errors", // looks at the difference of values in system.errors
         "01560_optimize_on_insert_zookeeper",
+        "01563_distributed_query_finish", // looks at system.errors which is global
         "01575_disable_detach_table_of_dictionary",
         "01593_concurrent_alter_mutations_kill",
         "01593_concurrent_alter_mutations_kill_many_replicas",
@@ -654,11 +685,14 @@
         "01702_system_query_log", // Runs many global system queries
         "01715_background_checker_blather_zookeeper",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01722_long_brotli_http_compression_json_format", // It is broken in some unimaginable way with the genius error 'cannot write to ofstream'. Not sure how to debug this
         "01747_alter_partition_key_enum_zookeeper",
         "01748_dictionary_table_dot", // creates database
         "01760_polygon_dictionaries",
         "01760_system_dictionaries",
         "01761_alter_decimal_zookeeper",
+        "01360_materialized_view_with_join_on_query_log", // creates and drops MVs on query_log, which may interrupt flushes.
+        "01509_parallel_quorum_insert_no_replicas", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "attach",
         "ddl_dictionaries",
         "dictionary",
@@ -666,6 +700,28 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts" // they use an explicitly specified database
+        "polygon_dicts", // they use an explicitly specified database
+        "01658_read_file_to_stringcolumn",
+        "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
+        "01748_dictionary_table_dot", // creates database
+        "00950_dict_get",
+        "01683_flat_dictionary",
+        "01681_cache_dictionary_simple_key",
+        "01682_cache_dictionary_complex_key",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key",
+        "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01760_system_dictionaries",
+        "01760_polygon_dictionaries",
+        "01778_hierarchical_dictionaries",
+        "01780_clickhouse_dictionary_source_loop",
+        "01785_dictionary_element_count",
+        "01802_test_postgresql_protocol_with_row_policy", /// Creates database and users
+        "01804_dictionary_decimal256_type",
+        "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
+        "01821_table_comment",
+        "01710_projection_fetch",
+        "01870_buffer_flush" // creates database
     ]
 }

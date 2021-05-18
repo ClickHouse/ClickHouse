@@ -17,3 +17,4 @@
 #cmakedefine01 USE_GRPC
 #cmakedefine01 USE_STATS
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
+#cmakedefine01 USE_DATASKETCHES

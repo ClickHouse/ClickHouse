@@ -29,6 +29,7 @@
 #include <common/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
+#include <ext/scope_guard_safe.h>
 
 namespace fs = std::filesystem;
 
@@ -148,9 +149,15 @@ std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
 }
 
 
-DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-                     const String & logger_name, const CurrentMetrics::Metric * max_entry_metric_)
-    : context(context_)
+DDLWorker::DDLWorker(
+    int pool_size_,
+    const std::string & zk_root_dir,
+    ContextPtr context_,
+    const Poco::Util::AbstractConfiguration * config,
+    const String & prefix,
+    const String & logger_name,
+    const CurrentMetrics::Metric * max_entry_metric_)
+    : context(Context::createCopy(context_))
     , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
@@ -176,16 +183,16 @@ DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Cont
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
 
         if (config->has(prefix + ".profile"))
-            context.setSetting("profile", config->getString(prefix + ".profile"));
+            context->setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context.getSettingsRef().readonly)
+    if (context->getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
-    host_fqdn_id = Cluster::Address::toString(host_fqdn, context.getTCPPort());
+    host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getTCPPort());
 }
 
 void DDLWorker::startup()
@@ -224,7 +231,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
     std::lock_guard lock(zookeeper_mutex);
 
     if (!current_zookeeper || current_zookeeper->expired())
-        current_zookeeper = context.getZooKeeper();
+        current_zookeeper = context->getZooKeeper();
 
     return current_zookeeper;
 }
@@ -365,7 +372,20 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     }
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
+    size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
+    /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
+    LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
+                   "entries={}..{}, "
+                   "first_failed_task_name={}, current_tasks_size={},"
+                   "last_current_task={},"
+                   "last_skipped_entry_name={}",
+                   initialized, size_before_filtering, queue_nodes.size(),
+                   queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
+                   first_failed_task_name ? *first_failed_task_name : "none", current_tasks.size(),
+                   current_tasks.empty() ? "none" : current_tasks.back()->entry_name,
+                   last_skipped_entry_name ? *last_skipped_entry_name : "none");
+
     if (max_tasks_in_queue < queue_nodes.size())
         cleanup_event->set();
 
@@ -491,8 +511,8 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
     {
         auto query_context = task.makeQueryContext(context, zookeeper);
         if (!task.is_initial_query)
-            query_scope.emplace(*query_context);
-        executeQuery(istr, ostr, !task.is_initial_query, *query_context, {});
+            query_scope.emplace(query_context);
+        executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -638,7 +658,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
-                    auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                    auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
                     storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
@@ -820,7 +840,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
             task.ops.push_back(create_shard_flag);
-            SCOPE_EXIT({ if (!executed_by_us && !task.ops.empty()) task.ops.pop_back(); });
+            SCOPE_EXIT_MEMORY({ if (!executed_by_us && !task.ops.empty()) task.ops.pop_back(); });
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock

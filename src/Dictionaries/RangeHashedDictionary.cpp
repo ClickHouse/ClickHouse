@@ -76,7 +76,7 @@ RangeHashedDictionary::RangeHashedDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -185,27 +185,30 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, con
     auto range_column_storage_type = std::make_shared<DataTypeInt64>();
     auto range_column_updated = castColumnAccurate(column_to_cast, range_column_storage_type);
 
-    PaddedPODArray<Key> key_backup_storage;
+    PaddedPODArray<UInt64> key_backup_storage;
     PaddedPODArray<RangeStorageType> range_backup_storage;
 
-    const PaddedPODArray<Key> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<UInt64> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
     const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, range_column_updated, range_backup_storage);
 
     const auto & attribute = attributes.front();
 
     ColumnUInt8::Ptr result;
 
+    size_t keys_found = 0;
+
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-        result = hasKeysImpl<ValueType>(attribute, ids, dates);
+        result = hasKeysImpl<ValueType>(attribute, ids, dates, keys_found);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -213,13 +216,16 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, con
 template <typename AttributeType>
 ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
     const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<RangeStorageType> & dates) const
+    const PaddedPODArray<UInt64> & ids,
+    const PaddedPODArray<RangeStorageType> & dates,
+    size_t & keys_found) const
 {
     auto result = ColumnUInt8::create(ids.size());
     auto& out = result->getData();
 
     const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
+
+    keys_found = 0;
 
     for (const auto row : ext::range(0, ids.size()))
     {
@@ -237,10 +243,8 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
                     return v.range.contains(date);
                 });
 
-            if (val_it != std::end(ranges_and_values))
-                out[row] = true;
-            else
-                out[row] = false;
+            out[row] = val_it != std::end(ranges_and_values);
+            keys_found += out[row];
         }
         else
             out[row] = false;
@@ -260,8 +264,8 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
-                            getDictionaryID().getNameForLogs()};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
+                            getDictionaryID().getNameForLogs());
     }
 }
 
@@ -311,8 +315,8 @@ void RangeHashedDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.",
-                        ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
+            "{}: dictionary source is empty and 'require_nonempty' property is set.");
 }
 
 template <typename T>
@@ -388,13 +392,15 @@ void RangeHashedDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    PaddedPODArray<Key> key_backup_storage;
+    PaddedPODArray<UInt64> key_backup_storage;
     PaddedPODArray<RangeStorageType> range_backup_storage;
 
-    const PaddedPODArray<Key> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<UInt64> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
     const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, key_columns[1], range_backup_storage);
 
     const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
+
+    size_t keys_found = 0;
 
     for (const auto row : ext::range(0, ids.size()))
     {
@@ -413,7 +419,8 @@ void RangeHashedDictionary::getItemsImpl(
 
             if (val_it != std::end(ranges_and_values))
             {
-                auto& value = val_it->value;
+                ++keys_found;
+                auto & value = val_it->value;
 
                 if (value)
                     set_value(row, static_cast<OutputType>(*value), false); // NOLINT
@@ -432,11 +439,12 @@ void RangeHashedDictionary::getItemsImpl(
     }
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 
 template <typename T>
-void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value)
+void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value)
 {
     using ValueType = std::conditional_t<std::is_same_v<T, String>, StringRef, T>;
     auto & map = *std::get<Ptr<ValueType>>(attribute.maps);
@@ -480,7 +488,7 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
         map.insert({id, Values<ValueType>{std::move(value_to_insert)}});
 }
 
-void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value)
+void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value)
 {
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -497,7 +505,7 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(con
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", full_name, attribute_name);
 
     return attributes[it->second];
 }
@@ -507,15 +515,16 @@ RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, 
 {
     const auto & attribute = getAttribute(attribute_name);
     if (attribute.type != type)
-        throw Exception{attribute_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "attribute {} has type {}",
+            attribute_name,
+            toString(attribute.type));
 
     return attribute;
 }
 
 template <typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
-    PaddedPODArray<Key> & ids,
+    PaddedPODArray<UInt64> & ids,
     PaddedPODArray<RangeType> & start_dates,
     PaddedPODArray<RangeType> & end_dates) const
 {
@@ -536,7 +545,7 @@ void RangeHashedDictionary::getIdsAndDates(
 template <typename T, typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
     const Attribute & attribute,
-    PaddedPODArray<Key> & ids,
+    PaddedPODArray<UInt64> & ids,
     PaddedPODArray<RangeType> & start_dates,
     PaddedPODArray<RangeType> & end_dates) const
 {
@@ -567,7 +576,7 @@ void RangeHashedDictionary::getIdsAndDates(
 template <typename RangeType>
 BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const
 {
-    PaddedPODArray<Key> ids;
+    PaddedPODArray<UInt64> ids;
     PaddedPODArray<RangeType> start_dates;
     PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);
@@ -613,8 +622,9 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
     ListType::forEach(callable);
 
     if (!callable.stream)
-        throw Exception(
-            "Unexpected range type for RangeHashed dictionary: " + dict_struct.range_min->type->getName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected range type for RangeHashed dictionary: {}",
+            dict_struct.range_min->type->getName());
 
     return callable.stream;
 }
@@ -629,11 +639,12 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");
 
         if (!dict_struct.range_min || !dict_struct.range_max)
-            throw Exception{full_name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
-                            ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{}: dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
+                full_name);
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

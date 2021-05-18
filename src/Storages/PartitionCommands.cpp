@@ -13,6 +13,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
     if (command_ast->type == ASTAlterCommand::DROP_PARTITION)
@@ -82,6 +88,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.type = FETCH_PARTITION;
         res.partition = command_ast->partition;
         res.from_zookeeper_path = command_ast->from;
+        res.part = command_ast->part;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FREEZE_PARTITION)
@@ -140,7 +147,10 @@ std::string PartitionCommand::typeToString() const
         else
             return "DROP DETACHED PARTITION";
     case PartitionCommand::Type::FETCH_PARTITION:
-        return "FETCH PARTITION";
+        if (part)
+            return "FETCH PART";
+        else
+            return "FETCH PARTITION";
     case PartitionCommand::Type::FREEZE_ALL_PARTITIONS:
         return "FREEZE ALL";
     case PartitionCommand::Type::FREEZE_PARTITION:
@@ -151,8 +161,9 @@ std::string PartitionCommand::typeToString() const
         return "UNFREEZE ALL";
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
+    default:
+        throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
     }
-    __builtin_unreachable();
 }
 
 Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
