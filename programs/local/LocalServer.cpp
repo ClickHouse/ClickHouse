@@ -208,18 +208,10 @@ static void clearTerminal()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    std::cout << is_interactive << "\n";
     Poco::Logger * log = &logger();
     ThreadStatus thread_status;
     UseSSL use_ssl;
 
-    if (!config().has("query") && !config().has("table-structure") && !config().has("queries-file")) /// Nothing to process
-    {
-        if (config().hasOption("verbose"))
-            std::cerr << "There are no queries to process." << '\n';
-
-        return Application::EXIT_OK;
-    }
 
     if (config().has("query") && config().has("queries-file"))
     {
@@ -260,7 +252,6 @@ try
     if (config().has("query") || config().has("queries-file"))
         is_interactive = false;
 
-    std::cout << is_interactive << "\n";
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
