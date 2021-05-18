@@ -256,7 +256,7 @@ try
     /// - stdin is not a terminal. In this case queries are read from it.
     /// - -qf (--queries-file) command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
-    if (!stdin_is_a_tty || config().has("query") || config().has("queries-file"))
+    if (config().has("query") || config().has("queries-file"))
         is_interactive = false;
 
     std::cout << std::fixed << std::setprecision(3);
