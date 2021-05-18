@@ -111,7 +111,16 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
         auto expr = result.expression_list_ast->clone();
         auto syntax_result = TreeRewriter(context).analyze(expr, columns.getAllPhysical());
         /// In expression we also need to store source columns
-        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
+        ///
+        /// NOTE: Here functions should not be compiled
+        /// (compile_expressions/min_count_to_compile), since you cannot call
+        /// compiled functions with different arguments, and this is required
+        /// for partition pruning, since types may differs, see:
+        /// - applyFunctionForFieldOfUnknownType()
+        /// - applyBinaryFunctionForFieldOfUnknownType()
+        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false,
+            /* project_result= */ true,
+            /* compile= */ false);
         /// In sample block we use just key columns
         result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
     }

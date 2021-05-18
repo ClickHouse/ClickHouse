@@ -1345,10 +1345,11 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
     return actions_dag;
 }
 
-ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
+ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result, bool compile)
 {
-    return std::make_shared<ExpressionActions>(
-        getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext()));
+    ExpressionActionsSettings settings = ExpressionActionsSettings::fromContext(getContext());
+    settings.compile_expressions = compile;
+    return std::make_shared<ExpressionActions>(getActionsDAG(add_aliases, project_result), settings);
 }
 
 
