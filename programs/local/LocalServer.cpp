@@ -205,6 +205,11 @@ static void clearTerminal()
                  "\033[?25h";
 }
 
+inline String prompt() const
+{
+    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+}
+
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -332,6 +337,29 @@ try
         attachSystemTables(global_context);
     }
 
+    auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+    if (history_file_from_env)
+        history_file = history_file_from_env;
+
+    if (!history_file.empty() && !Poco::File(history_file).exists())
+        Poco::File(history_file).createFile();
+
+    LineReader::Patterns query_extenders = {"\\"};
+    LineReader::Patterns query_delimiters = {";", "\\G"};
+
+#if USE_REPLXX
+    replxx::Replxx::highlighter_callback_t highlight_callback{};
+            if (config().getBool("highlight"))
+                highlight_callback = highlight;
+
+            ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
+
+#elif defined(USE_READLINE) && USE_READLINE
+    ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
+#else
+    LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
+#endif
+
     if (!is_interactive)
     {
         processQueries();
@@ -339,6 +367,19 @@ try
     else
     {
         prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+        do
+        {
+            auto input = lr.readLine(prompt(), ":-] ");
+            if (input.empty())
+                break;
+
+            has_vertical_output_suffix = false;
+            if (input.ends_with("\\G"))
+            {
+                input.resize(input.size() - 2);
+                has_vertical_output_suffix = true;
+            }
+        } while (true);
     }
 
     global_context->shutdown();

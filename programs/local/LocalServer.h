@@ -49,6 +49,8 @@ protected:
     bool is_interactive = true; /// Use either interactive line editing interface or batch mode.
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     String prompt_by_server_display_name;
+    /// Path to a file containing command history.
+    String history_file;
 
     /// Settings specified via command line args
     Settings cmd_settings;
