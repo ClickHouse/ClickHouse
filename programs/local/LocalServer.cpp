@@ -1,5 +1,13 @@
 #include "LocalServer.h"
 
+#if USE_REPLXX
+#   include <common/ReplxxLineReader.h>
+#elif defined(USE_READLINE) && USE_READLINE
+#   include <common/ReadlineLineReader.h>
+#else
+#   include <common/LineReader.h>
+#endif
+
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/OptionCallback.h>
@@ -205,11 +213,6 @@ static void clearTerminal()
                  "\033[?25h";
 }
 
-inline String prompt() const
-{
-    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-}
-
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -405,6 +408,11 @@ catch (const Exception & e)
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
+}
+
+inline String prompt() const
+{
+    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
 }
 
 
