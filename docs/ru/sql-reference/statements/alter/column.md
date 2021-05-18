@@ -63,6 +63,9 @@ DROP COLUMN [IF EXISTS] name
 
 Запрос удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
 
+!!! warning "Предупреждение"
+    Вы не можете удалить столбец, используемый в [материализованном представлениии](../../../sql-reference/statements/create/view.md#materialized). В противном случае будет ошибка.
+
 Пример:
 
 ``` sql
@@ -155,7 +158,7 @@ ALTER TABLE table_name MODIFY column_name REMOVE property;
 ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ```
 
-## Смотрите также
+**Смотрите также**
 
 - [REMOVE TTL](ttl.md).
 

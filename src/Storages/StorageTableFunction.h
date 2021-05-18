@@ -62,6 +62,13 @@ public:
             nested->shutdown();
     }
 
+    void flush() override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->flush();
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};

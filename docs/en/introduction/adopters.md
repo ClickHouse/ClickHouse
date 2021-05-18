@@ -77,7 +77,8 @@ toc_title: Adopters
 | <a href="https://tech.mymarilyn.ru" class="favicon">Marilyn</a> | Advertising | Statistics | — | — | [Talk in Russian, June 2017](https://www.youtube.com/watch?v=iXlIgx2khwc) |
 | <a href="https://mellodesign.ru/" class="favicon">Mello</a> | Marketing | Analytics | 1 server | — | [Article, Oct 2020](https://vc.ru/marketing/166180-razrabotka-tipovogo-otcheta-skvoznoy-analitiki) |
 | <a href="https://www.messagebird.com" class="favicon">MessageBird</a> | Telecommunications | Statistics | — | — | [Slides in English, November 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup20/messagebird.pdf) |
-| <a href="https://www.mindsdb.com/" class="favicon">MindsDB</a> | Machine Learning | Main Product | — | — | [Official Website](https://www.mindsdb.com/blog/machine-learning-models-as-tables-in-ch) |x
+| <a href="https://clarity.microsoft.com/" class="favicon">Microsoft</a> | Web Analytics | Clarity (Main Product) | — | — | [A question on GitHub](https://github.com/ClickHouse/ClickHouse/issues/21556) |
+| <a href="https://www.mindsdb.com/" class="favicon">MindsDB</a> | Machine Learning | Main Product | — | — | [Official Website](https://www.mindsdb.com/blog/machine-learning-models-as-tables-in-ch) |
 | <a href="https://mux.com/" class="favicon">MUX</a> | Online Video | Video Analytics | — | — | [Talk in English, August 2019](https://altinity.com/presentations/2019/8/13/how-clickhouse-became-the-default-analytics-database-for-mux/) |
 | <a href="https://www.mgid.com/" class="favicon">MGID</a> | Ad network | Web-analytics | — | — | [Blog post in Russian, April 2020](http://gs-studio.com/news-about-it/32777----clickhouse---c) |
 | <a href="https://www.netskope.com/" class="favicon">Netskope</a> | Network Security | — | — | — | [Job advertisement, March 2021](https://www.mendeley.com/careers/job/senior-software-developer-backend-developer-1346348) |

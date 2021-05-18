@@ -14,6 +14,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -26,6 +27,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -124,6 +130,21 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 
 bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
 {
+    if (block.rows() == 0)
+        throw Exception("Cannot prepare filter with empty block", ErrorCodes::LOGICAL_ERROR);
+
+    /// Take the first row of the input block to build a constant block
+    auto columns = block.getColumns();
+    Columns const_columns(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (isColumnConst(*columns[i]))
+            const_columns[i] = columns[i]->cloneResized(1);
+        else
+            const_columns[i] = ColumnConst::create(columns[i]->cloneResized(1), 1);
+    }
+    block.setColumns(const_columns);
+
     bool unmodified = true;
     const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where() && !select.prewhere())
@@ -134,10 +155,6 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         condition_ast = makeASTFunction("and", select.prewhere()->clone(), select.where()->clone());
     else
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
-
-    // Prepare a constant block with valid expressions
-    for (size_t i = 0; i < block.columns(); ++i)
-        block.getByPosition(i).column = block.getByPosition(i).type->createColumnConstWithDefaultValue(1);
 
     // Provide input columns as constant columns to check if an expression is constant.
     std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & node)
@@ -169,6 +186,9 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
 
 void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
 {
+    if (block.rows() == 0)
+        return;
+
     if (!expression_ast)
         prepareFilterBlockWithQuery(query, context, block, expression_ast);
 
