@@ -218,17 +218,17 @@ public:
       */
     virtual bool isShortCircuit() const { return false; }
 
-   /** Should we evaluate this function lazily in short-circuit function arguments?
-     * If function can throw an exception or it's computationally heavy, then
-     * it's suitable, otherwise it's not (due to the overhead of lazy execution).
-     * Suitability may depend on function arguments.
-     */
+    /** Should we evaluate this function lazily in short-circuit function arguments?
+      * If function can throw an exception or it's computationally heavy, then
+      * it's suitable, otherwise it's not (due to the overhead of lazy execution).
+      * Suitability may depend on function arguments.
+      */
     virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
 
-   /** Method for lazy arguments execution in short-circuit functions.
-     * Lazy argument is presented as ColumnFunction with isShortCircuitArgument() = true.
-     * This method is called before function execution.
-     */
+    /** Method for lazy arguments execution in short-circuit functions.
+      * Lazy argument is presented as ColumnFunction with isShortCircuitArgument() = true.
+      * This method is called before function execution.
+      */
     virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
     {
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
