@@ -928,12 +928,13 @@ public:
             return;
 
         executeColumnIfNeeded(arguments[0]);
+        /// Create mask only if it's needed.
         if (last_short_circuit_argument_index > 0)
         {
             IColumn::Filter mask;
             getMaskFromColumn(arguments[0].column, mask);
             maskedExecute(arguments[1], mask);
-            maskedExecute(arguments[2], mask, /*reverse=*/true);
+            maskedExecute(arguments[2], mask, /*inverse=*/true);
         }
     }
 

@@ -283,7 +283,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 }
 
 
-ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint, bool reverse) const
+ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint, bool inverse) const
 {
     size_t size = data.size();
     if (size != filter.size())
@@ -299,7 +299,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
     for (size_t i = 0; i < size; ++i)
-        if (reverse ^ filter[i])
+        if (inverse ^ filter[i])
             res_data.push_back(data[i]);
 
     /// To save RAM in case of too strong filtering.
@@ -309,9 +309,9 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
-void ColumnAggregateFunction::expand(const Filter & mask, bool reverse)
+void ColumnAggregateFunction::expand(const Filter & mask, bool inverse)
 {
-    expandDataByMask<char *>(data, mask, reverse, nullptr);
+    expandDataByMask<char *>(data, mask, inverse);
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const

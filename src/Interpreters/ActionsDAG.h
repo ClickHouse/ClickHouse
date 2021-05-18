@@ -67,10 +67,14 @@ public:
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
 
+    /// States for lazy function execution in short-circuit function arguments.
     enum class LazyExecution
     {
+        /// Don't execute lazily.
         DISABLED,
+        /// Execute lazily if it's possible (additional checks are required).
         ENABLED,
+        /// Always execute lazily.
         FORCE_ENABLED,
     };
 
@@ -97,6 +101,8 @@ public:
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
 
+        /// Determine if this action should be executed lazily. If it should and the action type is FUNCTION, then the function
+        /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         LazyExecution lazy_execution = LazyExecution::DISABLED;
 
         void toTree(JSONBuilder::JSONMap & map) const;

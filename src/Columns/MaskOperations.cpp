@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool reverse, T default_value)
+void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverse)
 {
     if (mask.size() < data.size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
@@ -24,7 +24,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
     data.resize(mask.size());
     while (index >= 0)
     {
-        if (mask[index] ^ reverse)
+        if (mask[index] ^ inverse)
         {
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
@@ -32,20 +32,17 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
             data[index] = data[from];
             --from;
         }
-        else
-            data[index] = default_value;
 
         --index;
     }
 
     if (from != -1)
         throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
-
 }
 
 /// Explicit instantiations - not to place the implementation of the function above in the header file.
 #define INSTANTIATE(TYPE) \
-template void expandDataByMask<TYPE>(PaddedPODArray<TYPE> &, const PaddedPODArray<UInt8> &, bool, TYPE);
+template void expandDataByMask<TYPE>(PaddedPODArray<TYPE> &, const PaddedPODArray<UInt8> &, bool);
 
 INSTANTIATE(UInt8)
 INSTANTIATE(UInt16)
@@ -71,7 +68,7 @@ INSTANTIATE(UUID)
 
 #undef INSTANTIATE
 
-void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<UInt8> & mask, bool reverse)
+void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<UInt8> & mask, bool inverse)
 {
     if (mask.size() < offsets.size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
@@ -82,7 +79,7 @@ void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<
     UInt64 prev_offset = offsets[from];
     while (index >= 0)
     {
-        if (mask[index] ^ reverse)
+        if (mask[index] ^ inverse)
         {
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
@@ -100,33 +97,35 @@ void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<
         throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
-void expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool reverse)
+void expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool inverse)
 {
-    column->assumeMutable()->expand(mask, reverse);
+    column->assumeMutable()->expand(mask, inverse);
 }
 
 void getMaskFromColumn(
     const ColumnPtr & column,
     PaddedPODArray<UInt8> & res,
-    bool reverse,
-    const PaddedPODArray<UInt8> * expanding_mask,
-    UInt8 default_value,
-    bool expanding_mask_reverse,
-    const PaddedPODArray<UInt8> * null_bytemap,
-    UInt8 null_value)
+    bool inverse,
+    const PaddedPODArray<UInt8> * mask_used_in_expanding,
+    UInt8 default_value_in_expanding,
+    bool inverse_mask_used_in_expanding,
+    UInt8 null_value,
+    const PaddedPODArray<UInt8> * null_bytemap)
 {
     if (const auto * col = checkAndGetColumn<ColumnNothing>(*column))
     {
-        res.resize_fill(col->size(), reverse ? !null_value : null_value);
+        res.resize_fill(col->size(), inverse ? !null_value : null_value);
         return;
     }
 
     if (const auto * col = checkAndGetColumn<ColumnNullable>(*column))
     {
         const PaddedPODArray<UInt8> & null_map = checkAndGetColumn<ColumnUInt8>(*col->getNullMapColumnPtr())->getData();
-        return getMaskFromColumn(col->getNestedColumnPtr(), res, reverse, expanding_mask, default_value, expanding_mask_reverse, &null_map, null_value);
+        return getMaskFromColumn(col->getNestedColumnPtr(), res, inverse, mask_used_in_expanding, default_value_in_expanding, inverse_mask_used_in_expanding, null_value, &null_map);
     }
 
+    /// Some columns doesn't implement getBool() method and we cannot
+    /// convert them to mask, throw an exception in this case.
     try
     {
         if (res.size() != column->size())
@@ -134,12 +133,12 @@ void getMaskFromColumn(
 
         for (size_t i = 0; i != column->size(); ++i)
         {
-            if (expanding_mask && (!(*expanding_mask)[i] ^ expanding_mask_reverse))
-                res[i] = reverse ? !default_value : default_value;
+            if (mask_used_in_expanding && (!(*mask_used_in_expanding)[i] ^ inverse_mask_used_in_expanding))
+                res[i] = inverse ? !default_value_in_expanding : default_value_in_expanding;
             else if (null_bytemap && (*null_bytemap)[i])
-                res[i] = reverse ? !null_value : null_value;
+                res[i] = inverse ? !null_value : null_value;
             else
-                res[i] = reverse ? !column->getBool(i): column->getBool(i);
+                res[i] = inverse ? !column->getBool(i): column->getBool(i);
         }
     }
     catch (...)
@@ -148,35 +147,24 @@ void getMaskFromColumn(
     }
 }
 
-template <typename Op>
-void binaryMasksOperationImpl(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8> & mask2, Op operation)
-{
-    if (mask1.size() != mask2.size())
-        throw Exception("Masks have different sizes", ErrorCodes::LOGICAL_ERROR);
-
-    for (size_t i = 0; i != mask1.size(); ++i)
-        mask1[i] = operation(mask1[i], mask2[i]);
-}
-
-void conjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8> & mask2)
-{
-    binaryMasksOperationImpl(mask1, mask2, [](const auto & lhs, const auto & rhs){ return lhs & rhs; });
-}
-
 void disjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8> & mask2)
 {
-    binaryMasksOperationImpl(mask1, mask2, [](const auto & lhs, const auto & rhs){ return lhs | rhs; });
+    if (mask1.size() != mask2.size())
+        throw Exception("Cannot make a disjunction of masks, they have different sizes", ErrorCodes::LOGICAL_ERROR);
+
+    for (size_t i = 0; i != mask1.size(); ++i)
+        mask1[i] = mask1[i] | mask2[i];
 }
 
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, bool reverse)
+void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, bool inverse)
 {
     const auto * column_function = checkAndGetColumn<ColumnFunction>(*column.column);
     if (!column_function || !column_function->isShortCircuitArgument())
         return;
 
-    auto filtered = column_function->filter(mask, -1, reverse);
+    auto filtered = column_function->filter(mask, -1, inverse);
     auto result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
-    expandColumnByMask(result.column, mask, reverse);
+    expandColumnByMask(result.column, mask, inverse);
     column = std::move(result);
 }
 

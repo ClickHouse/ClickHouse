@@ -211,10 +211,24 @@ public:
       */
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
+    /** Function is called "short-circuit" if it's arguments can be evaluated lazily
+      * (examples: and, or, if, multiIf). If function is short circuit, it must
+      *  implement method executeShortCircuitArguments for lazy arguments execution,
+      *  this method will be called before function execution.
+      */
     virtual bool isShortCircuit() const { return false; }
 
+   /** Should we evaluate this function lazily in short-circuit function arguments?
+     * If function can throw an exception or it's computationally heavy, then
+     * it's suitable, otherwise it's not (due to the overhead of lazy execution).
+     * Suitability may depend on function arguments.
+     */
     virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
 
+   /** Method for lazy arguments execution in short-circuit functions.
+     * Lazy argument is presented as ColumnFunction with isShortCircuitArgument() = true.
+     * This method is called before function execution.
+     */
     virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
     {
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
@@ -277,8 +291,10 @@ public:
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
 
+    /// Override and return true if function is short-circuit.
     virtual bool isShortCircuit() const { return false; }
 
+    /// Override and return true if function is suitable for lazy execution in short-circuit function arguments.
     virtual bool isSuitableForShortCircuitArgumentsExecution(ColumnsWithTypeAndName & /*arguments*/) const = 0;
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
@@ -391,7 +407,7 @@ public:
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
-    /// Properties from IFunctionBase (see IFunction.h)
+    /// Properties from IFunctionBase
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }

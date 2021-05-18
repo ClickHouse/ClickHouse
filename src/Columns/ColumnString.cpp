@@ -144,7 +144,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
 }
 
 
-ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint, bool reverse) const
+ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const
 {
     if (offsets.empty())
         return ColumnString::create();
@@ -154,13 +154,13 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint, bo
     Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
 
-    filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint, reverse);
+    filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint, inverse);
     return res;
 }
 
-void ColumnString::expand(const IColumn::Filter & mask, bool reverse)
+void ColumnString::expand(const IColumn::Filter & mask, bool inverse)
 {
-    expandOffsetsByMask(offsets, mask, reverse);
+    expandOffsetsByMask(offsets, mask, inverse);
 }
 
 

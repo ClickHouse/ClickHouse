@@ -180,8 +180,8 @@ public:
         data->updateHashFast(hash);
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool reverse) const override;
-    void expand(const Filter & mask, bool reverse) override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const override;
+    void expand(const Filter & mask, bool inverse) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;

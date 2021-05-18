@@ -143,15 +143,15 @@ void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length
         start, length);
 }
 
-ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint, bool reverse) const
+ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const
 {
-    auto filtered = nested->filter(filt, result_size_hint, reverse);
+    auto filtered = nested->filter(filt, result_size_hint, inverse);
     return ColumnMap::create(filtered);
 }
 
-void ColumnMap::expand(const IColumn::Filter & mask, bool reverse)
+void ColumnMap::expand(const IColumn::Filter & mask, bool inverse)
 {
-    nested->expand(mask, reverse);
+    nested->expand(mask, inverse);
 }
 
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const

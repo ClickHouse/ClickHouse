@@ -293,7 +293,7 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 }
 
 template <typename T>
-ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse) const
+ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool inverse) const
 {
     size_t size = data.size();
     if (size != filt.size())
@@ -311,7 +311,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 
     while (filt_pos < filt_end)
     {
-        if (reverse ^ *filt_pos)
+        if (inverse ^ *filt_pos)
             res_data.push_back(*data_pos);
 
         ++filt_pos;
@@ -322,9 +322,9 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <typename T>
-void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool reverse)
+void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverse)
 {
-    expandDataByMask<T>(data, mask, reverse, T());
+    expandDataByMask<T>(data, mask, inverse);
 }
 
 template <typename T>
