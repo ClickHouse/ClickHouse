@@ -187,8 +187,6 @@ static void incrementStateMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::add(CurrentMetrics::PartsDeleting);
             return;
         case IMergeTreeDataPart::State::DeleteOnDestroy:
-            CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
-            return;
         case IMergeTreeDataPart::State::DeleteOnDestroyKeepS3:
             CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
             return;
@@ -215,8 +213,6 @@ static void decrementStateMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::sub(CurrentMetrics::PartsDeleting);
             return;
         case IMergeTreeDataPart::State::DeleteOnDestroy:
-            CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
-            return;
         case IMergeTreeDataPart::State::DeleteOnDestroyKeepS3:
             CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
             return;
