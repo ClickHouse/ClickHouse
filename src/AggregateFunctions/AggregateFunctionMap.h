@@ -103,7 +103,7 @@ public:
             if (it == merged_maps.end())
             {
                 // create a new place for each key
-                nested_place = arena->alloc(sizeof(AggregateDataPtr));
+                nested_place = arena->alloc(nested_func->sizeOfData());
                 nested_func->create(nested_place);
                 merged_maps.emplace(key, nested_place);
             }
@@ -157,7 +157,7 @@ public:
             AggregateDataPtr nested_place;
 
             this->data(place).readKey(key, buf);
-            nested_place = arena->alloc(sizeof(AggregateDataPtr));
+            nested_place = arena->alloc(nested_func->sizeOfData());
             nested_func->create(nested_place);
             merged_maps.emplace(key, nested_place);
             nested_func->deserialize(nested_place, buf, arena);
