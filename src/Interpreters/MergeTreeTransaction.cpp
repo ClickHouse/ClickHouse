@@ -112,4 +112,25 @@ void MergeTreeTransaction::onException()
     TransactionLog::instance().rollbackTransaction(shared_from_this());
 }
 
+String MergeTreeTransaction::dumpDescription() const
+{
+    String res = "\ncreating parts:\n";
+    for (const auto & part : creating_parts)
+    {
+        res += part->name;
+        res += "\n";
+    }
+
+    res += "removing parts:\n";
+    for (const auto & part : removing_parts)
+    {
+        res += part->name;
+        res += fmt::format(" (created by {}, {})\n", part->versions.getMinTID(), part->versions.mincsn);
+        assert(!part->versions.mincsn || part->versions.mincsn <= snapshot);
+        assert(!part->versions.maxcsn);
+    }
+
+    return res;
+}
+
 }

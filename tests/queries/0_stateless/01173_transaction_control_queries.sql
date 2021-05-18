@@ -3,8 +3,6 @@ drop table if exists mt2;
 
 create table mt1 (n Int64) engine=MergeTree order by n;
 create table mt2 (n Int64) engine=MergeTree order by n;
---system stop merges mt1; --FIXME
---system stop merges mt2; --FIXME
 
 commit; -- { serverError 585 }
 rollback; -- { serverError 585 }

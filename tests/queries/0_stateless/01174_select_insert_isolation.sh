@@ -8,7 +8,6 @@ set -e
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mt";
 $CLICKHOUSE_CLIENT --query "CREATE TABLE mt (n Int8, m Int8) ENGINE=MergeTree ORDER BY n PARTITION BY 0 < n";
-#$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES mt"; #FIXME
 
 function thread_insert_commit()
 {
@@ -59,4 +58,4 @@ $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;
 SELECT count(), sum(n), sum(m=1), sum(m=2), sum(m=3) FROM mt;";
 
-#$CLICKHOUSE_CLIENT --query "DROP TABLE mt";
+$CLICKHOUSE_CLIENT --query "DROP TABLE mt";

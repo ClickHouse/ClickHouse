@@ -2,8 +2,6 @@ drop table if exists txn_counters;
 
 create table txn_counters (n Int64, mintid DEFAULT transactionID()) engine=MergeTree order by n;
 
-system stop merges txn_counters; --FIXME
-
 insert into txn_counters(n) values (1);
 select transactionID();
 

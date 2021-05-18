@@ -216,10 +216,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     const MergeTreeTransactionPtr & txn,
     String * out_disable_reason)
 {
-
-    MergeTreeData::DataPartsVector data_parts = data.getVisibleDataPartsVector(txn);
-    //FIXME get rid of sorting
-    std::sort(data_parts.begin(), data_parts.end(), MergeTreeData::LessDataPart());
+    /// NOTE It will contain uncommitted parts and future parts.
+    /// But It's ok since merge predicate allows to include in range visible parts only.
+    MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
     const auto data_settings = data.getSettings();
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
@@ -265,7 +264,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
             * of each partition because it will be automatically checked for a pair of parts. */
-            if (!can_merge_callback(nullptr, part, nullptr))
+            if (!can_merge_callback(nullptr, part, txn.get(), nullptr))
                 continue;
 
         }
@@ -273,7 +272,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         {
             /// If we cannot merge with previous part we had to start new parts
             /// interval (in the same partition)
-            if (!can_merge_callback(*prev_part, part, nullptr))
+            if (!can_merge_callback(*prev_part, part, txn.get(), nullptr))
             {
                 /// Starting new interval in the same partition
                 assert(!parts_ranges.back().empty());
@@ -415,7 +414,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     while (it != parts.end())
     {
         /// For the case of one part, we check that it can be merged "with itself".
-        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it, out_disable_reason))
+        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it, nullptr, out_disable_reason))
         {
             return SelectPartsDecision::CANNOT_SELECT;
         }
