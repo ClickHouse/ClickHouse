@@ -30,22 +30,22 @@ public:
         try
         {
             finalize();
-	}
-	catch (...)
-	{
+        }
+        catch (...)
+        {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-	}
+        }
     }
 
     void finalize() override
     {
         if (finalized)
-	    return;
+            return;
 
         next();
         out->finalize();
 
-	finalized = true;
+        finalized = true;
     }
 
     void sync() override
