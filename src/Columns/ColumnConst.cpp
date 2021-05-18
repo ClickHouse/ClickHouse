@@ -53,25 +53,25 @@ ColumnPtr ColumnConst::removeLowCardinality() const
     return ColumnConst::create(data->convertToFullColumnIfLowCardinality(), s);
 }
 
-ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/, bool reverse) const
+ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/, bool inverse) const
 {
     if (s != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column (" + toString(s) + ")",
             ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     size_t new_size = countBytesInFilter(filt);
-    if (reverse)
+    if (inverse)
         new_size = filt.size() - new_size;
     return ColumnConst::create(data, new_size);
 }
 
-void ColumnConst::expand(const Filter & mask, bool reverse)
+void ColumnConst::expand(const Filter & mask, bool inverse)
 {
     if (mask.size() < s)
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
     size_t bytes_count = countBytesInFilter(mask);
-    if (reverse)
+    if (inverse)
         bytes_count = mask.size() - bytes_count;
 
     if (bytes_count < s)

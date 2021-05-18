@@ -2,9 +2,15 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/PODArray.h>
+#include <Common/ProfileEvents.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 
+namespace ProfileEvents
+{
+    extern const Event FunctionExecute;
+    extern const Event CompiledFunctionExecute;
+}
 
 namespace DB
 {
@@ -15,8 +21,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool is_short_circuit_argument_)
-        : size_(size), function(function_), is_short_circuit_argument(is_short_circuit_argument_)
+ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool is_short_circuit_argument_, bool is_function_compiled_)
+        : size_(size), function(function_), is_short_circuit_argument(is_short_circuit_argument_), is_function_compiled(is_function_compiled_)
 {
     appendArguments(columns_to_capture);
 }
@@ -53,7 +59,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument);
 }
 
-ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, bool reverse) const
+ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const
 {
     if (size_ != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column ("
@@ -61,13 +67,13 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, 
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
-        column.column = column.column->filter(filt, result_size_hint, reverse);
+        column.column = column.column->filter(filt, result_size_hint, inverse);
 
     size_t filtered_size = 0;
     if (capture.empty())
     {
         filtered_size = countBytesInFilter(filt);
-        if (reverse)
+        if (inverse)
             filtered_size = filt.size() - filtered_size;
     }
     else
@@ -76,12 +82,12 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, 
     return ColumnFunction::create(filtered_size, function, capture, is_short_circuit_argument);
 }
 
-void ColumnFunction::expand(const Filter & mask, bool reverse)
+void ColumnFunction::expand(const Filter & mask, bool inverse)
 {
     for (auto & column : captured_columns)
     {
         column.column = column.column->cloneResized(column.column->size());
-        column.column->assumeMutable()->expand(mask, reverse);
+        column.column->assumeMutable()->expand(mask, inverse);
     }
 
     size_ = mask.size();
@@ -217,6 +223,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         if (function->isShortCircuit())
             function->executeShortCircuitArguments(columns);
 
+        /// Arguments of lazy executed function can also be lazy executed.
         const ColumnFunction * arg;
         for (auto & col : columns)
         {
@@ -226,6 +233,10 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     }
 
     ColumnWithTypeAndName res{nullptr, function->getResultType(), ""};
+
+    ProfileEvents::increment(ProfileEvents::FunctionExecute);
+    if (is_function_compiled)
+        ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, size_);
     return res;

@@ -115,6 +115,14 @@ public:
         if (last_short_circuit_argument_index < 0)
             return;
 
+        /// In multiIf we should execute the next condition only
+        /// if all previous once are false. So, we will filter
+        /// the next condition by inverted disjunction of previous once.
+        /// The next expression should be executed only if it's condition is
+        /// true and all previous conditions are false. So, we will
+        /// use default_value_in_expanding = 0 while extracting mask from
+        /// executed condition and filter expression by this mask.
+
         executeColumnIfNeeded(arguments[0]);
         IColumn::Filter current_mask;
         IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);

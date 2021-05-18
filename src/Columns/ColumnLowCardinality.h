@@ -105,14 +105,14 @@ public:
 
     void updateHashFast(SipHash &) const override;
 
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool reverse) const override
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool inverse) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint, reverse));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint, inverse));
     }
 
-    void expand(const Filter & mask, bool reverse) override
+    void expand(const Filter & mask, bool inverse) override
     {
-        idx.getPositionsPtr()->expand(mask, reverse);
+        idx.getPositionsPtr()->expand(mask, inverse);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override

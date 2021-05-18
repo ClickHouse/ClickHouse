@@ -74,6 +74,7 @@ void ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawCo
 {
     for (const auto * child : children)
     {
+        /// Skip actions that are needed outside or have already been rewritten.
         if (!need_outside.contains(child) || need_outside.at(child) || child->lazy_execution != ActionsDAG::LazyExecution::DISABLED)
             continue;
 
@@ -83,6 +84,7 @@ void ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawCo
                 rewriteShortCircuitArguments(child->children, need_outside, force_rewrite);
                 const_cast<ActionsDAG::Node *>(child)->lazy_execution = force_rewrite ? ActionsDAG::LazyExecution::FORCE_ENABLED : ActionsDAG::LazyExecution::ENABLED;
                 break;
+            /// Propagate lazy execution through aliases.
             case ActionsDAG::ActionType::ALIAS:
                 rewriteShortCircuitArguments(child->children, need_outside, force_rewrite);
                 break;
@@ -102,6 +104,11 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit())
         {
+            /// We should enable lazy execution for all actions that are used only in arguments of
+            /// short-circuit function. To determine if an action is used somewhere else we use
+            /// BFS, started from action with short-circuit function. If an action has parent that we didn't
+            /// visited earlier, it means that this action is used somewhere else. After BFS we will
+            /// have map need_outside: node -> is this node used somewhere else.
             std::unordered_map<const ActionsDAG::Node *, bool> need_outside;
             std::deque<const ActionsDAG::Node *> queue;
             for (const auto * child : node.children)
@@ -112,13 +119,15 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
             {
                 const ActionsDAG::Node * cur = queue.front();
                 queue.pop_front();
+                /// If we've already visited this action, just continue.
                 if (need_outside.contains(cur))
                     continue;
+                bool is_need_outside = false;
+                /// If action is used in result, we can't enable lazy execution.
                 if (data[reverse_index.at(cur)].used_in_result)
-                    need_outside[cur] = true;
+                    is_need_outside = true;
                 else
                 {
-                    bool is_need_outside = false;
                     for (const auto * parent : data[reverse_index.at(cur)].parents)
                     {
                         if (!need_outside.contains(parent) || need_outside[parent])
@@ -127,13 +136,24 @@ void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
                             break;
                         }
                     }
-                    need_outside[cur] = is_need_outside;
                 }
+                need_outside[cur] = is_need_outside;
 
-                for (const auto * child : cur->children)
-                    queue.push_back(child);
+                /// If this action is needed outside, all it's descendants are also needed outside
+                /// and we don't have to add them in queue (if action is not in need_outside we
+                /// treat it as it's needed outside).
+                if (!is_need_outside)
+                {
+                    for (const auto * child : cur->children)
+                        queue.push_back(child);
+                }
             }
+            /// If short-circuit function has only one argument, then we don't have to
+            /// evaluate this argument at all (example: toTypeName). In this case we
+            /// use LazyExecution::FORCE_ENABLED state.
             bool force_rewrite = (node.children.size() == 1);
+            /// Recursively enable lazy execution for actions that
+            /// aren't needed outside short-circuit function arguments.
             rewriteShortCircuitArguments(node.children, need_outside, force_rewrite);
         }
     }
@@ -415,6 +435,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     arguments[i] = columns[action.arguments[i].pos];
             }
 
+            /// Use lazy execution when:
+            ///  - It's force enabled.
+            ///  - It's is enabled and function is suitable for lazy execution or it has lazy executed arguments.
             if (action.node->lazy_execution == ActionsDAG::LazyExecution::FORCE_ENABLED
                 || (action.node->lazy_execution == ActionsDAG::LazyExecution::ENABLED
                     && (action.node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments) || checkShirtCircuitArguments(arguments) >= 0)))

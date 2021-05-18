@@ -133,9 +133,12 @@ private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions();
+
+    /// Enable lazy execution for short-circuit function arguments.
     void rewriteShortCircuitArguments(
         const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_rewrite);
 
+    /// Find short-circuit functions in actions and enable lazy execution for actions that are used in their arguments.
     void rewriteArgumentsForShortCircuitFunctions(
         const std::list<ActionsDAG::Node> & nodes,
         const std::vector<Data> & data,

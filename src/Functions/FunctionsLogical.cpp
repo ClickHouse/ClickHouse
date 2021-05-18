@@ -518,18 +518,26 @@ void FunctionAnyArityLogical<Impl, Name>::executeShortCircuitArguments(ColumnsWi
     if (last_short_circuit_argument_index < 0)
         return;
 
-    bool reverse = Name::name != NameAnd::name;
+    /// In AND (OR) function we need to execute the next argument
+    /// only if all previous once are true (false). We will filter the next
+    /// argument by conjunction (inverted disjunction) of all previous once.
+    /// To not make conjunction (inverted disjunction) every iteration, we will use
+    /// default_value_in_expanding = 0 (1) while converting column to mask,
+    /// so after converting we will get needed conjunction (inverted disjunction).
+
+    /// Set null_value according to ternary logic.
     UInt8 null_value = Name::name == NameAnd::name ? 1 : 0;
-    UInt8 value_for_mask_expanding = Name::name == NameAnd::name ? 0 : 1;
+    bool inverse = Name::name != NameAnd::name;
+    UInt8 default_value_in_expanding = Name::name == NameAnd::name ? 0 : 1;
     executeColumnIfNeeded(arguments[0]);
 
     IColumn::Filter mask;
-    IColumn::Filter * expanding_mask = nullptr;
+    IColumn::Filter * mask_used_in_expanding = nullptr;
     for (int i = 1; i <= last_short_circuit_argument_index; ++i)
     {
-        getMaskFromColumn(arguments[i - 1].column, mask, reverse, expanding_mask, value_for_mask_expanding, false, nullptr, null_value);
-        maskedExecute(arguments[i], mask, false);
-        expanding_mask = &mask;
+        getMaskFromColumn(arguments[i - 1].column, mask, inverse, mask_used_in_expanding, default_value_in_expanding, false, null_value);
+        maskedExecute(arguments[i], mask);
+        mask_used_in_expanding = &mask;
     }
 }
 
