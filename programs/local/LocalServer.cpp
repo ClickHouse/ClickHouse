@@ -627,7 +627,7 @@ void LocalServer::init(int argc, char ** argv)
         exit(0);
     }
 
-    if (options.empty() || options.count("help"))
+    if (options.count("help"))
     {
         std::cout << getHelpHeader() << "\n";
         std::cout << description << "\n";
