@@ -213,6 +213,78 @@ static void clearTerminal()
                  "\033[?25h";
 }
 
+#if USE_REPLXX
+static void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
+    {
+        using namespace replxx;
+
+        static const std::unordered_map<TokenType, Replxx::Color> token_to_color
+            = {{TokenType::Whitespace, Replxx::Color::DEFAULT},
+               {TokenType::Comment, Replxx::Color::GRAY},
+               {TokenType::BareWord, Replxx::Color::DEFAULT},
+               {TokenType::Number, Replxx::Color::GREEN},
+               {TokenType::StringLiteral, Replxx::Color::CYAN},
+               {TokenType::QuotedIdentifier, Replxx::Color::MAGENTA},
+               {TokenType::OpeningRoundBracket, Replxx::Color::BROWN},
+               {TokenType::ClosingRoundBracket, Replxx::Color::BROWN},
+               {TokenType::OpeningSquareBracket, Replxx::Color::BROWN},
+               {TokenType::ClosingSquareBracket, Replxx::Color::BROWN},
+               {TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE},
+               {TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE},
+
+               {TokenType::Comma, Replxx::Color::INTENSE},
+               {TokenType::Semicolon, Replxx::Color::INTENSE},
+               {TokenType::Dot, Replxx::Color::INTENSE},
+               {TokenType::Asterisk, Replxx::Color::INTENSE},
+               {TokenType::Plus, Replxx::Color::INTENSE},
+               {TokenType::Minus, Replxx::Color::INTENSE},
+               {TokenType::Slash, Replxx::Color::INTENSE},
+               {TokenType::Percent, Replxx::Color::INTENSE},
+               {TokenType::Arrow, Replxx::Color::INTENSE},
+               {TokenType::QuestionMark, Replxx::Color::INTENSE},
+               {TokenType::Colon, Replxx::Color::INTENSE},
+               {TokenType::Equals, Replxx::Color::INTENSE},
+               {TokenType::NotEquals, Replxx::Color::INTENSE},
+               {TokenType::Less, Replxx::Color::INTENSE},
+               {TokenType::Greater, Replxx::Color::INTENSE},
+               {TokenType::LessOrEquals, Replxx::Color::INTENSE},
+               {TokenType::GreaterOrEquals, Replxx::Color::INTENSE},
+               {TokenType::Concatenation, Replxx::Color::INTENSE},
+               {TokenType::At, Replxx::Color::INTENSE},
+               {TokenType::DoubleAt, Replxx::Color::MAGENTA},
+
+               {TokenType::EndOfStream, Replxx::Color::DEFAULT},
+
+               {TokenType::Error, Replxx::Color::RED},
+               {TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED},
+               {TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED},
+               {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
+               {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
+               {TokenType::ErrorWrongNumber, Replxx::Color::RED},
+               { TokenType::ErrorMaxQuerySizeExceeded,
+                 Replxx::Color::RED }};
+
+        const Replxx::Color unknown_token_color = Replxx::Color::RED;
+
+        Lexer lexer(query.data(), query.data() + query.size());
+        size_t pos = 0;
+
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        {
+            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
+            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
+            {
+                if (token_to_color.find(token.type) != token_to_color.end())
+                    colors[pos + code_point_index] = token_to_color.at(token.type);
+                else
+                    colors[pos + code_point_index] = unknown_token_color;
+            }
+
+            pos += utf8_len;
+        }
+    }
+#endif
+
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
