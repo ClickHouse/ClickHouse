@@ -54,7 +54,6 @@
                <value>uniqUpTo(10)</value>
                <value>uniqUpTo(25)</value>
                <value>uniqUpTo(100)</value>
-               <value>uniqTheta</value>
            </values>
        </substitution>
     </substitutions>
