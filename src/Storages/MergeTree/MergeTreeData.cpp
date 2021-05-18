@@ -2199,7 +2199,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
     DataPartsVector parts_to_remove;
 
     if (drop_range.min_block > drop_range.max_block)
-        return parts_to_remove;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid drop range: {}", drop_range.getPartName());
 
     auto partition_range = getDataPartsPartitionRange(drop_range.partition_id);
 
