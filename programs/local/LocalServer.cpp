@@ -195,6 +195,15 @@ static void showClientVersion()
     std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
 }
 
+static void clearTerminal()
+{
+    /// Clear from cursor until end of screen.
+    /// It is needed if garbage is left in terminal.
+    /// Show cursor. It can be left hidden by invocation of previous programs.
+    /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
+    std::cout << "\033[0J"
+                 "\033[?25h";
+}
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
