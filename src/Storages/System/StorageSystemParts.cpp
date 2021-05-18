@@ -259,11 +259,6 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
 
-        /// _state column should be the latest.
-        /// Do not use part->getState*, it can be changed from different thread
-        if (has_state_column)
-            columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
-
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
         {
             return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
@@ -277,6 +272,11 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->versions.mincsn.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->versions.maxcsn.load(std::memory_order_relaxed));
+
+        /// _state column should be the latest.
+        /// Do not use part->getState*, it can be changed from different thread
+        if (has_state_column)
+            columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
     }
 }
 

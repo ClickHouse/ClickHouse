@@ -2656,7 +2656,7 @@ void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
 {
     assert(!merge_tree_transaction || !txn);
     assert(this == session_context.lock().get() || this == query_context.lock().get());
-    int enable_mvcc_test_helper = getConfigRef().getInt("_enable_mvcc_test_helper_dev", 0);
+    int enable_mvcc_test_helper = getConfigRef().getInt("_enable_experimental_mvcc_prototype_test_helper_dev", 0);
     if (enable_mvcc_test_helper != 42)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
     merge_tree_transaction = std::move(txn);

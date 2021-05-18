@@ -46,6 +46,7 @@ ln -sf $SRC_PATH/strings_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/decimals_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/executable_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/executable_pool_dictionary.xml $DEST_SERVER_PATH/
+ln -sf $SRC_PATH/transactions.xml $DEST_SERVER_PATH/
 
 ln -sf $SRC_PATH/top_level_domains $DEST_SERVER_PATH/
 
