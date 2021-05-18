@@ -12,8 +12,8 @@ namespace ErrorCodes
 
 namespace
 {
-
-std::string getLogsPathFromConfig(const std::string & config_prefix, const Poco::Util::AbstractConfiguration & config)
+    std::string getLogsPathFromConfig(
+        const std::string & config_prefix, const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
 {
     /// the most specialized path
     if (config.has(config_prefix + ".log_storage_path"))
@@ -22,7 +22,10 @@ std::string getLogsPathFromConfig(const std::string & config_prefix, const Poco:
     if (config.has(config_prefix + ".storage_path"))
         return std::filesystem::path{config.getString(config_prefix + ".storage_path")} / "logs";
 
-    return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/logs";
+    if (standalone_keeper)
+        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "logs";
+    else
+        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/logs";
 }
 
 }
@@ -42,11 +45,12 @@ KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix,
     const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings)
+    const CoordinationSettingsPtr & coordination_settings,
+    bool standalone_keeper)
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix + ".raft_configuration.secure", false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
-                    getLogsPathFromConfig(config_prefix, config),
+                    getLogsPathFromConfig(config_prefix, config, standalone_keeper),
                     coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {

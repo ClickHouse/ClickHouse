@@ -290,7 +290,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     global_context = Context::createGlobal(shared_context.get());
 
     global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
+    global_context->setApplicationType(Context::ApplicationType::KEEPER);
 
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
@@ -305,7 +305,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     else if (config().has("keeper_server.snapshot_storage_path"))
         path = config().getString("keeper_server.snapshot_storage_path");
     else
-        path = std::filesystem::path{DBMS_DEFAULT_PATH} / "coordination/logs";
+        path = std::filesystem::path{KEEPER_DEFAULT_PATH};
 
 
     /// Check that the process user id matches the owner of the data.
@@ -410,7 +410,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
         global_context->shutdown();
 
-        LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
+        LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         int current_connections = 0;
         for (auto & server : *servers)
         {
@@ -427,9 +427,9 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
             current_connections = waitServersToFinish(*servers, config().getInt("shutdown_wait_unfinished", 5));
 
         if (current_connections)
-            LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
+            LOG_INFO(log, "Closed connections to Keeper. But {} remain. Probably some users cannot finish their connections after context shutdown.", current_connections);
         else
-            LOG_INFO(log, "Closed connections to servers for tables.");
+            LOG_INFO(log, "Closed connections to Keeper.");
 
         global_context->shutdownKeeperStorageDispatcher();
 
