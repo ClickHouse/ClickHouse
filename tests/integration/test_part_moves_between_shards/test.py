@@ -42,27 +42,26 @@ def started_cluster():
 def test_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
-            r.query("DROP TABLE IF EXISTS t SYNC")
             r.query("""
-            CREATE TABLE t(v UInt64)
-            ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/t', '{}')
+            CREATE TABLE test_move(v UInt64)
+            ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_move', '{}')
             ORDER BY tuple()
             """.format(shard_ix, replica_ix))
 
-    s0r0.query("SYSTEM STOP MERGES t")
+    s0r0.query("SYSTEM STOP MERGES test_move")
 
-    s0r0.query("INSERT INTO t VALUES (1)")
-    s0r0.query("INSERT INTO t VALUES (2)")
+    s0r0.query("INSERT INTO test_move VALUES (1)")
+    s0r0.query("INSERT INTO test_move VALUES (2)")
 
-    assert "2" == s0r0.query("SELECT count() FROM t").strip()
-    assert "0" == s1r0.query("SELECT count() FROM t").strip()
+    assert "2" == s0r0.query("SELECT count() FROM test_move").strip()
+    assert "0" == s1r0.query("SELECT count() FROM test_move").strip()
 
-    s0r0.query("ALTER TABLE t MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/t'")
+    s0r0.query("ALTER TABLE test_move MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_move'")
 
     print(s0r0.query("SELECT * FROM system.part_moves_between_shards"))
 
-    s0r0.query("SYSTEM START MERGES t")
-    s0r0.query("OPTIMIZE TABLE t FINAL")
+    s0r0.query("SYSTEM START MERGES test_move")
+    s0r0.query("OPTIMIZE TABLE test_move FINAL")
 
     while True:
         time.sleep(3)
@@ -70,17 +69,17 @@ def test_move(started_cluster):
         print(s0r0.query("SELECT * FROM system.part_moves_between_shards"))
 
         # Eventually.
-        if "DONE" == s0r0.query("SELECT state FROM system.part_moves_between_shards").strip():
+        if "DONE" == s0r0.query("SELECT state FROM system.part_moves_between_shards WHERE table = 'test_move'").strip():
             break
 
     for n in [s0r0, s0r1]:
-        assert "1" == n.query("SELECT count() FROM t").strip()
+        assert "1" == n.query("SELECT count() FROM test_move").strip()
 
     for n in [s1r0, s1r1]:
-        assert "1" == n.query("SELECT count() FROM t").strip()
+        assert "1" == n.query("SELECT count() FROM test_move").strip()
 
     # Move part back
-    s1r0.query("ALTER TABLE t MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_0/tables/t'")
+    s1r0.query("ALTER TABLE test_move MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_0/tables/test_move'")
 
     while True:
         time.sleep(3)
@@ -88,48 +87,41 @@ def test_move(started_cluster):
         print(s1r0.query("SELECT * FROM system.part_moves_between_shards"))
 
         # Eventually.
-        if "DONE" == s1r0.query("SELECT state FROM system.part_moves_between_shards").strip():
+        if "DONE" == s1r0.query("SELECT state FROM system.part_moves_between_shards WHERE table = 'test_move'").strip():
             break
 
     for n in [s0r0, s0r1]:
-        assert "2" == n.query("SELECT count() FROM t").strip()
+        assert "2" == n.query("SELECT count() FROM test_move").strip()
 
     for n in [s1r0, s1r1]:
-        assert "0" == n.query("SELECT count() FROM t").strip()
-
-    # Cleanup.
-    for n in started_cluster.instances.values():
-        n.query("DROP TABLE t SYNC")
+        assert "0" == n.query("SELECT count() FROM test_move").strip()
 
 
 def test_deduplication_while_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
-            r.query("DROP TABLE IF EXISTS t")
-            r.query("DROP TABLE IF EXISTS t_d")
-
             r.query("""
-            CREATE TABLE t(v UInt64)
-            ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/t', '{}')
+            CREATE TABLE test_deduplication(v UInt64)
+            ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_deduplication', '{}')
             ORDER BY tuple()
             """.format(shard_ix, replica_ix))
 
             r.query("""
-            CREATE TABLE t_d AS t
-            ENGINE Distributed('test_cluster', '', t)
+            CREATE TABLE t_d AS test_deduplication
+            ENGINE Distributed('test_cluster', '', test_deduplication)
             """)
 
-    s0r0.query("SYSTEM STOP MERGES t")
+    s0r0.query("SYSTEM STOP MERGES test_deduplication")
 
-    s0r0.query("INSERT INTO t VALUES (1)")
-    s0r0.query("INSERT INTO t VALUES (2)")
-    s0r1.query("SYSTEM SYNC REPLICA t")
+    s0r0.query("INSERT INTO test_deduplication VALUES (1)")
+    s0r0.query("INSERT INTO test_deduplication VALUES (2)")
+    s0r1.query("SYSTEM SYNC REPLICA test_deduplication", timeout=20)
 
-    assert "2" == s0r0.query("SELECT count() FROM t").strip()
-    assert "0" == s1r0.query("SELECT count() FROM t").strip()
+    assert "2" == s0r0.query("SELECT count() FROM test_deduplication").strip()
+    assert "0" == s1r0.query("SELECT count() FROM test_deduplication").strip()
 
-    s0r0.query("ALTER TABLE t MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/t'")
-    s0r0.query("SYSTEM START MERGES t")
+    s0r0.query("ALTER TABLE test_deduplication MOVE PART 'all_0_0_0' TO SHARD '/clickhouse/shard_1/tables/test_deduplication'")
+    s0r0.query("SYSTEM START MERGES test_deduplication")
 
     expected = """
 1
@@ -137,7 +129,7 @@ def test_deduplication_while_move(started_cluster):
 """
 
     # Verify that we get consisntent result at all times while the part is moving from one shard to another.
-    while "DONE" != s0r0.query("SELECT state FROM system.part_moves_between_shards ORDER BY create_time DESC LIMIT 1").strip():
+    while "DONE" != s0r0.query("SELECT state FROM system.part_moves_between_shards WHERE table = 'test_deduplication' ORDER BY create_time DESC LIMIT 1").strip():
         n = random.choice(list(started_cluster.instances.values()))
 
         assert TSV(n.query("SELECT * FROM t_d ORDER BY v", settings={
