@@ -190,6 +190,11 @@ static void attachSystemTables(ContextPtr context)
     attachSystemTablesLocal(*system_database);
 }
 
+static void showClientVersion()
+{
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
+}
+
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
@@ -234,6 +239,30 @@ try
     registerDictionaries();
     registerDisks();
     registerFormats();
+
+    /// Batch mode is enabled if one of the following is true:
+    /// - -e (--query) command line option is present.
+    ///   The value of the option is used as the text of query (or of multiple queries).
+    ///   If stdin is not a terminal, INSERT data for the first query is read from it.
+    /// - stdin is not a terminal. In this case queries are read from it.
+    /// - -qf (--queries-file) command line option is present.
+    ///   The value of the option is used as file with query (or of multiple queries) to execute.
+    if (!stdin_is_a_tty || config().has("query") || config().has("queries-file"))
+        is_interactive = false;
+
+    std::cout << std::fixed << std::setprecision(3);
+    std::cerr << std::fixed << std::setprecision(3);
+
+    if (is_interactive)
+    {
+        clearTerminal();
+        showClientVersion();
+    }
+
+    if (!is_interactive)
+    {
+        progress_bar.need_render_progress = config().getBool("progress", false);
+    }
 
     /// Maybe useless
     if (config().has("macros"))
@@ -300,7 +329,10 @@ try
         attachSystemTables(global_context);
     }
 
-    processQueries();
+    if (!is_interactive)
+    {
+        processQueries();
+    }
 
     global_context->shutdown();
     global_context.reset();
@@ -510,11 +542,6 @@ void LocalServer::cleanup()
     }
 }
 
-static void showClientVersion()
-{
-    std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
-}
-
 static std::string getHelpHeader()
 {
     return
@@ -546,6 +573,8 @@ void LocalServer::init(int argc, char ** argv)
 
     /// Don't parse options with Poco library, we prefer neat boost::program_options
     stopOptionsProcessing();
+
+    stdin_is_a_tty = isatty(STDIN_FILENO);
 
     po::options_description description = createOptionsDescription("Main options", getTerminalWidth());
     description.add_options()

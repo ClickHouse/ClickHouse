@@ -46,6 +46,8 @@ private:
 protected:
     SharedContextHolder shared_context;
     ContextPtr global_context;
+    bool is_interactive = true; /// Use either interactive line editing interface or batch mode.
+    bool stdin_is_a_tty = false; /// stdin is a terminal.
 
     /// Settings specified via command line args
     Settings cmd_settings;
