@@ -151,7 +151,7 @@ public:
 
 using AggregationKeyVisitor = AggregationKeyMatcher::Visitor;
 
-std::optional<AggregationKeyVisitor::Data> getFilterKeys(const Aggregator::Params & params, const SelectQueryInfo & query_info)
+static std::optional<AggregationKeyVisitor::Data> getFilterKeys(const Aggregator::Params & params, const SelectQueryInfo & query_info)
 {
     if (params.keys.empty())
         return {};
@@ -170,7 +170,7 @@ std::optional<AggregationKeyVisitor::Data> getFilterKeys(const Aggregator::Param
     return data;
 }
 
-void executeExpression(Pipe & pipe, const ActionsDAGPtr & expression)
+static void executeExpression(Pipe & pipe, const ActionsDAGPtr & expression)
 {
     if (!expression)
     {
