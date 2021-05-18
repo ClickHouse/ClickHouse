@@ -26,6 +26,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/UnicodeBar.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
@@ -285,6 +286,11 @@ static void highlight(const String & query, std::vector<replxx::Replxx::Color> &
     }
 #endif
 
+inline String prompt() const
+{
+    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+}
+
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -448,12 +454,6 @@ try
             if (input.empty())
                 break;
 
-            has_vertical_output_suffix = false;
-            if (input.ends_with("\\G"))
-            {
-                input.resize(input.size() - 2);
-                has_vertical_output_suffix = true;
-            }
         } while (true);
     }
 
@@ -480,11 +480,6 @@ catch (const Exception & e)
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
-}
-
-inline String prompt() const
-{
-    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
 }
 
 
