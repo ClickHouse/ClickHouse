@@ -1942,7 +1942,7 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -1979,7 +1979,7 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
@@ -2012,7 +2012,7 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
 @pytest.mark.timeout(120)
 def test_rabbitmq_queue_consume(rabbitmq_cluster):
     credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.queue_declare(queue='rabbit_queue', durable=True)
