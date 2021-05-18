@@ -336,6 +336,10 @@ try
     {
         processQueries();
     }
+    else
+    {
+        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+    }
 
     global_context->shutdown();
     global_context.reset();
