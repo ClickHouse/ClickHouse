@@ -76,7 +76,7 @@ namespace
 {
 
 /// Special support for the case when `_shard_num` column is used in GROUP BY key expression.
-/// This column is constant is a constant for shard.
+/// This column is a constant for shard.
 /// Constant expression with this colum may be removed from intermediate header.
 /// However, this column is not constant for initiator, and it expect intermediate header has it.
 ///
