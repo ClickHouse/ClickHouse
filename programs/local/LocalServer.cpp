@@ -286,10 +286,6 @@ static void highlight(const String & query, std::vector<replxx::Replxx::Color> &
     }
 #endif
 
-inline String prompt() const
-{
-    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-}
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
@@ -450,7 +446,7 @@ try
         prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
         do
         {
-            auto input = lr.readLine(prompt(), ":-] ");
+            auto input = lr.readLine(boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default")), ":-] ");
             if (input.empty())
                 break;
 
