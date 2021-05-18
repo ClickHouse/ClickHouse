@@ -648,7 +648,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                     throw Exception("The column " + version_column +
                         " cannot be used as a version column for storage " + storage +
                         " because it is of type " + column.type->getName() +
-                        " (must be of an integer type or of type Date or DateTime)", ErrorCodes::BAD_TYPE_OF_FIELD);
+                        " (must be of an integer type or of type Date/DateTime/DateTime64)", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
@@ -2089,8 +2089,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
             }
 
             if (!new_part_info.isDisjoint((*prev)->info))
-                throw Exception("Part " + new_part_name + " intersects previous part " + (*prev)->getNameWithState() +
-                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug.",
+                                new_part_name, (*prev)->getNameWithState());
 
             break;
         }
@@ -2103,7 +2103,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     while (end != committed_parts_range.end())
     {
         if ((*end)->info == new_part_info)
-            throw Exception("Unexpected duplicate part " + (*end)->getNameWithState() + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", (*end)->getNameWithState());
 
         if (!new_part_info.contains((*end)->info))
         {
@@ -2114,8 +2114,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
             }
 
             if (!new_part_info.isDisjoint((*end)->info))
-                throw Exception("Part " + new_part_name + " intersects next part " + (*end)->getNameWithState() +
-                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug.",
+                                new_part_name, (*end)->getNameWithState());
 
             break;
         }
@@ -2345,7 +2345,7 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
-                                                                               bool skip_intersecting_parts, DataPartsLock & lock)
+                                                                               DataPartsLock & lock)
 {
     DataPartsVector parts_to_remove;
 
@@ -2359,16 +2359,13 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.partition_id != drop_range.partition_id)
             throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (part->info.min_block < drop_range.min_block)
+        if (part->info.min_block < drop_range.min_block)    /// NOTE Always false, because drop_range.min_block == 0
         {
             if (drop_range.min_block <= part->info.max_block)
             {
                 /// Intersect left border
-                String error = "Unexpected merged part " + part->name + " intersecting drop range " + drop_range.getPartName();
-                if (!skip_intersecting_parts)
-                    throw Exception(error, ErrorCodes::LOGICAL_ERROR);
-
-                LOG_WARNING(log, error);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected merged part {} intersecting drop range {}",
+                                part->name, drop_range.getPartName());
             }
 
             continue;
@@ -2381,12 +2378,8 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.min_block <= drop_range.max_block && drop_range.max_block < part->info.max_block)
         {
             /// Intersect right border
-            String error = "Unexpected merged part " + part->name + " intersecting drop range " + drop_range.getPartName();
-            if (!skip_intersecting_parts)
-                throw Exception(error, ErrorCodes::LOGICAL_ERROR);
-
-            LOG_WARNING(log, error);
-            continue;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected merged part {} intersecting drop range {}",
+                            part->name, drop_range.getPartName());
         }
 
         if (part->getState() != DataPartState::Deleting)
@@ -3222,7 +3215,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
             {
                 std::swap(buf, res);
                 res.clear();
-                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart()); //-V783
             }
         }
 
@@ -4041,7 +4034,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
             // std::cerr << fmt::format("before_aggregation = \n{}", candidate.before_aggregation->dumpDAG()) << std::endl;
             // std::cerr << fmt::format("aggregate_required_columns = \n{}", fmt::join(required_columns, ", ")) << std::endl;
-            if (required_columns.empty())
+            if (required_columns.empty() && !keys.empty())
                 continue;
 
             if (analysis_result.optimize_aggregation_in_order)
