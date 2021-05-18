@@ -436,7 +436,7 @@ void DatabaseConnectionMySQL::detachTablePermanently(ContextPtr, const String & 
     try
     {
         table_iter->second.second->drop();
-        fs::createFile(remove_flag);
+        FS::createFile(remove_flag);
     }
     catch (...)
     {

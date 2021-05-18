@@ -326,7 +326,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_nam
     fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
     try
     {
-        fs::createFile(detached_permanently_flag);
+        FS::createFile(detached_permanently_flag);
     }
     catch (Exception & e)
     {

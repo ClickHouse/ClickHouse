@@ -17,7 +17,7 @@ extern const int CANNOT_CREATE_FILE;
 }
 }
 
-namespace std::filesystem
+namespace FS
 {
 [[noreturn]] void handleLastError(const std::string & path)
 {
@@ -37,7 +37,7 @@ namespace std::filesystem
 }
 
 /// Copy from Poco::createFile
-bool createFile(const path & path)
+bool createFile(const std::string & path)
 {
     int n = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
     if (n != -1)
@@ -45,8 +45,6 @@ bool createFile(const path & path)
         close(n);
         return true;
     }
-    if (n == -1 && errno == EEXIST)
-        return false;
     handleLastError(path);
 }
 }

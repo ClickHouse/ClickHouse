@@ -141,12 +141,13 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         const auto & file_name = response_expression.substr(file_prefix.size(), response_expression.size() - file_prefix.size());
 
         fs::path user_files_absolute_path = fs::absolute(fs::path(server.context()->getUserFilesPath()));
-        fs::path file_path = user_files_absolute_path / file_name;
+        /// Fixme: it does not work with fs::path(user_files_absolute_path) / file_name
+        String file_path = fs::absolute(user_files_absolute_path.string() + "/" + file_name);
 
         if (!fs::exists(file_path))
-            throw Exception("Invalid file name " + file_path.string() + " for static HTTPHandler. ", ErrorCodes::INCORRECT_FILE_NAME);
+            throw Exception("Invalid file name " + file_path + " for static HTTPHandler. ", ErrorCodes::INCORRECT_FILE_NAME);
 
-        ReadBufferFromFile in(file_path.string());
+        ReadBufferFromFile in(file_path);
         copyData(in, out);
     }
     else if (startsWith(response_expression, config_prefix))

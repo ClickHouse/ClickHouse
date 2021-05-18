@@ -637,7 +637,7 @@ private:
             }
 
             if (!history_file.empty() && !fs::exists(history_file))
-                fs::createFile(history_file);
+                FS::createFile(history_file);
 
             LineReader::Patterns query_extenders = {"\\"};
             LineReader::Patterns query_delimiters = {";", "\\G"};

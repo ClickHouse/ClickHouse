@@ -19,7 +19,7 @@ try
 {
     fs::path dir("./test_dir/");
     fs::create_directories(dir);
-    fs::createFile("./test_dir/file");
+    FS::createFile("./test_dir/file");
 
     if (0 != symlink("./test_dir", "./test_link"))
         DB::throwFromErrnoWithPath("Cannot create symlink", "./test_link", DB::ErrorCodes::SYSTEM_ERROR);
