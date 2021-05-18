@@ -330,9 +330,12 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer &
     out << "drop_range_name: " << drop_range_part_name << "\n";
     out << "from_database: " << escape << from_database << "\n";
     out << "from_table: " << escape << from_table << "\n";
-    out << "commands: ";
-    commands.writeText(out);
-    out << "\n";
+    if (!commands.empty())
+    {
+        out << "commands: ";
+        commands.writeText(out);
+        out << "\n";
+    }
 
     out << "source_parts: ";
     writeQuoted(src_part_names, out);
@@ -354,9 +357,11 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
     in >> "drop_range_name: " >> drop_range_part_name >> "\n";
     in >> "from_database: " >> escape >> from_database >> "\n";
     in >> "from_table: " >> escape >> from_table >> "\n";
-    in >> "commands: ";
-    commands.readText(in);
-    in >> "\n";
+    if (checkString("commands: ", in))
+    {
+        commands.readText(in);
+        in >> "\n";
+    }
 
     in >> "source_parts: ";
     readQuoted(src_part_names, in);
