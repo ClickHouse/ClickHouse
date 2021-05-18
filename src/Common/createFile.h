@@ -1,7 +1,7 @@
 #pragma once
-#include <filesystem>
+#include <string>
 
-namespace std::filesystem
+namespace FS
 {
-bool createFile(const path & path);
+bool createFile(const std::string & path);
 }

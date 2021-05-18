@@ -294,7 +294,7 @@ void DiskLocal::truncateFile(const String & path, size_t size)
 
 void DiskLocal::createFile(const String & path)
 {
-    fs::createFile(fs::path(disk_path) / path);
+    FS::createFile(fs::path(disk_path) / path);
 }
 
 void DiskLocal::setReadOnly(const String & path)

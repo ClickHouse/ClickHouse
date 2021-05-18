@@ -258,7 +258,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
         throw Exception(fmt::format("Table {}.{} is already dropped/detached", database_name, table_name), ErrorCodes::TABLE_IS_DROPPED);
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    fs::createFile(mark_table_removed);
+    FS::createFile(mark_table_removed);
 
     if (cache_tables)
         cached_tables.erase(table_name);
