@@ -339,12 +339,14 @@ try
     else
     {
         prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-        int x;
-        std::cin >> x;
-        if (x) {
-            break;
-        } else {
-            std::cout << "lol" << "\n";
+        while (true) {
+            int x;
+            std::cin >> x;
+            if (x) {
+                break;
+            } else {
+                std::cout << "lol" << "\n";
+            }
         }
     }
 
