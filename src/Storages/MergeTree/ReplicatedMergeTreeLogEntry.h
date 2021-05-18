@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Disks/IDisk.h>
 
 #include <mutex>
@@ -18,6 +19,7 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 class ReplicatedMergeTreeQueue;
+struct MergeTreePartInfo;
 
 namespace ErrorCodes
 {
@@ -109,6 +111,8 @@ struct ReplicatedMergeTreeLogEntryData
 
         void writeText(WriteBuffer & out) const;
         void readText(ReadBuffer & in);
+
+        static bool isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info);
     };
 
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
@@ -121,6 +125,7 @@ struct ReplicatedMergeTreeLogEntryData
     int alter_version = -1; /// May be equal to -1, if it's normal mutation, not metadata update.
 
     /// only ALTER METADATA command
+    /// NOTE It's never used
     bool have_mutation = false; /// If this alter requires additional mutation step, for data update
 
     String columns_str; /// New columns data corresponding to alter_version
@@ -128,36 +133,13 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// Returns a set of parts that will appear after executing the entry + parts to block
     /// selection of merges. These parts are added to queue.virtual_parts.
-    Strings getVirtualPartNames() const
-    {
-        /// Doesn't produce any part
-        if (type == ALTER_METADATA)
-            return {};
-
-        /// DROP_RANGE does not add a real part, but we must disable merges in that range
-        if (type == DROP_RANGE)
-            return {new_part_name};
-
-        /// Return {} because selection of merges in the partition where the column is cleared
-        /// should not be blocked (only execution of merges should be blocked).
-        if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
-            return {};
-
-        if (type == REPLACE_RANGE)
-        {
-            Strings res = replace_range_entry->new_part_names;
-            res.emplace_back(replace_range_entry->drop_range_part_name);
-            return res;
-        }
-
-        return {new_part_name};
-    }
+    Strings getVirtualPartNames(MergeTreeDataFormatVersion format_version) const;
 
     /// Returns set of parts that denote the block number ranges that should be blocked during the entry execution.
     /// These parts are added to future_parts.
-    Strings getBlockingPartNames() const
+    Strings getBlockingPartNames(MergeTreeDataFormatVersion format_version) const
     {
-        Strings res = getVirtualPartNames();
+        Strings res = getVirtualPartNames(format_version);
 
         if (type == CLEAR_COLUMN)
             res.emplace_back(new_part_name);

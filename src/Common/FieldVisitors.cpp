@@ -1,4 +1,3 @@
-#include <Core/UUID.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -27,7 +26,7 @@ template <typename T>
 static inline String formatQuotedWithPrefix(T x, const char * prefix)
 {
     WriteBufferFromOwnString wb;
-    wb.write(prefix, strlen(prefix));
+    writeCString(prefix, wb);
     writeQuoted(x, wb);
     return wb.str();
 }
@@ -48,10 +47,11 @@ String FieldVisitorDump::operator() (const DecimalField<Decimal32> & x) const { 
 String FieldVisitorDump::operator() (const DecimalField<Decimal64> & x) const { return formatQuotedWithPrefix(x, "Decimal64_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal128> & x) const { return formatQuotedWithPrefix(x, "Decimal128_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal256> & x) const { return formatQuotedWithPrefix(x, "Decimal256_"); }
+String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(x, "UInt128_"); }
 String FieldVisitorDump::operator() (const UInt256 & x) const { return formatQuotedWithPrefix(x, "UInt256_"); }
-String FieldVisitorDump::operator() (const Int256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
 String FieldVisitorDump::operator() (const Int128 & x) const { return formatQuotedWithPrefix(x, "Int128_"); }
-String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(UUID(x), "UUID_"); }
+String FieldVisitorDump::operator() (const Int256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
+String FieldVisitorDump::operator() (const UUID & x) const { return formatQuotedWithPrefix(x, "UUID_"); }
 
 
 String FieldVisitorDump::operator() (const String & x) const
@@ -152,13 +152,11 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) cons
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal256> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int128 & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
-String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
-{
-    return formatQuoted(x.data);
-}
+String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const UUID & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -228,6 +226,7 @@ void FieldVisitorWriteBinary::operator() (const UInt128 & x, WriteBuffer & buf) 
 void FieldVisitorWriteBinary::operator() (const Int128 & x, WriteBuffer & buf) const { DB::writeVarInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const UInt256 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int256 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const UUID & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal32> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
@@ -311,6 +310,13 @@ void FieldVisitorHash::operator() (const Int64 & x) const
 void FieldVisitorHash::operator() (const Int128 & x) const
 {
     UInt8 type = Field::Types::Int128;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const UUID & x) const
+{
+    UInt8 type = Field::Types::UUID;
     hash.update(type);
     hash.update(x);
 }

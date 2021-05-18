@@ -106,6 +106,8 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     auto result_columns = request.makeAttributesResultColumns();
 
+    size_t keys_found = 0;
+
     for (size_t attribute_index = 0; attribute_index < result_columns.size(); ++attribute_index)
     {
         if (!request.shouldFillResultColumnWithIndex(attribute_index))
@@ -124,7 +126,10 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
             const auto * it = key_to_fetched_index.find(requested_key);
 
             if (it)
+            {
                 fetched_column_from_storage->get(it->getMapped(), value_to_insert);
+                ++keys_found;
+            }
             else
                 value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
 
@@ -133,6 +138,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     }
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return request.filterRequestedColumns(result_columns);
 }
@@ -181,6 +187,8 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
 
     stream->readPrefix();
 
+    size_t keys_found = 0;
+
     while (const auto block = stream->read())
     {
         /// Split into keys columns and attribute columns
@@ -198,6 +206,8 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
             assert(it);
 
             size_t result_data_found_index = it->getMapped();
+            /// block_keys_size cannot be used, due to duplicates.
+            keys_found += !result_data[result_data_found_index];
             result_data[result_data_found_index] = true;
 
             block_keys_extractor.rollbackCurrentKey();
@@ -209,6 +219,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     stream->readSuffix();
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -220,8 +231,10 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
-        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type);
+        size_t keys_found;
+        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -236,8 +249,10 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
-        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type);
+        size_t keys_found = 0;
+        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else

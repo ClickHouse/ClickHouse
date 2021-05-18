@@ -93,7 +93,8 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
-    UInt64 insert_timeout_)
+    UInt64 insert_timeout_,
+    StorageID main_table_)
     : context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -102,6 +103,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , insert_timeout(insert_timeout_)
+    , main_table(main_table_)
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
@@ -326,11 +328,11 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                         throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
-                    if (connections.empty() || connections.front().isNull())
+                    auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
+                    if (results.empty() || results.front().entry.isNull())
                         throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
 
-                    job.connection_entry = std::move(connections.front());
+                    job.connection_entry = std::move(results.front().entry);
                 }
                 else
                 {
@@ -477,7 +479,9 @@ void DistributedBlockOutputStream::writeSuffix()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
-    if (insert_sync && pool)
+    /// Pool finished means that some exception had been thrown before,
+    /// and scheduling new jobs will return "Cannot schedule a task" error.
+    if (insert_sync && pool && !pool->finished())
     {
         finished_jobs_count = 0;
         try

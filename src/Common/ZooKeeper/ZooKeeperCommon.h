@@ -25,7 +25,7 @@ namespace Coordination
 struct ZooKeeperResponse : virtual Response
 {
     XID xid = 0;
-    int64_t zxid;
+    int64_t zxid = 0;
 
     virtual ~ZooKeeperResponse() override = default;
     virtual void readImpl(ReadBuffer &) = 0;

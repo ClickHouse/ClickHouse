@@ -1,7 +1,7 @@
-SELECT 'uniqThetaSketch many agrs';
+SELECT 'uniqTheta many agrs';
 
 SELECT
-    uniqThetaSketch(x), uniqThetaSketch((x)), uniqThetaSketch(x, y), uniqThetaSketch((x, y)), uniqThetaSketch(x, y, z), uniqThetaSketch((x, y, z))
+    uniqTheta(x), uniqTheta((x)), uniqTheta(x, y), uniqTheta((x, y)), uniqTheta(x, y, z), uniqTheta((x, y, z))
 FROM
 (
     SELECT
@@ -13,7 +13,7 @@ FROM
 
 
 SELECT k,
-    uniqThetaSketch(x), uniqThetaSketch((x)), uniqThetaSketch(x, y), uniqThetaSketch((x, y)), uniqThetaSketch(x, y, z), uniqThetaSketch((x, y, z)),
+    uniqTheta(x), uniqTheta((x)), uniqTheta(x, y), uniqTheta((x, y)), uniqTheta(x, y, z), uniqTheta((x, y, z)),
     count() AS c
 FROM
 (
@@ -29,34 +29,34 @@ ORDER BY c DESC, k ASC
 LIMIT 10;
 
 
-SELECT 'uniqThetaSketch distinct';
+SELECT 'uniqTheta distinct';
 
-SET count_distinct_implementation = 'uniqThetaSketch';
+SET count_distinct_implementation = 'uniqTheta';
 SELECT count(DISTINCT x) FROM (SELECT number % 123 AS x FROM system.numbers LIMIT 1000);
 SELECT count(DISTINCT x, y) FROM (SELECT number % 11 AS x, number % 13 AS y FROM system.numbers LIMIT 1000);
 
 
-SELECT 'uniqThetaSketch arrays';
+SELECT 'uniqTheta arrays';
 
-SELECT uniqThetaSketchArray([0, 1, 1], [0, 1, 1], [0, 1, 1]);
-SELECT uniqThetaSketchArray([0, 1, 1], [0, 1, 1], [0, 1, 0]);
-SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[1, 2], [1, 2], [1, 2, 3], []]) AS x);
-
-
-SELECT 'uniqThetaSketch complex types';
-
-SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[[]], [['a', 'b']], [['a'], ['b']], [['a', 'b']]]) AS x);
-SELECT uniqThetaSketch(x, x) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch(x, arrayMap(elem -> [elem, elem], x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch(x, toString(x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch((x, x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch((x, arrayMap(elem -> [elem, elem], x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch((x, toString(x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[], ['a'], ['a', NULL, 'b'], []]) AS x);
+SELECT uniqThetaArray([0, 1, 1], [0, 1, 1], [0, 1, 1]);
+SELECT uniqThetaArray([0, 1, 1], [0, 1, 1], [0, 1, 0]);
+SELECT uniqTheta(x) FROM (SELECT arrayJoin([[1, 2], [1, 2], [1, 2, 3], []]) AS x);
 
 
-SELECT 'uniqThetaSketch decimals';
+SELECT 'uniqTheta complex types';
+
+SELECT uniqTheta(x) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqTheta(x) FROM (SELECT arrayJoin([[[]], [['a', 'b']], [['a'], ['b']], [['a', 'b']]]) AS x);
+SELECT uniqTheta(x, x) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqTheta(x, arrayMap(elem -> [elem, elem], x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqTheta(x, toString(x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqTheta((x, x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqTheta((x, arrayMap(elem -> [elem, elem], x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqTheta((x, toString(x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqTheta(x) FROM (SELECT arrayJoin([[], ['a'], ['a', NULL, 'b'], []]) AS x);
+
+
+SELECT 'uniqTheta decimals';
 
 DROP TABLE IF EXISTS decimal;
 CREATE TABLE decimal
@@ -66,38 +66,38 @@ CREATE TABLE decimal
     c Decimal128(8)
 ) ENGINE = Memory;
 
-SELECT (uniqThetaSketch(a), uniqThetaSketch(b), uniqThetaSketch(c))
+SELECT (uniqTheta(a), uniqTheta(b), uniqTheta(c))
 FROM (SELECT * FROM decimal ORDER BY a);
 
 INSERT INTO decimal (a, b, c)
 SELECT toDecimal32(number - 50, 4), toDecimal64(number - 50, 8) / 3, toDecimal128(number - 50, 8) / 5
 FROM system.numbers LIMIT 101;
 
-SELECT (uniqThetaSketch(a), uniqThetaSketch(b), uniqThetaSketch(c))
+SELECT (uniqTheta(a), uniqTheta(b), uniqTheta(c))
 FROM (SELECT * FROM decimal ORDER BY a);
 
 DROP TABLE decimal;
 
 
-SELECT 'uniqThetaSketch remove injective';
+SELECT 'uniqTheta remove injective';
 
 set optimize_injective_functions_inside_uniq = 1;
 
-EXPLAIN SYNTAX select uniqThetaSketch(x) from (select number % 2 as x from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(x + y) from (select number % 2 as x, number % 3 y from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(-x) from (select number % 2 as x from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(bitNot(x)) from (select number % 2 as x from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(bitNot(-x)) from (select number % 2 as x from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(-bitNot(-x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(x) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(x + y) from (select number % 2 as x, number % 3 y from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(-x) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(bitNot(x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(bitNot(-x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(-bitNot(-x)) from (select number % 2 as x from numbers(10));
 
 set optimize_injective_functions_inside_uniq = 0;
 
-EXPLAIN SYNTAX select uniqThetaSketch(x) from (select number % 2 as x from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(x + y) from (select number % 2 as x, number % 3 y from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(-x) from (select number % 2 as x from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(bitNot(x)) from (select number % 2 as x from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(bitNot(-x)) from (select number % 2 as x from numbers(10));
-EXPLAIN SYNTAX select uniqThetaSketch(-bitNot(-x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(x) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(x + y) from (select number % 2 as x, number % 3 y from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(-x) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(bitNot(x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(bitNot(-x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqTheta(-bitNot(-x)) from (select number % 2 as x from numbers(10));
 
 
 DROP TABLE IF EXISTS stored_aggregates;
@@ -107,7 +107,7 @@ CREATE TABLE stored_aggregates
 (
     d Date,
     Uniq AggregateFunction(uniq, UInt64),
-    UniqThetaSketch AggregateFunction(uniqThetaSketch, UInt64)
+    UniqThetaSketch AggregateFunction(uniqTheta, UInt64)
 )
 ENGINE = AggregatingMergeTree(d, d, 8192);
 
@@ -115,21 +115,21 @@ INSERT INTO stored_aggregates
 SELECT
     toDate('2014-06-01') AS d,
     uniqState(number) AS Uniq,
-    uniqThetaSketchState(number) AS UniqThetaSketch
+    uniqThetaState(number) AS UniqThetaSketch
 FROM
 (
     SELECT * FROM system.numbers LIMIT 1000
 );
 
-SELECT uniqMerge(Uniq), uniqThetaSketchMerge(UniqThetaSketch) FROM stored_aggregates;
+SELECT uniqMerge(Uniq), uniqThetaMerge(UniqThetaSketch) FROM stored_aggregates;
 
-SELECT d, uniqMerge(Uniq), uniqThetaSketchMerge(UniqThetaSketch) FROM stored_aggregates GROUP BY d ORDER BY d;
+SELECT d, uniqMerge(Uniq), uniqThetaMerge(UniqThetaSketch) FROM stored_aggregates GROUP BY d ORDER BY d;
 
 OPTIMIZE TABLE stored_aggregates;
 
-SELECT uniqMerge(Uniq), uniqThetaSketchMerge(UniqThetaSketch) FROM stored_aggregates;
+SELECT uniqMerge(Uniq), uniqThetaMerge(UniqThetaSketch) FROM stored_aggregates;
 
-SELECT d, uniqMerge(Uniq), uniqThetaSketchMerge(UniqThetaSketch) FROM stored_aggregates GROUP BY d ORDER BY d;
+SELECT d, uniqMerge(Uniq), uniqThetaMerge(UniqThetaSketch) FROM stored_aggregates GROUP BY d ORDER BY d;
 
 DROP TABLE stored_aggregates;
 
@@ -140,7 +140,7 @@ CREATE TABLE stored_aggregates
 	k1 	UInt64,
 	k2 	String,
 	Uniq 			AggregateFunction(uniq, UInt64),
-    UniqThetaSketch	AggregateFunction(uniqThetaSketch, UInt64)
+    UniqThetaSketch	AggregateFunction(uniqTheta, UInt64)
 )
 ENGINE = AggregatingMergeTree(d, (d, k1, k2), 8192);
 
@@ -150,7 +150,7 @@ SELECT
 	intDiv(number, 100) AS k1,
 	toString(intDiv(number, 10)) AS k2,
 	uniqState(toUInt64(number % 7)) AS Uniq,
-    uniqThetaSketchState(toUInt64(number % 7)) AS UniqThetaSketch
+    uniqThetaState(toUInt64(number % 7)) AS UniqThetaSketch
 FROM
 (
 	SELECT * FROM system.numbers LIMIT 1000
@@ -159,19 +159,19 @@ GROUP BY d, k1, k2
 ORDER BY d, k1, k2;
 
 SELECT d, k1, k2,
-	uniqMerge(Uniq), uniqThetaSketchMerge(UniqThetaSketch)
+	uniqMerge(Uniq), uniqThetaMerge(UniqThetaSketch)
 FROM stored_aggregates
 GROUP BY d, k1, k2
 ORDER BY d, k1, k2;
 
 SELECT d, k1,
-	uniqMerge(Uniq), uniqThetaSketchMerge(UniqThetaSketch)
+	uniqMerge(Uniq), uniqThetaMerge(UniqThetaSketch)
 FROM stored_aggregates
 GROUP BY d, k1
 ORDER BY d, k1;
 
 SELECT d,
-	uniqMerge(Uniq), uniqThetaSketchMerge(UniqThetaSketch)
+	uniqMerge(Uniq), uniqThetaMerge(UniqThetaSketch)
 FROM stored_aggregates
 GROUP BY d
 ORDER BY d;
@@ -193,18 +193,18 @@ create materialized view summing_merge_tree_aggregate_function (
     k UInt64,
     c UInt64,
     un AggregateFunction(uniq, UInt64),
-    ut AggregateFunction(uniqThetaSketch, UInt64)
+    ut AggregateFunction(uniqTheta, UInt64)
 ) engine=SummingMergeTree(d, k, 8192)
-as select d, k, sum(c) as c, uniqState(u) as un, uniqThetaSketchState(u) as ut
+as select d, k, sum(c) as c, uniqState(u) as un, uniqThetaState(u) as ut
 from summing_merge_tree_null
 group by d, k;
 
 -- prime number 53 to avoid resonanse between %3 and %53
 insert into summing_merge_tree_null select number % 3, 1, number % 53 from numbers(999999);
 
-select k, sum(c), uniqMerge(un), uniqThetaSketchMerge(ut) from summing_merge_tree_aggregate_function group by k order by k;
+select k, sum(c), uniqMerge(un), uniqThetaMerge(ut) from summing_merge_tree_aggregate_function group by k order by k;
 optimize table summing_merge_tree_aggregate_function;
-select k, sum(c), uniqMerge(un), uniqThetaSketchMerge(ut) from summing_merge_tree_aggregate_function group by k order by k;
+select k, sum(c), uniqMerge(un), uniqThetaMerge(ut) from summing_merge_tree_aggregate_function group by k order by k;
 
 drop table summing_merge_tree_aggregate_function;
 drop table summing_merge_tree_null;

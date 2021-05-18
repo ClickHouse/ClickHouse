@@ -29,5 +29,3 @@ $ sudo apt-get update
 $ sudo apt-get install clickhouse-server=xx.yy.a.b clickhouse-client=xx.yy.a.b clickhouse-common-static=xx.yy.a.b
 $ sudo service clickhouse-server restart
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/update/) <!--hide-->

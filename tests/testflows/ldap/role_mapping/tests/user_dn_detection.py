@@ -334,7 +334,7 @@ def mapping(self):
         config = create_xml_config_content(entries=entries, config_file="ldap_servers.xml")
         add_ldap_servers_configuration(servers=None, config=config)
 
-    for scenario in loads(importlib.import_module("tests.mapping", package=None), Scenario):
+    for scenario in loads(importlib.import_module("ldap.role_mapping.tests.mapping"), Scenario):
         scenario(ldap_server="openldap1", ldap_user=users[0])
 
 @TestOutline

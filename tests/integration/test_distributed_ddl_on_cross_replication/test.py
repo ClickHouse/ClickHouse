@@ -20,23 +20,23 @@ def started_cluster():
         node1.query('''
             CREATE DATABASE replica_1 ON CLUSTER cross_3shards_2replicas;
             CREATE DATABASE replica_2 ON CLUSTER cross_3shards_2replicas;
-            
-            CREATE TABLE replica_1.replicated_local  
+
+            CREATE TABLE replica_1.replicated_local
             ON CLUSTER cross_3shards_2replicas (part_key Date, id UInt32, shard_id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{replica}') 
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{replica}')
             partition by part_key order by id;
-            
-            CREATE TABLE replica_1.replicated  
-            ON CLUSTER cross_3shards_2replicas as replica_1.replicated_local  
+
+            CREATE TABLE replica_1.replicated
+            ON CLUSTER cross_3shards_2replicas as replica_1.replicated_local
             ENGINE = Distributed(cross_3shards_2replicas, '', replicated_local, shard_id);
-                
-            CREATE TABLE replica_2.replicated_local 
+
+            CREATE TABLE replica_2.replicated_local
             ON CLUSTER cross_3shards_2replicas (part_key Date, id UInt32, shard_id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard_bk}/replicated', '{replica_bk}') 
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard_bk}/replicated', '{replica_bk}')
             partition by part_key order by id;
-            
-            CREATE TABLE replica_2.replicated  
-            ON CLUSTER cross_3shards_2replicas as replica_2.replicated_local  
+
+            CREATE TABLE replica_2.replicated
+            ON CLUSTER cross_3shards_2replicas as replica_2.replicated_local
             ENGINE = Distributed(cross_3shards_2replicas, '', replicated_local, shard_id);
             ''')
 
@@ -98,8 +98,8 @@ def test_atomic_database(started_cluster):
     node1.query("CREATE TABLE replica_1.rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree('/tables/{shard}/rmt/', '{replica}') ORDER BY n")
     node1.query("CREATE TABLE replica_2.rmt ON CLUSTER cross_3shards_2replicas (n UInt64, s String) ENGINE=ReplicatedMergeTree('/tables/{shard_bk}/rmt/', '{replica_bk}') ORDER BY n")
 
-    assert node1.query("SELECT countDistinct(uuid) from remote('node1,node2,node3', 'system', 'databases') WHERE uuid != 0 AND name='replica_1'") == "1\n"
-    assert node1.query("SELECT countDistinct(uuid) from remote('node1,node2,node3', 'system', 'tables') WHERE uuid != 0 AND name='rmt'") == "2\n"
+    assert node1.query("SELECT countDistinct(uuid) from remote('node1,node2,node3', 'system', 'databases') WHERE uuid != '00000000-0000-0000-0000-000000000000' AND name='replica_1'") == "1\n"
+    assert node1.query("SELECT countDistinct(uuid) from remote('node1,node2,node3', 'system', 'tables') WHERE uuid != '00000000-0000-0000-0000-000000000000' AND name='rmt'") == "2\n"
 
     node1.query("INSERT INTO replica_1.rmt VALUES (1, 'test')")
     node2.query("SYSTEM SYNC REPLICA replica_2.rmt", timeout=5)
