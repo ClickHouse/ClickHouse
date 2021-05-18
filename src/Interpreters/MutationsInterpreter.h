@@ -56,6 +56,9 @@ public:
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
 
+    /// Only updated columns.
+    const NameSet & getUpdatedColumns() const { return updated_columns; }
+
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
 
@@ -146,6 +149,7 @@ private:
 
     NameSet materialized_indices;
     NameSet materialized_projections;
+    NameSet updated_columns;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 };

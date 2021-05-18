@@ -1228,6 +1228,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     NameSet materialized_projections;
     MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
         = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
+    NameSet updated_columns;
 
     if (!for_interpreter.empty())
     {
@@ -1238,6 +1239,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         mutation_kind = interpreter->getMutationKind();
         in = interpreter->execute();
         updated_header = interpreter->getUpdatedHeader();
+        // If current mutation is not a materialization command, get the real updated columns to
+        // check dependencies for indices and projections.
+        if (mutation_kind != MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION)
+            updated_columns = interpreter->getUpdatedColumns();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
     }
 
@@ -1311,12 +1316,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else /// TODO: check that we modify only non-key columns in this case.
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
-        NameSet updated_columns;
-        if (mutation_kind != MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION)
-        {
-            for (const auto & name_type : updated_header.getNamesAndTypesList())
-                updated_columns.emplace(name_type.name);
-        }
 
         auto indices_to_recalc = getIndicesToRecalculate(
             in, updated_columns, metadata_snapshot, context, materialized_indices, source_part);
@@ -2060,7 +2059,8 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                           context,
                           Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
                           SelectQueryOptions{
-                              projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
+                              projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
+                                                                                     : QueryProcessingStage::WithMergeableState})
                           .execute()
                           .getInputStream();
             in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), std::numeric_limits<UInt64>::max());
