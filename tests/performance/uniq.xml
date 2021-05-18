@@ -23,7 +23,6 @@
                 -->
                <value>SearchEngineID</value>
                <value>RegionID</value>
-               <value>SearchPhrase</value>
                <value>ClientIP</value>
            </values>
        </substitution>
@@ -52,4 +51,5 @@
     </substitutions>
 
     <query>SELECT {key} AS k, {func}(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT SearchPhrase AS k, uniqTheta(UserID) FROM (SELECT SearchPhrase, UserID FROM hits_100m_single LIMIT 20000000) GROUP BY k</query>
 </test>
