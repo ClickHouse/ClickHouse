@@ -203,9 +203,18 @@ public:
 
     void writeSuffix() override
     {
-        writer->writeSuffix();
-        writer->flush();
-        write_buf->sync();
+        try
+        {
+            writer->writeSuffix();
+            writer->flush();
+            write_buf->sync();
+            write_buf->finalize();
+        }
+        catch (...)
+        {
+            writer.reset();
+            throw;
+        }
     }
 
 private:
