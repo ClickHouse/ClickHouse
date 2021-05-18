@@ -1324,34 +1324,97 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     return results;
 }
 
-void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
+void StorageMergeTree::replacePartitionFromOrUpdate(
+    const StoragePtr & source_table, const ASTPtr & partition, bool replace, const MutationCommands & commands, ContextPtr local_context)
 {
-    auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-    auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
+    auto table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    TableLockHolder src_table_lock;
+    StorageMetadataPtr source_metadata_snapshot;
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
 
-    Stopwatch watch;
-    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
+    DataPartsVector src_parts;
     String partition_id = getPartitionIDFromQuery(partition, local_context);
+    if (source_table)
+    {
+        src_table_lock = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+        source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
+        MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
+        src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    }
+    else
+    {
+        auto src_partition_id = getPartitionIDFromQuery(commands[0].partition, local_context);
+        src_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, src_partition_id);
+        if (src_parts.empty())
+        {
+            LOG_INFO(log, "Partition {} is empty", src_partition_id);
+            return;
+        }
+    }
 
-    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    Stopwatch watch;
     MutableDataPartsVector dst_parts;
 
     static const String TMP_PREFIX = "tmp_replace_from_";
 
     for (const DataPartPtr & src_part : src_parts)
     {
-        if (!canReplacePartition(src_part))
-            throw Exception(
-                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                ErrorCodes::BAD_ARGUMENTS);
+        if (source_table)
+        {
+            if (!canReplacePartition(src_part))
+                throw Exception(
+                    "Cannot replace partition '" + partition_id + "' because part '" + src_part->name
+                        + "' has inconsistent granularity with table",
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MutableDataPartPtr dst_part;
+        if (!source_table)
+        {
+            FutureMergedMutatedPart future_part;
+            future_part.parts.push_back(src_part);
+            future_part.part_info = dst_part_info;
+            future_part.name = src_part->getNewName(dst_part_info);
+            future_part.type = src_part->getType();
+            auto reservation = tryReserveSpace(MergeTreeDataMergerMutator::estimateNeededDiskSpace({src_part}), src_part->volume);
+            auto table_id = getStorageID();
+            MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+            Stopwatch stopwatch;
 
-        dst_parts.emplace_back(cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot));
+            auto write_part_log = [&] (const ExecutionStatus & execution_status)
+            {
+                writePartLog(
+                    PartLogElement::MUTATE_PART,
+                    execution_status,
+                    stopwatch.elapsed(),
+                    future_part.name,
+                    dst_part,
+                    future_part.parts,
+                    merge_entry.get());
+            };
+
+            try
+            {
+                dst_part = merger_mutator.mutatePartToTemporaryPart(
+                    future_part, my_metadata_snapshot, commands, *merge_entry, time(nullptr), getContext(), reservation, table_lock, partition_id);
+
+                if (dst_part->info.partition_id != partition_id)
+                    throw Exception("Partition update should generate part in the same partition", ErrorCodes::BAD_ARGUMENTS);
+                write_part_log({});
+            }
+            catch (...)
+            {
+                write_part_log(ExecutionStatus::fromCurrentException());
+                throw;
+            }
+        }
+        else
+            dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot);
+
+        dst_parts.emplace_back(std::move(dst_part));
     }
 
     /// ATTACH empty part set
@@ -1397,113 +1460,16 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 }
 
-void StorageMergeTree::replacePartitionUpdate(
-    const ASTPtr & partition,
-    bool replace,
-    const MutationCommands & commands,
-    ContextPtr local_context)
+void StorageMergeTree::replacePartitionFrom(
+    const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
 {
-    auto lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    replacePartitionFromOrUpdate(source_table, partition, replace, {}, local_context);
+}
 
-    Stopwatch watch;
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
-    String src_partition_id = getPartitionIDFromQuery(commands[0].partition, local_context);
-    DataPartsVector parts = getDataPartsVector({DataPartState::Committed});
-    DataPartsVector src_parts = getDataPartsVectorInPartition(DataPartState::Committed, src_partition_id);
-    if (src_parts.empty())
-        return;
-
-    MutableDataPartsVector dst_parts;
-    for (const auto & part : src_parts)
-    {
-        FutureMergedMutatedPart future_part;
-
-        /// This will generate unique name in scope of current server process.
-        Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, part->info.level);
-
-        future_part.parts.push_back(part);
-        future_part.part_info = dst_part_info;
-        future_part.name = part->getNewName(dst_part_info);
-        future_part.type = part->getType();
-        auto reservation = tryReserveSpace(MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), part->volume);
-        auto table_id = getStorageID();
-        MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
-        Stopwatch stopwatch;
-        MutableDataPartPtr new_part;
-
-        auto write_part_log = [&] (const ExecutionStatus & execution_status)
-        {
-            writePartLog(
-                PartLogElement::MUTATE_PART,
-                execution_status,
-                stopwatch.elapsed(),
-                future_part.name,
-                new_part,
-                future_part.parts,
-                merge_entry.get());
-        };
-
-        try
-        {
-            new_part = merger_mutator.mutatePartToTemporaryPart(
-                future_part, metadata_snapshot, commands, *merge_entry, time(nullptr), getContext(), reservation, lock, partition_id);
-
-            if (new_part->info.partition_id != partition_id)
-                throw Exception("Partition update should generate part in the same partition", ErrorCodes::BAD_ARGUMENTS);
-
-            dst_parts.emplace_back(std::move(new_part));
-            write_part_log({});
-        }
-        catch (...)
-        {
-            write_part_log(ExecutionStatus::fromCurrentException());
-            throw;
-        }
-    }
-
-    /// ATTACH empty part set
-    if (!replace && dst_parts.empty())
-        return;
-
-    MergeTreePartInfo drop_range;
-    if (replace)
-    {
-        drop_range.partition_id = partition_id;
-        drop_range.min_block = 0;
-        drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
-        drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
-    }
-
-    /// Atomically add new parts and remove old ones
-    try
-    {
-        {
-            /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
-            ///  and we should be able to rollback already added (Precomitted) parts
-            Transaction transaction(*this);
-
-            auto data_parts_lock = lockParts();
-
-            /// Populate transaction
-            for (MutableDataPartPtr & part : dst_parts)
-                renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
-
-            transaction.commit(&data_parts_lock);
-
-            /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
-            if (replace)
-                removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
-        }
-
-        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
-    }
-    catch (...)
-    {
-        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
-        throw;
-    }
+void StorageMergeTree::replacePartitionUpdate(
+    const ASTPtr & partition, bool replace, const MutationCommands & commands, ContextPtr local_context)
+{
+    replacePartitionFromOrUpdate({}, partition, replace, commands, local_context);
 }
 
 void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context)

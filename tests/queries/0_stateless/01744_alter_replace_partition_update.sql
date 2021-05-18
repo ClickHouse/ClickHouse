@@ -20,7 +20,7 @@ alter table x replace partition ('daily', '2021-03-28 00:00:00') from partition 
 alter table x replace partition ('daily', '2021-03-29 00:00:00') from partition ('hourly', '2021-03-29 06:00:00') update type = 'daily';
 
 -- replace from non-existing partition to non-existing partition
-alter table x replace partition ('daily', '2021-03-29 00:00:00') from partition ('hourly', '2021-03-09 06:00:00') update type = 'daily';
+alter table x replace partition ('daily', '2021-03-30 00:00:00') from partition ('hourly', '2021-03-09 06:00:00') update type = 'daily';
 
 -- replace from non-existing partition to existing partition
 -- replace will do nothing in this case

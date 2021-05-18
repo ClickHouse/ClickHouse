@@ -679,6 +679,14 @@ protected:
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
         bool allow_renaming_);
+
+private:
+    void replacePartitionFromOrUpdate(
+        const StoragePtr & source_table, // not-null if replace from other tables
+        const ASTPtr & partition,
+        bool replace,
+        const MutationCommands & commands, // not empty if replace update from self
+        ContextPtr query_context);
 };
 
 

@@ -258,6 +258,14 @@ protected:
         bool has_force_restore_data_flag);
 
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+
+private:
+    void replacePartitionFromOrUpdate(
+        const StoragePtr & source_table,
+        const ASTPtr & partition,
+        bool replace,
+        const MutationCommands & commands,
+        ContextPtr local_context);
 };
 
 }
