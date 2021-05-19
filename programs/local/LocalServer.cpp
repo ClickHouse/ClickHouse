@@ -719,6 +719,7 @@ void LocalServer::init(int argc, char ** argv)
         ("query,q", po::value<std::string>(), "query")
         ("queries-file, qf", po::value<std::string>(), "file path with queries to execute")
         ("database,d", po::value<std::string>(), "database")
+        ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
 
         ("table,N", po::value<std::string>(), "name of the initial table")
         /// If structure argument is omitted then initial query is not generated
