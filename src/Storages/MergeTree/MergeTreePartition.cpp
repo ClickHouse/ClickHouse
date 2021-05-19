@@ -228,6 +228,9 @@ Block MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr 
 KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     const auto & partition_key = metadata_snapshot->getPartitionKey();
+    if (!partition_key.definition_ast)
+        return partition_key;
+
     ASTPtr ast_copy = partition_key.definition_ast->clone();
 
     /// Implementation of modulo function was changed from 8bit result type to 16bit. For backward compatibility partition by expression is always
