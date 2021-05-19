@@ -18,7 +18,6 @@ PEERDIR(
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
-    contrib/libs/cxxsupp/libcxxabi-parts
     contrib/restricted/dragonbox
 )
 
@@ -72,6 +71,7 @@ SRCS(
     Stopwatch.cpp
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
+    Suggest.cpp
     SymbolIndex.cpp
     TLDListsHolder.cpp
     TaskStatsInfoGetter.cpp
