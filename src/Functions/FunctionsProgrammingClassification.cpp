@@ -14,12 +14,15 @@ struct ProgrammingClassificationImpl
 
     using ResultType = String;
 
-    static ALWAYS_INLINE inline Float64 state_machine(std::unordered_map<String, Float64> standart, std::unordered_map<String, Float64> model)
+    static ALWAYS_INLINE inline Float64 state_machine(std::unordered_map<String, Float64>& standart, std::unordered_map<String, Float64>& model)
     {
         Float64 res = 0;
         for (auto & el : model)
         {
-            res += el.second * standart[el.first];
+            if (standart.find(el.first) != standart.end())
+            {
+                res += el.second * standart[el.first];
+            }
         }
         return res;
     }
@@ -64,7 +67,7 @@ struct ProgrammingClassificationImpl
         String most_liked;
         Float64 max_result = 0;
 
-        for (const auto& item : programming_freq)
+        for (auto& item : programming_freq)
         {
             Float64 result = state_machine(item.second, data_freq);
             if (result > max_result)
@@ -134,7 +137,7 @@ struct ProgrammingClassificationImpl
             String most_liked;
             Float64 max_result = 0;
 
-            for (const auto& item : programming_freq)
+            for (auto& item : programming_freq)
             {
                 Float64 result = state_machine(item.second, data_freq);
                 if (result > max_result)
