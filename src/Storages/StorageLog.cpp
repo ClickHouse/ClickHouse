@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -168,7 +169,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
-    auto serialization = name_and_type.type->getDefaultSerialization();
+    auto serialization = IDataType::getSerialization(name_and_type, {});
 
     auto create_stream_getter = [&](bool stream_for_prefix)
     {
