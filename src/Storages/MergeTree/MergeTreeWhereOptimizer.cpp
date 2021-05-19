@@ -44,7 +44,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
-    Poco::Logger::get("kek").information("IN MT OPTIMIZER");
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
@@ -186,17 +185,6 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 {
     if (!select.where() || select.prewhere())
         return;
-
-    if (select.where())
-    {
-        Poco::Logger::get("MTPRWHERE WHERE").information(select.where()->getColumnName());
-        Poco::Logger::get("MTPRWHERE WHERE").information(select.where()->dumpTree());
-    }
-    if (select.prewhere())
-    {
-        Poco::Logger::get("MTPRWHERE PRE").information(select.prewhere()->dumpTree());
-        Poco::Logger::get("MTPRWHERE PRE").information(select.prewhere()->getColumnName());
-    }
 
     Conditions where_conditions = analyze(select.where(), select.final());
     Conditions prewhere_conditions;

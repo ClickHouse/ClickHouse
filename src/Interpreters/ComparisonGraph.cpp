@@ -145,9 +145,6 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
         const auto it_right = graph.ast_hash_to_component.find(right->getTreeHash());
         if (it_left == std::end(graph.ast_hash_to_component) || it_right == std::end(graph.ast_hash_to_component))
         {
-            Poco::Logger::get("Graph").information("not found");
-            Poco::Logger::get("Graph").information(std::to_string(left->getTreeHash().second));
-            Poco::Logger::get("Graph").information(std::to_string(right->getTreeHash().second));
             {
                 const auto left_bound = getConstLowerBound(left);
                 const auto right_bound = getConstUpperBound(right);
@@ -184,7 +181,6 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
         {
             start = it_left->second;
             finish = it_right->second;
-            Poco::Logger::get("Graph").information("found:" + std::to_string(start) + " " + std::to_string(finish));
         }
     }
 
@@ -211,7 +207,6 @@ bool ComparisonGraph::isPossibleCompare(const CompareResult expected, const ASTP
 
     if (expected == CompareResult::UNKNOWN || result == CompareResult::UNKNOWN)
     {
-        Poco::Logger::get("isPossibleCompare").information("unknown");
         return true;
     }
     if (expected == result)
@@ -460,7 +455,6 @@ void ComparisonGraph::dfsComponents(
 
 ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & asts_graph)
 {
-    Poco::Logger::get("Graph").information("building");
     /// Find strongly connected component
     const auto n = asts_graph.vertices.size();
 
@@ -507,7 +501,7 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
         vertex.buildConstants();
     }
 
-    Poco::Logger::get("Graph").information("components: " + std::to_string(component));
+    Poco::Logger::get("ComparisonGraph").information("components: " + std::to_string(component));
 
     for (size_t v = 0; v < n; ++v)
     {

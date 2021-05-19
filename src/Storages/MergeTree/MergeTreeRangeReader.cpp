@@ -529,12 +529,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
 {
-    if (prewhere_info_)
-    {
-        Poco::Logger::get("PREWHERE").information(prewhere_info_->prewhere_column_name);
-        Poco::Logger::get("PREWHERE").information(prewhere_info_->prewhere_actions->dumpActions());
-        Poco::Logger::get("PREWHERE rm?").information(std::to_string(prewhere_info_->remove_prewhere_column));
-    }
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();
 
@@ -989,7 +983,6 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// If we need to filter in PREWHERE
     else if (prewhere_info->need_filter || result.need_filter || prewhere_info->row_level_filter)
     {
-        Poco::Logger::get("USE PREWHERE FILTER").information("++++++++++++++");
         /// If there is a filter and without optimized
         if (result.getFilter() && last_reader_in_chain)
         {
@@ -1045,7 +1038,6 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// Filter in WHERE instead
     else
     {
-        Poco::Logger::get("USE WHERE FILTER ").information("---------------------");
         result.columns[prewhere_column_pos] = result.getFilterHolder()->convertToFullColumnIfConst();
         if (getSampleBlock().getByName(prewhere_info->prewhere_column_name).type->isNullable())
             result.columns[prewhere_column_pos] = makeNullable(std::move(result.columns[prewhere_column_pos]));

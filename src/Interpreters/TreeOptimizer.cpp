@@ -519,10 +519,6 @@ void optimizeWithConstraints(ASTSelectQuery * select_query,
                              const bool optimize_append_index)
 {
     WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index).perform();
-    if (select_query->where())
-        Poco::Logger::get("CNF").information(select_query->where()->dumpTree());
-    else
-        Poco::Logger::get("CNF").information("NO WHERE");
 }
 
 void optimizeSubstituteColumn(ASTSelectQuery * select_query,
@@ -543,8 +539,6 @@ void convertQueryToCNF(ASTSelectQuery * select_query)
         auto cnf_form = TreeCNFConverter::toCNF(select_query->where()).pushNotInFuntions();
         select_query->refWhere() = TreeCNFConverter::fromCNF(cnf_form);
     }
-    if (select_query->where())
-        Poco::Logger::get("CNF").information(select_query->where()->dumpTree());
 }
 
 /// Remove duplicated columns from USING(...).
@@ -655,16 +649,6 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
         optimizeWithConstraints(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, settings.optimize_append_index);
         if (settings.optimize_substitute_columns)
             optimizeSubstituteColumn(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage);
-    }
-    if (select_query->where())
-    {
-        Poco::Logger::get("&&&&&&&&&&&&&&& WHERE").information(select_query->where()->getColumnName());
-        Poco::Logger::get("&&&&&&&&&&&&&&& WHERE").information(select_query->where()->dumpTree());
-    }
-    if (select_query->prewhere())
-    {
-        Poco::Logger::get("&&&&&&&&&&&&&&& prewhere").information(select_query->prewhere()->getColumnName());
-        Poco::Logger::get("&&&&&&&&&&&&&&& prewhere").information(select_query->prewhere()->dumpTree());
     }
 
     /// Push the predicate expression down to the subqueries.

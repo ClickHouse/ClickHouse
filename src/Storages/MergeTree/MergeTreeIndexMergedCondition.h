@@ -25,7 +25,6 @@ public:
     bool alwaysUnknownOrTrue() const;
     bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const;
 
-    //TODO: add constraints
 private:
     std::unique_ptr<ComparisonGraph> buildGraph(const std::vector<bool> & values) const;
     const ComparisonGraph & getGraph(const std::vector<bool> & values) const;
@@ -35,6 +34,7 @@ private:
     std::unique_ptr<CNFQuery> expression_cnf;
 
     mutable std::unordered_map<std::vector<bool>, std::unique_ptr<ComparisonGraph>> graphCache;
+    mutable std::unordered_map<std::vector<bool>, bool> answerCache;
 
     std::vector<std::vector<ASTPtr>> index_to_compare_atomic_hypotheses;
     std::vector<std::vector<CNFQuery::OrGroup>> index_to_atomic_hypotheses;

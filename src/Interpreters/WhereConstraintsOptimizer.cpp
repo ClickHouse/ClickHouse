@@ -156,11 +156,9 @@ void WhereConstraintsOptimizer::perform()
 {
     if (select_query->where() && metadata_snapshot)
     {
-        //const auto & constraint_data = metadata_snapshot->getConstraints().getConstraintData();
         const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
-        Poco::Logger::get("BEFORE CNF ").information(select_query->where()->dumpTree());
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
-        Poco::Logger::get("BEFORE OPT").information(cnf.dump());
+        Poco::Logger::get("WhereConstraintsOptimizer").information("Before optimization: " + cnf.dump());
         cnf.pullNotOutFunctions()
             .filterAlwaysTrueGroups([&compare_graph, this](const auto & group)
             {
@@ -182,7 +180,7 @@ void WhereConstraintsOptimizer::perform()
         if (optimize_append_index)
             AddIndexConstraintsOptimizer(metadata_snapshot).perform(cnf);
 
-        Poco::Logger::get("AFTER OPT").information(cnf.dump());
+        Poco::Logger::get("WhereConstraintsOptimizer").information("After optimization: " + cnf.dump());
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, TreeCNFConverter::fromCNF(cnf));
     }
 }
