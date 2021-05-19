@@ -53,41 +53,18 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 
 std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    bool exist = exists(path);
-
-    if (exist && readMeta(path).read_only)
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is read-only: " + path);
+    auto metadata = readOrCreateMetaForWriting(path, mode);
 
     /// Path to store new HDFS object.
     auto file_name = getRandomName();
     auto hdfs_path = remote_fs_root_path + file_name;
 
-    if (!exist || mode == WriteMode::Rewrite)
-    {
-        /// If metadata file exists - remove and new.
-        if (exist)
-            removeFile(path);
+    LOG_DEBUG(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
+              backQuote(metadata_path + path), remote_fs_root_path + hdfs_path);
 
-        auto metadata = createMeta(path);
-        /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
-        metadata.save();
-
-        LOG_DEBUG(log,
-            "Write to file by path: {}. New hdfs path: {}", backQuote(metadata_path + path), hdfs_path);
-
-        return std::make_unique<WriteIndirectBufferFromHDFS>(config, hdfs_path, file_name, metadata, buf_size, O_WRONLY);
-    }
-    else
-    {
-        auto metadata = readMeta(path);
-
-        LOG_DEBUG(log,
-            "Append to file by path: {}. New hdfs path: {}. Existing HDFS objects: {}",
-            backQuote(metadata_path + path), hdfs_path, metadata.remote_fs_objects.size());
-
-        return std::make_unique<WriteIndirectBufferFromHDFS>(
-                config, hdfs_path, file_name, metadata, buf_size, O_WRONLY | O_APPEND);
-    }
+    return std::make_unique<WriteIndirectBufferFromHDFS>(
+            config, hdfs_path, file_name, metadata, buf_size,
+            mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND); /// Single O_WRONLY in libhdfs adds O_TRUNC
 }
 
 
