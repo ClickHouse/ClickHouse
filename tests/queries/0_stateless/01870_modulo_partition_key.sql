@@ -1,11 +1,15 @@
 SELECT 'simple partition key:';
-DROP TABLE IF EXISTS table1;
+DROP TABLE IF EXISTS table1 SYNC;
 CREATE TABLE table1 (id Int64, v UInt64)
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/test/tables/table', '1', v)
 PARTITION BY id % 200 ORDER BY id;
 INSERT INTO table1 SELECT number-205, number FROM numbers(10);
 INSERT INTO table1 SELECT number-205, number FROM numbers(400, 10);
 SELECT toInt64(partition) as p FROM system.parts WHERE table='table1' ORDER BY p;
+select 'where id % 200 > 0 ';
+select id from table1 where id % 200 > 0 order by id;
+select 'where id % 200 < 0 ';
+select id from table1 where id % 200 < 0 order by id;
 
 SELECT 'tuple as partition key:';
 DROP TABLE IF EXISTS table2;

@@ -220,6 +220,13 @@ static bool moduloToModuloLegacyRecursive(ASTPtr node_expr)
 
 Block MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
+    auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
+    adjusted_partition_key.expression->execute(block);
+    return adjusted_partition_key.sample_block;
+}
+
+KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+{
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     ASTPtr ast_copy = partition_key.definition_ast->clone();
 
@@ -228,12 +235,10 @@ Block MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr 
     if (moduloToModuloLegacyRecursive(ast_copy))
     {
         auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
-        adjusted_partition_key.expression->execute(block);
-        return adjusted_partition_key.sample_block;
+        return adjusted_partition_key;
     }
 
-    partition_key.expression->execute(block);
-    return partition_key.sample_block;
+    return partition_key;
 }
 
 }
