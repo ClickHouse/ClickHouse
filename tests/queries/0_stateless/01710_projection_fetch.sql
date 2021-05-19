@@ -28,6 +28,7 @@ select count() from system.projection_parts where table = 'tp_2' and name = 'pp'
 show create table tp_2;
 
 alter table tp_1 clear projection pp;
+system sync replica tp_2;
 select * from system.projection_parts where table = 'tp_2' and name = 'pp' and active;
 show create table tp_2;
 
