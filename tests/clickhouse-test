@@ -147,15 +147,6 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-<<<<<<< HEAD
-        clickhouse_proc_create = Popen(shlex.split(testcase_args.testcase_client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
-
-        try:
-            clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(testcase_args, database)), timeout=testcase_args.timeout)
-        except TimeoutExpired:
-            total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
-            return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
-=======
         with open(stderr_file, 'w') as stderr:
             clickhouse_proc_create = Popen(shlex.split(testcase_args.testcase_client), stdin=PIPE, stdout=PIPE, stderr=stderr, universal_newlines=True)
             try:
@@ -163,7 +154,6 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
             except TimeoutExpired:
                 total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
                 return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
->>>>>>> upstream/master
 
         os.environ["CLICKHOUSE_DATABASE"] = database
         # Set temporary directory to match the randomly generated database,

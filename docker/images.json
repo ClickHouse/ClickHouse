@@ -63,11 +63,6 @@
         "name": "yandex/clickhouse-test-coverage",
         "dependent": []
     },
-    "docker/test/new_coverage": {
-        "name": "yandex/clickhouse-test-new-coverage",
-        "dependent": []
-    },
-
     "docker/test/unit": {
         "name": "yandex/clickhouse-unit-test",
         "dependent": []

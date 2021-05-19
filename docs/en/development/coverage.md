@@ -7,7 +7,7 @@ toc_title: Working with code coverage
 
 ClickHouse Coverage Report (referred as CCR) is a simple format for accumulating large coverage reports while 
 preserving per-test coverage data. It can be easily converted to `.info` for `genhtml`. ClickHouse includes a CCR 
-converter located at `/utils/ccr_converter/`.
+converter located at `/docker/test/coverage/ccr_converter.py`.
 
 CCR consists of 3 sections:
 

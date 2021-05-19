@@ -26,17 +26,57 @@
 #include "common/logger_useful.h"
 #include <common/types.h>
 
+#if defined(__ELF__) && !defined(__FreeBSD__)
+
+#define NON_ELF_BUILD 0
+
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 
+using SymbolIndex = DB::SymbolIndex;
+using SymbolIndexInstance = decltype(SymbolIndex::instance());
+using Dwarf = DB::Dwarf;
+
+#else
+
+#define NON_ELF_BUILD 1
+
+/// FreeBSD and Darwin do not have DWARF, so coverage build is explicitly disabled.
+/// Fake classes are introduced to be able to build CH.
+
+#if WITH_COVERAGE
+#error "Coverage build does not work on FreeBSD and Darwin".
+#endif
+
+struct SymbolIndexInstance
+{
+    struct SymbolPtr { std::string_view name; };
+    static constexpr SymbolPtr sym_ptr;
+
+    struct Ptr { constexpr const SymbolPtr * const findSymbol(size_t) const { return &sym_ptr; } }; //NOLINT
+    static constexpr Ptr ptr;
+
+    constexpr const Ptr * const operator->() const { return &ptr; }
+};
+
+struct SymbolIndex { static constexpr SymbolIndexInstance instance() { return {}; } };
+
+struct Dwarf
+{
+    struct File { std::string toString() const { return {}; } }; //NOLINT
+    struct FileAndLine { size_t line; File file; };
+
+    constexpr FileAndLine findAddressForCoverageRuntime(uintptr_t) const { return {}; } //NOLINT
+};
+
+#endif
+
 namespace detail
 {
-using namespace DB;
-
 using EdgeIndex = uint32_t;
 using Addr = void *;
 
-using CallCount = size_t;
+using CallCount = int;
 using Line = size_t;
 
 /**
@@ -124,7 +164,7 @@ private:
     const size_t hardware_concurrency;
     const Poco::Logger * base_log;
 
-    const MultiVersion<SymbolIndex>::Version symbol_index;
+    const SymbolIndexInstance symbol_index;
     const Dwarf dwarf;
 
     const std::filesystem::path clickhouse_src_dir_abs_path;
@@ -173,7 +213,7 @@ private:
         std::vector<SourceData> data; // [i] means source file in source_files_cache with index i.
     };
 
-    using EdgesHit = std::vector<EdgeIndex>;
+    using EdgesHit = std::vector<CallCount>; // [i] ~ edge with index i call count
 
     std::vector<Addr> edges_to_addrs;
     std::vector<bool> edge_is_func_entry;

@@ -15,7 +15,7 @@ namespace detail
 {
 namespace
 {
-inline decltype(SymbolIndex::instance()) getInstanceAndInitGlobalCounters()
+inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
 {
     /**
      * Writer is a singleton, so it initializes statically.
@@ -105,8 +105,14 @@ constexpr const std::string_view docker_report_path = "/report.ccr";
 Writer::Writer()
     : hardware_concurrency(std::thread::hardware_concurrency()),
       base_log(nullptr),
+
+#if NON_ELF_BUILD
+      symbol_index(),
+      dwarf(),
+#else
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
+#endif
 
       clickhouse_src_dir_abs_path(docker_ch_src),
       report_path(docker_report_path),
@@ -205,7 +211,8 @@ void Writer::hit(EdgeIndex edge_index)
      * where only lines 32-36 swap the pointers, so we'll just probably count some old hits for new test.
      *
      */
-    __atomic_add_fetch(&edges_hit[edge_index], 1, __ATOMIC_RELAXED);
+    ++edges_hit[edge_index];
+    //__atomic_add_fetch(&edges_hit[edge_index], 1, __ATOMIC_RELAXED);
 }
 
 namespace /// Symbolized data
@@ -490,8 +497,7 @@ Writer::Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_
 
                 const EdgeIndex edge_index = data[i];
 
-                const Dwarf::LocationInfo loc =
-                    dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[edge_index]));
+                const auto loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[edge_index]));
 
                 SourceRelativePath source_rel_path = std::filesystem::path(loc.file.toString())
                     .lexically_relative(clickhouse_src_dir_abs_path)
