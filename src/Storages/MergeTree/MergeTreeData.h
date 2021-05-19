@@ -51,6 +51,7 @@ struct EmergingPartInfo
 
 struct CurrentlySubmergingEmergingTagger;
 
+struct SelectQueryOptions;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
@@ -216,15 +217,15 @@ public:
     /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-        const VolumePtr & volume, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     /// Create part, that already exists on filesystem.
     /// After this methods 'loadColumnsChecksumsIndexes' must be called.
     MutableDataPartPtr createPart(const String & name,
-        const VolumePtr & volume, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const VolumePtr & volume, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
@@ -357,6 +358,18 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
+    bool getQueryProcessingStageWithAggregateProjection(
+        ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
+
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr query_context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & info) const override;
+
+    ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
+
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -388,10 +401,11 @@ public:
     DataParts getDataParts(const DataPartStates & affordable_states) const;
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
-    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+    DataPartsVector getDataPartsVector(
+        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
-    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
+    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
 
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
@@ -476,10 +490,9 @@ public:
 
     /// Removes all parts from the working set parts
     ///  for which (partition_id = drop_range.partition_id && min_block >= drop_range.min_block && max_block <= drop_range.max_block).
-    /// If a part intersecting drop_range.max_block is found, an exception will be thrown.
     /// Used in REPLACE PARTITION command;
     DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
-                                                     bool skip_intersecting_parts, DataPartsLock & lock);
+                                                     DataPartsLock & lock);
 
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.

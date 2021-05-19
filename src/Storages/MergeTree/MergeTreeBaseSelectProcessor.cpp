@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 
 namespace DB
@@ -205,6 +207,7 @@ namespace
     {
         virtual ~VirtualColumnsInserter() = default;
 
+        virtual void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
@@ -229,13 +232,20 @@ static void injectVirtualColumnsImpl(
             throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
                             ErrorCodes::LOGICAL_ERROR);
 
+        const IMergeTreeDataPart * part = nullptr;
+        if (rows)
+        {
+            part = task->data_part.get();
+            if (part->isProjectionPart())
+                part = part->getParentPart();
+        }
         for (const auto & virtual_column_name : virtual_columns)
         {
             if (virtual_column_name == "_part")
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst();
+                    column = DataTypeString().createColumnConst(rows, part->name)->convertToFullColumnIfConst();
                 else
                     column = DataTypeString().createColumn();
 
@@ -265,7 +275,7 @@ static void injectVirtualColumnsImpl(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, task->data_part->info.partition_id)->convertToFullColumnIfConst();
+                    column = DataTypeString().createColumnConst(rows, part->info.partition_id)->convertToFullColumnIfConst();
                 else
                     column = DataTypeString().createColumn();
 
@@ -287,6 +297,11 @@ namespace
     struct VirtualColumnsInserterIntoBlock : public VirtualColumnsInserter
     {
         explicit VirtualColumnsInserterIntoBlock(Block & block_) : block(block_) {}
+
+        void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) final
+        {
+            block.insert({column, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), name});
+        }
 
         void insertStringColumn(const ColumnPtr & column, const String & name) final
         {
@@ -322,6 +337,11 @@ namespace
     struct VirtualColumnsInserterIntoColumns : public VirtualColumnsInserter
     {
         explicit VirtualColumnsInserterIntoColumns(Columns & columns_) : columns(columns_) {}
+
+        void insertArrayOfStringsColumn(const ColumnPtr & column, const String &) final
+        {
+            columns.push_back(column);
+        }
 
         void insertStringColumn(const ColumnPtr & column, const String &) final
         {

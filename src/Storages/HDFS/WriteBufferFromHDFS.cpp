@@ -36,7 +36,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         , fs(createHDFSFS(builder.get()))
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
-        const std::string path = hdfs_uri.substr(begin_of_path);
+        const String path = hdfs_uri.substr(begin_of_path);
 
         if (path.find_first_of("*?{") != std::string::npos)
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "URI '{}' contains globs, so the table is in readonly mode", hdfs_uri);
@@ -63,9 +63,11 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     int write(const char * start, size_t size) const
     {
         int bytes_written = hdfsWrite(fs.get(), fout, start, size);
+
         if (bytes_written < 0)
             throw Exception("Fail to write HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
                 ErrorCodes::NETWORK_ERROR);
+
         return bytes_written;
     }
 
@@ -106,7 +108,8 @@ void WriteBufferFromHDFS::sync()
     impl->sync();
 }
 
-WriteBufferFromHDFS::~WriteBufferFromHDFS()
+
+void WriteBufferFromHDFS::finalize()
 {
     try
     {
@@ -116,6 +119,12 @@ WriteBufferFromHDFS::~WriteBufferFromHDFS()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+
+WriteBufferFromHDFS::~WriteBufferFromHDFS()
+{
+    finalize();
 }
 
 }
