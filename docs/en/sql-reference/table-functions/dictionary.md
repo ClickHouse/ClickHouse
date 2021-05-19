@@ -1,0 +1,60 @@
+---
+toc_priority: 54
+toc_title: dictionary function
+---
+
+# dictionary {#dictionary-function}
+
+Displays the [dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table.
+
+**Syntax**
+
+``` sql
+dictionary('dict')
+```
+
+**Arguments** 
+
+-   `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+A ClickHouse table.
+
+**Example**
+
+Input table:
+
+``` text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+Create a dictionary:
+
+``` sql
+CREATE DICTIONARY table_function_dictionary_test_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_function_dictionary_source_table'))
+LAYOUT(DIRECT());
+```
+
+Query:
+
+``` sql
+SELECT * FROM dictionary('table_function_dictionary_test_dictionary');
+```
+
+Result:
+
+``` text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+**See Also**
+
+-   [Dictionary engine](../../engines/table-engines/special/dictionary.md#dictionary)
