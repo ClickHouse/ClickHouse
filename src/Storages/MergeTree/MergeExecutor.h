@@ -95,6 +95,7 @@ public:
                 return false;
             }
         }
+        return false;
     }
 
     bool operator> (const MergeTask & rhs) const
