@@ -82,7 +82,7 @@ namespace
 ///
 /// To fix it, the follwing trick is applied.
 /// We check all GROUP BY keys which depend only on `_shard_num`.
-/// Calculate such expression for curren shard if it is used in header.
+/// Calculate such expression for current shard if it is used in header.
 /// Those columns will be added to modified header as already known constants.
 ///
 /// For local shard, missed constants will be added by converting actions.
