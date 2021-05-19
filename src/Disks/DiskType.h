@@ -24,8 +24,8 @@ struct DiskType
                 return "memory";
             case Type::S3:
                 return "s3";
-	    case Type::Encrypted:
-		return "encrypted";
+            case Type::Encrypted:
+                return "encrypted";
         }
         __builtin_unreachable();
     }
