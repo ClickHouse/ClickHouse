@@ -21,6 +21,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -166,7 +167,7 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
-    auto serialization = name_and_type.type->getDefaultSerialization();
+    auto serialization = IDataType::getSerialization(name_and_type, {});
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
