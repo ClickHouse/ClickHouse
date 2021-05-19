@@ -10,3 +10,7 @@ SELECT _shard_num + dummy s, count() FROM remote('127.0.0.{1,2}', system.one) GR
 
 SELECT _shard_num FROM remote('127.0.0.{1,2}', system.one) ORDER BY _shard_num;
 SELECT _shard_num s FROM remote('127.0.0.{1,2}', system.one) ORDER BY _shard_num;
+
+SELECT _shard_num s, count() FROM remote('127.0.0.{1,2}', system.one) GROUP BY s order by s;
+
+select materialize(_shard_num), * from remote('127.{1,2}', system.one) limit 1 by dummy format Null;

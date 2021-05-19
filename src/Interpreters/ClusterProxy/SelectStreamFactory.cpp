@@ -92,6 +92,11 @@ Block evaluateConstantGroupByKeysWithShardNumber(
 {
     Block res;
 
+    ColumnWithTypeAndName shard_num_col;
+    shard_num_col.type = std::make_shared<DataTypeUInt32>();
+    shard_num_col.column = shard_num_col.type->createColumnConst(0, shard_num);
+    shard_num_col.name = "_shard_num";
+
     if (auto group_by = query_ast->as<ASTSelectQuery &>().groupBy())
     {
         for (const auto & elem : group_by->children)
@@ -108,18 +113,19 @@ Block evaluateConstantGroupByKeysWithShardNumber(
                 if (required_columns.size() != 1 || required_columns.count("_shard_num") == 0)
                     continue;
 
-                auto type = std::make_shared<DataTypeUInt32>();
-                auto col = type->createColumnConst(1, shard_num);
-                std::string name = "_shard_num";
-
-                Block block({ColumnWithTypeAndName{col, type, name}});
-                auto syntax_result = TreeRewriter(context).analyze(ast, {NameAndTypePair{name, type}});
-                ExpressionAnalyzer(ast, syntax_result, context).getActions(true)->execute(block);
+                Block block({shard_num_col});
+                auto syntax_result = TreeRewriter(context).analyze(ast, {NameAndTypePair{shard_num_col.name, shard_num_col.type}});
+                ExpressionAnalyzer(ast, syntax_result, context).getActions(true, false)->execute(block);
 
                 res.insert(block.getByName(key_name));
             }
         }
     }
+
+    /// We always add _shard_num constant just in case.
+    /// For initial query it is considered as a column from table, and may be required by intermediate block.
+    if (!res.has(shard_num_col.name))
+        res.insert(std::move(shard_num_col));
 
     return res;
 }
