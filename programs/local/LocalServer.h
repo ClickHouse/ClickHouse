@@ -55,6 +55,8 @@ protected:
 
     String server_display_name;
 
+    std::unique_ptr<Connection> connection; /// Connection to DB.
+
     std::optional<Suggest> suggest;
 
     /// Settings specified via command line args
