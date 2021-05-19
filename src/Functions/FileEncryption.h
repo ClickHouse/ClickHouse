@@ -65,7 +65,7 @@ private:
     DB::UInt128 FromBigEndianString(const String & str) const
     {
         size_t dev = std::pow(2, CHAR_BIT);
-	DB::UInt128 result = 0;
+        DB::UInt128 result = 0;
 
         for (auto c : str)
         {
@@ -110,7 +110,7 @@ String GetRandomString(size_t size)
     {
         /// may be it's better to use GRND_RANDOM
         ret = getrandom(iv.data() + cur, size - cur, 0);
-	if (ret < 0)
+        if (ret < 0)
         {
             if (errno == EINTR) continue;
             else break;
