@@ -968,7 +968,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         }
     };
 
-    auto task = std::make_shared<MergeTask>(merged_stream, to, is_cancelled, update_for_block);
+    auto task = std::make_shared<MergeTask>(merged_stream, to, is_cancelled, update_for_block, /*priority=*/new_data_part->getBytesOnDisk());
     merge_executor.schedule(task);
     task->wait();
 

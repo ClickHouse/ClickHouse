@@ -298,7 +298,7 @@ private:
     MergeTreeData & data;
     const size_t background_pool_size;
 
-    ConcurrentMergeExecutor merge_executor{2};
+    ConcurrentMergeExecutor merge_executor{4};
 
     Poco::Logger * log;
 

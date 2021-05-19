@@ -7,8 +7,11 @@
 #include "Storages/MergeTree/MergeAlgorithm.h"
 
 #include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
+#include <common/logger_useful.h>
 
 #include <functional>
+#include <iostream>
 
 namespace DB
 {
@@ -33,11 +36,12 @@ public:
     using UpdateForBlockCallback = std::function<void(const Block &)>;
 
     MergeTask(BlockInputStreamPtr merged_stream_, BlockOutputStreamPtr to_,
-        IsCancelledCallback is_cancelled_, UpdateForBlockCallback update_for_block_)
+        IsCancelledCallback is_cancelled_, UpdateForBlockCallback update_for_block_, UInt64 priority_)
         : is_cancelled(std::move(is_cancelled_))
         , update_for_block(std::move(update_for_block_))
         , merged_stream(merged_stream_)
         , to(to_)
+        , priority(priority_)
     {
 
     }
@@ -82,7 +86,7 @@ public:
                     return true;
 
                 state = MergeTaskState::NEED_FINISH;
-                [[fallthrough]];
+                return true;
             }
             case MergeTaskState::NEED_FINISH:
             {
@@ -93,9 +97,14 @@ public:
         }
     }
 
-    bool operator< (const MergeTask & rhs) const
+    bool operator> (const MergeTask & rhs) const
     {
-        return priority < rhs.priority;
+        return priority > rhs.priority;
+    }
+
+    UInt64 getPriority() const
+    {
+        return priority;
     }
 
 private:
@@ -124,21 +133,11 @@ private:
     std::exception_ptr exception;
     Poco::Event is_done;
 
-    int priority = 0;
+    UInt64 priority = 0;
 };
 
 
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
-
-
-class MergeTaskPtrComparator
-{
-public:
-    bool operator()(MergeTaskPtr lhs, MergeTaskPtr rhs) 
-    {
-        return (*lhs) < (*rhs);
-    }
-};
 
 
 class InlineMergeExecutor
@@ -177,6 +176,7 @@ public:
     {
         std::lock_guard lock(mutex);
         tasks.push(std::move(task));
+        has_tasks.notify_one();
     }
 
 private:
@@ -219,7 +219,8 @@ private:
 
     std::mutex mutex;
     std::condition_variable has_tasks;
-    std::priority_queue<MergeTaskPtr, std::vector<MergeTaskPtr>, MergeTaskPtrComparator> tasks;
+    /// https://en.cppreference.com/w/cpp/memory/shared_ptr/operator_cmp
+    std::priority_queue<MergeTaskPtr, std::vector<MergeTaskPtr>, std::greater<MergeTaskPtr>> tasks;
 };
 
 }
