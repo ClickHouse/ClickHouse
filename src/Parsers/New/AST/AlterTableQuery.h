@@ -95,7 +95,7 @@ class AlterTableClause : public INode
         enum ChildIndex : UInt8
         {
             // ADD COLUMN, INDEX or PROJECTION
-            ELEMENT = 0,  // TableElementExpr
+            ELEMENT = 0,  // TableElementExpr (COLUMN, CONSTRAINT, INDEX, PROJECTION)
             AFTER = 1,    // Identifier (optional)
 
             // ATTACH/REPLACE
@@ -105,8 +105,8 @@ class AlterTableClause : public INode
             // CLEAR COLUMN, INDEX or PROJECTION
             IN = 1,      // PartitionClause
 
-            // CODEC
-            COLUMN = 0,
+            // CODEC, COMMENT and RENAME
+            COLUMN = 0, // Identifier
             CODEC = 1,  // CodecExpr
 
             // COMMENT
