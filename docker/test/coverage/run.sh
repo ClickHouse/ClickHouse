@@ -4,7 +4,6 @@ kill_clickhouse () {
     echo "clickhouse pids $(pgrep -u clickhouse)" | ts '%Y-%m-%d %H:%M:%S'
     pkill -f "clickhouse-server" 2>/dev/null
 
-
     for _ in {1..120}
     do
         if ! pkill -0 -f "clickhouse-server" ; then break ; fi

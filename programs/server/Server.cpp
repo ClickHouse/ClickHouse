@@ -1387,16 +1387,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         /// try to load dictionaries immediately, throw on error and die
-        ext::scope_guard dictionaries_xmls;
         try
         {
-            if (!config().getBool("dictionaries_lazy_load", true))
-            {
-                global_context->tryCreateEmbeddedDictionaries();
-                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
-            }
-            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
+            global_context->loadDictionaries(config());
         }
         catch (...)
         {
