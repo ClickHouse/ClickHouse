@@ -173,7 +173,7 @@ public:
     void checkConsistency() const;
 
     size_t getNumberOfDefaultRows(size_t step) const override;
-    void getIndicesOfNonDefaultValues(Offsets & offsets, size_t from, size_t limit) const override;
+    void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const override;
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows) const override;
 
 private:

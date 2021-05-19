@@ -16,8 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int INCORRECT_DATA;
 }
 
 SerializationInfoBuilder::SerializationInfoBuilder(
