@@ -439,6 +439,8 @@ try
         }
     }
 
+    std::cout << prompt_by_server_display_name << "\n";
+
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
             if (config().getBool("highlight"))
