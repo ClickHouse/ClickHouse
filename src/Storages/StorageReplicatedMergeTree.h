@@ -237,6 +237,8 @@ public:
     inline String getReplicaName() const { return replica_name; }
     inline bool isReadonly() const { return is_readonly.load(std::memory_order_relaxed); }
 
+    void restoreMetadataOnReadonlyTable();
+
 private:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;

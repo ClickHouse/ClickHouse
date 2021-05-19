@@ -2183,8 +2183,7 @@ bool MergeTreeData::renameTempPartAndReplace(
 
     LOG_TRACE(log, "Renaming temporary part {} to {}.", part->relative_path, part_name);
 
-    auto it_duplicate = data_parts_by_info.find(part_info);
-    if (it_duplicate != data_parts_by_info.end())
+    if (auto it_duplicate = data_parts_by_info.find(part_info); it_duplicate != data_parts_by_info.end())
     {
         String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
 

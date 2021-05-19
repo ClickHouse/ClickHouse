@@ -61,6 +61,7 @@
 #include <ext/range.h>
 #include <ext/scope_guard.h>
 #include <ext/scope_guard_safe.h>
+#include "Interpreters/executeQuery.h"
 #include "Parsers/ASTPartition.h"
 
 #include <ctime>
@@ -4940,6 +4941,33 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     return true;
 }
 
+void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    const DataPartsVector parts = getDataPartsVector();
+
+    removePartsFromWorkingSetImmediatelyAndSetTemporaryState(parts);
+
+    for (const auto & part : parts)
+        part->makeCloneInDetached("", metadata_snapshot);
+
+    const bool is_first_replica = createTableIfNotExists(metadata_snapshot);
+
+    if (!is_first_replica)
+        createReplica(metadata_snapshot);
+
+    createNewZooKeeperNodes();
+
+    is_readonly = false;
+    has_metadata_in_zookeeper = true;
+
+    if (is_first_replica)
+        for (const auto& part : parts)
+            attachPartition(std::make_shared<ASTLiteral>(part->name), metadata_snapshot, true, getContext());
+
+    startup();
+}
 
 void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr query_context, bool throw_if_noop)
 {
@@ -6842,8 +6870,10 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
     zookeeper.get(alter_partition_version_path, &alter_partition_version_stat);
 
     MergeTreePartInfo drop_range_info;
-    /// It prevent other replicas from assigning merges which intersect locked block number.
+
+    /// It would prevent other replicas from assigning merges which intersect locked block number.
     std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+
     if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info, delimiting_block_lock))
     {
         LOG_INFO(log, "Will not drop partition {}, it is empty.", partition_id);
@@ -6864,23 +6894,30 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
     entry.create_time = time(nullptr);
 
     Coordination::Requests ops;
+
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
     /// Check and update version to avoid race with REPLACE_RANGE.
     /// Otherwise new parts covered by drop_range_info may appear after execution of current DROP_RANGE entry
     /// as a result of execution of concurrently created REPLACE_RANGE entry.
     ops.emplace_back(zkutil::makeCheckRequest(alter_partition_version_path, alter_partition_version_stat.version));
     ops.emplace_back(zkutil::makeSetRequest(alter_partition_version_path, "", -1));
+
     /// Just update version, because merges assignment relies on it
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));
     delimiting_block_lock->getUnlockOps(ops);
+
     if (auto txn = query_context->getZooKeeperMetadataTransaction())
         txn->moveOpsTo(ops);
+
     Coordination::Responses responses;
     Coordination::Error code = zookeeper.tryMulti(ops, responses);
+
     if (code == Coordination::Error::ZOK)
         delimiting_block_lock->assumeUnlocked();
     else if (code == Coordination::Error::ZBADVERSION)
-        throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot assign ALTER PARTITION, because another ALTER PARTITION query was concurrently executed");
+        throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
+            "Cannot assign ALTER PARTITION because another ALTER PARTITION query was concurrently executed");
     else
         zkutil::KeeperMultiException::check(code, ops, responses);
 

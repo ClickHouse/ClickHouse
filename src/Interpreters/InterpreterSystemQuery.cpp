@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int NO_ZOOKEEPER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -447,99 +448,8 @@ BlockIO InterpreterSystemQuery::execute()
     return BlockIO();
 }
 
-Strings InterpreterSystemQuery::moveDetachedPartsToNewTable(
-    const String& db_name, const String& old_table_name, const String& new_table_name) const
-{
-    Strings parts_names;
-
-    StoragePtr new_table_ptr = DatabaseCatalog::instance().getTable({db_name, new_table_name}, getContext());
-    auto& new_storage = *static_cast<StorageReplicatedMergeTree*>(new_table_ptr.get());
-
-    const StoragePtr old_table_ptr = DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext());
-    auto& old_storage = *static_cast<StorageReplicatedMergeTree*>(old_table_ptr.get());
-
-    const auto detached_parts = old_storage.getDetachedParts();
-    parts_names.reserve(detached_parts.size());
-
-    for (const DetachedPartInfo& part : detached_parts)
-    {
-        const DiskPtr part_disk = old_storage.getStoragePolicy()->getDiskByName(part.disk);
-        const String part_name = part.getPartName();
-        const String part_path = old_storage.getFullPathOnDisk(part_disk) + "/detached/" + part_name;
-        const size_t part_size = part_disk->getFileSize(part_path);
-
-        LOG_DEBUG(log, "Detached part {} with size {} located at {}", part_name, part_size, part_size);
-
-        const ReservationPtr reservation = new_storage.reserveSpace(part_size);
-        const String part_target_path = new_storage.getFullPathOnDisk(reservation->getDisk()) + "detached/" + part_name;
-
-        std::error_code error;
-        std::filesystem::rename(part_path, part_target_path, error);
-
-        if (error)
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "Error moving part from {} to {}: {}",
-                part_path, part_target_path, error.message());
-
-        parts_names.emplace_back(part_name);
-    }
-
-    LOG_DEBUG(log, "Found {} parts", parts_names.size());
-
-    return parts_names;
-}
-
-InterpreterSystemQuery::ReplicaAndZK InterpreterSystemQuery::checkTablesAndSwapIfNeeded(
-    const String& db_name, const String& old_table_name, const String& new_table_name) const
-{
-    const StoragePtr table = DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext());
-    StorageReplicatedMergeTree *old_table;
-
-    if (!table || ((old_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get())) == nullptr))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no replicated table \"{}.{}\"", db_name, old_table_name);
-
-    const String replica_name = old_table->getReplicaName();
-
-    /**
-     * What if server failed while processing the query?
-     * - If failed before step 4, everything is ok.
-     * - If failed after, everything would break down when trying to restart the restore query, so we need to check
-     *   it and rename tables if needed.
-     */
-    StorageReplicatedMergeTree::Status status;
-    old_table->getStatus(status);
-
-    if (auto new_table_ptr = DatabaseCatalog::instance().tryGetTable({db_name, new_table_name}, getContext());
-        new_table_ptr && !status.is_readonly)
-    {
-        /// Both of the tables are present, and the table with old_table_name is not readonly, so we need to rename
-        assert(static_cast<StorageReplicatedMergeTree*>(new_table_ptr.get())->isReadonly());
-        LOG_DEBUG(log, "Looks like server failed while processing the query, renaming the tables");
-
-        executeQuery(fmt::format("EXCHANGE TABLES {0}.{1} AND {0}.{2}", db_name, new_table_name, old_table_name),
-            getContext(), true);
-
-        /// Now the old_table_name is really the old table.
-        static_cast<StorageReplicatedMergeTree*>(
-            DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext()).get())->getStatus(status);
-    }
-
-    return {replica_name, status.zookeeper_path};
-}
-
-
 void InterpreterSystemQuery::restoreReplica()
 {
-    /**
-     * This query should be:
-     * - idempotent on non-existent or invalid table invocation (i.e. throwing).
-     * - re-invokable (i.e. when the server failed while processing RESTORE REPLICA query).
-     *   The server should correctly restore the replica regardless of the step where the last invocation failed.
-     *
-     * So no random may be used.
-     * NOTE: The integration test, checking the re-invocation, kills server after finding certain messages in log,
-     * so, if changing the latter, also change the test (test_restore_replica).
-     */
-
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
     const zkutil::ZooKeeperPtr& zookeeper = getContext()->getZooKeeper();
@@ -549,67 +459,31 @@ void InterpreterSystemQuery::restoreReplica()
             "Cannot restore table metadata because ZooKeeper session has expired");
 
     const String& db_name = table_id.database_name;
-    const String& old_table_name = table_id.table_name;
-    const std::hash<String> table_name_hash;
-    const String new_table_name = fmt::format("{}_tmp_{}", old_table_name, table_name_hash(old_table_name));
+    const String& table_name = table_id.table_name;
 
-    const auto [replica_name, zk_root_path] = checkTablesAndSwapIfNeeded(db_name, old_table_name, new_table_name);
+    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable({db_name, table_name}, getContext());
 
-    if (zookeeper->exists(zk_root_path))
+    if (!table_ptr)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no table \"{}.{}\"", db_name, table_name);
+
+    auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
+
+    if (table_replicated_ptr == nullptr)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no replicated table \"{}.{}\"", db_name, table_name);
+
+    auto& table_replicated = *table_replicated_ptr;
+
+    StorageReplicatedMergeTree::Status status;
+    table_replicated.getStatus(status);
+
+    const String replica_name = table_replicated.getReplicaName();
+    const String& zk_root_path = status.zookeeper_path;
+
+    if (String replica_path = zk_root_path + "replicas/" + replica_name; zookeeper->exists(replica_path))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "The ZK root is present at {} -- nothing to restore", zk_root_path);
+            "Replica path is present at {} -- nothing to restore", replica_path);
 
-    LOG_DEBUG(log, "Started restoring {}.{}, zk root path at {}", db_name, old_table_name, zk_root_path);
-
-    /// 0.
-    /// Detach parts, so in the next step the newly created table would be empty.
-    /// If we don't do that, RESTORE queries running on other replicas would immediately download the parts,
-    /// discarding the local ones.
-    const StoragePtr old_table_ptr = DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext());
-
-    for (const auto & part : static_cast<StorageReplicatedMergeTree *>(old_table_ptr.get())->getDataParts())
-        executeQuery(fmt::format("ALTER TABLE {}.{} DETACH PART '{}'", db_name, old_table_name, part->name),
-            getContext(), true);
-
-    /// 1.
-    /// If the server failed after this step, the old temporary table won't be lost in mem so the query re-run could
-    /// succeed (need of IF NOT EXISTS).
-    executeQuery(fmt::format("CREATE TABLE IF NOT EXISTS {0}.{1} AS {0}.{2}", db_name, new_table_name, old_table_name),
-        getContext(), true);
-
-    LOG_DEBUG(log, "Created a new replicated table {}.{}", db_name, new_table_name);
-
-    /// 2.
-    executeQuery(fmt::format("SYSTEM STOP FETCHES {}.{}", db_name, old_table_name), getContext(), true);
-    LOG_DEBUG(log, "Stopped replica fetches for {}.{}", db_name, old_table_name);
-
-    /// 3. Register parts in new table and send data to ZooKeeper.
-    for (const String& part_name : moveDetachedPartsToNewTable(db_name, old_table_name, new_table_name))
-        executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PART '{}'", db_name, new_table_name, part_name),
-            getContext(), true);
-
-    LOG_DEBUG(log, "Moved and attached all parts from {0}.{1} to {0}.{2}", db_name, old_table_name, new_table_name);
-
-    /// 4.
-    executeQuery(
-        fmt::format("EXCHANGE TABLES {0}.{1} AND {0}.{2}", db_name, new_table_name, old_table_name),
-        getContext(), true);
-
-    LOG_DEBUG(log, "Renamed tables {0}.{1} <=> {0}.{2}", db_name, old_table_name, new_table_name);
-
-    /// 5.
-    executeQuery(fmt::format("DETACH TABLE {}.{}", db_name, new_table_name), getContext(), true);
-    LOG_DEBUG(log, "Detached old table {}.{}", db_name, new_table_name);
-
-    /// 6. Delete information about the old table, so it wouldn't be attached after server restart.
-    const DatabasePtr db = DatabaseCatalog::instance().getDatabase(db_name, getContext());
-    const String old_table_metadata_file = db->getObjectMetadataPath(new_table_name);
-
-    if (auto ec = std::error_code{}; !std::filesystem::remove(old_table_metadata_file, ec))
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Error removing file {}: {}",
-            old_table_metadata_file, ec.message());
-
-    LOG_DEBUG(log, "Removed old table {}.{} metadata at {}", db_name, new_table_name, old_table_metadata_file);
+    table_replicated.restoreMetadataOnReadonlyTable();
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextPtr system_context, bool need_ddl_guard)
@@ -666,28 +540,23 @@ void InterpreterSystemQuery::restartReplicas(ContextPtr system_context)
     auto & catalog = DatabaseCatalog::instance();
 
     for (auto & elem : catalog.getDatabases())
-    {
-        DatabasePtr & database = elem.second;
-        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-        {
-            if (auto table = iterator->table())
-            {
-                if (dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
-                    replica_names.emplace_back(StorageID{iterator->databaseName(), iterator->name()});
-            }
-        }
-    }
+        for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
+                replica_names.emplace_back(it->databaseName(), it->name());
 
     if (replica_names.empty())
         return;
 
     TableGuards guards;
+
     for (const auto & name : replica_names)
         guards.emplace(UniqueTableName{name.database_name, name.table_name}, nullptr);
+
     for (auto & guard : guards)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
+
     for (auto & replica : replica_names)
     {
         LOG_TRACE(log, "Restarting replica on {}", replica.getNameForLogs());

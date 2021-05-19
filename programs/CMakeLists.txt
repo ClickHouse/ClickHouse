@@ -33,7 +33,7 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data t
     ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/odbc-bridge/
-if (ENABLE_ODBC)
+if (ENABLE_ODBC AND ENABLE_NANODBC)
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
         ${ENABLE_CLICKHOUSE_ALL})
 else ()

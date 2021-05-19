@@ -384,6 +384,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
         MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
+
         try
         {
             renamed = storage.renameTempPartAndAdd(part, nullptr, &transaction);
@@ -394,6 +395,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
                 throw;
         }
+
         if (!renamed)
         {
             if (is_already_existing_part)
@@ -521,6 +523,8 @@ void ReplicatedMergeTreeBlockOutputStream::waitForQuorum(
 {
     /// We are waiting for quorum to be satisfied.
     LOG_TRACE(log, "Waiting for quorum");
+
+
 
     try
     {

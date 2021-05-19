@@ -81,8 +81,7 @@ def check_data(_sum: int, count: int):
 #     node_3.query("SYSTEM SYNC REPLICA test")
 #     check_data(1999000, 2000)
 
-
-def test_restore_replica_root_loss(start_cluster):
+def test_restore_replica_sequential(start_cluster):
     zk = cluster.get_kazoo_client('zoo1')
 
     check_data(0, 0)
@@ -90,6 +89,7 @@ def test_restore_replica_root_loss(start_cluster):
     check_data(499500, 1000)
 
     print("Deleting root ZK path metadata")
+
     zk.delete("/clickhouse/tables/test", recursive=True)
     assert zk.exists("/clickhouse/tables/test") is None
 
@@ -117,28 +117,30 @@ def test_restore_replica_root_loss(start_cluster):
 
     check_data(1999000, 2000)
 
-    # 7. check we cannot restore the already restored replica
-    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
+    for node in [node_1, node_2, node_3]:
+        node.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
-query_steps_log = [
-    "Started restoring",
-    "Created a new replicated table",
-    "Stopped replica fetches for",
-    "Moved and attached all parts from",
-    "Renamed tables",
-    "Detached old table",
-    "Removed old table"
-]
-
-# Issue a query, kill server after some step, then issue another query and wait till full restoration.
-# def test_restore_replica_partial_execution_then_full_execution(start_cluster):
+# def test_restore_replica_parallel(start_cluster):
 #     zk = cluster.get_kazoo_client('zoo1')
 #
 #     check_data(0, 0)
 #     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
 #     check_data(499500, 1000)
-#     pass
-
-# Issue a query, kill server on step i, then issue another and kill server on step i + 1.
-# def test_restore_replica_partial_cascade_execution(start_cluster):
-#   pass
+#
+#     print("Deleting root ZK path metadata")
+#     zk.delete("/clickhouse/tables/test", recursive=True)
+#     assert zk.exists("/clickhouse/tables/test") is None
+#
+#     node_1.query("SYSTEM RESTART REPLICA test")
+#     node_1.query_and_get_error("INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0")
+#
+#     print("Restoring replicas in parallel")
+#
+#     node_1.query("SYSTEM RESTORE REPLICA test ON CLUSTER test_cluster")
+#
+#     assert zk.exists("/clickhouse/tables/test")
+#     check_data(499500, 1000)
+#
+#     node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)")
+#
+#     check_data(1999000, 2000)
