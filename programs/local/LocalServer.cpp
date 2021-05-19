@@ -428,11 +428,11 @@ try
 
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
 
-    config().keys("prompt_by_server_display_name", keys);
+    server_display_name = config().getString("host", "localhost");
 
     /// Prompt may contain the following substitutions in a form of {name}.
     std::map<String, String> prompt_substitutions{
-        {"host", connection_parameters.host},
+        {"display_name", server_display_name}
     };
 
     /// Quite suboptimal.
