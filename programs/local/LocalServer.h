@@ -57,6 +57,8 @@ protected:
 
     std::unique_ptr<Connection> connection; /// Connection to DB.
 
+    ConnectionParameters connection_parameters;
+
     std::optional<Suggest> suggest;
 
     /// Settings specified via command line args
