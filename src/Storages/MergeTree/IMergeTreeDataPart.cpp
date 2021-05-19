@@ -267,7 +267,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , volume(parent_part_ ? parent_part_->volume : volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
-    , serialization_info(storage_.getSettings()->ratio_of_defaults_for_sparse_serialization)
+    , serialization_info(std::make_shared<SerializationInfo>())
     , part_type(part_type_)
     , parent_part(parent_part_)
 {
@@ -291,7 +291,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , volume(parent_part_ ? parent_part_->volume : volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
-    , serialization_info(storage_.getSettings()->ratio_of_defaults_for_sparse_serialization)
+    , serialization_info(std::make_shared<SerializationInfo>())
     , part_type(part_type_)
     , parent_part(parent_part_)
 {
@@ -747,12 +747,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         auto column_size = getColumnSize(part_column.name, *part_column.type);
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
-            auto serialization = IDataType::getSerialization(part_column,
-                [&](const String & stream_name)
-                {
-                    return volume->getDisk()->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
-                });
-
+            auto serialization = IDataType::getSerialization(part_column, *serialization_info);
             String path_to_data_file;
             serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
@@ -1020,7 +1015,7 @@ void IMergeTreeDataPart::loadSerializationInfo()
     if (volume->getDisk()->exists(path))
     {
         auto in = openForReading(volume->getDisk(), path);
-        serialization_info.read(*in);
+        serialization_info->readText(*in);
     }
 }
 
@@ -1489,11 +1484,7 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
 
 SerializationPtr IMergeTreeDataPart::getSerializationForColumn(const NameAndTypePair & column) const
 {
-    return IDataType::getSerialization(column,
-        [&](const String & stream_name)
-        {
-            return checksums.files.count(stream_name + DATA_FILE_EXTENSION) != 0;
-        });
+    return IDataType::getSerialization(column, *serialization_info);
 }
 
 String IMergeTreeDataPart::getUniqueId() const

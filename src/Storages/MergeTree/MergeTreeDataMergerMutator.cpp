@@ -732,7 +732,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     bool need_remove_expired_values = false;
     bool force_ttl = false;
-    SerializationInfo new_serialization_info(data_settings->ratio_of_defaults_for_sparse_serialization);
+    auto serialization_info_builder = std::make_shared<SerializationInfoBuilder>(data_settings->ratio_of_defaults_for_sparse_serialization);
 
     for (const auto & part : parts)
     {
@@ -744,8 +744,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             force_ttl = true;
         }
 
-        new_serialization_info.add(part->serialization_info);
+        serialization_info_builder->add(*part->serialization_info);
     }
+
+    auto input_serialization_info = serialization_info_builder->build();
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
     if (part_min_ttl && part_min_ttl <= time_of_merge)
@@ -942,7 +944,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merging_columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         compression_codec,
-        new_serialization_info,
+        input_serialization_info,
         blocks_are_granules_size};
 
     merged_stream->readPrefix();
@@ -1044,7 +1046,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(
-                column_name, column_type->getSerialization(column_name, new_serialization_info),
+                column_name, column_type->getSerialization(column_name, *input_serialization_info),
                 column_part_streams, rows_sources_read_buf);
 
             MergedColumnOnlyOutputStream column_to(
@@ -1052,7 +1054,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 metadata_snapshot,
                 column_gathered_stream.getHeader(),
                 compression_codec,
-                new_serialization_info,
+                input_serialization_info,
                 /// we don't need to recalc indices here
                 /// because all of them were already recalculated and written
                 /// as key part of vertical merge

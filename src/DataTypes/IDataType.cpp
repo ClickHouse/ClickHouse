@@ -170,31 +170,16 @@ SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_n
 
 SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
 {
-    ISerialization::Settings settings =
-    {
-        .num_rows = info.getNumberOfRows(),
-        .num_default_rows = info.getNumberOfDefaultRows(column_name),
-        .ratio_for_sparse_serialization = info.getRatioForSparseSerialization()
-    };
-
-    return getSerialization(settings);
-}
-
-SerializationPtr IDataType::getSerialization(const IColumn & column) const
-{
-    if (column.isSparse())
+    auto kind = info.getKind(column_name);
+    if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
 
     return getDefaultSerialization();
 }
 
-SerializationPtr IDataType::getSerialization(const ISerialization::Kinds & kinds) const
+SerializationPtr IDataType::getSerialization(const IColumn & column) const
 {
-    if (!kinds.subcolumns.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,"Data type {} doesn't support "
-            "custom kinds of serialization for subcolumns or doesn't have subcolumns at all.", getName());
-
-    if (kinds.main == ISerialization::Kind::SPARSE)
+    if (column.isSparse())
         return getSparseSerialization();
 
     return getDefaultSerialization();
@@ -213,32 +198,20 @@ SerializationPtr IDataType::getSerialization(const ISerialization::Settings & se
 }
 
 // static
-SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const IDataType::StreamExistenceCallback & callback)
+SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const SerializationInfo & info)
 {
     if (column.isSubcolumn())
     {
         auto base_serialization_getter = [&](const IDataType & subcolumn_type)
         {
-            return subcolumn_type.getSerialization(column.name, callback);
+            return subcolumn_type.getSerialization(column.name, info);
         };
 
         auto type_in_storage = column.getTypeInStorage();
         return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization_getter);
     }
 
-    return column.type->getSerialization(column.name, callback);
-}
-
-SerializationPtr IDataType::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const
-{
-    if (supportsSparseSerialization())
-    {
-        auto sparse_idx_name = escapeForFileName(column_name) + ".sparse.idx";
-        if (callback(sparse_idx_name))
-            return getSparseSerialization();
-    }
-
-    return getDefaultSerialization();
+    return column.type->getSerialization(column.name, info);
 }
 
 DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const

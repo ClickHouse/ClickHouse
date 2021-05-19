@@ -14,7 +14,8 @@ class IMergedBlockOutputStream : public IBlockOutputStream
 public:
     IMergedBlockOutputStream(
         const MergeTreeDataPartPtr & data_part,
-        const StorageMetadataPtr & metadata_snapshot_);
+        const StorageMetadataPtr & metadata_snapshot_,
+        const SerializationInfoPtr & input_serialization_info_);
 
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -43,7 +44,8 @@ protected:
     String part_path;
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
-    SerializationInfo new_serialization_info;
+    SerializationInfoPtr input_serialization_info;
+    SerializationInfoBuilderPtr new_serialization_info;
 };
 
 }

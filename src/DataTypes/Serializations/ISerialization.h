@@ -42,25 +42,13 @@ public:
     enum class Kind : UInt8
     {
         DEFAULT = 0,
-        SPARSE = 1
+        SPARSE = 1,
     };
 
     virtual Kind getKind() const { return Kind::DEFAULT; }
+    static Kind getKind(const IColumn & column);
     static String kindToString(Kind kind);
-
-    struct Kinds
-    {
-        Kinds() = default;
-        Kinds(Kind main_) : main(main_) {}
-
-        Kind main = Kind::DEFAULT;
-        std::vector<std::variant<Kinds, Kind>> subcolumns;
-
-        void writeBinary(WriteBuffer & ostr) const;
-        void readBinary(ReadBuffer & istr);
-    };
-
-    virtual Kinds getKinds() const { return Kinds(getKind()); }
+    static Kind stringToKind(const String & str);
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *

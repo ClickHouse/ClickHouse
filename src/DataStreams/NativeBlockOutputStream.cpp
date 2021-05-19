@@ -10,6 +10,7 @@
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Columns/ColumnSparse.h>
 
 namespace DB
@@ -85,6 +86,14 @@ void NativeBlockOutputStream::write(const Block & block)
         writeVarUInt(rows, *index_ostr);
     }
 
+
+    /// Serialization
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+    {
+        auto serialization_kinds = SerializationInfo::getKinds(block);
+        SerializationInfo::writeKindsBinary(serialization_kinds, ostr);
+    }
+
     for (size_t i = 0; i < columns; ++i)
     {
         /// For the index.
@@ -129,7 +138,6 @@ void NativeBlockOutputStream::write(const Block & block)
         else
         {
             serialization = column.type->getSerialization(*column.column);
-            serialization->getKinds().writeBinary(ostr);
         }
 
         /// Data

@@ -435,13 +435,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
 
     const auto & data_settings = data.getSettings();
 
-    SerializationInfo serialization_info(data_settings->ratio_of_defaults_for_sparse_serialization);
-    serialization_info.add(block);
+    auto serialization_info = std::make_shared<SerializationInfoBuilder>(data_settings->ratio_of_defaults_for_sparse_serialization);
+    serialization_info->add(block);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot,columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        compression_codec, serialization_info);
+        compression_codec, serialization_info->build());
 
     bool sync_on_insert = data_settings->fsync_after_insert;
 
@@ -516,8 +516,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
-    SerializationInfo serialization_info(data.getSettings()->ratio_of_defaults_for_sparse_serialization);
-    serialization_info.add(block);
+    auto serialization_info = std::make_shared<SerializationInfoBuilder>(data.getSettings()->ratio_of_defaults_for_sparse_serialization);
+    serialization_info->add(block);
 
     MergedBlockOutputStream out(
         new_data_part,
@@ -525,7 +525,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         columns,
         {},
         compression_codec,
-        serialization_info);
+        serialization_info->build());
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

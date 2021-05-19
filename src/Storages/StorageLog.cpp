@@ -168,7 +168,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
-    auto serialization = IDataType::getSerialization(name_and_type);
+    auto serialization = name_and_type.type->getDefaultSerialization();
 
     auto create_stream_getter = [&](bool stream_for_prefix)
     {

@@ -74,24 +74,11 @@ public:
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
 
-    /// Asks whether the stream with given name exists in table.
-    /// If callback returned true for all streams, which are required for
-    /// one of serialization types, that serialization will be chosen for reading.
-    /// If callback always returned false, the default serialization will be chosen.
-    using StreamExistenceCallback = std::function<bool(const String &)>;
     using BaseSerializationGetter = std::function<SerializationPtr(const IDataType &)>;
-
-    /// Chooses serialization for reading of one column or subcolumns by
-    /// checking existence of substreams using callback.
-    virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
 
     /// Returns serialization wrapper for reading one particular subcolumn of data type.
     virtual SerializationPtr getSubcolumnSerialization(
         const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
-
-    static SerializationPtr getSerialization(
-        const NameAndTypePair & column,
-        const StreamExistenceCallback & callback = [](const String &) { return false; });
 
     /// Chooses serialziation accordind to column content.
     virtual SerializationPtr getSerialization(const IColumn & column) const;
@@ -99,9 +86,9 @@ public:
     /// Chooses serialization accosrding to collected information about content of columns.
     virtual SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
 
-    virtual SerializationPtr getSerialization(const ISerialization::Kinds & kinds) const;
-
     SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
+
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
 
     using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
 

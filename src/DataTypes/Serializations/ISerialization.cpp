@@ -15,6 +15,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ISerialization::Kind ISerialization::getKind(const IColumn & column)
+{
+    if (column.isSparse())
+        return Kind::SPARSE;
+
+    return Kind::DEFAULT;
+}
+
 String ISerialization::kindToString(Kind kind)
 {
     switch (kind)
@@ -28,47 +36,14 @@ String ISerialization::kindToString(Kind kind)
     __builtin_unreachable();
 }
 
-void ISerialization::Kinds::writeBinary(WriteBuffer & ostr) const
+ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
-    writeIntBinary(static_cast<UInt8>(main), ostr);
-    writeIntBinary(subcolumns.size(), ostr);
-    for (size_t i = 0; i < subcolumns.size(); ++i)
-    {
-        writeIntBinary(subcolumns[i].index(), ostr);
-        if (const auto * elem_kinds = std::get_if<Kinds>(&subcolumns[i]))
-            elem_kinds->writeBinary(ostr);
-        else
-            writeIntBinary(static_cast<UInt8>(main), ostr);
-    }
-}
-
-void ISerialization::Kinds::readBinary(ReadBuffer & istr)
-{
-    readIntBinary(main, istr);
-    size_t num_subcolumns;
-    readIntBinary(num_subcolumns, istr);
-    subcolumns.reserve(num_subcolumns);
-    for (size_t i = 0; i < num_subcolumns; ++i)
-    {
-        size_t index;
-        readIntBinary(index, istr);
-        if (index == 0)
-        {
-            Kinds elem_kinds;
-            elem_kinds.readBinary(istr);
-            subcolumns.emplace_back(elem_kinds);
-        }
-        else if (index == 1)
-        {
-            Kind elem_kind;
-            readIntBinary(elem_kind, istr);
-            subcolumns.emplace_back(elem_kind);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index of variant: {}, must be 0 or 1", index);
-        }
-    }
+    if (str == "Default")
+        return Kind::DEFAULT;
+    else if (str == "Sparse")
+        return Kind::SPARSE;
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 String ISerialization::Substream::toString() const
