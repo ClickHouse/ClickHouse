@@ -45,7 +45,10 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_, CompileExpressions compile_expressions)
+ExpressionActions::ExpressionActions(
+    ActionsDAGPtr actions_dag_,
+    const ExpressionActionsSettings & settings_,
+    CompileExpressions compile_expressions [[maybe_unused]])
     : settings(settings_)
 {
     actions_dag = actions_dag_->clone();
