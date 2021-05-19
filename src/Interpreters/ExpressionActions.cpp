@@ -45,16 +45,13 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-ExpressionActions::ExpressionActions(
-    ActionsDAGPtr actions_dag_,
-    const ExpressionActionsSettings & settings_,
-    CompileExpressions compile_expressions [[maybe_unused]])
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
     : settings(settings_)
 {
     actions_dag = actions_dag_->clone();
 
 #if USE_EMBEDDED_COMPILER
-    if (settings.compile_expressions && compile_expressions == CompileExpressions::yes)
+    if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
         actions_dag->compileExpressions(settings.min_count_to_compile_expression);
 #endif
 
