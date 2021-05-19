@@ -29,10 +29,10 @@ namespace
         {
             const auto * arg = arguments[i].get();
             if (!WhichDataType(arg).isNativeUInt())
-                throw Exception{
+                throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + toString(i + 1) + " of aggregate function " + name
                         + ", must be Native Unsigned Number",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         AggregateFunctionPtr res(createWithNativeUnsignedIntegerType<AggregateFunctionRangeSum, Data>(*arguments[0], arguments));
@@ -40,10 +40,10 @@ namespace
         if (res)
             return res;
 
-        throw Exception{
+        throw Exception(
             "Illegal type " + arguments.front().get()->getName() + " of first argument of aggregate function " + name
                 + ", must be Native Unsigned Number",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 }
