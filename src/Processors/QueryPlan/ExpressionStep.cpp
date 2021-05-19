@@ -54,7 +54,7 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
 
 void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings(), CompileExpressions::yes);
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
 
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -67,7 +67,7 @@ void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQuer
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_stream->header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings(), CompileExpressions::yes);
+        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
