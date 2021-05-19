@@ -81,7 +81,8 @@ void traversePushNot(ASTPtr & node, bool add_negation)
 }
 
 /// Push Or inside And (actually pull AND to top)
-void traversePushOr(ASTPtr & node) {
+void traversePushOr(ASTPtr & node)
+{
     auto * func = node->as<ASTFunction>();
 
     if (func && (func->name == "or" || func->name == "and"))
