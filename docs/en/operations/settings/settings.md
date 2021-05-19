@@ -1520,8 +1520,8 @@ Do not merge aggregation states from different servers for distributed query pro
 Possible values:
 
 -   0 — Disabled (final query processing is done on the initiator node).
--   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data).
--   2 - Same as 1 but apply `ORDER BY` and `LIMIT` on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
+-   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possilbe when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
 
 **Example**
 
