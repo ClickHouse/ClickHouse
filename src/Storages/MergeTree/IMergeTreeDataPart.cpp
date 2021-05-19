@@ -1009,7 +1009,7 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
-void IMergeTreeDataPart::loadSerializationInfo()
+void IMergeTreeDataPart::loadSerializationInfo() const
 {
     String path = getFullRelativePath() + SERIALIZATION_FILE_NAME;
     if (volume->getDisk()->exists(path))

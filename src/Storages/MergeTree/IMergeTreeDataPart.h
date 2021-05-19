@@ -462,7 +462,7 @@ private:
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
 
-    void loadSerializationInfo();
+    void loadSerializationInfo() const;
 
     void loadPartitionAndMinMaxIndex();
 

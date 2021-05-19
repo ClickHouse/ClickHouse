@@ -1253,6 +1253,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     new_data_part->uuid = future_part.uuid;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
+    new_data_part->serialization_info = source_part->serialization_info;
 
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;

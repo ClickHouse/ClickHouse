@@ -100,9 +100,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
     };
 
     auto serialization_info = std::make_shared<SerializationInfo>();
+    auto serialization_path = path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME;
 
+    if (disk->exists(serialization_path))
     {
-        auto serialization_file = disk->readFile(path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+        auto serialization_file = disk->readFile(serialization_path);
         serialization_info->readText(*serialization_file);
     }
 
