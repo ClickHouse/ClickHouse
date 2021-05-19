@@ -724,6 +724,7 @@ void LocalServer::init(int argc, char ** argv)
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
         ("progress", "print progress of queries execution")
+        ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
         ;
 
     cmd_settings.addProgramOptions(description);
@@ -789,6 +790,8 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("ignore-error", true);
     if (options.count("no-system-tables"))
         config().setBool("no-system-tables", true);
+    if (options.count("highlight"))
+        config().setBool("highlight", options["highlight"].as<bool>());
 
     std::vector<std::string> arguments;
     for (int arg_num = 1; arg_num < argc; ++arg_num)
