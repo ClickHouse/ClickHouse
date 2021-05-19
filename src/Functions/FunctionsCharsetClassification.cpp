@@ -38,17 +38,22 @@ struct CharsetClassificationImpl
 
     using NgramCount = UInt16;
 
-    static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64> standart, std::unordered_map<UInt16, Float64> model)
+    static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64>& standart,
+        std::unordered_map<UInt16, Float64>& model,
+        Float64 max_result)
     {
         Float64 res = 0;
         for (auto & el : model)
         {
-            if (standart[el.first] != 0)
+            if (standart.find(el.first) != standart.end())
             {
                 res += el.second * log(standart[el.first]);
             } else
             {
                 res += el.second * log(zero_frequency);
+            }
+            if (res < max_result) {
+                return res;
             }
         }
         return res;
@@ -113,12 +118,12 @@ struct CharsetClassificationImpl
         std::unordered_map<UInt16, Float64> model;
         calculateStats(data.data(), data.size(), readCodePoints, model);
 
-        Float64 max_result = 0;
+        Float64 max_result = log(zero_frequency) * (max_string_size);
         String poss_ans;
-        for (const auto& item : encodings_freq)
+        for (auto& item : encodings_freq)
         {
-            const Float64 score = Naive_bayes(item.second, model);
-            if (max_result == 0 || max_result < score)
+            Float64 score = Naive_bayes(item.second, model, max_result);
+            if (max_result < score)
             {
                 poss_ans = item.first;
                 max_result = score;
@@ -161,11 +166,11 @@ struct CharsetClassificationImpl
             std::unordered_map<UInt16, Float64> model;
             calculateStats(str.data(), str.size(), readCodePoints, model);
 
-           Float64 max_result = 0;
-           for (const auto& item : encodings_freq)
+           Float64 max_result = log(zero_frequency) * (max_string_size);
+           for (auto& item : encodings_freq)
             {
-                Float64 score = Naive_bayes(item.second, model);
-                if (max_result == 0 || max_result < score)
+                Float64 score = Naive_bayes(item.second, model, max_result);
+                if (max_result < score)
                 {
                     max_result = score;
                     poss_ans = item.first;
@@ -174,6 +179,7 @@ struct CharsetClassificationImpl
             
             size_t sep = poss_ans.find('_');
             String ans_str;
+            
             if (detect_language)
             {
                 ans_str = poss_ans.erase(0, sep + 1);
@@ -182,6 +188,8 @@ struct CharsetClassificationImpl
             {
                 ans_str = poss_ans.erase(sep, poss_ans.size() - sep);
             }
+
+            ans_str = poss_ans;
 
             const auto ans = ans_str.c_str();
             size_t cur_offset = offsets[i];
