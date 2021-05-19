@@ -51,7 +51,7 @@ def _create_env_file(path, variables):
             f.write("=".join([var, value]) + "\n")
     return path
 
-def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120):
+def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180):
     res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout)
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
@@ -760,7 +760,7 @@ class ClickHouseCluster:
         run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
-        start_deadline = time.time() + 120.0  # seconds
+        start_deadline = time.time() + 180.0  # seconds
         node.wait_for_start(start_deadline)
         return node
 
@@ -1521,7 +1521,6 @@ class ClickHouseInstance:
         self.docker_client = None
         self.ip_address = None
         self.client = None
-        self.default_timeout = 20.0  # 20 sec
         self.image = image
         self.tag = tag
         self.stay_alive = stay_alive
@@ -1718,7 +1717,7 @@ class ClickHouseInstance:
                 return None
         return None
 
-    def restart_with_latest_version(self, stop_start_wait_sec=60, callback_onstop=None, signal=60):
+    def restart_with_latest_version(self, stop_start_wait_sec=120, callback_onstop=None, signal=60):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
