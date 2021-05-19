@@ -266,9 +266,11 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
     size_t expected_number_of_arguments = getNumberOfArguments();
 
     if (number_of_arguments != expected_number_of_arguments)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, should be {}",
+            getName(),
+            toString(number_of_arguments),
+            toString(expected_number_of_arguments));
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
