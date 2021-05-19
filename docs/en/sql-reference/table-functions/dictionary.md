@@ -5,7 +5,7 @@ toc_title: dictionary function
 
 # dictionary {#dictionary-function}
 
-Displays the [dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table.
+Displays the [dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table.
 
 **Syntax**
 
