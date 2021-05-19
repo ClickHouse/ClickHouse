@@ -30,6 +30,11 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+enum class CompileExpressions: uint8_t
+{
+    no = 0,
+    yes = 1,
+};
 
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
@@ -84,7 +89,7 @@ private:
 public:
     ExpressionActions() = delete;
     ~ExpressionActions();
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {});
+    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {}, CompileExpressions compile_expressions = CompileExpressions::no);
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
 

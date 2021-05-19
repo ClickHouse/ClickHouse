@@ -67,7 +67,8 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
 
 void FilterStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings(), CompileExpressions::yes);
+
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
@@ -80,7 +81,7 @@ void FilterStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPip
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_stream->header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
+        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings(), CompileExpressions::yes);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -99,7 +100,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
     settings.out << '\n';
 
     bool first = true;
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
@@ -119,7 +120,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Filter Column", filter_column_name);
     map.add("Removes Filter", remove_filter_column);
 
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     map.add("Expression", expression->toTree());
 }
 

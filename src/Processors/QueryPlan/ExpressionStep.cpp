@@ -54,7 +54,8 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
 
 void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings(), CompileExpressions::yes);
+
     pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExpressionTransform>(header, expression);
@@ -66,7 +67,7 @@ void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQuer
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_stream->header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
+        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings(), CompileExpressions::yes);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -80,7 +81,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
     bool first = true;
 
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
@@ -97,7 +98,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     map.add("Expression", expression->toTree());
 }
 
