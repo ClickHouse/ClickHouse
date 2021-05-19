@@ -51,8 +51,8 @@ def _create_env_file(path, variables):
             f.write("=".join([var, value]) + "\n")
     return path
 
-def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
-    res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell)
+def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120):
+    res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout)
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
         logging.debug(f"Stderr:\n{res.stderr.decode('utf-8')}\n")
