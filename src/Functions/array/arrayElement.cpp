@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -876,7 +876,7 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     Field::dispatch([&](const auto & value)
     {
         using FieldType = std::decay_t<decltype(value)>;
-        if constexpr (is_integer_v<FieldType> && std::is_convertible_v<FieldType, DataType>)
+        if constexpr (std::is_same_v<FieldType, DataType> || (is_integer_v<FieldType> && std::is_convertible_v<FieldType, DataType>))
             index_as_integer = static_cast<DataType>(value);
     }, index);
 
@@ -914,14 +914,15 @@ bool FunctionArrayElement::matchKeyToIndex(
         || matchKeyToIndexNumber<UInt16>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<UInt32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<UInt64>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt128>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int8>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int16>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int32>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int64>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int128>(data, offsets, arguments, matched_idxs)
-        || matchKeyToIndexNumber<UInt128>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int256>(data, offsets, arguments, matched_idxs)
-        || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
+        || matchKeyToIndexNumber<UUID>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexString(data, offsets, arguments, matched_idxs);
 }
 
@@ -933,14 +934,15 @@ bool FunctionArrayElement::matchKeyToIndexConst(
         || matchKeyToIndexNumberConst<UInt16>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<UInt32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<UInt64>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt128>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UInt256>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int8>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int16>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int32>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int64>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int128>(data, offsets, index, matched_idxs)
-        || matchKeyToIndexNumberConst<UInt128>(data, offsets, index, matched_idxs)
         || matchKeyToIndexNumberConst<Int256>(data, offsets, index, matched_idxs)
-        || matchKeyToIndexNumberConst<UInt256>(data, offsets, index, matched_idxs)
+        || matchKeyToIndexNumberConst<UUID>(data, offsets, index, matched_idxs)
         || matchKeyToIndexStringConst(data, offsets, index, matched_idxs);
 }
 

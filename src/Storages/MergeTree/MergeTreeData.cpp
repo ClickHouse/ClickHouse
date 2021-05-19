@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -15,12 +16,12 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -397,6 +398,23 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    if (!new_metadata.projections.empty())
+    {
+        std::unordered_set<String> projections_names;
+
+        for (const auto & projection : new_metadata.projections)
+        {
+            MergeTreeProjectionFactory::instance().validate(projection);
+
+            if (projections_names.find(projection.name) != projections_names.end())
+                throw Exception(
+                        "Projection with name " + backQuote(projection.name) + " already exists",
+                        ErrorCodes::LOGICAL_ERROR);
+
+            projections_names.insert(projection.name);
+        }
+    }
+
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
 
 }
@@ -630,7 +648,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                     throw Exception("The column " + version_column +
                         " cannot be used as a version column for storage " + storage +
                         " because it is of type " + column.type->getName() +
-                        " (must be of an integer type or of type Date or DateTime)", ErrorCodes::BAD_TYPE_OF_FIELD);
+                        " (must be of an integer type or of type Date/DateTime/DateTime64)", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
@@ -685,12 +703,71 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 }
 
 
+DataTypePtr MergeTreeData::getPartitionValueType() const
+{
+    DataTypePtr partition_value_type;
+    auto partition_types = getInMemoryMetadataPtr()->partition_key.sample_block.getDataTypes();
+    if (partition_types.empty())
+        partition_value_type = std::make_shared<DataTypeUInt8>();
+    else
+        partition_value_type = std::make_shared<DataTypeTuple>(std::move(partition_types));
+    return partition_value_type;
+}
+
+
+Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const
+{
+    DataTypePtr partition_value_type = getPartitionValueType();
+    bool has_partition_value = typeid_cast<const DataTypeTuple *>(partition_value_type.get());
+    Block block{
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid"),
+        ColumnWithTypeAndName(partition_value_type->createColumn(), partition_value_type, "_partition_value")};
+
+    MutableColumns columns = block.mutateColumns();
+
+    auto & part_column = columns[0];
+    auto & partition_id_column = columns[1];
+    auto & part_uuid_column = columns[2];
+    auto & partition_value_column = columns[3];
+
+    for (const auto & part_or_projection : parts)
+    {
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
+        part_column->insert(part->name);
+        partition_id_column->insert(part->info.partition_id);
+        part_uuid_column->insert(part->uuid);
+        Tuple tuple(part->partition.value.begin(), part->partition.value.end());
+        if (has_partition_value)
+            partition_value_column->insert(tuple);
+
+        if (one_part)
+        {
+            part_column = ColumnConst::create(std::move(part_column), 1);
+            partition_id_column = ColumnConst::create(std::move(partition_id_column), 1);
+            part_uuid_column = ColumnConst::create(std::move(part_uuid_column), 1);
+            if (has_partition_value)
+                partition_value_column = ColumnConst::create(std::move(partition_value_column), 1);
+            break;
+        }
+    }
+
+    block.setColumns(std::move(columns));
+    if (!has_partition_value)
+        block.erase("_partition_value");
+    return block;
+}
+
+
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     const SelectQueryInfo & query_info, ContextPtr local_context, const DataPartsVector & parts) const
 {
+    if (parts.empty())
+        return 0u;
     auto metadata_snapshot = getInMemoryMetadataPtr();
     ASTPtr expression_ast;
-    Block virtual_columns_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
+    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
     // Generate valid expressions for filtering
     bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
@@ -702,7 +779,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     std::unordered_set<String> part_values;
     if (valid && expression_ast)
     {
-        MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */);
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, local_context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
@@ -713,7 +790,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     size_t res = 0;
     for (const auto & part : parts)
     {
-        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(part))
+        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(*part))
             res += part->rows_count;
     }
     return res;
@@ -1177,7 +1254,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         part_log_elem.event_type = PartLogElement::REMOVE_PART;
         part_log_elem.event_time = time(nullptr);
-        part_log_elem.duration_ms = 0;
+        part_log_elem.duration_ms = 0; //-V1048
 
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
@@ -1391,12 +1468,20 @@ void MergeTreeData::dropIfEmpty()
     if (!data_parts_by_info.empty())
         return;
 
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    try
     {
-        /// Non recursive, exception is thrown if there are more files.
-        disk->removeFile(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
-        disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
-        disk->removeDirectory(path);
+        for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+        {
+            /// Non recursive, exception is thrown if there are more files.
+            disk->removeFileIfExists(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
+            disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
+            disk->removeDirectory(path);
+        }
+    }
+    catch (...)
+    {
+        // On unsuccessful creation of ReplicatedMergeTree table with multidisk configuration some files may not exist.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -1578,7 +1663,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 const IDataType * new_type = command.data_type.get();
                 const IDataType * old_type = old_types[command.column_name];
 
-                checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                if (new_type)
+                    checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
 
                 /// No other checks required
                 continue;
@@ -1624,6 +1710,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 "ALTER ADD INDEX is not supported for tables with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
         }
+        if (command.type == AlterCommand::ADD_PROJECTION && !is_custom_partitioned)
+        {
+            throw Exception(
+                "ALTER ADD PROJECTION is not supported for tables with the old syntax",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
             if (columns_in_keys.count(command.column_name))
@@ -1642,13 +1734,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
 
-            const auto & deps_mv = name_deps[command.column_name];
-            if (!deps_mv.empty())
+            if (!command.clear)
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                const auto & deps_mv = name_deps[command.column_name];
+                if (!deps_mv.empty())
+                {
+                    throw Exception(
+                        "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                            + toString(deps_mv),
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                }
             }
 
             dropped_columns.emplace(command.column_name);
@@ -1794,14 +1889,14 @@ MergeTreeDataPartType MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompres
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-    const VolumePtr & volume, const String & relative_path) const
+    const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
     if (type == MergeTreeDataPartType::COMPACT)
-        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, volume, relative_path);
+        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, volume, relative_path, parent_part);
     else if (type == MergeTreeDataPartType::WIDE)
-        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, volume, relative_path);
+        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, volume, relative_path, parent_part);
     else if (type == MergeTreeDataPartType::IN_MEMORY)
-        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, volume, relative_path);
+        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, volume, relative_path, parent_part);
     else
         throw Exception("Unknown type of part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
 }
@@ -1819,17 +1914,17 @@ static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name, const VolumePtr & volume, const String & relative_path) const
+    const String & name, const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
-    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), volume, relative_path);
+    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), volume, relative_path, parent_part);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const String & name, const MergeTreePartInfo & part_info,
-    const VolumePtr & volume, const String & relative_path) const
+    const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
     MergeTreeDataPartType type;
-    auto full_path = relative_data_path + relative_path + "/";
+    auto full_path = relative_data_path + (parent_part ? parent_part->relative_path + "/" : "") + relative_path + "/";
     auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(volume->getDisk(), full_path);
 
     if (mrk_ext)
@@ -1840,7 +1935,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
         type = choosePartTypeOnDisk(0, 0);
     }
 
-    return createPart(name, type, part_info, volume, relative_path);
+    return createPart(name, type, part_info, volume, relative_path, parent_part);
 }
 
 void MergeTreeData::changeSettings(
@@ -1994,8 +2089,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
             }
 
             if (!new_part_info.isDisjoint((*prev)->info))
-                throw Exception("Part " + new_part_name + " intersects previous part " + (*prev)->getNameWithState() +
-                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug.",
+                                new_part_name, (*prev)->getNameWithState());
 
             break;
         }
@@ -2008,7 +2103,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     while (end != committed_parts_range.end())
     {
         if ((*end)->info == new_part_info)
-            throw Exception("Unexpected duplicate part " + (*end)->getNameWithState() + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", (*end)->getNameWithState());
 
         if (!new_part_info.contains((*end)->info))
         {
@@ -2019,8 +2114,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
             }
 
             if (!new_part_info.isDisjoint((*end)->info))
-                throw Exception("Part " + new_part_name + " intersects next part " + (*end)->getNameWithState() +
-                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug.",
+                                new_part_name, (*end)->getNameWithState());
 
             break;
         }
@@ -2250,12 +2345,12 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
-                                                                               bool skip_intersecting_parts, DataPartsLock & lock)
+                                                                               DataPartsLock & lock)
 {
     DataPartsVector parts_to_remove;
 
     if (drop_range.min_block > drop_range.max_block)
-        return parts_to_remove;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid drop range: {}", drop_range.getPartName());
 
     auto partition_range = getDataPartsPartitionRange(drop_range.partition_id);
 
@@ -2264,16 +2359,13 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.partition_id != drop_range.partition_id)
             throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (part->info.min_block < drop_range.min_block)
+        if (part->info.min_block < drop_range.min_block)    /// NOTE Always false, because drop_range.min_block == 0
         {
             if (drop_range.min_block <= part->info.max_block)
             {
                 /// Intersect left border
-                String error = "Unexpected merged part " + part->name + " intersecting drop range " + drop_range.getPartName();
-                if (!skip_intersecting_parts)
-                    throw Exception(error, ErrorCodes::LOGICAL_ERROR);
-
-                LOG_WARNING(log, error);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected merged part {} intersecting drop range {}",
+                                part->name, drop_range.getPartName());
             }
 
             continue;
@@ -2286,12 +2378,8 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.min_block <= drop_range.max_block && drop_range.max_block < part->info.max_block)
         {
             /// Intersect right border
-            String error = "Unexpected merged part " + part->name + " intersecting drop range " + drop_range.getPartName();
-            if (!skip_intersecting_parts)
-                throw Exception(error, ErrorCodes::LOGICAL_ERROR);
-
-            LOG_WARNING(log, error);
-            continue;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected merged part {} intersecting drop range {}",
+                            part->name, drop_range.getPartName());
         }
 
         if (part->getState() != DataPartState::Deleting)
@@ -3008,6 +3096,9 @@ Pipe MergeTreeData::alterPartition(
             }
 
             break;
+
+            default:
+                throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
         }
         for (auto & command_result : current_command_results)
             command_result.command_type = command.typeToString();
@@ -3100,7 +3191,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     return partition_id;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
+    const DataPartStates & affordable_states, DataPartStateVector * out_states, bool require_projection_parts) const
 {
     DataPartsVector res;
     DataPartsVector buf;
@@ -3109,27 +3201,64 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
 
         for (auto state : affordable_states)
         {
-            std::swap(buf, res);
-            res.clear();
-
             auto range = getDataPartsStateRange(state);
-            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+
+            if (require_projection_parts)
+            {
+                for (const auto & part : range)
+                {
+                    for (const auto & [p_name, projection_part] : part->getProjectionParts())
+                        res.push_back(projection_part);
+                }
+            }
+            else
+            {
+                std::swap(buf, res);
+                res.clear();
+                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart()); //-V783
+            }
         }
 
         if (out_states != nullptr)
         {
             out_states->resize(res.size());
-            for (size_t i = 0; i < res.size(); ++i)
-                (*out_states)[i] = res[i]->getState();
+            if (require_projection_parts)
+            {
+                for (size_t i = 0; i < res.size(); ++i)
+                    (*out_states)[i] = res[i]->getParentPart()->getState();
+            }
+            else
+            {
+                for (size_t i = 0; i < res.size(); ++i)
+                    (*out_states)[i] = res[i]->getState();
+            }
         }
     }
 
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector
+MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states, bool require_projection_parts) const
 {
     DataPartsVector res;
+    if (require_projection_parts)
+    {
+        auto lock = lockParts();
+        for (const auto & part : data_parts_by_info)
+        {
+            for (const auto & [p_name, projection_part] : part->getProjectionParts())
+                res.push_back(projection_part);
+        }
+
+        if (out_states != nullptr)
+        {
+            out_states->resize(res.size());
+            for (size_t i = 0; i < res.size(); ++i)
+                (*out_states)[i] = res[i]->getParentPart()->getState();
+        }
+    }
+    else
     {
         auto lock = lockParts();
         res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
@@ -3622,9 +3751,17 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
+            if (metadata_snapshot->selected_projection
+                && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
+                return true;
         }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
-        return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
+        if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot))
+            return true;
+        if (metadata_snapshot->selected_projection
+            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+            return true;
+        return false;
     }
     else
     {
@@ -3632,9 +3769,410 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
+        if (metadata_snapshot->selected_projection
+            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+            return true;
+
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
     }
 }
+
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+
+static void selectBestProjection(
+    const MergeTreeDataSelectExecutor & reader,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    const Names & required_columns,
+    ProjectionCandidate & candidate,
+    ContextPtr query_context,
+    const PartitionIdToMaxBlock * max_added_blocks,
+    const Settings & settings,
+    const MergeTreeData::DataPartsVector & parts,
+    ProjectionCandidate *& selected_candidate,
+    size_t & min_sum_marks)
+{
+    MergeTreeData::DataPartsVector projection_parts;
+    MergeTreeData::DataPartsVector normal_parts;
+    for (const auto & part : parts)
+    {
+        const auto & projections = part->getProjectionParts();
+        auto it = projections.find(candidate.desc->name);
+        if (it != projections.end())
+            projection_parts.push_back(it->second);
+        else
+            normal_parts.push_back(part);
+    }
+
+    if (projection_parts.empty())
+        return;
+
+    candidate.merge_tree_data_select_base_cache = std::make_unique<MergeTreeDataSelectCache>();
+    candidate.merge_tree_data_select_projection_cache = std::make_unique<MergeTreeDataSelectCache>();
+    reader.readFromParts(
+        projection_parts,
+        candidate.required_columns,
+        metadata_snapshot,
+        candidate.desc->metadata,
+        query_info, // TODO syntax_analysis_result set in index
+        query_context,
+        0, // max_block_size is unused when getting cache
+        settings.max_threads,
+        max_added_blocks,
+        candidate.merge_tree_data_select_projection_cache.get());
+
+    size_t sum_marks = candidate.merge_tree_data_select_projection_cache->sum_marks;
+    if (normal_parts.empty())
+    {
+        // All parts are projection parts which allows us to use in_order_optimization.
+        // TODO It might be better to use a complete projection even with more marks to read.
+        candidate.complete = true;
+    }
+    else
+    {
+        reader.readFromParts(
+            normal_parts,
+            required_columns,
+            metadata_snapshot,
+            metadata_snapshot,
+            query_info, // TODO syntax_analysis_result set in index
+            query_context,
+            0, // max_block_size is unused when getting cache
+            settings.max_threads,
+            max_added_blocks,
+            candidate.merge_tree_data_select_base_cache.get());
+        sum_marks += candidate.merge_tree_data_select_base_cache->sum_marks;
+    }
+
+    // We choose the projection with least sum_marks to read.
+    if (sum_marks < min_sum_marks)
+    {
+        selected_candidate = &candidate;
+        min_sum_marks = sum_marks;
+    }
+}
+
+
+bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
+    ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections)
+        return false;
+
+    const auto & query_ptr = query_info.query;
+
+    InterpreterSelectQuery select(
+        query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
+    const auto & analysis_result = select.getAnalysisResult();
+
+    bool can_use_aggregate_projection = true;
+    /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
+    /// we cannot use aggregate projection.
+    if (analysis_result.join != nullptr || analysis_result.array_join != nullptr)
+        can_use_aggregate_projection = false;
+
+    /// Check if all needed columns can be provided by some aggregate projection. Here we also try
+    /// to find expression matches. For example, suppose an aggregate projection contains a column
+    /// named sum(x) and the given query also has an expression called sum(x), it's a match. This is
+    /// why we need to ignore all aliases during projection creation and the above query planning.
+    /// It's also worth noting that, sqrt(sum(x)) will also work because we can treat sum(x) as a
+    /// required column.
+
+    /// The ownership of ProjectionDescription is hold in metadata_snapshot which lives along with
+    /// InterpreterSelect, thus we can store the raw pointer here.
+    std::vector<ProjectionCandidate> candidates;
+    NameSet keys;
+    std::unordered_map<std::string_view, size_t> key_name_pos_map;
+    size_t pos = 0;
+    for (const auto & desc : select.getQueryAnalyzer()->aggregationKeys())
+    {
+        keys.insert(desc.name);
+        key_name_pos_map.insert({desc.name, pos++});
+    }
+    auto actions_settings = ExpressionActionsSettings::fromSettings(settings);
+
+    // All required columns should be provided by either current projection or previous actions
+    // Let's traverse backward to finish the check.
+    // TODO what if there is a column with name sum(x) and an aggregate sum(x)?
+    auto rewrite_before_where =
+        [&](ProjectionCandidate & candidate, const ProjectionDescription & projection,
+            NameSet & required_columns, const Block & source_block, const Block & aggregates)
+    {
+        if (analysis_result.before_where)
+        {
+            candidate.where_column_name = analysis_result.where_column_name;
+            candidate.remove_where_filter = analysis_result.remove_where_filter;
+            candidate.before_where = analysis_result.before_where->clone();
+            // std::cerr << fmt::format("before_where_actions = \n{}", candidate.before_where->dumpDAG()) << std::endl;
+            required_columns = candidate.before_where->foldActionsByProjection(
+                required_columns,
+                projection.sample_block_for_keys,
+                candidate.where_column_name);
+            // std::cerr << fmt::format("before_where_actions = \n{}", candidate.before_where->dumpDAG()) << std::endl;
+            // std::cerr << fmt::format("where_required_columns = \n{}", fmt::join(required_columns, ", ")) << std::endl;
+
+            if (required_columns.empty())
+                return false;
+            candidate.before_where->addAggregatesViaProjection(aggregates);
+        }
+
+        if (analysis_result.prewhere_info)
+        {
+            const auto & prewhere_info = analysis_result.prewhere_info;
+            candidate.prewhere_info = std::make_shared<PrewhereInfo>();
+            candidate.prewhere_info->prewhere_column_name = prewhere_info->prewhere_column_name;
+            candidate.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+            // std::cerr << fmt::format("remove prewhere column : {}", candidate.prewhere_info->remove_prewhere_column) << std::endl;
+            candidate.prewhere_info->row_level_column_name = prewhere_info->row_level_column_name;
+            candidate.prewhere_info->need_filter = prewhere_info->need_filter;
+
+            auto prewhere_actions = prewhere_info->prewhere_actions->clone();
+            auto prewhere_required_columns = required_columns;
+            // required_columns should not contain columns generated by prewhere
+            for (const auto & column : prewhere_actions->getResultColumns())
+                required_columns.erase(column.name);
+            // std::cerr << fmt::format("prewhere_actions = \n{}", prewhere_actions->dumpDAG()) << std::endl;
+            // Prewhere_action should not add missing keys.
+            prewhere_required_columns = prewhere_actions->foldActionsByProjection(
+                prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->prewhere_column_name, false);
+            // std::cerr << fmt::format("prewhere_actions = \n{}", prewhere_actions->dumpDAG()) << std::endl;
+            // std::cerr << fmt::format("prewhere_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
+            if (prewhere_required_columns.empty())
+                return false;
+            candidate.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_actions, actions_settings);
+
+            if (prewhere_info->row_level_filter_actions)
+            {
+                auto row_level_filter_actions = prewhere_info->row_level_filter_actions->clone();
+                prewhere_required_columns = row_level_filter_actions->foldActionsByProjection(
+                    prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->row_level_column_name, false);
+                // std::cerr << fmt::format("row_level_filter_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
+                if (prewhere_required_columns.empty())
+                    return false;
+                candidate.prewhere_info->row_level_filter
+                    = std::make_shared<ExpressionActions>(row_level_filter_actions, actions_settings);
+            }
+
+            if (prewhere_info->alias_actions)
+            {
+                auto alias_actions = prewhere_info->alias_actions->clone();
+                // std::cerr << fmt::format("alias_actions = \n{}", alias_actions->dumpDAG()) << std::endl;
+                prewhere_required_columns
+                    = alias_actions->foldActionsByProjection(prewhere_required_columns, projection.sample_block_for_keys, {}, false);
+                // std::cerr << fmt::format("alias_actions = \n{}", alias_actions->dumpDAG()) << std::endl;
+                // std::cerr << fmt::format("alias_required_columns = \n{}", fmt::join(prewhere_required_columns, ", ")) << std::endl;
+                if (prewhere_required_columns.empty())
+                    return false;
+                candidate.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(alias_actions, actions_settings);
+            }
+            required_columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+        }
+
+        bool match = true;
+        for (const auto & column : required_columns)
+        {
+            /// There are still missing columns, fail to match
+            if (!source_block.has(column))
+            {
+                match = false;
+                break;
+            }
+        }
+        return match;
+    };
+
+    for (const auto & projection : metadata_snapshot->projections)
+    {
+        ProjectionCandidate candidate{};
+        candidate.desc = &projection;
+
+        if (projection.type == ProjectionDescription::Type::Aggregate && analysis_result.need_aggregate && can_use_aggregate_projection)
+        {
+            // std::cerr << fmt::format("====== aggregate projection analysis: {} ======", projection.name) << std::endl;
+            bool match = true;
+            Block aggregates;
+            // Let's first check if all aggregates are provided by current projection
+            for (const auto & aggregate : select.getQueryAnalyzer()->aggregates())
+            {
+                const auto * column = projection.sample_block.findByName(aggregate.column_name);
+                if (column)
+                {
+                    aggregates.insert(*column);
+                }
+                else
+                {
+                    match = false;
+                    break;
+                }
+            }
+
+            if (!match)
+                continue;
+
+            // Check if all aggregation keys can be either provided by some action, or by current
+            // projection directly. Reshape the `before_aggregation` action DAG so that it only
+            // needs to provide aggregation keys, and certain children DAG might be substituted by
+            // some keys in projection.
+            candidate.before_aggregation = analysis_result.before_aggregation->clone();
+            // std::cerr << fmt::format("keys = {}", fmt::join(keys, ", ")) << std::endl;
+            // std::cerr << fmt::format("before_aggregation = \n{}", candidate.before_aggregation->dumpDAG()) << std::endl;
+            auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
+            // std::cerr << fmt::format("before_aggregation = \n{}", candidate.before_aggregation->dumpDAG()) << std::endl;
+            // std::cerr << fmt::format("aggregate_required_columns = \n{}", fmt::join(required_columns, ", ")) << std::endl;
+            if (required_columns.empty() && !keys.empty())
+                continue;
+
+            if (analysis_result.optimize_aggregation_in_order)
+            {
+                for (const auto & key : keys)
+                {
+                    auto actions_dag = analysis_result.before_aggregation->clone();
+                    actions_dag->foldActionsByProjection({key}, projection.sample_block_for_keys);
+                    candidate.group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, actions_settings));
+                }
+            }
+
+            // Reorder aggregation keys and attach aggregates
+            candidate.before_aggregation->reorderAggregationKeysForProjection(key_name_pos_map);
+            candidate.before_aggregation->addAggregatesViaProjection(aggregates);
+
+            if (rewrite_before_where(candidate, projection, required_columns, projection.sample_block_for_keys, aggregates))
+            {
+                candidate.required_columns = {required_columns.begin(), required_columns.end()};
+                for (const auto & aggregate : aggregates)
+                    candidate.required_columns.push_back(aggregate.name);
+                candidates.push_back(std::move(candidate));
+            }
+            // std::cerr << fmt::format("====== aggregate projection analysis end: {} ======", projection.name) << std::endl;
+        }
+
+        if (projection.type == ProjectionDescription::Type::Normal && (analysis_result.hasWhere() || analysis_result.hasPrewhere()))
+        {
+            // std::cerr << fmt::format("====== normal projection analysis: {} ======", projection.name) << std::endl;
+            const auto & actions
+                = analysis_result.before_aggregation ? analysis_result.before_aggregation : analysis_result.before_order_by;
+            NameSet required_columns;
+            for (const auto & column : actions->getRequiredColumns())
+                required_columns.insert(column.name);
+
+            if (rewrite_before_where(candidate, projection, required_columns, projection.sample_block, {}))
+            {
+                candidate.required_columns = {required_columns.begin(), required_columns.end()};
+                candidates.push_back(std::move(candidate));
+            }
+            // std::cerr << fmt::format("====== normal projection analysis end: {} ======", projection.name) << std::endl;
+        }
+    }
+
+    // Let's select the best projection to execute the query.
+    if (!candidates.empty())
+    {
+        // First build a MergeTreeDataSelectCache to check if a projection is indeed better than base
+        query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
+
+        std::unique_ptr<PartitionIdToMaxBlock> max_added_blocks;
+        if (settings.select_sequential_consistency)
+        {
+            if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
+                max_added_blocks = std::make_unique<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
+        }
+
+        auto parts = getDataPartsVector();
+        MergeTreeDataSelectExecutor reader(*this);
+        reader.readFromParts(
+            parts,
+            analysis_result.required_columns,
+            metadata_snapshot,
+            metadata_snapshot,
+            query_info, // TODO syntax_analysis_result set in index
+            query_context,
+            0, // max_block_size is unused when getting cache
+            settings.max_threads,
+            max_added_blocks.get(),
+            query_info.merge_tree_data_select_cache.get());
+
+        // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+        size_t min_sum_marks = query_info.merge_tree_data_select_cache->sum_marks + 1;
+        ProjectionCandidate * selected_candidate = nullptr;
+        /// Favor aggregate projections
+        for (auto & candidate : candidates)
+        {
+            if (candidate.desc->type == ProjectionDescription::Type::Aggregate)
+            {
+                selectBestProjection(
+                    reader,
+                    metadata_snapshot,
+                    query_info,
+                    analysis_result.required_columns,
+                    candidate,
+                    query_context,
+                    max_added_blocks.get(),
+                    settings,
+                    parts,
+                    selected_candidate,
+                    min_sum_marks);
+            }
+        }
+
+        /// Select the best normal projection if no aggregate projection is available
+        if (!selected_candidate)
+        {
+            for (auto & candidate : candidates)
+            {
+                if (candidate.desc->type == ProjectionDescription::Type::Normal)
+                {
+                    selectBestProjection(
+                        reader,
+                        metadata_snapshot,
+                        query_info,
+                        analysis_result.required_columns,
+                        candidate,
+                        query_context,
+                        max_added_blocks.get(),
+                        settings,
+                        parts,
+                        selected_candidate,
+                        min_sum_marks);
+                }
+            }
+        }
+
+        if (!selected_candidate)
+            return false;
+
+        if (selected_candidate->desc->type == ProjectionDescription::Type::Aggregate)
+        {
+            selected_candidate->aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
+            selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
+        }
+
+        query_info.projection = std::move(*selected_candidate);
+
+        return true;
+    }
+    return false;
+}
+
+
+QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
+    ContextPtr query_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info) const
+{
+    if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
+    {
+        if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
+        {
+            if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
+                return QueryProcessingStage::Enum::WithMergeableState;
+        }
+    }
+
+    return QueryProcessingStage::Enum::FetchColumns;
+}
+
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
@@ -4179,6 +4717,18 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
     return true;
 }
 
+bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right)
+{
+    if (left->getProjectionParts().size() != right->getProjectionParts().size())
+        return false;
+    for (const auto & [name, _] : left->getProjectionParts())
+    {
+        if (!right->hasProjection(name))
+            return false;
+    }
+    return true;
+}
+
 bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const
 {
     if (!canUseAdaptiveGranularity())
@@ -4237,6 +4787,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
     };
 }

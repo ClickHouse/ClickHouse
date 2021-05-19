@@ -35,7 +35,7 @@ PEERDIR(
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
 
 SRCS(
-<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|abtesting' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|abtesting' | grep -v -F examples  | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

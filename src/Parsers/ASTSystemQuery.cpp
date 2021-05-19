@@ -96,6 +96,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "START DISTRIBUTED SENDS";
         case Type::FLUSH_LOGS:
             return "FLUSH LOGS";
+        case Type::RESTART_DISK:
+            return "RESTART DISK";
         default:
             throw Exception("Unknown SYSTEM query command", ErrorCodes::LOGICAL_ERROR);
     }

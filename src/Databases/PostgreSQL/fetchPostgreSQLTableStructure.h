@@ -5,14 +5,15 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/ConnectionHolder.h>
+#include <Core/NamesAndTypes.h>
 
 
 namespace DB
 {
 
 std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
-    postgres::ConnectionHolderPtr connection, const String & postgres_table_name, bool use_nulls);
+    postgres::ConnectionHolderPtr connection_holder, const String & postgres_table_name, bool use_nulls);
 
 }
 

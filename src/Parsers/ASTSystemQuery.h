@@ -42,6 +42,7 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_SYMBOLS,
+        RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
         STOP_TTL_MERGES,
@@ -74,6 +75,7 @@ public:
     bool is_drop_whole_replica{};
     String storage_policy;
     String volume;
+    String disk;
     UInt64 seconds{};
 
     String getID(char) const override { return "SYSTEM query"; }

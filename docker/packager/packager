@@ -143,8 +143,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         cmake_flags.append('-DUSE_GTEST=1')
 
     if unbundled:
-        # TODO: fix build with ENABLE_RDKAFKA
-        cmake_flags.append('-DUNBUNDLED=1 -DUSE_INTERNAL_RDKAFKA_LIBRARY=1 -DENABLE_ARROW=0 -DENABLE_ORC=0 -DENABLE_PARQUET=0')
+        cmake_flags.append('-DUNBUNDLED=1 -DUSE_INTERNAL_RDKAFKA_LIBRARY=1 -DENABLE_ARROW=0 -DENABLE_AVRO=0 -DENABLE_ORC=0 -DENABLE_PARQUET=0')
 
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
@@ -182,9 +181,8 @@ if __name__ == "__main__":
     parser.add_argument("--clickhouse-repo-path", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-10", "clang-10-darwin", "clang-10-aarch64", "clang-10-freebsd",
-                                               "clang-11", "clang-11-darwin", "clang-11-aarch64", "clang-11-freebsd",
-                                               "gcc-9", "gcc-10"), default="gcc-9")
+    parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-aarch64", "clang-11-freebsd",
+                                               "gcc-10"), default="clang-11")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")

@@ -341,6 +341,8 @@ select number, count(*) over (partition by p)
 select number, count(*) over (partition by p)
     from window_mt order by number limit 10 settings optimize_read_in_order = 1;
 
+drop table window_mt;
+
 -- some true window functions -- rank and friends
 select number, p, o,
     count(*) over w,
@@ -415,4 +417,8 @@ from (
 -- under UBSan. Should be limited to at most INT_MAX.
 select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
 
-drop table window_mt;
+-- Somehow in this case WindowTransform gets empty input chunks not marked as
+-- input end, and then two (!) empty input chunks marked as input end. Whatever.
+select count() over () from (select 1 a) l inner join (select 2 a) r using a;
+-- This case works as expected, one empty input chunk marked as input end.
+select count() over () where null;

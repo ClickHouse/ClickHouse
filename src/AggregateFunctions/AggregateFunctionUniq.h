@@ -22,6 +22,7 @@
 
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/ThetaSketchData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
 
@@ -69,7 +70,7 @@ struct AggregateFunctionUniqHLL12Data<String>
 };
 
 template <>
-struct AggregateFunctionUniqHLL12Data<UInt128>
+struct AggregateFunctionUniqHLL12Data<UUID>
 {
     using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
     Set set;
@@ -124,6 +125,19 @@ struct AggregateFunctionUniqExactData<String>
 };
 
 
+/// uniqTheta
+#if USE_DATASKETCHES
+
+struct AggregateFunctionUniqThetaData
+{
+    using Set = ThetaSketchData<UInt64>;
+    Set set;
+
+    static String getName() { return "uniqTheta"; }
+};
+
+#endif
+
 namespace detail
 {
 
@@ -133,16 +147,14 @@ template <typename T> struct AggregateFunctionUniqTraits
 {
     static UInt64 hash(T x)
     {
-        if constexpr (std::is_same_v<T, UInt128>)
-        {
-            return sipHash64(x);
-        }
-        else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
+        if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
         {
             return ext::bit_cast<UInt64>(x);
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
+        {
             return x;
+        }
         else
             return DefaultHash64<T>(x);
     }
@@ -184,11 +196,17 @@ struct OneAdder
                 UInt128 key;
                 SipHash hash;
                 hash.update(value.data, value.size);
-                hash.get128(key.low, key.high);
+                hash.get128(key);
 
                 data.set.insert(key);
             }
         }
+#if USE_DATASKETCHES
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaData>)
+        {
+            data.set.insertOriginal(column.getDataAt(row_num));
+        }
+#endif
     }
 };
 
