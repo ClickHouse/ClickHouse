@@ -1,5 +1,6 @@
 #include "Coverage.h"
 
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -8,6 +9,7 @@
 #include <utility>
 
 #include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "Common/ProfileEvents.h"
 
@@ -35,34 +37,22 @@ inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
 
     return SymbolIndex::instance();
 }
-
-template <class T>
-inline typename T::mapped_type valueOr(
-    const T& container, typename T::key_type key, typename T::mapped_type default_value)
-{
-    if (auto it = container.find(key); it != container.end())
-        return it->second;
-    return default_value;
 }
 
-template <class T>
-inline void setOrIncrement(T& container, typename T::key_type key, typename T::mapped_type value)
+void TaskQueue::wait()
 {
-    if (auto it = container.find(key); it != container.end())
-        it->second += value;
-    else
-        container[key] = value;
-}
-}
+    size_t active_tasks = 0;
 
-TaskQueue::~TaskQueue()
-{
     {
         std::lock_guard lock(mutex);
+        active_tasks = tasks.size();
         shutdown = true;
     }
 
-    task_or_shutdown.notify_all();
+    // If queue has n tasks left, we need to notify it n times
+    // (to process all tasks) and one extra time to shut down.
+    for (size_t i = 0; i < active_tasks + 1; ++i)
+        task_or_shutdown.notify_one();
 
     if (worker.joinable())
         worker.join();
@@ -73,54 +63,34 @@ void TaskQueue::workerThread()
     while (true)
     {
         Task task;
-        bool is_shutdown;
-        bool has_task;
 
         {
             std::unique_lock lock(mutex);
 
             task_or_shutdown.wait(lock, [this] { return shutdown || !tasks.empty(); });
 
-            is_shutdown = shutdown;
-            has_task = !tasks.empty();
+            // We need to process all tasks before shutting down.
+            if (shutdown && tasks.empty())
+                return;
 
-            if (has_task)
-            {
-                task = std::move(tasks.front());
-                tasks.pop();
-            }
+            task = std::move(tasks.front());
+            tasks.pop();
         }
 
-        if (has_task)
-            task();
-
-        if (is_shutdown)
-            return;
+        task();
     }
 }
 
-constexpr const std::string_view docker_ch_src = "/build/src";
-constexpr const std::string_view docker_report_path = "/report.ccr";
-
 Writer::Writer()
-    : hardware_concurrency(std::thread::hardware_concurrency()),
-      base_log(nullptr),
-
+    :
 #if NON_ELF_BUILD
       symbol_index(),
-      dwarf(),
+      dwarf()
 #else
       symbol_index(getInstanceAndInitGlobalCounters()),
-      dwarf(symbol_index->getSelf()->elf),
+      dwarf(symbol_index->getSelf()->elf)
 #endif
-
-      clickhouse_src_dir_abs_path(docker_ch_src),
-      report_path(docker_report_path),
-
-      functions_count(0),
-      addrs_count(0),
-      edges_count(0),
-      test_index(0) {}
+    {}
 
 Writer& Writer::instance()
 {
@@ -180,9 +150,28 @@ void Writer::initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_ar
 
 void Writer::deinitRuntime()
 {
+    tasks_queue.wait();
     writeCCRFooter();
     report_file.close();
     LOG_INFO(base_log, "Shut down runtime");
+}
+
+void Writer::setTestsCount(size_t tests_count)
+{
+    // This is an upper bound (as we don't know which tests will be skipped before running them).
+    tests.resize(tests_count);
+}
+
+void Writer::hit(EdgeIndex index)
+{
+    /**
+     * If we are copying data: the only place where edges_hit is used is pointer swap with a temporary vector.
+     * In -O3 this code will surely be optimized to something like https://godbolt.org/z/8rerbshzT,
+     * where only lines 32-36 swap the pointers, so we'll just probably count some old hits for new test.
+     *
+     * If we are not copying data: no race as it's just assignment.
+     */
+    edges_hit[index] = 1;
 }
 
 void Writer::onServerInitialized()
@@ -201,18 +190,6 @@ void Writer::onServerInitialized()
         LOG_INFO(base_log, "Opened report file {}", report_path);
 
     symbolizeInstrumentedData();
-}
-
-void Writer::hit(EdgeIndex edge_index)
-{
-    /**
-     * If we are copying data: the only place where edges_hit is used is pointer swap with a temporary vector.
-     * In -O3 this code will surely be optimized to something like https://godbolt.org/z/8rerbshzT,
-     * where only lines 32-36 swap the pointers, so we'll just probably count some old hits for new test.
-     *
-     */
-    ++edges_hit[edge_index];
-    //__atomic_add_fetch(&edges_hit[edge_index], 1, __ATOMIC_RELAXED);
 }
 
 namespace /// Symbolized data
@@ -262,7 +239,7 @@ inline auto& getInstrumented(auto& info)
         return info.instrumented_lines;
 }
 
-inline void waitFor(Writer::Threads& threads)
+inline void waitFor(Threads& threads)
 {
     for (auto & thread : threads)
         if (thread.joinable())
@@ -328,13 +305,13 @@ void Writer::onChangedTestName(std::string old_test_name)
     /// https://godbolt.org/z/qqTYdr5Gz, explicit 0 state generates slightly better assembly than without it.
     EdgesHit edges_hit_swap(edges_count, 0);
 
-    const size_t test_that_finished = test_index - 1;
     const size_t test_that_will_run_next = test_index;
+    const size_t test_that_finished = test_that_will_run_next - 1;
     ++test_index;
 
     edges_hit.swap(edges_hit_swap);
 
-    tasks_queue.schedule([this, test_that_finished, edges = std::move(edges_hit_swap)] () mutable
+    tasks_queue.schedule([this, test_that_finished, edges = std::move(edges_hit_swap)]
     {
         TestData & data = tests[test_that_finished];
         data.test_index = test_that_finished;
@@ -356,15 +333,13 @@ void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
 
     for (size_t edge_index = 0; edge_index < edges_count; ++edge_index)
     {
-        const CallCount hit = hits[edge_index];
-
-        if (!hit)
+        if (!hits[edge_index]) //char to bool conversion
             continue;
 
         if (const EdgeInfo& info = edges_cache[edge_index]; info.isFunctionEntry())
-            setOrIncrement(test_data.data[info.index].functions_hit, edge_index, hit);
+            test_data.data[info.index].functions_hit.push_back(edge_index);
         else
-            setOrIncrement(test_data.data[info.index].lines_hit, info.line, hit);
+            test_data.data[info.index].lines_hit.push_back(info.line);
     }
 
     LOG_INFO(test_data.log, "Finished filling internal structures");
@@ -420,28 +395,21 @@ void Writer::writeCCREntry(const Writer::TestData& test_data)
     /**
      * TEST //Note -- test index is not written. Test name will be found in footer (TESTS section)
      * SOURCE <source file id> <functions count> <lines count>
-     * <function 1 edge index> <call count>
-     * <function 2 edge index> <call count>
-     * <line 1 number> <call count>
-     * <line 2 number> <call count>
+     * <function 1 edge index> <function 2 edge index>
+     * <line 1 number> <line 2 number>
      */
     fmt::print(report_file.file(), "TEST\n");
 
     for (size_t i = 0; i < test_data.data.size(); ++i)
     {
-        const auto& source = test_data.data[i];
+        const TestData::SourceData& source = test_data.data[i];
+        const auto& funcs = source.functions_hit;
+        const auto& lines = source.lines_hit;
 
-        if (source.functions_hit.empty() && source.lines_hit.empty())
+        if (funcs.empty() && lines.empty())
             continue;
 
-        fmt::print(report_file.file(), "SOURCE {} {} {}\n",
-            i, source.functions_hit.size(), source.lines_hit.size());
-
-        for (const auto [edge_index, call_count]: source.functions_hit)
-            fmt::print(report_file.file(), "{} {}\n", edge_index, call_count);
-
-        for (const auto [line, call_count]: source.lines_hit)
-            fmt::print(report_file.file(), "{} {}\n", line, call_count);
+        fmt::print(report_file.file(), "SOURCE {}\n{}\n{}\n", i, fmt::join(funcs, " "), fmt::join(lines, " "));
     }
 
     LOG_INFO(test_data.log, "Finished writing test entry");
@@ -469,7 +437,7 @@ void Writer::writeCCRFooter()
 }
 
 template <bool is_func_cache, class CacheItem>
-Writer::Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
+Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
 {
     Threads out;
     out.reserve(hardware_concurrency);
@@ -505,7 +473,7 @@ Writer::Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_
                     .lexically_normal()
                     .string();
 
-                const size_t line = loc.line;
+                const int line = static_cast<int>(loc.line);
 
                 auto cache_it = cache.find(source_rel_path);
 
@@ -584,6 +552,6 @@ void Writer::mergeDataToCaches(const LocalCaches<CacheItem>& data)
 
 template void Writer::mergeDataToCaches<true, FuncSym>(const LocalCaches<FuncSym>&);
 template void Writer::mergeDataToCaches<false, AddrSym>(const LocalCaches<AddrSym>&);
-template Writer::Threads Writer::scheduleSymbolizationJobs<true, FuncSym>(LocalCaches<FuncSym>&, const std::vector<EdgeIndex>&);
-template Writer::Threads Writer::scheduleSymbolizationJobs<false, AddrSym>(LocalCaches<AddrSym>&, const std::vector<EdgeIndex>&);
+template Threads Writer::scheduleSymbolizationJobs<true, FuncSym>(LocalCaches<FuncSym>&, const std::vector<EdgeIndex>&);
+template Threads Writer::scheduleSymbolizationJobs<false, AddrSym>(LocalCaches<AddrSym>&, const std::vector<EdgeIndex>&);
 }

@@ -27,26 +27,22 @@
 #include <common/types.h>
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-
-#define NON_ELF_BUILD 0
-
-#include <Common/SymbolIndex.h>
-#include <Common/Dwarf.h>
+    #define NON_ELF_BUILD 0
+    #include <Common/SymbolIndex.h>
+    #include <Common/Dwarf.h>
 
 using SymbolIndex = DB::SymbolIndex;
 using SymbolIndexInstance = decltype(SymbolIndex::instance());
 using Dwarf = DB::Dwarf;
 
 #else
+    /// FreeBSD and Darwin do not have DWARF, so coverage build is explicitly disabled.
+    /// Fake classes are introduced to be able to build CH.
 
-#define NON_ELF_BUILD 1
-
-/// FreeBSD and Darwin do not have DWARF, so coverage build is explicitly disabled.
-/// Fake classes are introduced to be able to build CH.
-
-#if WITH_COVERAGE
-#error "Coverage build does not work on FreeBSD and Darwin".
-#endif
+    #define NON_ELF_BUILD 1
+    #if WITH_COVERAGE
+        #error "Coverage build does not work on FreeBSD and Darwin".
+    #endif
 
 struct SymbolIndexInstance
 {
@@ -75,9 +71,9 @@ namespace detail
 {
 using EdgeIndex = uint32_t;
 using Addr = void *;
+using Line = int;
 
-using CallCount = int;
-using Line = size_t;
+using Threads = std::vector<std::thread>;
 
 /**
  * Simplified FreeThreadPool from Common/ThreadPool.h . Uses one external thread.
@@ -109,7 +105,8 @@ public:
         task_or_shutdown.notify_one();
     }
 
-    ~TaskQueue();
+    ~TaskQueue() { wait(); }
+    void wait();
 
 private:
     using Task = std::function<void()>;
@@ -120,7 +117,7 @@ private:
     std::mutex mutex;
     std::condition_variable task_or_shutdown;
 
-    bool shutdown = false;
+    bool shutdown {false};
 
     void workerThread();
 };
@@ -144,35 +141,35 @@ public:
 
     void onServerInitialized();
 
-    void hit(EdgeIndex edge_index);
+    void hit(EdgeIndex index);
 
-    inline void setTestsCount(size_t tests_count)
-    {
-        // This is an upper bound (as we don't know which tests will be skipped before running them).
-        tests.resize(tests_count);
-    }
+    void setTestsCount(size_t tests_count);
 
     void onChangedTestName(std::string old_test_name); // String is passed by value as it's swapped with _test_.
 
 private:
     Writer();
 
+    /// If you want to test this runtime outside of Docker, change these two variables.
+    static constexpr std::string_view docker_clickhouse_src_dir_abs_path = "/build/src";
+    static constexpr std::string_view docker_report_path = "/report.ccr";
+
     static constexpr std::string_view logger_base_name = "Coverage";
 
-    static constexpr size_t total_source_files_hint = 5000; // each LocalCache pre-allocates this / pool_size.
+    static constexpr size_t total_source_files_hint {5000}; // each LocalCache pre-allocates this / pool_size.
 
-    const size_t hardware_concurrency;
-    const Poco::Logger * base_log;
+    const size_t hardware_concurrency { std::thread::hardware_concurrency() };
+    const Poco::Logger * base_log {nullptr}; // Initialized when server initializes Poco internal structures.
 
     const SymbolIndexInstance symbol_index;
     const Dwarf dwarf;
 
-    const std::filesystem::path clickhouse_src_dir_abs_path;
-    const std::string report_path;
+    const std::filesystem::path clickhouse_src_dir_abs_path { docker_clickhouse_src_dir_abs_path };
+    const std::string report_path { docker_report_path };
 
-    size_t functions_count;
-    size_t addrs_count;
-    size_t edges_count;
+    size_t functions_count {0}; // Initialized after processing PC table.
+    size_t addrs_count {0};
+    size_t edges_count {0};
 
     TaskQueue tasks_queue;
 
@@ -203,17 +200,19 @@ private:
     {
         struct SourceData
         {
-            std::unordered_map<EdgeIndex, CallCount> functions_hit;
-            std::unordered_map<Line, CallCount> lines_hit;
+            std::vector<EdgeIndex> functions_hit;
+            std::vector<Line> lines_hit;
         };
 
         std::string name; // If is empty, there is no data for test.
         size_t test_index;
         const Poco::Logger * log;
-        std::vector<SourceData> data; // [i] means source file in source_files_cache with index i.
+        std::vector<SourceData> data; // [i] ~ info for source_files_cache[i].
     };
 
-    using EdgesHit = std::vector<CallCount>; // [i] ~ edge with index i call count
+    /// [i] ~ is edge with index i hit or not.
+    /// Can't use vector<bool> as it's not contiguous.
+    using EdgesHit = std::vector<char>;
 
     std::vector<Addr> edges_to_addrs;
     std::vector<bool> edge_is_func_entry;
@@ -226,16 +225,16 @@ private:
     std::vector<TestData> tests; /// Data accumulated for all tests.
     EdgesHit edges_hit; /// Data accumulated for a single test.
 
-    size_t test_index;
+    size_t test_index {0}; /// Index for test that will run next.
 
-    class FileWrapper /// RAII wrapper for FILE *
+    class FileWrapper
     {
         FILE * handle {nullptr};
     public:
         inline void set(const std::string& pathname, const char * mode) { handle = fopen(pathname.data(), mode); }
         inline FILE * file() { return handle; }
         inline void close() { fclose(handle); handle = nullptr; }
-        inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), mb.size(), sizeof(char), handle); }
+        inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), 1, mb.size(), handle); }
     };
 
     FileWrapper report_file;
@@ -259,10 +258,6 @@ private:
 
     template <class CacheItem>
     using LocalCaches = std::vector<LocalCache<CacheItem>>;
-
-public:
-    using Threads = std::vector<std::thread>;
-private:
 
     /// Spawn workers symbolizing addresses obtained from PC table to internal local caches.
     /// Returns the thread pool.

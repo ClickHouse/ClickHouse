@@ -5,6 +5,16 @@ set (CLICKHOUSE_CLIENT_SOURCES
     Suggest.cpp
 )
 
+if (WITH_COVERAGE)
+    set_source_files_properties(
+        Client.cpp
+        ConnectionParameters.cpp
+        QueryFuzzer.cpp
+        Suggest.cpp
+
+        PROPERTIES COMPILE_FLAGS "-O3 -finline-functions ${WITHOUT_COVERAGE}")
+endif()
+
 set (CLICKHOUSE_CLIENT_LINK
     PRIVATE
         boost::program_options

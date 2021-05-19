@@ -28,11 +28,9 @@ Test entry:
 
 ```
 TEST
-SOURCE <source file id> <functions count> <lines count>
-<function 1 edge index> <call count>
-<function 2 edge index> <call count>
-<line 1 number> <call count>
-<line 2 number> <call count>
+SOURCE <source file id>
+<function 1 edge index> <function 2 edge index> (till end of line)
+<line 1 number> <line 2 number>
 ```
 
 Footer:

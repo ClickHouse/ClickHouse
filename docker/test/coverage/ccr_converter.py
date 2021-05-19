@@ -17,27 +17,28 @@ def convert_to_slim_genhtml_report(file_name: str):
         f.write("TN:global_report\n")
 
         for test in tests:
-            for source_id, (funcs_hit_f, lines_hit_f) in test.items():
+            for source_id, (test_funcs_hit, test_lines_hit) in test.items():
                 if source_id not in data:
-                    data[source_id] = funcs_hit_f, lines_hit_f
+                    data[source_id] = set(test_funcs_hit), set(test_lines_hit)
                 else:
                     funcs_hit, lines_hit = data[source_id]
-                    funcs_hit.update(funcs_hit_f)
-                    lines_hit.update(lines_hit_f)
+                    funcs_hit.update(test_funcs_hit)
+                    lines_hit.update(test_lines_hit)
 
         for i, (rel_path, funcs_instrumented, lines_instrumented) in enumerate(files):
             f.write("SF:{}\n".format(abs_path_to_src + rel_path))
 
-            funcs_hit, lines_hit = data[i] if i in data else (Counter(), Counter())
+            funcs_hit, lines_hit = data[i] if i in data else (set(), set())
 
             f.write("FNF:{}\nFNH:{}\n".format(len(funcs_instrumented), len(funcs_hit)))
             f.write("LF:{}\nLH:{}\n".format(len(lines_instrumented), len(lines_hit)))
 
             for edge_index, (func_name, func_line) in funcs_instrumented.items():
-                f.write("FNDA:{0},{1}\nFN:{2},{1}\n".format(funcs_hit[edge_index], func_name, func_line))
+                f.write("FNDA:{0},{1}\nFN:{2},{1}\n".format(
+                    1 if edge_index in funcs_hit else 0, func_name, func_line))
 
             for line in lines_instrumented:
-                f.write("DA:{},{}\n".format(line, lines_hit[line]))
+                f.write("DA:{},{}\n".format(line, 1 if line in lines_hit else 0))
 
             f.write("end_of_record\n")
 
@@ -81,11 +82,11 @@ def read_report(f: TextIO):
                 tests.append(tests_sources)
             break
 
-        source_id, funcs_count, lines_count = map(int, token.split()[1:])
+        source_id = int(token.split()[1])
+        funcs = list(map(int, next(f).split()))
+        lines = list(map(int, next(f).split()))
 
-        tests_sources[source_id] = \
-            Counter(dict([map(int, next(f).split()) for _ in range(funcs_count)])), \
-            Counter(dict([map(int, next(f).split()) for _ in range(lines_count)]))
+        tests_sources[source_id] = funcs, lines
 
     tests_names = f.readlines()
 

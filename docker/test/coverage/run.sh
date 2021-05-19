@@ -85,28 +85,15 @@ chmod 777 -R /var/lib/clickhouse
 
 wail_till_ready
 
-# clickhouse-client --query "SET coverage_tests_count=2"
-# clickhouse-client --query "SET coverage_test_name='client_initial_1'"
-# TODO Is not tracked as for now
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE test"
-
-# clickhouse-client --query "SET coverage_test_name='client_initial_2'"
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
-
-# clickhouse-client --query "SET coverage_test_name=''"
-# kill_clickhouse
-#
-# cp report.ccr ${OUTPUT_DIR}/client_report.ccr
-#
-# start_clickhouse
-# wail_till_ready
 
 clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --coverage \
     2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt

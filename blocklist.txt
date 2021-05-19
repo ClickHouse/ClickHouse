@@ -36,3 +36,6 @@ fun:_ZNKllvm*
 # internal memory routines
 fun:_ZN6Memory*
 fun:_ZN6Memory*
+# coverage runtime
+fun:_ZN6detail*
+fun:_ZNK6detail*

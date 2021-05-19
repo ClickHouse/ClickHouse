@@ -314,6 +314,30 @@ SERVER_DIED = False
 exit_code = 0
 stop_time = None
 
+def run_query(query_to_run: str, failures: int, increment_failures: bool = True):
+    global SERVER_DIED
+
+    clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+    failed_to_check = False
+
+    try:
+        clickhouse_proc.communicate((query_to_run), timeout=20)
+    except:
+        failed_to_check = True
+
+    if not increment_failures:
+        return True, failures
+
+    if not failed_to_check and clickhouse_proc.returncode == 0:
+        return True, failures
+
+    print("Server did not respond to query", query_to_run)
+
+    SERVER_DIED = True
+    stop_tests()
+
+    return False, failures + 1
+
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
     all_tests, suite, suite_dir, suite_tmp_dir = all_tests_with_params
@@ -348,33 +372,6 @@ def run_tests_array(all_tests_with_params):
 
     if all_tests:
         print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
-
-    def run_query(query_to_run: str, failures: int, increment_failures: bool = True):
-        global SERVER_DIED
-
-        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-
-        failed_to_check = False
-
-        try:
-            clickhouse_proc.communicate((query_to_run), timeout=20)
-        except:
-            failed_to_check = True
-
-        if increment_failures and (failed_to_check or clickhouse_proc.returncode != 0):
-            print("Server did not respond to query", query_to_run)
-
-            if failures:
-                print("Failed to get result from server")
-            else:
-                print("Return code", clickhouse_proc.returncode)
-
-            SERVER_DIED = True
-            stop_tests()
-
-            return False, failures + 1
-
-        return True, failures
 
     if args.coverage:
         run_query("SET coverage_tests_count={};".format(len(all_tests)), 0, False)
