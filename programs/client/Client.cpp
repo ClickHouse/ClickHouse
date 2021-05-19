@@ -1381,7 +1381,7 @@ private:
                 {
                     // Just report it, we'll terminate below.
                     fmt::print(stderr,
-                        "Error while reconnecting to the  server: Code: {}: {}\n",
+                        "Error while reconnecting to the server: Code: {}: {}\n",
                         getCurrentExceptionCode(),
                         getCurrentExceptionMessage(true));
 
