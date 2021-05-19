@@ -432,7 +432,7 @@ int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
 
 bool ColumnSparse::hasEqualValues() const
 {
-    return offsets->size() == 0;
+    return offsets->empty();
 }
 
 void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
@@ -638,8 +638,8 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
 void ColumnSparse::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
 {
     const auto & offsets_data = getOffsetsData();
-    auto start = from ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from) : offsets_data.begin();
-    auto end = limit ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from + limit) : offsets_data.end();
+    const auto * start = from ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from) : offsets_data.begin();
+    const auto * end = limit ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from + limit) : offsets_data.end();
 
     indices.assign(start, end);
 }
@@ -701,7 +701,7 @@ size_t ColumnSparse::getValueIndex(size_t n) const
     assert(n < _size);
 
     const auto & offsets_data = getOffsetsData();
-    auto it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
+    const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
     if (it == offsets_data.end() || *it != n)
         return 0;
 
