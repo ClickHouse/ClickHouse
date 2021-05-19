@@ -99,6 +99,13 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
+    auto serialization_info = std::make_shared<SerializationInfo>();
+
+    {
+        auto serialization_file = disk->readFile(path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+        serialization_info->readText(*serialization_file);
+    }
+
     /// This function calculates only checksum of file content (compressed or uncompressed).
     /// It also calculates checksum of projections.
     auto checksum_file = [&](const String & file_path, const String & file_name)
@@ -132,11 +139,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 const NamesAndTypesList & projection_columns_list = projection->getColumns();
                 for (const auto & projection_column : projection_columns_list)
                 {
-                    auto serialization = IDataType::getSerialization(projection_column, [&](const String & stream_name)
-                    {
-                        return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
-                    });
-
+                    auto serialization = IDataType::getSerialization(projection_column, *serialization_info);
                     serialization->enumerateStreams(
                         [&](const ISerialization::SubstreamPath & substream_path)
                         {
@@ -210,12 +213,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         for (const auto & column : columns_list)
         {
-            auto serialization = IDataType::getSerialization(column,
-                [&](const String & stream_name)
-                {
-                    return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
-                });
-
+            auto serialization = IDataType::getSerialization(column, *serialization_info);
             serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";

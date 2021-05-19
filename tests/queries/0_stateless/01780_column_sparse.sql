@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS t_sparse_1;
 
 CREATE TABLE t_sparse (id UInt64, u UInt64, s String, arr1 Array(String), arr2 Array(UInt64))
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.1;
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
 
 INSERT INTO t_sparse SELECT
     number,
@@ -31,7 +31,7 @@ SELECT arrayFilter(x -> x % 2 = 1, arr2) FROM t_sparse WHERE arr2 != [] LIMIT 5;
 
 CREATE TABLE t_sparse_1 (id UInt64, v Int64)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0;
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0;
 
 INSERT INTO t_sparse_1 VALUES (1, 6), (2, 1), (3, 0), (4, -1), (5, 0), (6, 0), (7, -2), (8, 0), (9, 0), (10, 4), (11, 0);
 

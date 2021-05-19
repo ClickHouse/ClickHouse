@@ -75,7 +75,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const SerializationInfo & serialization_info_,
+    const SerializationInfoPtr & serialization_info_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
@@ -85,7 +85,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
     {
-        serializations.emplace(it.name, it.type->getSerialization(it.name, serialization_info));
+        serializations.emplace(it.name, it.type->getSerialization(it.name, *serialization_info));
         addStreams(it, columns.getCodecDescOrDefault(it.name, default_codec));
     }
 }

@@ -166,7 +166,7 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
-    auto serialization = IDataType::getSerialization(name_and_type);
+    auto serialization = name_and_type.type->getDefaultSerialization();
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {

@@ -32,16 +32,6 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
     return assert_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
-ISerialization::Kinds SerializationTuple::getKinds() const
-{
-    Kinds kinds(Kind::DEFAULT);
-    kinds.subcolumns.reserve(elems.size());
-    for (const auto & elem : elems)
-        kinds.subcolumns.push_back(elem->getKind());
-
-    return kinds;
-}
-
 void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const auto & tuple = get<const Tuple &>(field);

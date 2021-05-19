@@ -102,7 +102,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const SerializationInfo & serialization_info_,
+        const SerializationInfoPtr & serialization_info_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity = {}) const = 0;
 
@@ -192,10 +192,9 @@ public:
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     /// TODO: add comment
-    SerializationInfo serialization_info;
+    SerializationInfoPtr serialization_info;
 
     size_t rows_count = 0;
-
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -398,7 +397,7 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Returns serialization for column according to files in which column is written in part.
+    /// Returns serialization for column according to serialization_info.
     SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
 
     /// Return some uniq string for file

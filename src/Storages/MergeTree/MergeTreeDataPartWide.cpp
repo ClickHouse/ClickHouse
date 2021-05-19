@@ -65,7 +65,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const CompressionCodecPtr & default_codec_,
-    const SerializationInfo & serialization_info_,
+    const SerializationInfoPtr & serialization_info_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
@@ -186,12 +186,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
         std::optional<UInt64> marks_size;
         for (const NameAndTypePair & name_type : columns)
         {
-            auto serialization = IDataType::getSerialization(name_type,
-                [&](const String & stream_name)
-                {
-                    return volume->getDisk()->exists(stream_name + DATA_FILE_EXTENSION);
-                });
-
+            auto serialization = IDataType::getSerialization(name_type, *serialization_info);
             serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 auto file_path = path + ISerialization::getFileNameForStream(name_type, substream_path) + index_granularity_info.marks_file_extension;
@@ -227,7 +222,7 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     };
 
     bool res = true;
-    auto serialization = IDataType::getSerialization(column, check_stream_exists);
+    auto serialization = IDataType::getSerialization(column, *serialization_info);
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         String file_name = ISerialization::getFileNameForStream(column, substream_path);
