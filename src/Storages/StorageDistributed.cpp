@@ -281,7 +281,9 @@ void replaceConstantExpressions(
     visitor.visit(node);
 }
 
-/// Returns one of the following:
+/// This is the implementation of optimize_distributed_group_by_sharding_key.
+/// It returns up to which stage the query can be processed on a shard, which
+/// is one of the following:
 /// - QueryProcessingStage::Complete
 /// - QueryProcessingStage::WithMergeableStateAfterAggregation
 /// - none (in this case regular WithMergeableState should be used)
