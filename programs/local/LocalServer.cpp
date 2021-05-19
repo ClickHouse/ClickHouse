@@ -439,7 +439,25 @@ try
         }
     }
 
-    std::cout << prompt_by_server_display_name << "\n";
+    /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
+    {
+        String unescaped_prompt_by_server_display_name;
+        ReadBufferFromString in(prompt_by_server_display_name);
+        readEscapedString(unescaped_prompt_by_server_display_name, in);
+        prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
+    }
+
+    /// Prompt may contain the following substitutions in a form of {name}.
+    std::map<String, String> prompt_substitutions{
+        {"host", connection_parameters.host},
+        {"port", toString(connection_parameters.port)},
+        {"user", connection_parameters.user},
+        {"display_name", server_display_name},
+    };
+
+    /// Quite suboptimal.
+    for (const auto & [key, value] : prompt_substitutions)
+        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
