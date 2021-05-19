@@ -432,7 +432,7 @@ try
 
     for (const String & key : keys)
     {
-        if (key != "default" && server_display_name.find(key) != std::string::npos)
+        if (key != "default")
         {
             prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
             break;
