@@ -35,6 +35,8 @@ public:
 
     bool canBePromoted() const override { return false; }
 
+    bool canBeUsedAsVersion() const override { return true; }
+
 protected:
     SerializationPtr doGetDefaultSerialization() const override;
 };
