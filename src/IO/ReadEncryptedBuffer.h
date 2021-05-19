@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 using namespace FileEncryption;
 
 class ReadEncryptedBuffer : public ReadBufferFromFileBase

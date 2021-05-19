@@ -85,7 +85,8 @@ public:
         return delegate->iterateDirectory(wrapped_path);
     }
 
-    void createFile(const String & path) override {
+    void createFile(const String & path) override
+    {
         auto wrapped_path = wrappedPath(path);
         delegate->createFile(wrapped_path);
     }
