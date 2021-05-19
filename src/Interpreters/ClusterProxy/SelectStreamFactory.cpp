@@ -77,10 +77,10 @@ namespace
 
 /// Special support for the case when `_shard_num` column is used in GROUP BY key expression.
 /// This column is a constant for shard.
-/// Constant expression with this colum may be removed from intermediate header.
+/// Constant expression with this column may be removed from intermediate header.
 /// However, this column is not constant for initiator, and it expect intermediate header has it.
 ///
-/// To fix it, the follwing trick is applied.
+/// To fix it, the following trick is applied.
 /// We check all GROUP BY keys which depend only on `_shard_num`.
 /// Calculate such expression for current shard if it is used in header.
 /// Those columns will be added to modified header as already known constants.
