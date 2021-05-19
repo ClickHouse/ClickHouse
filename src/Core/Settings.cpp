@@ -97,6 +97,10 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
     for (const auto & field : all())
     {
         const std::string_view name = field.getName();
+
+        if (name == "testmode")
+            continue;
+
         auto on_program_option
             = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
         options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(

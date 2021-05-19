@@ -22,6 +22,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Poco/Util/Application.h>
+
 
 namespace DB
 {
@@ -252,6 +254,32 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 )";
 
     return help;
+}
+
+static bool changeZooKeeperPath(std::string & path, ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (settings.testmode)
+    {
+        auto current_database = context->getCurrentDatabase();
+        const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+        if (config.has("testmode_zk_path_prefix"))
+        {
+            auto prefix = config.getString("testmode_zk_path_prefix");
+            if (prefix.empty() || prefix.back() != '/')
+                prefix += '/';
+
+            prefix += context->getCurrentDatabase();
+            path = prefix + path;
+
+            if (path[0] != '/')
+                path = '/' + path;
+
+            return true;
+        }
+    }
+
+    return false;
 }
 
 
@@ -501,6 +529,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         else
             throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
+
+        if (!args.attach && changeZooKeeperPath(zookeeper_path, args.getLocalContext()))
+            ast_zk_path->value = zookeeper_path;
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;

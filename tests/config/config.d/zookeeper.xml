@@ -5,4 +5,5 @@
             <port>9181</port>
         </node>
     </zookeeper>
+    <testmode_zk_path_prefix>/test</testmode_zk_path_prefix>
 </yandex>

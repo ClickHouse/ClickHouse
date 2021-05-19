@@ -2524,6 +2524,12 @@ public:
             exit(0);
         }
 
+        if (options.count("testmode"))
+        {
+            config().setBool("testmode", true);
+            cmd_settings.testmode = true;
+        }
+
         if (options.count("log-level"))
             Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
 
@@ -2608,8 +2614,6 @@ public:
             config().setBool("multiline", true);
         if (options.count("multiquery"))
             config().setBool("multiquery", true);
-        if (options.count("testmode"))
-            config().setBool("testmode", true);
         if (options.count("ignore-error"))
             config().setBool("ignore-error", true);
         if (options.count("format"))
