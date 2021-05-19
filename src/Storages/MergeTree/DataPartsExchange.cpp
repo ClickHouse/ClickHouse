@@ -483,6 +483,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
                 = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
         if (reservation)
         {
+            /// When we have multi-volume storage, one of them was chosen, depends on TTL, free space, etc.
+            /// Chosen one may be S3 or not.
             DiskPtr disk = reservation->getDisk();
             if (disk && disk->getType() == DiskType::Type::S3)
             {

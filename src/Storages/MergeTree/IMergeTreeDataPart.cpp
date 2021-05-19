@@ -187,7 +187,6 @@ static void incrementStateMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::add(CurrentMetrics::PartsDeleting);
             return;
         case IMergeTreeDataPart::State::DeleteOnDestroy:
-        case IMergeTreeDataPart::State::DeleteOnDestroyKeepS3:
             CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
@@ -213,7 +212,6 @@ static void decrementStateMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::sub(CurrentMetrics::PartsDeleting);
             return;
         case IMergeTreeDataPart::State::DeleteOnDestroy:
-        case IMergeTreeDataPart::State::DeleteOnDestroyKeepS3:
             CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
@@ -407,7 +405,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
-    if (state == State::DeleteOnDestroy || state == State::DeleteOnDestroyKeepS3 || is_temp)
+    if (state == State::DeleteOnDestroy || is_temp)
     {
         try
         {
@@ -431,11 +429,11 @@ void IMergeTreeDataPart::removeIfNeeded()
             }
 
             if (parent_part)
-                projectionRemove(parent_part->getFullRelativePath(), state == State::DeleteOnDestroyKeepS3);
+                projectionRemove(parent_part->getFullRelativePath(), keep_s3_on_delete);
             else
-                remove(state == State::DeleteOnDestroyKeepS3);
+                remove(keep_s3_on_delete);
 
-            if (state == State::DeleteOnDestroy || state == State::DeleteOnDestroyKeepS3)
+            if (state == State::DeleteOnDestroy)
             {
                 LOG_TRACE(storage.log, "Removed part from old location {}", path);
             }
@@ -480,8 +478,6 @@ String IMergeTreeDataPart::stateToString(IMergeTreeDataPart::State state)
             return "Deleting";
         case State::DeleteOnDestroy:
             return "DeleteOnDestroy";
-        case State::DeleteOnDestroyKeepS3:
-            return "DeleteOnDestroyKeepS3";
     }
 
     __builtin_unreachable();
