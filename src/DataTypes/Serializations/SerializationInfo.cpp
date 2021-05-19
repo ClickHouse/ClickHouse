@@ -66,11 +66,6 @@ SerializationInfoPtr SerializationInfoBuilder::build()
 
 SerializationInfoPtr SerializationInfoBuilder::buildFrom(const SerializationInfo & other)
 {
-    if (info->number_of_rows && info->number_of_rows != other.number_of_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot update SerializationInfo with {} rows by SerializationInfo with {} rows",
-            info->number_of_rows, other.number_of_rows);
-
     for (auto & [name, column_info] : other.columns)
     {
         auto it = info->columns.find(name);
