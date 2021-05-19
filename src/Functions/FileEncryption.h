@@ -15,12 +15,22 @@
 #include <cassert>
 #include <cmath>
 
-#include <Functions/FunctionsAES.h>
+#include <errno.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int DATA_ENCRYPTION_ERROR;
+}
+}
 
 namespace FileEncryption
 {
 
 constexpr size_t kIVSize = sizeof(DB::UInt128);
+
 
 class InitVector
 {
@@ -30,7 +40,7 @@ public:
     const char * GetRef() const
     {
         local = ToBigEndianString(iv + counter);
-	return local.data();
+        return local.data();
     }
 
     void Inc() { ++counter; }
@@ -42,14 +52,14 @@ private:
     {
         size_t size = kIVSize;
         size_t dev = std::pow(2, CHAR_BIT);
-	String result(size, 0);
+        String result(size, 0);
 
         for (size_t i = 0; i != size; ++i)
         {
             result[size - i - 1] = value % dev;
             value /= dev;
         }
-	return result;
+        return result;
     }
 
     DB::UInt128 FromBigEndianString(const String & str) const
@@ -57,18 +67,19 @@ private:
         size_t dev = std::pow(2, CHAR_BIT);
 	DB::UInt128 result = 0;
 
-	for (auto c : str)
-	{
-	    result *= dev;
-	    result += c % dev;
-	}
-	return result;
+        for (auto c : str)
+        {
+            result *= dev;
+            result += c % dev;
+        }
+        return result;
     }
 
     DB::UInt128 iv;
     DB::UInt128 counter = 0;
     mutable String local;
 };
+
 
 class EncryptionKey
 {
@@ -82,7 +93,6 @@ private:
 };
 
 
-
 String ReadIV(size_t size, DB::ReadBuffer & in)
 {
     String iv(size, 0);
@@ -93,7 +103,25 @@ String ReadIV(size_t size, DB::ReadBuffer & in)
 String GetRandomString(size_t size)
 {
     String iv(size, 0);
-    getrandom(iv.data(), size, GRND_NONBLOCK);
+    int ret = 0;
+    size_t cur = 0;
+
+    while (cur < size)
+    {
+        /// may be it's better to use GRND_RANDOM
+        ret = getrandom(iv.data() + cur, size - cur, 0);
+	if (ret < 0)
+        {
+            if (errno == EINTR) continue;
+            else break;
+        }
+        cur += ret;
+        ret = 0;
+    }
+
+    if (ret < 0)
+        throw DB::Exception("Failed to generate IV string with size " + std::to_string(size),
+                            DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
     return iv;
 }
 
@@ -118,6 +146,7 @@ const EVP_CIPHER * DefaultCipher()
     return EVP_aes_128_ctr();
 }
 
+
 class Encryption
 {
 public:
@@ -127,13 +156,15 @@ public:
         , key(key_)
         , block_size(CipherIVLength(evp_cipher))
     {
-        assert(iv_.size() == CipherIVLength(evp_cipher));
-        assert(key_.Size() == CipherKeyLength(evp_cipher));
+        if (iv_.size() != CipherIVLength(evp_cipher))
+            throw DB::Exception("Expected iv with size " + std::to_string(CipherIVLength(evp_cipher)) + ", got iv with size " + std::to_string(iv_.size()),
+                                DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
+        if (key_.Size() != CipherKeyLength(evp_cipher))
+            throw DB::Exception("Expected key with size " + std::to_string(CipherKeyLength(evp_cipher)) + ", got iv with size " + std::to_string(key_.Size()),
+                                DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         offset = BlockOffset(offset_);
     }
-
-    Poco::Logger * log = &Poco::Logger::get("FileEncryption");
 
 protected:
 
@@ -144,7 +175,7 @@ protected:
     size_t PartBlockSize(size_t size, size_t off)
     {
         assert(off < block_size);
-        // write the part as usual block
+        /// write the part as usual block
         if (off == 0)
             return 0;
         return off + size <= block_size ? size : (block_size - off) % block_size;
@@ -157,9 +188,10 @@ protected:
     const EncryptionKey key;
     size_t block_size;
 
-    // absolute offset
+    /// absolute offset
     size_t offset = 0;
 };
+
 
 class Encryptor : public Encryption
 {
@@ -196,9 +228,9 @@ public:
 private:
     String EncryptPartialBlock(const char * partial_block, size_t size, const InitVector & iv, size_t off) const
     {
-        using namespace OpenSSLDetails;
         if (size > block_size)
-            onError("Expecter partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off));
+            throw DB::Exception("Expecter partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off),
+                                DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         String plaintext(block_size, '\0');
         for (size_t i = 0; i < size; ++i)
@@ -209,8 +241,6 @@ private:
 
     String EncryptNBytes(const char * data, size_t bytes, const InitVector & iv) const
     {
-        using namespace OpenSSLDetails;
-
         String ciphertext(bytes, '\0');
         auto ciphertext_ref = ciphertext.data();
 
@@ -218,32 +248,33 @@ private:
         auto * evp_ctx = evp_ctx_ptr.get();
 
         if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
-            onError("Failed to initialize encryption context with cipher");
+            throw DB::Exception("Failed to initialize encryption context with cipher", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
             reinterpret_cast<const unsigned char*>(key.GetRef()),
             reinterpret_cast<const unsigned char*>(iv.GetRef())) != 1)
-            onError("Failed to set key and IV");
+            throw DB::Exception("Failed to set key and IV for encryption", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         int output_len = 0;
         if (EVP_EncryptUpdate(evp_ctx,
             reinterpret_cast<unsigned char*>(ciphertext_ref), &output_len,
             reinterpret_cast<const unsigned char*>(data), static_cast<int>(bytes)) != 1)
-            onError("Failed to encrypt");
+            throw DB::Exception("Failed to encrypt", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         ciphertext_ref += output_len;
 
         int final_output_len = 0;
         if (EVP_EncryptFinal_ex(evp_ctx,
             reinterpret_cast<unsigned char*>(ciphertext_ref), &final_output_len) != 1)
-            onError("Failed to fetch ciphertext");
+            throw DB::Exception("Failed to fetch ciphertext", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         if (output_len < 0 || final_output_len < 0 || size_t(output_len + final_output_len) != bytes)
-            onError("only part of the data was written");
+            throw DB::Exception("Only part of the data was encrypted", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
-	return ciphertext;
+        return ciphertext;
     }
 };
+
 
 class Decryptor : public Encryption
 {
@@ -276,9 +307,9 @@ public:
 private:
     void DecryptPartialBlock(DB::BufferBase::Position & to, const char * partial_block, size_t size, const InitVector & iv, size_t off) const
     {
-        using namespace OpenSSLDetails;
         if (size > block_size)
-            onError("Expecter partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off));
+            throw DB::Exception("Expecter partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off),
+                                DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         String ciphertext(block_size, '\0');
         String plaintext(block_size, '\0');
@@ -294,34 +325,32 @@ private:
 
     void DecryptNBytes(DB::BufferBase::Position & to, const char * data, size_t bytes, const InitVector & iv) const
     {
-        using namespace OpenSSLDetails;
-
         auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
         auto * evp_ctx = evp_ctx_ptr.get();
 
         if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
-            onError("Failed to initialize encryption context with cipher");
+            throw DB::Exception("Failed to initialize decryption context with cipher", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
             reinterpret_cast<const unsigned char*>(key.GetRef()),
             reinterpret_cast<const unsigned char*>(iv.GetRef())) != 1)
-            onError("Failed to set key and IV");
+            throw DB::Exception("Failed to set key and IV for decryption", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         int output_len = 0;
         if (EVP_DecryptUpdate(evp_ctx,
             reinterpret_cast<unsigned char*>(to), &output_len,
             reinterpret_cast<const unsigned char*>(data), static_cast<int>(bytes)) != 1)
-            onError("Failed to decrypt");
+            throw DB::Exception("Failed to decrypt", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         to += output_len;
 
         int final_output_len = 0;
         if (EVP_DecryptFinal_ex(evp_ctx,
             reinterpret_cast<unsigned char*>(to), &final_output_len) != 1)
-            onError("Failed to fetch ciphertext");
+            throw DB::Exception("Failed to fetch plaintext", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         if (output_len < 0 || final_output_len < 0 || size_t(output_len + final_output_len) != bytes)
-            onError("only part of the data was written");
+            throw DB::Exception("Only part of the data was decrypted", DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
     }
 };
 
