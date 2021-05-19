@@ -424,6 +424,21 @@ try
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G"};
 
+    Strings keys;
+
+    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+
+    config().keys("prompt_by_server_display_name", keys);
+
+    for (const String & key : keys)
+    {
+        if (key != "default" && server_display_name.find(key) != std::string::npos)
+        {
+            prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
+            break;
+        }
+    }
+
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
             if (config().getBool("highlight"))
@@ -443,13 +458,11 @@ try
     }
     else
     {
-        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
         do
         {
             auto input = lr.readLine(boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default")), ":-] ");
             if (input.empty())
                 break;
-
         } while (true);
 
         std::cout << "Bye." << std::endl;
