@@ -30,7 +30,6 @@
 #include <Common/UnicodeBar.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
-#include <Common/Suggest.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>

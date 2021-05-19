@@ -8,6 +8,7 @@
 #include <loggers/Loggers.h>
 #include <Poco/Util/Application.h>
 #include <Common/ProgressBar.h>
+#include <Common/Suggest.h>
 
 namespace DB
 {
@@ -51,6 +52,8 @@ protected:
     String prompt_by_server_display_name;
     /// Path to a file containing command history.
     String history_file;
+
+    std::optional<Suggest> suggest;
 
     /// Settings specified via command line args
     Settings cmd_settings;
