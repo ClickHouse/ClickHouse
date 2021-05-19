@@ -53,6 +53,8 @@ protected:
     /// Path to a file containing command history.
     String history_file;
 
+    ConnectionParameters connection_parameters;
+
     std::optional<Suggest> suggest;
 
     /// Settings specified via command line args

@@ -430,14 +430,14 @@ try
 
     config().keys("prompt_by_server_display_name", keys);
 
-    for (const String & key : keys)
-    {
-        if (key != "default")
-        {
-            prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
-            break;
-        }
-    }
+    /// Prompt may contain the following substitutions in a form of {name}.
+    std::map<String, String> prompt_substitutions{
+        {"host", connection_parameters.host},
+    };
+
+    /// Quite suboptimal.
+    for (const auto & [key, value] : prompt_substitutions)
+        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
 
 #if USE_REPLXX
