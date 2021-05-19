@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <common/logger_useful.h>
-#include <Common/MultiVersion.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 
@@ -41,22 +40,22 @@ struct DiskS3Settings
     int list_object_keys_size;
 };
 
+
 /**
  * Storage for persisting data in S3 and metadata on the local disk.
  * Files are represented by file in local filesystem (clickhouse_root/disks/disk_name/path/to/file)
  * that contains S3 object key with actual data.
  */
-class DiskS3 : public IDiskRemote
+class DiskS3 final : public IDiskRemote
 {
 public:
     using ObjectMetadata = std::map<std::string, std::string>;
     using Futures = std::vector<std::future<void>>;
+
     using SettingsPtr = std::unique_ptr<DiskS3Settings>;
     using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextConstPtr)>;
 
     friend class DiskS3Reservation;
-
-    class AwsS3KeyKeeper;
     struct RestoreInformation;
 
     DiskS3(
@@ -80,15 +79,10 @@ public:
         size_t buf_size,
         WriteMode mode) override;
 
+    void removeFromRemoteFS(const RemoteFSPathKeeper & keeper) final override;
+
     void moveFile(const String & from_path, const String & to_path, bool send_metadata);
     void moveFile(const String & from_path, const String & to_path) override;
-
-    void removeFile(const String & path) override { removeSharedFile(path, false); }
-    void removeFileIfExists(const String & path) override;
-    void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
-
-    void removeSharedFile(const String & path, bool keep_s3) override;
-    void removeSharedRecursive(const String & path, bool keep_s3) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
     void createHardLink(const String & src_path, const String & dst_path, bool send_metadata);
@@ -113,10 +107,6 @@ public:
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context) override;
 
 private:
-    void removeMeta(const String & path, AwsS3KeyKeeper & keys);
-    void removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys);
-    void removeAws(const AwsS3KeyKeeper & keys);
-
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
     /// Converts revision to binary string with leading zeroes (64 bit).
     static String revisionToString(UInt64 revision);
@@ -151,8 +141,8 @@ private:
     static String pathToDetached(const String & source_path);
 
     const String bucket;
-    MultiVersion<DiskS3Settings> current_settings;
 
+    MultiVersion<DiskS3Settings> current_settings;
     /// Gets disk settings from context.
     GetDiskSettings settings_getter;
 

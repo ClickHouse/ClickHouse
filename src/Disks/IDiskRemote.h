@@ -4,11 +4,40 @@
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 #include <Poco/DirectoryIterator.h>
+#include <utility>
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/HeadObjectRequest.h>
+#include <Common/MultiVersion.h>
 
 
 namespace DB
 {
 
+/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
+class RemoteFSPathKeeper : public std::list<Aws::Vector<Aws::S3::Model::ObjectIdentifier>>
+{
+public:
+    void addPath(const String & path)
+    {
+        if (empty() || back().size() >= chunk_limit)
+        { /// add one more chunk
+            push_back(value_type());
+            back().reserve(chunk_limit);
+        }
+
+        Aws::S3::Model::ObjectIdentifier obj;
+        obj.SetKey(path);
+        back().push_back(obj);
+    }
+
+private:
+    /// limit for one DeleteObject request
+    /// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+    const static size_t chunk_limit = 1000;
+};
 
 /// Base Disk class for remote FS's, which are not posix-compatible (DiskS3 and DiskHDFS)
 class IDiskRemote : public IDisk
@@ -26,9 +55,9 @@ public:
 
     struct Metadata;
 
-    const String & getName() const override { return name; }
+    const String & getName() const final override { return name; }
 
-    const String & getPath() const override { return metadata_path; }
+    const String & getPath() const final override { return metadata_path; }
 
     Metadata readMeta(const String & path) const;
 
@@ -56,6 +85,16 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
+    void removeFile(const String & path) override { removeSharedFile(path, false); }
+
+    void removeFileIfExists(const String & path) override;
+
+    void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
+
+    void removeSharedFile(const String & path, bool keep_in_remote_fs) override;
+
+    void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
+
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
     void setReadOnly(const String & path) override;
@@ -82,13 +121,20 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    virtual void removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper) = 0;
+
 protected:
+    Poco::Logger * log;
     const String name;
     const String remote_fs_root_path;
+
     const String metadata_path;
-    Poco::Logger * log;
 
 private:
+    void removeMeta(const String & path, RemoteFSPathKeeper & keys);
+
+    void removeMetaRecursive(const String & path, RemoteFSPathKeeper & keys);
+
     bool tryReserve(UInt64 bytes);
 
     UInt64 reserved_bytes = 0;

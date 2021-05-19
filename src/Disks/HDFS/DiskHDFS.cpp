@@ -26,14 +26,14 @@ namespace ErrorCodes
 DiskHDFS::DiskHDFS(
     const String & disk_name_,
     const String & hdfs_root_path_,
+    SettingsPtr settings_,
     const String & metadata_path_,
-    const Poco::Util::AbstractConfiguration & config_,
-    size_t min_bytes_for_seek_)
-    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskHDFS")
+    const Poco::Util::AbstractConfiguration & config_)
+    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskS3")
     , config(config_)
-    , min_bytes_for_seek(min_bytes_for_seek_)
     , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
     , hdfs_fs(createHDFSFS(hdfs_builder.get()))
+    , settings(std::move(settings_))
 {
 }
 
@@ -47,7 +47,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
     auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, buf_size);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
+    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
 
@@ -91,120 +91,34 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 }
 
 
-void DiskHDFS::removeFromRemoteFS(const Metadata & metadata)
+void DiskHDFS::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
 {
-    for (const auto & [hdfs_object_path, _] : metadata.remote_fs_objects)
+    if (!fs_paths_keeper.empty())
     {
-        /// Add path from root to file name
-        const size_t begin_of_path = remote_fs_root_path.find('/', remote_fs_root_path.find("//") + 2);
-        const String hdfs_path = remote_fs_root_path.substr(begin_of_path) + hdfs_object_path;
-
-        int res = hdfsDelete(hdfs_fs.get(), hdfs_path.c_str(), 0);
-        if (res == -1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
-    }
-}
-
-
-void DiskHDFS::removeSharedFile(const String & path, bool keep_in_remote_fs)
-{
-    removeMeta(path, keep_in_remote_fs);
-}
-
-
-void DiskHDFS::removeSharedRecursive(const String & path, bool keep_in_remote_fs)
-{
-    removeMetaRecursive(path, keep_in_remote_fs);
-}
-
-
-void DiskHDFS::removeFileIfExists(const String & path)
-{
-    if (Poco::File(metadata_path + path).exists())
-        removeMeta(path, /* keep_in_remote_fs */ false);
-}
-
-
-void DiskHDFS::removeRecursive(const String & path)
-{
-    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
-
-    Poco::File file(metadata_path + path);
-    if (file.isFile())
-    {
-        removeFile(path);
-    }
-    else
-    {
-        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            removeRecursive(it->path());
-        file.remove();
-    }
-}
-
-
-void DiskHDFS::removeMeta(const String & path, bool keep_in_remote_fs)
-{
-    Poco::File file(metadata_path + path);
-
-    if (!file.isFile())
-        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
-
-    try
-    {
-        auto metadata = readMeta(path);
-
-        /// If there is no references - delete content from remote FS.
-        if (metadata.ref_count == 0)
+        for (const auto & chunk : fs_paths_keeper)
         {
-            file.remove();
+            for (const auto & hdfs_object_path : chunk)
+            {
+                const String hdfs_path = hdfs_object_path.GetKey();
+                const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
 
-            if (!keep_in_remote_fs)
-                removeFromRemoteFS(metadata);
-        }
-        else /// In other case decrement number of references, save metadata and delete file.
-        {
-            --metadata.ref_count;
-            metadata.save();
-            file.remove();
+                /// Add path from root to file name
+                int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
+                if (res == -1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
+            }
         }
     }
-    catch (const Exception & e)
-    {
-        /// If it's impossible to read meta - just remove it from FS.
-        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
-        {
-            LOG_WARNING(
-                log,
-                "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
-                backQuote(path),
-                e.nested() ? e.nested()->message() : e.message());
-
-            file.remove();
-        }
-        else
-            throw;
-    }
 }
 
 
-void DiskHDFS::removeMetaRecursive(const String & path, bool keep_in_remote_fs)
+namespace
 {
-    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
-
-    Poco::File file(metadata_path + path);
-    if (file.isFile())
-    {
-        removeMeta(path, keep_in_remote_fs);
-    }
-    else
-    {
-        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            removeMetaRecursive(it->path(), keep_in_remote_fs);
-        file.remove();
-    }
+std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    return std::make_unique<DiskHDFSSettings>(config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
 }
-
+}
 
 void registerDiskHDFS(DiskFactory & factory)
 {
@@ -224,8 +138,9 @@ void registerDiskHDFS(DiskFactory & factory)
         String metadata_path = context_->getPath() + "disks/" + name + "/";
 
         return std::make_shared<DiskHDFS>(
-            name, uri, metadata_path, config,
-            config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
+            name, uri,
+            getSettings(config, config_prefix),
+            metadata_path, config);
     };
 
     factory.registerDiskType("hdfs", creator);
