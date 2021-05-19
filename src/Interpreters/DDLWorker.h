@@ -95,8 +95,6 @@ private:
     void runMainThread();
     void runCleanupThread();
 
-    void attachToThreadGroup();
-
 private:
     bool is_circular_replicated;
     Context & context;
@@ -131,7 +129,7 @@ private:
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
 
-    ThreadGroupStatusPtr thread_group;
+    std::atomic<UInt64> max_id = 0;
 
     friend class DDLQueryStatusInputStream;
     friend struct DDLTask;

@@ -114,8 +114,9 @@ FROM
 (
     SELECT 
         1 AS id,
-        CAST(1, \'UInt8\') AS subquery
+        identity(CAST(1, \'UInt8\')) AS subquery
 )
+WHERE subquery = 1
 1	1
 SELECT 
     a,

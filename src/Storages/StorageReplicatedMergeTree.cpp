@@ -385,12 +385,12 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     if (replicas.empty())
         return;
 
-    zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
 
     std::set<String> inactive_replicas;
     for (const String & replica : replicas)
     {
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
+        zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
 
         while (!partial_shutdown_called)
         {
@@ -414,9 +414,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             String mutation_pointer = zookeeper_path + "/replicas/" + replica + "/mutation_pointer";
             std::string mutation_pointer_value;
-            Coordination::Stat get_stat;
             /// Replica could be removed
-            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, &get_stat, wait_event))
+            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
             {
                 LOG_WARNING(log, "Replica {} was removed", replica);
                 break;
@@ -426,8 +425,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             /// Replica can become inactive, so wait with timeout and recheck it
             if (wait_event->tryWait(1000))
-                break;
+                continue;
 
+            /// Here we check mutation for errors or kill on local replica. If they happen on this replica
+            /// they will happen on each replica, so we can check only in-memory info.
             auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
             if (!mutation_status || !mutation_status->latest_fail_reason.empty())
                 break;
@@ -444,6 +445,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         std::set<String> mutation_ids;
         mutation_ids.insert(mutation_id);
 
+        /// Here we check mutation for errors or kill on local replica. If they happen on this replica
+        /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
         checkMutationStatus(mutation_status, mutation_ids);
 
@@ -1526,9 +1529,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     if (source_part->name != source_part_name)
     {
-        throw Exception("Part " + source_part_name + " is covered by " + source_part->name
-            + " but should be mutated to " + entry.new_part_name + ". This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        LOG_WARNING(log, "Part " + source_part_name + " is covered by " + source_part->name
+                    + " but should be mutated to " + entry.new_part_name + ". "
+                    + "Possibly the mutation of this part is not needed and will be skipped. This shouldn't happen often.");
+        return false;
     }
 
     /// TODO - some better heuristic?
@@ -3536,7 +3540,7 @@ void StorageReplicatedMergeTree::shutdown()
 
     /// We clear all old parts after stopping all background operations. It's
     /// important, because background operations can produce temporary parts
-    /// which will remove themselves in their descrutors. If so, we may have
+    /// which will remove themselves in their destructors. If so, we may have
     /// race condition between our remove call and background process.
     clearOldPartsFromFilesystem(true);
 }

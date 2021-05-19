@@ -162,6 +162,16 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         lit->alias = subquery.alias;
         lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
+
+        /// If only analyze was requested the expression is not suitable for constant folding, disable it.
+        if (data.only_analyze)
+        {
+            ast->as<ASTFunction>()->alias.clear();
+            auto func = makeASTFunction("identity", std::move(ast));
+            func->alias = subquery.alias;
+            func->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+            ast = std::move(func);
+        }
     }
     else
     {

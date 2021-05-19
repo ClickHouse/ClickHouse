@@ -5,6 +5,7 @@
 #include <Interpreters/executeQuery.h>
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
+#include <Common/setThreadName.h>
 #include <random>
 
 #if !defined(ARCADIA_BUILD)
@@ -49,6 +50,8 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
+    setThreadName("PostgresHandler");
+    ThreadStatus thread_status;
     connection_context.makeSessionContext();
     connection_context.setDefaultFormat("PostgreSQLWire");
 
@@ -275,8 +278,10 @@ void PostgreSQLHandler::processQuery()
 
         for (const auto & spl_query : queries)
         {
+            /// FIXME why do we execute all queries in a single connection context?
+            CurrentThread::QueryScope query_scope{connection_context};
             ReadBufferFromString read_buf(spl_query);
-            executeQuery(read_buf, *out, true, connection_context, {});
+            executeQuery(read_buf, *out, false, connection_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);

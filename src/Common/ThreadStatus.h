@@ -132,6 +132,11 @@ public:
         return query_id;
     }
 
+    const Context * getQueryContext() const
+    {
+        return query_context;
+    }
+
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
 
@@ -150,7 +155,7 @@ public:
     void setFatalErrorCallback(std::function<void()> callback);
     void onFatalError();
 
-    /// Sets query context for current thread and its thread group
+    /// Sets query context for current master thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
     void attachQueryContext(Context & query_context);
 
@@ -164,6 +169,8 @@ public:
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
 protected:
+    void applyQuerySettings();
+
     void initPerformanceCounters();
 
     void initQueryProfiler();

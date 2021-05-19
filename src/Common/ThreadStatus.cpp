@@ -4,6 +4,7 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
 #include <common/getThreadId.h>
@@ -50,6 +51,11 @@ ThreadStatus::~ThreadStatus()
         /// It's a minor tracked memory leak here (not the memory itself but it's counter).
         /// We've already allocated a little bit more then the limit and cannot track it in the thread memory tracker or its parent.
     }
+
+#if !defined(ARCADIA_BUILD)
+    /// It may cause segfault if query_context was destroyed, but was not detached
+    assert((!query_context && query_id.empty()) || (query_context && query_id == query_context->getCurrentQueryId()));
+#endif
 
     if (deleter)
         deleter();
