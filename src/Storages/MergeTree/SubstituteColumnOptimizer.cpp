@@ -146,15 +146,11 @@ public:
         if (identifier && data.name_to_component_id.contains(identifier->name()))
         {
             const String & name = identifier->name();
-            //Poco::Logger::get("NAME").information(name);
             const auto component_id = data.name_to_component_id.at(name);
-            //Poco::Logger::get("COMP").information(std::to_string(component_id));
             auto new_ast = data.id_to_expression_map.at(component_id)->clone();
-            //Poco::Logger::get("NEW_AST").information(new_ast->dumpTree());
             if (data.is_select)
             {
                 new_ast->setAlias(data.old_name.at(name));
-                //Poco::Logger::get("OLD").information(data.old_name.at(name));
             }
             ast = new_ast;
         }
@@ -195,7 +191,6 @@ void bruteforce(
         {
             min_price = current_price;
             min_expressions = expressions_stack;
-            //Poco::Logger::get("PRICE").information("UPDATE");
         }
     }
     else
@@ -324,12 +319,6 @@ void SubstituteColumnOptimizer::perform()
 
     for (size_t i = 0; i < components_list.size(); ++i)
         id_to_expression_map[components_list[i]] = min_expressions[i];
-
-    /*Poco::Logger::get("comp list").information("CL");
-    for (const auto id : components_list)
-        Poco::Logger::get("comp list").information(std::to_string(id));
-    for (const auto & [k, v] : id_to_expression_map)
-        Poco::Logger::get("id2expr").information(std::to_string(k) + " " + v->dumpTree());*/
 
     auto process = [&](ASTPtr & ast, bool is_select)
     {

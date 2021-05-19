@@ -118,7 +118,6 @@ namespace
         CNFQuery::OrGroup result;
         for (const auto & atom : group)
         {
-            Poco::Logger::get("INDEX_HINT_CREATE").information("CHECK");
             const auto * func = atom.ast->as<ASTFunction>();
             if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
             {
@@ -137,7 +136,6 @@ namespace
 
                         if (canBeSequence(need_result, actual_result))
                         {
-                            Poco::Logger::get("INDEX_HINT_CREATE").information(func->arguments->children[index]->getColumnName() + " " + primary_key_ast->getColumnName());
                             ASTPtr helper_ast = func->clone();
                             auto * helper_func = helper_ast->as<ASTFunction>();
                             helper_func->name = getReverseRelationMap().at(mostStrict(need_result, actual_result));

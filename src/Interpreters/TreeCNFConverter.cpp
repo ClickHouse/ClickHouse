@@ -32,11 +32,10 @@ void splitMultiLogic(ASTPtr & node)
         }
 
         auto * new_func = node->as<ASTFunction>();
-        Poco::Logger::get("new_func_children").information(std::to_string(new_func->arguments->children.size()));
         for (auto & child : new_func->arguments->children)
             splitMultiLogic(child);
     }
-    else if (func->name == "not")
+    else if (func && func->name == "not")
     {
         for (auto & child : func->arguments->children)
             splitMultiLogic(child);
@@ -168,24 +167,14 @@ CNFQuery TreeCNFConverter::toCNF(const ASTPtr & query)
     auto cnf = query->clone();
 
     splitMultiLogic(cnf);
-    Poco::Logger::get("CNF CONVERSION").information("SPLIT:" + cnf->dumpTree());
-    Poco::Logger::get("CNF CONVERSION").information("SPLIT:" + cnf->getColumnName());
     traversePushNot(cnf, false);
-
-    Poco::Logger::get("PUSH NOT").information("SPLIT:" + cnf->dumpTree());
-    Poco::Logger::get("PUSH NOT").information("SPLIT:" + cnf->getColumnName());
-
     traversePushOr(cnf);
-
-    Poco::Logger::get("PUSH OR").information("SPLIT:" + cnf->dumpTree());
-    Poco::Logger::get("PUSH OR").information("SPLIT:" + cnf->getColumnName());
-
     CNFQuery::AndGroup and_group;
     traverseCNF(cnf, and_group);
 
     CNFQuery result{std::move(and_group)};
 
-    Poco::Logger::get("CNF CONVERSION").information("DONE: " + result.dump());
+    Poco::Logger::get("TreeCNFConverter").information("Converted to CNF: " + result.dump());
     return result;
 }
 

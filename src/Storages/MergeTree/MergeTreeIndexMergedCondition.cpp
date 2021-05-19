@@ -163,6 +163,10 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
             throw Exception("Only hypothesis index is supported here.", ErrorCodes::LOGICAL_ERROR);
         values.push_back(granule->met);
     }
+
+    if (const auto it = answerCache.find(values); it != std::end(answerCache))
+        return it->second;
+
     const auto & graph = getGraph(values);
 
     bool always_false = false;
@@ -176,7 +180,6 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
             {
                 CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
                 pushNotIn(atom);
-                Poco::Logger::get("KEK").information(atom.ast->dumpTree());
                 const auto * func = atom.ast->as<ASTFunction>();
                 if (func && func->arguments->children.size() == 2)
                 {
@@ -191,12 +194,12 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
             }
             always_false = true;
        });
+    answerCache[values] = !always_false;
     return !always_false;
 }
 
 std::unique_ptr<ComparisonGraph> MergeTreeIndexMergedCondition::buildGraph(const std::vector<bool> & values) const
 {
-    Poco::Logger::get("MergeTreeIndexMergedCondition").information("New graph");
     std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
     for (size_t i = 0; i < values.size(); ++i)
     {
@@ -208,7 +211,7 @@ std::unique_ptr<ComparisonGraph> MergeTreeIndexMergedCondition::buildGraph(const
     }
     return std::make_unique<ComparisonGraph>(active_atomic_formulas);
 }
-
+// something strange))
 const ComparisonGraph & MergeTreeIndexMergedCondition::getGraph(const std::vector<bool> & values) const
 {
     if (!graphCache.contains(values))
