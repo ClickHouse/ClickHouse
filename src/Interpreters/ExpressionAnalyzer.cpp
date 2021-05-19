@@ -1347,7 +1347,6 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result, CompileExpressions compile_expressions)
 {
-    /// TODO: Add checks here
     return std::make_shared<ExpressionActions>(
         getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext()), compile_expressions);
 }
