@@ -11,7 +11,7 @@
 #include <Disks/HDFS/DiskHDFS.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-const String hdfs_uri = "hdfs://192.168.112.2:9000/disk_test/";
+const String hdfs_uri = "hdfs://172.20.0.2:9000/disk_test/";
 const String metadata_path = "/home/kssenii/metadata/";
 const String config_path = "/home/kssenii/ClickHouse/programs/server/config.xml";
 const String file_name = "test.txt";
@@ -20,7 +20,8 @@ const String file_name = "test.txt";
 TEST(DiskTestHDFS, RemoveFileHDFS)
 {
     Poco::Util::AbstractConfiguration *config = new Poco::Util::XMLConfiguration(config_path);
-    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, metadata_path, *config, 1000);
+    auto settings = std::make_unique<DB::DiskHDFSSettings>(1024 * 1024);
+    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, std::move(settings), metadata_path, *config);
 
     DB::HDFSBuilderWrapper builder = DB::createHDFSBuilder(hdfs_uri, *config);
     DB::HDFSFSPtr fs = DB::createHDFSFS(builder.get());
@@ -43,7 +44,8 @@ TEST(DiskTestHDFS, RemoveFileHDFS)
 TEST(DiskTestHDFS, WriteReadHDFS)
 {
     Poco::Util::AbstractConfiguration *config = new Poco::Util::XMLConfiguration(config_path);
-    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, metadata_path, *config, 1000);
+    auto settings = std::make_unique<DB::DiskHDFSSettings>(1024 * 1024);
+    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, std::move(settings), metadata_path, *config);
 
     {
         auto out = disk.writeFile(file_name, 1024, DB::WriteMode::Rewrite);
@@ -64,7 +66,8 @@ TEST(DiskTestHDFS, WriteReadHDFS)
 TEST(DiskTestHDFS, RewriteFileHDFS)
 {
     Poco::Util::AbstractConfiguration *config = new Poco::Util::XMLConfiguration(config_path);
-    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, metadata_path, *config, 1000);
+    auto settings = std::make_unique<DB::DiskHDFSSettings>(1024 * 1024);
+    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, std::move(settings), metadata_path, *config);
 
     for (size_t i = 1; i <= 10; ++i)
     {
@@ -88,7 +91,8 @@ TEST(DiskTestHDFS, RewriteFileHDFS)
 TEST(DiskTestHDFS, AppendFileHDFS)
 {
     Poco::Util::AbstractConfiguration *config = new Poco::Util::XMLConfiguration(config_path);
-    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, metadata_path, *config, 1000);
+    auto settings = std::make_unique<DB::DiskHDFSSettings>(1024 * 1024);
+    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, std::move(settings), metadata_path, *config);
 
     {
         std::unique_ptr<DB::WriteBuffer> out = disk.writeFile(file_name, 1024, DB::WriteMode::Append);
@@ -117,7 +121,8 @@ TEST(DiskTestHDFS, AppendFileHDFS)
 TEST(DiskTestHDFS, SeekHDFS)
 {
     Poco::Util::AbstractConfiguration *config = new Poco::Util::XMLConfiguration(config_path);
-    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, metadata_path, *config, 1000);
+    auto settings = std::make_unique<DB::DiskHDFSSettings>(1024 * 1024);
+    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, std::move(settings), metadata_path, *config);
 
     {
         std::unique_ptr<DB::WriteBuffer> out = disk.writeFile(file_name, 1024, DB::WriteMode::Rewrite);

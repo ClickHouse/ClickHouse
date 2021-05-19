@@ -16,17 +16,11 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
-#include <Common/checkStackSize.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
+#include <Common/checkStackSize.h>
 #include <Common/ThreadPool.h>
-
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/HeadObjectRequest.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -41,35 +35,9 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_DELETE_DIRECTORY;
     extern const int LOGICAL_ERROR;
 }
 
-
-/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
-class DiskS3::AwsS3KeyKeeper : public std::list<Aws::Vector<Aws::S3::Model::ObjectIdentifier>>
-{
-public:
-    void addKey(const String & key);
-
-private:
-    /// limit for one DeleteObject request
-    /// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
-    const static size_t chunk_limit = 1000;
-};
-
-void DiskS3::AwsS3KeyKeeper::addKey(const String & key)
-{
-    if (empty() || back().size() >= chunk_limit)
-    { /// add one more chunk
-        push_back(value_type());
-        back().reserve(chunk_limit);
-    }
-
-    Aws::S3::Model::ObjectIdentifier obj;
-    obj.SetKey(key);
-    back().push_back(obj);
-}
 
 String getRandomName()
 {
@@ -400,76 +368,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     return std::make_unique<WriteIndirectBufferFromS3>(std::move(s3_buffer), std::move(metadata), s3_path);
 }
 
-void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
+void DiskS3::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
 {
-    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
-
-    Poco::File file(metadata_path + path);
-
-    if (!file.isFile())
-        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
-
-    try
-    {
-        auto metadata = readMeta(path);
-
-        /// If there is no references - delete content from S3.
-        if (metadata.ref_count == 0)
-        {
-            file.remove();
-
-            for (const auto & [s3_object_path, _] : metadata.remote_fs_objects)
-                keys.addKey(remote_fs_root_path + s3_object_path);
-        }
-        else /// In other case decrement number of references, save metadata and delete file.
-        {
-            --metadata.ref_count;
-            metadata.save();
-            file.remove();
-        }
-    }
-    catch (const Exception & e)
-    {
-        /// If it's impossible to read meta - just remove it from FS.
-        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
-        {
-            LOG_WARNING(
-                log,
-                "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
-                backQuote(path),
-                e.nested() ? e.nested()->message() : e.message());
-
-            file.remove();
-        }
-        else
-            throw;
-    }
-}
-
-void DiskS3::removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys)
-{
-    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
-
-    Poco::File file(metadata_path + path);
-    if (file.isFile())
-    {
-        removeMeta(path, keys);
-    }
-    else
-    {
-        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            removeMetaRecursive(it->path(), keys);
-        file.remove();
-    }
-}
-
-void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
-{
-    if (!keys.empty())
+    if (!fs_paths_keeper.empty())
     {
         auto settings = current_settings.get();
 
-        for (const auto & chunk : keys)
+        for (const auto & chunk : fs_paths_keeper)
         {
             Aws::S3::Model::Delete delkeys;
             delkeys.SetObjects(chunk);
@@ -484,36 +389,9 @@ void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
     }
 }
 
-void DiskS3::removeFileIfExists(const String & path)
-{
-    AwsS3KeyKeeper keys;
-    if (Poco::File(metadata_path + path).exists())
-    {
-        removeMeta(path, keys);
-        removeAws(keys);
-    }
-}
-
-void DiskS3::removeSharedFile(const String & path, bool keep_s3)
-{
-    AwsS3KeyKeeper keys;
-    removeMeta(path, keys);
-    if (!keep_s3)
-        removeAws(keys);
-}
-
-void DiskS3::removeSharedRecursive(const String & path, bool keep_s3)
-{
-    AwsS3KeyKeeper keys;
-    removeMetaRecursive(path, keys);
-    if (!keep_s3)
-        removeAws(keys);
-}
-
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
 {
     auto settings = current_settings.get();
-
     createHardLink(src_path, dst_path, settings->send_metadata);
 }
 

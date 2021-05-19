@@ -10,6 +10,7 @@
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
+#include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
 
 
@@ -22,6 +23,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int FILE_ALREADY_EXISTS;
     extern const int PATH_ACCESS_DENIED;;
+    extern const int CANNOT_DELETE_DIRECTORY;
 }
 
 
@@ -173,6 +175,66 @@ IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 }
 
 
+void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeper & fs_paths_keeper)
+{
+    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
+
+    Poco::File file(metadata_path + path);
+
+    if (!file.isFile())
+        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
+
+    try
+    {
+        auto metadata = readMeta(path);
+
+        /// If there is no references - delete content from remote FS.
+        if (metadata.ref_count == 0)
+        {
+            file.remove();
+            for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
+                fs_paths_keeper.addPath(remote_fs_root_path + remote_fs_object_path);
+        }
+        else /// In other case decrement number of references, save metadata and delete file.
+        {
+            --metadata.ref_count;
+            metadata.save();
+            file.remove();
+        }
+    }
+    catch (const Exception & e)
+    {
+        /// If it's impossible to read meta - just remove it from FS.
+        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
+        {
+            LOG_WARNING(log,
+                "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
+                backQuote(path), e.nested() ? e.nested()->message() : e.message());
+            file.remove();
+        }
+        else
+            throw;
+    }
+}
+
+
+void IDiskRemote::removeMetaRecursive(const String & path, RemoteFSPathKeeper & fs_paths_keeper)
+{
+    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
+
+    Poco::File file(metadata_path + path);
+    if (file.isFile())
+    {
+        removeMeta(path, fs_paths_keeper);
+    }
+    else
+    {
+        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
+            removeMetaRecursive(it->path(), fs_paths_keeper);
+        file.remove();
+    }
+}
+
 DiskPtr DiskRemoteReservation::getDisk(size_t i) const
 {
     if (i != 0)
@@ -224,10 +286,10 @@ IDiskRemote::IDiskRemote(
     const String & log_name_,
     std::unique_ptr<Executor> executor_)
     : IDisk(std::move(executor_))
+    , log(&Poco::Logger::get(log_name_))
     , name(name_)
     , remote_fs_root_path(remote_fs_root_path_)
     , metadata_path(metadata_path_)
-    , log(&Poco::Logger::get(log_name_))
 {
 }
 
@@ -279,6 +341,35 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
     }
     else
         moveFile(from_path, to_path);
+}
+
+
+void IDiskRemote::removeFileIfExists(const String & path)
+{
+    RemoteFSPathKeeper fs_paths_keeper;
+    if (Poco::File(metadata_path + path).exists())
+    {
+        removeMeta(path, fs_paths_keeper);
+        removeFromRemoteFS(fs_paths_keeper);
+    }
+}
+
+
+void IDiskRemote::removeSharedFile(const String & path, bool keep_remote_fs)
+{
+    RemoteFSPathKeeper fs_paths_keeper;
+    removeMeta(path, fs_paths_keeper);
+    if (!keep_remote_fs)
+        removeFromRemoteFS(fs_paths_keeper);
+}
+
+
+void IDiskRemote::removeSharedRecursive(const String & path, bool keep_remote_fs)
+{
+    RemoteFSPathKeeper fs_paths_keeper;
+    removeMetaRecursive(path, fs_paths_keeper);
+    if (!keep_remote_fs)
+        removeFromRemoteFS(fs_paths_keeper);
 }
 
 
@@ -375,7 +466,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
     std::lock_guard lock(reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(log, "Reserving 0 bytes on s3 disk {}", backQuote(name));
+        LOG_DEBUG(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }

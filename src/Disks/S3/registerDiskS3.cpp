@@ -225,4 +225,3 @@ void registerDiskS3(DiskFactory & factory)
 void registerDiskS3(DiskFactory &) {}
 
 #endif
-
