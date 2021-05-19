@@ -430,7 +430,7 @@ try
 
     server_display_name = config().getString("host", "localhost");
 
-    server_display_name = connection->getServerDisplayName(connection_parameters.timeouts;
+    server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
 
     /// Prompt may contain the following substitutions in a form of {name}.
     std::map<String, String> prompt_substitutions{
