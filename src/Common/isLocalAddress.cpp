@@ -22,7 +22,8 @@ namespace
 
 struct NetworkInterfaces
 {
-    ifaddrs * ifaddr;
+    const ifaddrs * ifaddr;
+
     NetworkInterfaces()
     {
         if (getifaddrs(&ifaddr) == -1)
@@ -33,7 +34,7 @@ struct NetworkInterfaces
 
     bool hasAddress(const Poco::Net::IPAddress & address) const
     {
-        ifaddrs * iface;
+        const ifaddrs * iface;
         for (iface = ifaddr; iface != nullptr; iface = iface->ifa_next)
         {
             /// Point-to-point (VPN) addresses may have NULL ifa_addr
@@ -52,7 +53,7 @@ struct NetworkInterfaces
                 }
                 case AF_INET6:
                 {
-                    interface_address.emplace(&reinterpret_cast<const struct sockaddr_in6*>(iface->ifa_addr)->sin6_addr, sizeof(struct in6_addr));
+                    interface_address.emplace(&reinterpret_cast<const struct sockaddr_in6 *>(iface->ifa_addr)->sin6_addr, sizeof(struct in6_addr));
                     break;
                 }
                 default:
