@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ConnectionParameters.h"
+#include "../../programs/client/ConnectionParameters.h"
 
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>

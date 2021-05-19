@@ -1,6 +1,5 @@
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
-#include "Suggest.h"
 #include "TestHint.h"
 
 #if USE_REPLXX
@@ -42,6 +41,7 @@
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/PODArray.h>
+#include <Common/Suggest.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
