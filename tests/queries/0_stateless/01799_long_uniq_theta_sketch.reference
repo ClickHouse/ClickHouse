@@ -1,4 +1,4 @@
-uniqThetaSketch
+uniqTheta
 1	1
 3	1
 6	1
@@ -51,7 +51,7 @@ uniqThetaSketch
 31	54139
 35	52331
 36	53766
-uniqThetaSketch round(float)
+uniqTheta round(float)
 0.125	1
 0.5	1
 0.05	1
@@ -104,7 +104,7 @@ uniqThetaSketch round(float)
 0.043	54690
 0.037	53716
 0.071	53479
-uniqThetaSketch round(toFloat32())
+uniqTheta round(toFloat32())
 0.5	1
 0.05	1
 0.25	1
@@ -157,7 +157,7 @@ uniqThetaSketch round(toFloat32())
 0.037	53716
 0.1	54408
 1	55018
-uniqThetaSketch IPv4NumToString
+uniqTheta IPv4NumToString
 1	1
 3	1
 6	1
@@ -210,9 +210,9 @@ uniqThetaSketch IPv4NumToString
 31	54012
 35	54826
 36	54910
-uniqThetaSketch remote()
+uniqTheta remote()
 1
-uniqThetaSketch precise
+uniqTheta precise
 10000000
 10021957
 10021969

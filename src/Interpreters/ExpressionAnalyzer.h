@@ -209,6 +209,7 @@ struct ExpressionAnalysisResult
     bool has_order_by   = false;
     bool has_window = false;
 
+    String where_column_name;
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
@@ -230,6 +231,9 @@ struct ExpressionAnalysisResult
     /// Columns from the SELECT list, before renaming them to aliases. Used to
     /// perform SELECT DISTINCT.
     Names selected_columns;
+
+    /// Columns to read from storage if any.
+    Names required_columns;
 
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;

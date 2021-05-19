@@ -14,7 +14,7 @@ namespace DB
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class WriteBufferFromHDFS : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromHDFS final : public BufferWithOwnMemory<WriteBuffer>
 {
 
 public:
@@ -26,11 +26,13 @@ public:
 
     WriteBufferFromHDFS(WriteBufferFromHDFS &&) = default;
 
-    void nextImpl() override;
-
     ~WriteBufferFromHDFS() override;
 
+    void nextImpl() override;
+
     void sync() override;
+
+    void finalize() override;
 
 private:
     struct WriteBufferFromHDFSImpl;
