@@ -14,7 +14,6 @@ class JoiningTransform;
 class ExpressionStep : public ITransformingStep
 {
 public:
-    using Transform = ExpressionTransform;
 
     explicit ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_);
     String getName() const override { return "Expression"; }

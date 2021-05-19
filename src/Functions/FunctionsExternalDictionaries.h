@@ -27,7 +27,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/castColumn.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <ext/range.h>
 

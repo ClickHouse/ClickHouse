@@ -161,7 +161,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             query_info.merge_tree_data_select_cache.get());
     }
 
-    LOG_DEBUG(log, "Choose projection {}", query_info.projection->desc->name);
+    LOG_DEBUG(
+        log,
+        "Choose {} projection {}",
+        ProjectionDescription::typeToString(query_info.projection->desc->type),
+        query_info.projection->desc->name);
 
     if (query_info.projection->merge_tree_data_select_base_cache->sum_marks
             + query_info.projection->merge_tree_data_select_projection_cache->sum_marks
@@ -280,25 +284,27 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                             descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
             }
 
-            Aggregator::Params params(
-                header_before_aggregation,
-                keys,
-                aggregates,
-                query_info.projection->aggregate_overflow_row,
-                settings.max_rows_to_group_by,
-                settings.group_by_overflow_mode,
-                settings.group_by_two_level_threshold,
-                settings.group_by_two_level_threshold_bytes,
-                settings.max_bytes_before_external_group_by,
-                settings.empty_result_for_aggregation_by_empty_set,
-                context->getTemporaryVolume(),
-                settings.max_threads,
-                settings.min_free_disk_space_for_temporary_data);
-
-            auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
-
+            AggregatingTransformParamsPtr transform_params;
             if (projection)
             {
+                Aggregator::Params params(
+                    header_before_aggregation,
+                    keys,
+                    aggregates,
+                    query_info.projection->aggregate_overflow_row,
+                    settings.max_rows_to_group_by,
+                    settings.group_by_overflow_mode,
+                    settings.group_by_two_level_threshold,
+                    settings.group_by_two_level_threshold_bytes,
+                    settings.max_bytes_before_external_group_by,
+                    settings.empty_result_for_aggregation_by_empty_set,
+                    context->getTemporaryVolume(),
+                    settings.max_threads,
+                    settings.min_free_disk_space_for_temporary_data,
+                    header_before_aggregation); // The source header is also an intermediate header
+
+                transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
+
                 /// This part is hacky.
                 /// We want AggregatingTransform to work with aggregate states instead of normal columns.
                 /// It is almost the same, just instead of adding new data to aggregation state we merge it with existing.
@@ -307,6 +313,25 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 /// * is not merged completely (we may have states with the same key in different parts)
                 /// * is not split into buckets (so if we just use MergingAggregated, it will use single thread)
                 transform_params->only_merge = true;
+            }
+            else
+            {
+                Aggregator::Params params(
+                    header_before_aggregation,
+                    keys,
+                    aggregates,
+                    query_info.projection->aggregate_overflow_row,
+                    settings.max_rows_to_group_by,
+                    settings.group_by_overflow_mode,
+                    settings.group_by_two_level_threshold,
+                    settings.group_by_two_level_threshold_bytes,
+                    settings.max_bytes_before_external_group_by,
+                    settings.empty_result_for_aggregation_by_empty_set,
+                    context->getTemporaryVolume(),
+                    settings.max_threads,
+                    settings.min_free_disk_space_for_temporary_data);
+
+                transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
             }
 
             pipe.resize(pipe.numOutputPorts(), true, true);

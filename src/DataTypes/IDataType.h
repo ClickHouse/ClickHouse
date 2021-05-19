@@ -177,7 +177,7 @@ public:
       */
     virtual bool canBeComparedWithCollation() const { return false; }
 
-    /** If the type is totally comparable (Ints, Date, DateTime, not nullable, not floats)
+    /** If the type is totally comparable (Ints, Date, DateTime, DateTime64, not nullable, not floats)
       *  and "simple" enough (not String, FixedString) to be used as version number
       *  (to select rows with maximum version).
       */
