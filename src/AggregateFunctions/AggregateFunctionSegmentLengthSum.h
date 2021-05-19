@@ -15,43 +15,43 @@ namespace DB
 {
 
 template <typename T>
-struct AggregateFunctionRangeSumData
+struct AggregateFunctionSegmentLengthSumData
 {
-    using TimeGap = std::pair<T, T>;
-    using TimeGaps = PODArrayWithStackMemory<TimeGap, 64>;
+    using Segment = std::pair<T, T>;
+    using Segments = PODArrayWithStackMemory<Segment, 64>;
 
     bool sorted = false;
 
-    TimeGaps gap_list;
+    Segments segments;
 
-    size_t size() const { return gap_list.size(); }
+    size_t size() const { return segments.size(); }
 
     void add(T start, T end)
     {
-        if (sorted && gap_list.size() > 0)
+        if (sorted && segments.size() > 0)
         {
-            sorted = gap_list.back().first <= start;
+            sorted = segments.back().first <= start;
         }
-        gap_list.emplace_back(start, end);
+        segments.emplace_back(start, end);
     }
 
-    void merge(const AggregateFunctionRangeSumData & other)
+    void merge(const AggregateFunctionSegmentLengthSumData & other)
     {
-        if (other.gap_list.empty())
+        if (other.segments.empty())
             return;
 
-        const auto size = gap_list.size();
+        const auto size = segments.size();
 
-        gap_list.insert(std::begin(other.gap_list), std::end(other.gap_list));
+        segments.insert(std::begin(other.segments), std::end(other.segments));
 
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
-            std::stable_sort(std::begin(gap_list), std::end(gap_list));
+            std::stable_sort(std::begin(segments), std::end(segments));
         else
         {
-            const auto begin = std::begin(gap_list);
+            const auto begin = std::begin(segments);
             const auto middle = std::next(begin, size);
-            const auto end = std::end(gap_list);
+            const auto end = std::end(segments);
 
             if (!sorted)
                 std::stable_sort(begin, middle);
@@ -69,7 +69,7 @@ struct AggregateFunctionRangeSumData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(gap_list), std::end(gap_list));
+            std::stable_sort(std::begin(segments), std::end(segments));
             sorted = true;
         }
     }
@@ -77,9 +77,9 @@ struct AggregateFunctionRangeSumData
     void serialize(WriteBuffer & buf) const
     {
         writeBinary(sorted, buf);
-        writeBinary(gap_list.size(), buf);
+        writeBinary(segments.size(), buf);
 
-        for (const auto & time_gap : gap_list)
+        for (const auto & time_gap : segments)
         {
             writeBinary(time_gap.first, buf);
             writeBinary(time_gap.second, buf);
@@ -93,8 +93,8 @@ struct AggregateFunctionRangeSumData
         size_t size;
         readBinary(size, buf);
 
-        gap_list.clear();
-        gap_list.reserve(size);
+        segments.clear();
+        segments.reserve(size);
 
         T start, end;
 
@@ -102,46 +102,47 @@ struct AggregateFunctionRangeSumData
         {
             readBinary(start, buf);
             readBinary(end, buf);
-            gap_list.emplace_back(start, end);
+            segments.emplace_back(start, end);
         }
     }
 };
 
 template <typename T, typename Data>
-class AggregateFunctionRangeSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionRangeSum<T, Data>>
+class AggregateFunctionSegmentLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSegmentLengthSum<T, Data>>
 {
 private:
-    UInt64 getRangeSum(Data & data) const
+    UInt64 getSegmentLengthSum(Data & data) const
     {
         if (data.size() == 0)
             return 0;
 
         data.sort();
 
-        typename Data::TimeGaps merged;
-
-        for (const auto & gap : data.gap_list)
-        {
-            if (!merged.size() || merged.back().second < gap.first)
-                merged.emplace_back(gap.first, gap.second);
-            else
-                merged.back().second = std::max(merged.back().second, gap.second);
-        }
-
         UInt64 res = 0;
-        for (const auto & gap : merged)
+
+        typename Data::Segment cur_segment = data.segments[0];
+
+        for (size_t i = 1; i < data.segments.size(); ++i)
         {
-            res += gap.second - gap.first;
+            if (cur_segment.second < data.segments[i].first)
+            {
+                res += cur_segment.second - cur_segment.first;
+                cur_segment = data.segments[i];
+            }
+            else
+                cur_segment.second = std::max(cur_segment.second, data.segments[i].second);
         }
+
+        res += cur_segment.second - cur_segment.first;
 
         return res;
     }
 
 public:
-    String getName() const override { return "rangeSum"; }
+    String getName() const override { return "segmentLengthSum"; }
 
-    explicit AggregateFunctionRangeSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionRangeSum<T, Data>>(arguments, {})
+    explicit AggregateFunctionSegmentLengthSum(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSegmentLengthSum<T, Data>>(arguments, {})
     {
     }
 
@@ -182,7 +183,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnUInt64 &>(to).getData().push_back(getRangeSum(this->data(place)));
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(getSegmentLengthSum(this->data(place)));
     }
 };
 
