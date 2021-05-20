@@ -4,6 +4,7 @@
 #include <cstring>
 #include <optional>
 #include <common/types.h>
+#include <common/unaligned.h>
 #include <Common/Exception.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -81,9 +82,44 @@ struct NetworkInterfaces
 
 bool isLocalAddress(const Poco::Net::IPAddress & address)
 {
+    /** 127.0.0.1 is treat as local address unconditionally.
+      * ::1 is also treat as local address unconditionally.
+      *
+      * 127.0.0.{2..255} are not treat as local addresses, because they are used in tests
+      *  to emulate distributed queries across localhost.
+      *
+      * But 127.{0,1}.{0,1}.{0,1} are treat as local addresses,
+      *  because they are used in Debian for localhost.
+      */
+    if (address.isLoopback())
+    {
+        if (address.family() == Poco::Net::AddressFamily::IPv4)
+        {
+            union
+            {
+                UInt32 word;
+                unsigned char digits[4];
+            } digits_union;
+
+            digits_union.word = ntohl(unalignedLoad<UInt32>(address.addr()));
+            if (digits_union.digits[0] == 127
+                && digits_union.digits[1] <= 1
+                && digits_union.digits[2] <= 1
+                && digits_union.digits[3] <= 1)
+            {
+                return true;
+            }
+        }
+        else if (address.family() == Poco::Net::AddressFamily::IPv6)
+        {
+            return true;
+        }
+    }
+
     NetworkInterfaces interfaces;
     return interfaces.hasAddress(address);
 }
+
 
 bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port)
 {
