@@ -2,9 +2,9 @@
 
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include "ReadIndirectBufferFromHDFS.h"
 #include "WriteIndirectBufferFromHDFS.h"
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
@@ -21,6 +21,36 @@ namespace ErrorCodes
     extern const int CANNOT_DELETE_DIRECTORY;
     extern const int UNKNOWN_FORMAT;
 }
+
+/// Reads data from HDFS using stored paths in metadata.
+class ReadIndirectBufferFromHDFS final : public ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>
+{
+public:
+    ReadIndirectBufferFromHDFS(
+            const Poco::Util::AbstractConfiguration & config_,
+            const String & hdfs_uri_,
+            DiskHDFS::Metadata metadata_,
+            size_t buf_size_)
+        : ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>(metadata_)
+        , config(config_)
+        , buf_size(buf_size_)
+    {
+        const size_t begin_of_path = hdfs_uri_.find('/', hdfs_uri_.find("//") + 2);
+        hdfs_directory = hdfs_uri_.substr(begin_of_path);
+        hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
+    }
+
+    std::unique_ptr<ReadBufferFromHDFS> createReadBuffer(const String & path) override
+    {
+        return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_directory + path, config, buf_size);
+    }
+
+private:
+    const Poco::Util::AbstractConfiguration & config;
+    String hdfs_uri;
+    String hdfs_directory;
+    size_t buf_size;
+};
 
 
 DiskHDFS::DiskHDFS(
