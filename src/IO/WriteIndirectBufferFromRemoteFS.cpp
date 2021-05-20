@@ -1,4 +1,6 @@
 #include "WriteIndirectBufferFromRemoteFS.h"
+
+#if USE_AWS_S3 || USE_HDFS
 #include <IO/WriteBufferFromS3.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 
@@ -54,10 +56,16 @@ void WriteIndirectBufferFromRemoteFS<T>::sync()
 }
 
 
+#if USE_AWS_S3
 template
 class WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>;
+#endif
 
+#if USE_HDFS
 template
 class WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>;
+#endif
 
 }
+
+#endif

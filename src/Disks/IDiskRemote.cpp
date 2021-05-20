@@ -1,5 +1,7 @@
 #include <Disks/IDiskRemote.h>
 
+#if USE_AWS_S3
+
 #include "Disks/DiskFactory.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -485,3 +487,5 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
 }
 
 }
+
+#endif

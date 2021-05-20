@@ -105,20 +105,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 
 void DiskHDFS::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
 {
-    if (!fs_paths_keeper.empty())
+    for (const auto & chunk : fs_paths_keeper)
     {
-        for (const auto & chunk : fs_paths_keeper)
+        for (const auto & hdfs_object_path : chunk)
         {
-            for (const auto & hdfs_object_path : chunk)
-            {
-                const String hdfs_path = hdfs_object_path.GetKey();
-                const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
+            const String hdfs_path = hdfs_object_path.GetKey();
+            const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
 
-                /// Add path from root to file name
-                int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
-                if (res == -1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
-            }
+            /// Add path from root to file name
+            int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
+            if (res == -1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
         }
     }
 }

@@ -1,4 +1,7 @@
 #pragma once
+#include <Common/config.h>
+
+#if USE_AWS_S3
 
 #include <atomic>
 #include "Disks/DiskFactory.h"
@@ -242,3 +245,5 @@ private:
 };
 
 }
+
+#endif

@@ -1,3 +1,7 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3 || USE_HDFS
+
 #include <IO/ReadBufferFromFile.h>
 #include <Disks/IDiskRemote.h>
 #include <utility>
@@ -37,3 +41,5 @@ private:
 };
 
 }
+
+#endif
