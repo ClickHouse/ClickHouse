@@ -100,11 +100,6 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
     return pos + n;
 }
 
-const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
-{
-    return pos + n;
-}
-
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);

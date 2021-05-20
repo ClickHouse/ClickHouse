@@ -116,11 +116,6 @@ const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
     return nested->deserializeAndInsertFromArena(pos);
 }
 
-const char * ColumnMap::skipSerializedInArena(const char * pos) const
-{
-    return nested->skipSerializedInArena(pos);
-}
-
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
 {
     nested->updateHashWithValue(n, hash);

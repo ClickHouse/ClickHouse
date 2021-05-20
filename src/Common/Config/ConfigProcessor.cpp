@@ -234,7 +234,7 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 
 static std::string layerFromHost()
 {
-    struct utsname buf;
+    utsname buf;
     if (uname(&buf))
         throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
 
@@ -462,19 +462,10 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     }
     else
     {
-        /// These embedded files added during build with some cmake magic.
-        /// Look at the end of programs/sever/CMakeLists.txt.
-        std::string embedded_name;
-        if (path == "config.xml")
-            embedded_name = "embedded.xml";
-
-        if (path == "keeper_config.xml")
-            embedded_name = "keeper_embedded.xml";
-
         /// When we can use config embedded in binary.
-        if (!embedded_name.empty())
+        if (path == "config.xml")
         {
-            auto resource = getResource(embedded_name);
+            auto resource = getResource("embedded.xml");
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
             LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);

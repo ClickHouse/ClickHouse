@@ -73,18 +73,19 @@ Clusters are set like this:
 ``` xml
 <remote_servers>
     <logs>
-        <!-- Inter-server per-cluster secret for Distributed queries
-             default: no secret (no authentication will be performed)
-
-             If set, then Distributed queries will be validated on shards, so at least:
-             - such cluster should exist on the shard,
-             - such cluster should have the same secret.
-
-             And also (and which is more important), the initial_user will
-             be used as current user for the query.
-        -->
-        <!-- <secret></secret> -->
         <shard>
+            <!-- Inter-server per-cluster secret for Distributed queries
+                 default: no secret (no authentication will be performed)
+
+                 If set, then Distributed queries will be validated on shards, so at least:
+                 - such cluster should exist on the shard,
+                 - such cluster should have the same secret.
+
+                 And also (and which is more important), the initial_user will
+                 be used as current user for the query.
+            -->
+            <!-- <secret></secret> -->
+
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>
             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->

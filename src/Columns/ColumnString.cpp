@@ -237,12 +237,6 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
     return pos + string_size;
 }
 
-const char * ColumnString::skipSerializedInArena(const char * pos) const
-{
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
-    return pos + string_size;
-}
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
@@ -535,6 +529,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(min_idx, min);
     get(max_idx, max);
 }
+
 
 ColumnPtr ColumnString::compress() const
 {

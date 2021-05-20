@@ -44,7 +44,7 @@ DictionaryReader::FunctionWrapper::FunctionWrapper(FunctionOverloadResolverPtr r
 static constexpr const size_t key_size = 1;
 
 DictionaryReader::DictionaryReader(const String & dictionary_name, const Names & src_column_names, const NamesAndTypesList & result_columns,
-                                   ContextPtr context)
+                                   const Context & context)
     : result_header(makeResultBlock(result_columns))
     , key_position(key_size + result_header.columns())
 {
