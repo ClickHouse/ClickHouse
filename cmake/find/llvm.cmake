@@ -32,9 +32,6 @@ set (REQUIRED_LLVM_LIBRARIES
 LLVMOrcJIT
 LLVMExecutionEngine
 LLVMRuntimeDyld
-LLVMX86CodeGen
-LLVMX86Desc
-LLVMX86Info
 LLVMAsmPrinter
 LLVMDebugInfoDWARF
 LLVMGlobalISel
@@ -65,6 +62,12 @@ LLVMDebugInfoCodeView
 LLVMSupport
 LLVMDemangle
 )
+
+if (ARCH_AMD64)
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen)
+elseif (ARCH_AARCH64)
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
+endif ()
 
 #function(llvm_libs_all REQUIRED_LLVM_LIBRARIES)
 #    llvm_map_components_to_libnames (result all)
