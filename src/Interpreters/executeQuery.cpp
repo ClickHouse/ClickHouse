@@ -355,6 +355,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 {
     const auto current_time = std::chrono::system_clock::now();
 
+    auto & client_info = context->getClientInfo();
+
+    // If it's an initial query, set to current_time
+    if (client_info.initial_query_start_time == 0)
+    {
+        client_info.initial_query_start_time = time_in_seconds(current_time);
+        client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
+    }
+
 #if !defined(ARCADIA_BUILD)
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
@@ -643,7 +652,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.query = query_for_logging;
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
-            elem.client_info = context->getClientInfo();
+            elem.client_info = client_info;
 
             bool log_queries = settings.log_queries && !internal;
 
