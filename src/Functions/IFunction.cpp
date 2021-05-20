@@ -15,7 +15,17 @@
 #include <Functions/FunctionHelpers.h>
 #include <cstdlib>
 #include <memory>
-#include <optional>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
+#    include <llvm/IR/IRBuilder.h>
+#    pragma GCC diagnostic pop
+#endif
 
 namespace DB
 {
@@ -51,13 +61,14 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
         {
             /// Single LowCardinality column is supported now.
             if (indexes)
-                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
 
             const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
 
             if (!low_cardinality_type)
-                throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Incompatible type for low cardinality column: {}",
+                    column.type->getName());
 
             if (can_be_executed_on_default_arguments)
             {
@@ -111,7 +122,10 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
     /// Check that these arguments are really constant.
     for (auto arg_num : arguments_to_remain_constants)
         if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
-            throw Exception("Argument at index " + toString(arg_num) + " for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Argument at index {} for function {} must be constant",
+                toString(arg_num),
+                getName());
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
         return nullptr;
@@ -140,8 +154,9 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
       *  not in "arguments_to_remain_constants" set. Otherwise we get infinite recursion.
       */
     if (!have_converted_columns)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: the function requires more arguments",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: the function requires more arguments",
+            getName());
 
     ColumnPtr result_column = executeWithoutLowCardinalityColumns(temporary_columns, result_type, 1, dry_run);
 
@@ -256,9 +271,11 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
     size_t expected_number_of_arguments = getNumberOfArguments();
 
     if (number_of_arguments != expected_number_of_arguments)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, should be {}",
+            getName(),
+            toString(number_of_arguments),
+            toString(expected_number_of_arguments));
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
@@ -289,11 +306,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
                 ++num_full_ordinary_columns;
         }
 
-        for (auto & arg : args_without_low_cardinality)
-        {
-            arg.column = recursiveRemoveLowCardinality(arg.column);
-            arg.type = recursiveRemoveLowCardinality(arg.type);
-        }
+        convertLowCardinalityColumnsToFull(args_without_low_cardinality);
 
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
 
@@ -342,5 +355,78 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
 
     return getReturnTypeImpl(arguments);
 }
+
+
+#if USE_EMBEDDED_COMPILER
+
+static std::optional<DataTypes> removeNullables(const DataTypes & types)
+{
+    for (const auto & type : types)
+    {
+        if (!typeid_cast<const DataTypeNullable *>(type.get()))
+            continue;
+        DataTypes filtered;
+        for (const auto & sub_type : types)
+            filtered.emplace_back(removeNullable(sub_type));
+        return filtered;
+    }
+    return {};
+}
+
+bool IFunction::isCompilable(const DataTypes & arguments) const
+{
+    if (useDefaultImplementationForNulls())
+        if (auto denulled = removeNullables(arguments))
+            return isCompilableImpl(*denulled);
+    return isCompilableImpl(arguments);
+}
+
+llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, Values values) const
+{
+    auto denulled_arguments = removeNullables(arguments);
+    if (useDefaultImplementationForNulls() && denulled_arguments)
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        std::vector<llvm::Value*> unwrapped_values;
+        std::vector<llvm::Value*> is_null_values;
+
+        unwrapped_values.reserve(arguments.size());
+        is_null_values.reserve(arguments.size());
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            auto * value = values[i];
+
+            WhichDataType data_type(arguments[i]);
+            if (data_type.isNullable())
+            {
+                unwrapped_values.emplace_back(b.CreateExtractValue(value, {0}));
+                is_null_values.emplace_back(b.CreateExtractValue(value, {1}));
+            }
+            else
+            {
+                unwrapped_values.emplace_back(value);
+            }
+        }
+
+        auto * result = compileImpl(builder, *denulled_arguments, unwrapped_values);
+
+        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments)));
+        auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
+
+        auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
+        auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+
+        for (auto * is_null_value : is_null_values)
+            nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+
+        return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+    }
+
+    return compileImpl(builder, arguments, std::move(values));
+}
+
+#endif
 
 }
