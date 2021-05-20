@@ -101,6 +101,7 @@ void QueryPipeline::addParallelTransforms(Processors transforms)
 {
     checkInitializedAndNotCompleted();
     pipe.addParallelTransforms(transforms);
+}
 
 void QueryPipeline::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes)
 {

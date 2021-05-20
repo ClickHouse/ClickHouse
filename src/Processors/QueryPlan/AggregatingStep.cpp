@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/ForkProcessor.h>
@@ -70,34 +72,36 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
         pipeline.resize(1);
         pipeline.addTransform(std::make_shared<ForkProcessor>(pipeline.getHeader(), grouping_sets_number));
 
+
         Processors aggregating_transforms;
         AggregatingTransformParamsPtr transform_params_ptr;
+        Processors expression_transforms;
+        // std::set<size_t>
         for (size_t i = 0; i < grouping_sets_number; ++i)
         {
             params.keys = params.keys_vector[i];
             params.keys_size = params.keys.size();
             transform_params_ptr = std::make_shared<AggregatingTransformParams>(params, final);
+            LOG_DEBUG(log, "header structure: {}", pipeline.getHeader().dumpStructure());
             aggregating_transforms.push_back(std::make_shared<AggregatingTransform>(pipeline.getHeader(), transform_params_ptr));
+            size_t first_column_to_add = (i == 0 ? 1 : 0);
+            auto adding_column_action = ActionsDAG::makeAddingColumnActions(pipeline.getHeader().getByPosition(params.keys_vector[first_column_to_add][0]));
+
+            for (size_t j = 0; j < grouping_sets_number; ++j) {
+                if (j == i || j == first_column_to_add) continue;
+                auto helper_adding_column_action = ActionsDAG::makeAddingColumnActions(pipeline.getHeader().getByPosition(params.keys_vector[j][0]));
+                adding_column_action = ActionsDAG::merge(std::move(*helper_adding_column_action), std::move(*adding_column_action));
+            }
+            auto actions = std::make_shared<ExpressionActions>(adding_column_action, ExpressionActionsSettings{});
+
+            expression_transforms.push_back(std::make_shared<ExpressionTransform>(aggregating_transforms[i]->getOutputs().front().getHeader(), actions));
+
         }
         pipeline.addParallelTransforms(std::move(aggregating_transforms));
-/*
-        Processors expression_transforms;
-        ExpressionActionsPtr expression_actions_ptr;
-        for (size_t i = 0; i < grouping_sets_number; ++i)
-        {
-            params.keys = params.keys_vector[i];
-            params.keys_size = params.keys.size();
 
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
-            getRootActions(child, only_types, actions_dag);
-            expression_actions_ptr = actions_dag->buildExpressions(context);
-            expression_actions_ptr = std::make_shared<ExpressionActions>(pipeline.getHeader().getNamesAndTypesList());
-            aggregating_transforms.push_back(std::make_shared<AggregatingTransform>(pipeline.getHeader(), transform_params_ptr));
-        }
-        pipeline.addParallelTransforms(expression_transforms);
-*/
+        pipeline.addParallelTransforms(std::move(expression_transforms));
         /// merge all aggregating transforms outputs with ResizeProcessor
-        pipeline.resize(1);
+        // pipeline.resize(1);
     }
     else
     {

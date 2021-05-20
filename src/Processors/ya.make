@@ -104,7 +104,6 @@ SRCS(
     QueryPlan/FillingStep.cpp
     QueryPlan/FilterStep.cpp
     QueryPlan/FinishSortingStep.cpp
-
     QueryPlan/IQueryPlanStep.cpp
     QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
@@ -153,7 +152,6 @@ SRCS(
     Transforms/FillingTransform.cpp
     Transforms/FilterTransform.cpp
     Transforms/FinishSortingTransform.cpp
-    Transforms/GroupingSetsTransform.cpp
     Transforms/JoiningTransform.cpp
     Transforms/LimitByTransform.cpp
     Transforms/LimitsCheckingTransform.cpp

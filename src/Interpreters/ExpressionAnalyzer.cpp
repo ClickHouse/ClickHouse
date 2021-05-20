@@ -1025,12 +1025,10 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     ASTs asts = select_query->groupBy()->children;
     if (select_query->group_by_with_grouping_sets)
     {
-        for (const auto & inner_asts : asts) {
-            for (const auto & ast : inner_asts->children)
-            {
-                step.required_output.emplace_back(ast->getColumnName());
-                getRootActions(ast, only_types, step.actions());
-            }
+        for (const auto & ast : asts)
+        {
+            step.addRequiredOutput(ast->getColumnName());
+            getRootActions(ast, only_types, step.actions());
         }
     }
     else
