@@ -593,6 +593,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
 
     query_info.query = query_ptr;
+    query_info.has_window = query_analyzer->hasWindow();
 
     if (storage && !options.only_analyze)
     {
@@ -1257,7 +1258,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             // 4) preliminary distinct.
             // Some of these were already executed at the shards (first_stage),
             // see the counterpart code and comments there.
-            if (expressions.need_aggregate)
+            if (from_aggregation_stage)
+            {
+                if (query_analyzer->hasWindow())
+                    throw Exception("Window functions does not support processing from WithMergeableStateAfterAggregation", ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else if (expressions.need_aggregate)
             {
                 executeExpression(query_plan, expressions.before_window,
                     "Before window functions");

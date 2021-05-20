@@ -245,6 +245,8 @@ public:
 
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
+    void checkNumberOfArguments(size_t number_of_arguments) const;
+
     /// Get the main function name.
     virtual String getName() const = 0;
 
@@ -318,8 +320,6 @@ protected:
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:
-
-    void checkNumberOfArguments(size_t number_of_arguments) const;
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };

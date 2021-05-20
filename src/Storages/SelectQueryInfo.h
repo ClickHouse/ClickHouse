@@ -170,6 +170,9 @@ struct SelectQueryInfo
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
 
+    /// Cached value of ExpressionAnalysisResult::has_window
+    bool has_window = false;
+
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     /// If not null, it means we choose a projection to execute current query.
