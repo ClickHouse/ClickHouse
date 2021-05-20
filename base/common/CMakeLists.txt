@@ -1,4 +1,5 @@
 set (SRCS
+    addDatabasePrefixToZooKeeperPath.cpp
     argsToConfig.cpp
     coverage.cpp
     DateLUT.cpp

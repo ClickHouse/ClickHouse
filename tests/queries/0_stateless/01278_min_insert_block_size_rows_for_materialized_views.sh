@@ -76,18 +76,18 @@ insert into data_01278 select
     reinterpretAsString(number), // s6
     reinterpretAsString(number), // s7
     reinterpretAsString(number)  // s8
-from numbers(100000); -- { serverError 241; }
+from numbers(100000); -- $1
 EOL
     } | {
-        execute --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@"
+        execute --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "${@:2}"
     }
     echo 'select count() from out_01278' | execute
 }
 
 # fails
-execute_insert --testmode
-execute_insert --testmode --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=$((1<<20))
+execute_insert "{ serverError 241; }"
+execute_insert "{ serverError 241; }" --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=$((1<<20))
 
 # passes
-execute_insert --min_insert_block_size_rows=1
-execute_insert --min_insert_block_size_rows_for_materialized_views=1
+execute_insert "" --min_insert_block_size_rows=1
+execute_insert "" --min_insert_block_size_rows_for_materialized_views=1

@@ -4,6 +4,7 @@
 
 
 #include <common/types.h>
+#include <common/addDatabasePrefixToZooKeeperPath.h>
 #include <optional>
 #include <mutex>
 #include <city.h>
@@ -163,7 +164,11 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 
 uint64_t ReplicatedMergeTreeMergeStrategyPicker::getEntryHash(const ReplicatedMergeTreeLogEntryData & entry) const
 {
-    auto hash_data = storage.zookeeper_path + entry.new_part_name;
+    auto zk_path = storage.zookeeper_path;
+    if (storage.getSettings()->testmode)
+        removeDatabasePrefixToZooKeeperPath(zk_path);
+
+    auto hash_data = zk_path + entry.new_part_name;
     return CityHash_v1_0_2::CityHash64(hash_data.c_str(), hash_data.length());
 }
 

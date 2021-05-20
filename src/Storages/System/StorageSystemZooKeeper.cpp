@@ -12,6 +12,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/typeid_cast.h>
+#include <common/addDatabasePrefixToZooKeeperPath.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
@@ -48,7 +49,7 @@ NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 
 using Paths = Strings;
 
-static String pathCorrected(const String & path)
+static String pathCorrected(const String & path, const Context & context)
 {
     String path_corrected;
     /// path should starts with '/', otherwise ZBADARGUMENTS will be thrown in
@@ -59,6 +60,10 @@ static String pathCorrected(const String & path)
     /// In all cases except the root, path must not end with a slash.
     if (path_corrected != "/" && path_corrected.back() == '/')
         path_corrected.resize(path_corrected.size() - 1);
+
+    if (context.getSettingsRef().testmode)
+        addDatabasePrefixToZooKeeperPath(path_corrected, context.getCurrentDatabase());
+
     return path_corrected;
 }
 
@@ -187,7 +192,7 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
     std::unordered_set<String> paths_corrected;
     for (const auto & path : paths)
     {
-        const String & path_corrected = pathCorrected(path);
+        const String & path_corrected = pathCorrected(path, *context);
         auto [it, inserted] = paths_corrected.emplace(path_corrected);
         if (!inserted) /// Do not repeat processing.
             continue;

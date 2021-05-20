@@ -18,6 +18,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/typeid_cast.h>
+#include <common/addDatabasePrefixToZooKeeperPath.h>
 
 #include <boost/range/algorithm_ext/push_back.hpp>
 
@@ -82,6 +83,9 @@ BlockIO InterpreterAlterQuery::execute()
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {
+            if (!partition_command->from_zookeeper_path.empty() && getContext()->getSettingsRef().testmode)
+                addDatabasePrefixToZooKeeperPath(partition_command->from_zookeeper_path, table_id.database_name);
+
             partition_commands.emplace_back(std::move(*partition_command));
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))

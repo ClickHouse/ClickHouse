@@ -41,6 +41,7 @@ SRCS(
     JSON.cpp
     LineReader.cpp
     StringRef.cpp
+    addDatabasePrefixToZooKeeperPath.cpp
     argsToConfig.cpp
     coverage.cpp
     demangle.cpp

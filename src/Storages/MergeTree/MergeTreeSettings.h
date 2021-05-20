@@ -132,6 +132,9 @@ struct Settings;
     M(UInt64, min_relative_delay_to_yield_leadership, 120, "Obsolete setting, does nothing.", 0) \
     M(UInt64, check_delay_period, 60, "Obsolete setting, does nothing.", 0) \
     M(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
+    \
+    M(Bool, testmode, false, "This setting is enabled in functional tests.", 0) \
+
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
     M(index_granularity)
