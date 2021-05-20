@@ -4,7 +4,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnsNumber.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <ext/map.h>
 
@@ -87,12 +87,12 @@ private:
 
 
 template <LeastGreatest kind, typename SpecializedFunction>
-class LeastGreatestOverloadResolver : public IFunctionOverloadResolverImpl
+class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
 
-    static FunctionOverloadResolverImplPtr create(ContextPtr context)
+    static FunctionOverloadResolverPtr create(ContextPtr context)
     {
         return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context);
     }
@@ -103,19 +103,19 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
 
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2 && isNumber(arguments[0].type) && isNumber(arguments[1].type))
-            return std::make_unique<DefaultFunction>(SpecializedFunction::create(context), argument_types, return_type);
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
 
-        return std::make_unique<DefaultFunction>(
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionLeastGreatestGeneric<kind>::create(context), argument_types, return_type);
     }
 
-    DataTypePtr getReturnType(const DataTypes & types) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (types.empty())
             throw Exception("Function " + getName() + " cannot be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
