@@ -36,6 +36,10 @@ struct NetworkInterfaces
         ifaddrs * iface;
         for (iface = ifaddr; iface != nullptr; iface = iface->ifa_next)
         {
+            /// Point-to-point (VPN) addresses may have NULL ifa_addr
+            if (!iface->ifa_addr)
+                continue;
+
             auto family = iface->ifa_addr->sa_family;
             std::optional<Poco::Net::IPAddress> interface_address;
             switch (family)

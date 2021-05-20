@@ -37,7 +37,6 @@ DEFAULT_ENV_NAME = 'env_file'
 
 SANITIZER_SIGN = "=================="
 
-
 def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
     full_path = os.path.join(path, fname)
     with open(full_path, 'w') as f:
@@ -199,9 +198,11 @@ class ClickHouseCluster:
         self.schema_registry_port = 8081
 
         self.zookeeper_use_tmpfs = True
+        self.use_keeper = True
 
         self.docker_client = None
         self.is_up = False
+        self.env = os.environ.copy()
         print("CLUSTER INIT base_config_dir:{}".format(self.base_config_dir))
 
     def get_client_cmd(self):
@@ -218,7 +219,7 @@ class ClickHouseCluster:
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None):
+                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None, use_keeper=True):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -238,6 +239,8 @@ class ClickHouseCluster:
             tag = self.docker_base_tag
         if not env_variables:
             env_variables = {}
+
+        self.use_keeper = use_keeper
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
@@ -291,7 +294,10 @@ class ClickHouseCluster:
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
             if not zookeeper_docker_compose_path:
-                zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper.yml')
+                if self.use_keeper:
+                    zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_keeper.yml')
+                else:
+                    zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper.yml')
 
             self.with_zookeeper = True
             self.zookeeper_use_tmpfs = zookeeper_use_tmpfs
@@ -680,20 +686,50 @@ class ClickHouseCluster:
             common_opts = ['up', '-d']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
-                print('Setup ZooKeeper')
-                env = os.environ.copy()
-                if not self.zookeeper_use_tmpfs:
-                    env['ZK_FS'] = 'bind'
-                    for i in range(1, 4):
-                        zk_data_path = self.instances_dir + '/zkdata' + str(i)
-                        zk_log_data_path = self.instances_dir + '/zklog' + str(i)
-                        if not os.path.exists(zk_data_path):
-                            os.mkdir(zk_data_path)
-                        if not os.path.exists(zk_log_data_path):
-                            os.mkdir(zk_log_data_path)
-                        env['ZK_DATA' + str(i)] = zk_data_path
-                        env['ZK_DATA_LOG' + str(i)] = zk_log_data_path
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=env)
+                if self.use_keeper:
+                    print('Setup Keeper')
+                    binary_path = self.server_bin_path
+                    if binary_path.endswith('-server'):
+                        binary_path = binary_path[:-len('-server')]
+
+                    self.env['keeper_binary'] = binary_path
+                    self.env['image'] = "yandex/clickhouse-integration-test:" + self.docker_base_tag
+                    self.env['user'] = str(os.getuid())
+                    if not self.zookeeper_use_tmpfs:
+                        self.env['keeper_fs'] = 'bind'
+
+                    for i in range (1, 4):
+                        instance_dir = p.join(self.instances_dir, f"keeper{i}")
+                        logs_dir = p.join(instance_dir, "logs")
+                        configs_dir = p.join(instance_dir, "configs")
+                        coordination_dir = p.join(instance_dir, "coordination")
+                        if not os.path.exists(instance_dir):
+                            os.mkdir(instance_dir)
+                            os.mkdir(configs_dir)
+                            os.mkdir(logs_dir)
+                            if not self.zookeeper_use_tmpfs:
+                                os.mkdir(coordination_dir)
+                            shutil.copy(os.path.join(HELPERS_DIR, f'keeper_config{i}.xml'), configs_dir)
+
+                        self.env[f'keeper_logs_dir{i}'] = p.abspath(logs_dir)
+                        self.env[f'keeper_config_dir{i}'] = p.abspath(configs_dir)
+                        if not self.zookeeper_use_tmpfs:
+                            self.env[f'keeper_db_dir{i}'] = p.abspath(coordination_dir)
+                else:
+                    print('Setup ZooKeeper')
+                    if not self.zookeeper_use_tmpfs:
+                        self.env['ZK_FS'] = 'bind'
+                        for i in range(1, 4):
+                            zk_data_path = self.instances_dir + '/zkdata' + str(i)
+                            zk_log_data_path = self.instances_dir + '/zklog' + str(i)
+                            if not os.path.exists(zk_data_path):
+                                os.mkdir(zk_data_path)
+                            if not os.path.exists(zk_log_data_path):
+                                os.mkdir(zk_log_data_path)
+                            self.env['ZK_DATA' + str(i)] = zk_data_path
+                            self.env['ZK_DATA_LOG' + str(i)] = zk_log_data_path
+
+                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
                 self.wait_zookeeper_to_start(120)
@@ -730,9 +766,8 @@ class ClickHouseCluster:
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 print('Setup kerberized kafka')
-                env = os.environ.copy()
-                env['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
-                run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
+                self.env['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
+                run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=self.env)
                 self.kerberized_kafka_docker_id = self.get_instance_docker_id('kerberized_kafka1')
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
@@ -746,9 +781,8 @@ class ClickHouseCluster:
 
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 print('Setup kerberized HDFS')
-                env = os.environ.copy()
-                env['KERBERIZED_HDFS_DIR'] = instance.path + '/'
-                run_and_check(self.base_kerberized_hdfs_cmd + common_opts, env=env)
+                self.env['KERBERIZED_HDFS_DIR'] = instance.path + '/'
+                run_and_check(self.base_kerberized_hdfs_cmd + common_opts, env=self.env)
                 self.make_hdfs_api(kerberized=True)
                 self.wait_hdfs_to_start(timeout=300)
 
@@ -763,23 +797,22 @@ class ClickHouseCluster:
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
-                env = os.environ.copy()
                 prev_ca_certs = os.environ.get('SSL_CERT_FILE')
                 if self.minio_certs_dir:
                     minio_certs_dir = p.join(self.base_dir, self.minio_certs_dir)
-                    env['MINIO_CERTS_DIR'] = minio_certs_dir
+                    self.env['MINIO_CERTS_DIR'] = minio_certs_dir
                     # Minio client (urllib3) uses SSL_CERT_FILE for certificate validation.
                     os.environ['SSL_CERT_FILE'] = p.join(minio_certs_dir, 'public.crt')
                 else:
                     # Attach empty certificates directory to ensure non-secure mode.
                     minio_certs_dir = p.join(self.instances_dir, 'empty_minio_certs_dir')
                     os.mkdir(minio_certs_dir)
-                    env['MINIO_CERTS_DIR'] = minio_certs_dir
+                    self.env['MINIO_CERTS_DIR'] = minio_certs_dir
 
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
-                run_and_check(minio_start_cmd, env=env)
+                run_and_check(minio_start_cmd, env=self.env)
 
                 try:
                     logging.info("Trying to connect to Minio...")
@@ -798,7 +831,7 @@ class ClickHouseCluster:
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             print(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
-            subprocess_check_call(clickhouse_start_cmd)
+            run_and_check(clickhouse_start_cmd, env=self.env)
             print("ClickHouse instance created")
 
             start_timeout = 20.0  # seconds
@@ -824,7 +857,7 @@ class ClickHouseCluster:
         sanitizer_assert_instance = None
         with open(self.docker_logs_path, "w+") as f:
             try:
-                subprocess.check_call(self.base_cmd + ['logs'], stdout=f)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                subprocess.check_call(self.base_cmd + ['logs'], env=self.env, stdout=f)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
             except Exception as e:
                 print("Unable to get logs from docker.")
             f.seek(0)
@@ -835,14 +868,14 @@ class ClickHouseCluster:
 
         if kill:
             try:
-                subprocess_check_call(self.base_cmd + ['stop', '--timeout', '20'])
+                run_and_check(self.base_cmd + ['stop', '--timeout', '20'], env=self.env)
             except Exception as e:
                 print("Kill command failed during shutdown. {}".format(repr(e)))
                 print("Trying to kill forcefully")
                 subprocess_check_call(self.base_cmd + ['kill'])
 
         try:
-            subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+            run_and_check(self.base_cmd + ['down', '--volumes', '--remove-orphans'], env=self.env)
         except Exception as e:
             print("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
 
