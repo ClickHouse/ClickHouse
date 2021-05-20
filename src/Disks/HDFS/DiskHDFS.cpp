@@ -2,9 +2,9 @@
 
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include "WriteIndirectBufferFromHDFS.h"
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadIndirectBufferFromRemoteFS.h>
+#include <IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
@@ -59,7 +59,7 @@ DiskHDFS::DiskHDFS(
     SettingsPtr settings_,
     const String & metadata_path_,
     const Poco::Util::AbstractConfiguration & config_)
-    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskS3")
+    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskHDFS")
     , config(config_)
     , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
     , hdfs_fs(createHDFSFS(hdfs_builder.get()))
@@ -92,9 +92,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     LOG_DEBUG(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
               backQuote(metadata_path + path), remote_fs_root_path + hdfs_path);
 
-    return std::make_unique<WriteIndirectBufferFromHDFS>(
-            config, hdfs_path, file_name, metadata, buf_size,
-            mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND); /// Single O_WRONLY in libhdfs adds O_TRUNC
+    /// Single O_WRONLY in libhdfs adds O_TRUNC
+    auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
+                                                             config, buf_size,
+                                                             mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND);
+
+    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(std::move(hdfs_buffer),
+                                                                                std::move(metadata),
+                                                                                file_name);
 }
 
 
@@ -152,6 +157,5 @@ void registerDiskHDFS(DiskFactory & factory)
 
     factory.registerDiskType("hdfs", creator);
 }
-
 
 }

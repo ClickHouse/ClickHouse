@@ -9,10 +9,10 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadIndirectBufferFromRemoteFS.h>
+#include <IO/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
@@ -97,55 +97,6 @@ private:
     size_t s3_max_single_read_retries;
     size_t buf_size;
 };
-
-/// Stores data in S3 and adds the object key (S3 path) and object size to metadata file on local FS.
-class WriteIndirectBufferFromS3 final : public WriteBufferFromFileDecorator
-{
-public:
-    WriteIndirectBufferFromS3(
-        std::unique_ptr<WriteBufferFromS3> impl_,
-        DiskS3::Metadata metadata_,
-        String & s3_path_)
-        : WriteBufferFromFileDecorator(std::move(impl_))
-        , metadata(std::move(metadata_))
-        , s3_path(s3_path_) { }
-
-    virtual ~WriteIndirectBufferFromS3() override
-    {
-        try
-        {
-            WriteIndirectBufferFromS3::finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    void finalize() override
-    {
-        if (finalized)
-            return;
-
-        WriteBufferFromFileDecorator::finalize();
-
-        metadata.addObject(s3_path, count());
-        metadata.save();
-    }
-
-    void sync() override
-    {
-        if (finalized)
-            metadata.save(true);
-    }
-
-    std::string getFileName() const override { return metadata.metadata_file_path; }
-
-private:
-    DiskS3::Metadata metadata;
-    String s3_path;
-};
-
 
 /// Runs tasks asynchronously using thread pool.
 class AsyncExecutor : public Executor
@@ -277,7 +228,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         std::move(object_metadata),
         buf_size);
 
-    return std::make_unique<WriteIndirectBufferFromS3>(std::move(s3_buffer), std::move(metadata), s3_path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(metadata), s3_path);
 }
 
 void DiskS3::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
