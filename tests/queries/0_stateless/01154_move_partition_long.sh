@@ -6,17 +6,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_TEST_ZOOKEEPER_PREFIX='test_01154_move_partition_long'
 
-declare -A engines
-engines[0]="MergeTree"
-engines[1]="ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src', toString(randConstant()))"
-engines[2]="ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src_' || toString(randConstant()), 'single_replica')"
+#declare -A engines
+#engines[0]="MergeTree"
+#engines[1]="ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src', toString(randConstant()))"
+#engines[2]="ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src_' || toString(randConstant()), 'single_replica')"
 
 for ((i=0; i<16; i++)) do
     $CLICKHOUSE_CLIENT -q "CREATE TABLE dst_$i (p UInt64, k UInt64, v UInt64)
           ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst', '$i')
           PARTITION BY p % 10 ORDER BY k" 2>&1| grep -Pv "Retrying createReplica|created by another server at the same moment, will retry" &
-    engine=${engines[$((i % ${#engines[@]}))]}
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE src_$i (p UInt64, k UInt64, v UInt64) ENGINE=$engine
+    j=$(($i % 4))
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE src_$i (p UInt64, k UInt64, v UInt64) ENGINE=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src_$j', '$i')
           PARTITION BY p % 10 ORDER BY k" 2>&1| grep -Pv "Retrying createReplica|created by another server at the same moment, will retry" &
 done
 wait
