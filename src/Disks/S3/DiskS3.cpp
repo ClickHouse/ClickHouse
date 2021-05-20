@@ -7,8 +7,8 @@
 #include <utility>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ReadIndirectBufferFromRemoteFS.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -69,7 +69,7 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
 }
 
 /// Reads data from S3 using stored paths in metadata.
-class ReadIndirectBufferFromS3 final : public ReadBufferFromFileBase
+class ReadIndirectBufferFromS3 final : public ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>
 {
 public:
     ReadIndirectBufferFromS3(
@@ -78,112 +78,24 @@ public:
         DiskS3::Metadata metadata_,
         size_t s3_max_single_read_retries_,
         size_t buf_size_)
-        : client_ptr(std::move(client_ptr_))
+        : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
+        , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
-        , metadata(std::move(metadata_))
         , s3_max_single_read_retries(s3_max_single_read_retries_)
         , buf_size(buf_size_)
     {
     }
 
-    off_t seek(off_t offset_, int whence) override
+    std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
     {
-        if (whence == SEEK_CUR)
-        {
-            /// If position within current working buffer - shift pos.
-            if (!working_buffer.empty() && size_t(getPosition() + offset_) < absolute_position)
-            {
-                pos += offset_;
-                return getPosition();
-            }
-            else
-            {
-                absolute_position += offset_;
-            }
-        }
-        else if (whence == SEEK_SET)
-        {
-            /// If position within current working buffer - shift pos.
-            if (!working_buffer.empty() && size_t(offset_) >= absolute_position - working_buffer.size()
-                && size_t(offset_) < absolute_position)
-            {
-                pos = working_buffer.end() - (absolute_position - offset_);
-                return getPosition();
-            }
-            else
-            {
-                absolute_position = offset_;
-            }
-        }
-        else
-            throw Exception("Only SEEK_SET or SEEK_CUR modes are allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-
-        current_buf = initialize();
-        pos = working_buffer.end();
-
-        return absolute_position;
+        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, s3_max_single_read_retries, buf_size);
     }
-
-    off_t getPosition() override { return absolute_position - available(); }
-
-    std::string getFileName() const override { return metadata.metadata_file_path; }
 
 private:
-    std::unique_ptr<ReadBufferFromS3> initialize()
-    {
-        size_t offset = absolute_position;
-        for (size_t i = 0; i < metadata.remote_fs_objects.size(); ++i)
-        {
-            current_buf_idx = i;
-            const auto & [path, size] = metadata.remote_fs_objects[i];
-            if (size > offset)
-            {
-                auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, s3_max_single_read_retries, buf_size);
-                buf->seek(offset, SEEK_SET);
-                return buf;
-            }
-            offset -= size;
-        }
-        return nullptr;
-    }
-
-    bool nextImpl() override
-    {
-        /// Find first available buffer that fits to given offset.
-        if (!current_buf)
-            current_buf = initialize();
-
-        /// If current buffer has remaining data - use it.
-        if (current_buf && current_buf->next())
-        {
-            working_buffer = current_buf->buffer();
-            absolute_position += working_buffer.size();
-            return true;
-        }
-
-        /// If there is no available buffers - nothing to read.
-        if (current_buf_idx + 1 >= metadata.remote_fs_objects.size())
-            return false;
-
-        ++current_buf_idx;
-        const auto & path = metadata.remote_fs_objects[current_buf_idx].first;
-        current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, s3_max_single_read_retries, buf_size);
-        current_buf->next();
-        working_buffer = current_buf->buffer();
-        absolute_position += working_buffer.size();
-
-        return true;
-    }
-
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
-    DiskS3::Metadata metadata;
     size_t s3_max_single_read_retries;
     size_t buf_size;
-
-    size_t absolute_position = 0;
-    size_t current_buf_idx = 0;
-    std::unique_ptr<ReadBufferFromS3> current_buf;
 };
 
 /// Stores data in S3 and adds the object key (S3 path) and object size to metadata file on local FS.

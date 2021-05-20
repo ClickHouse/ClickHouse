@@ -4,7 +4,7 @@
 #include "gtest_disk.h"
 
 /// To enable tests set to 1. It is set to 0, because there is not HDFS instance in CI.
-#define RUN_HDFS_TEST 0
+#define RUN_HDFS_TEST 1
 
 #if RUN_HDFS_TEST
 
