@@ -34,12 +34,14 @@ StorageView::StorageView(
     const StorageID & table_id_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
+    const String & comment,
     const Settings & settings)
     : IStorage(table_id_)
     , settings_changes(settings.changes())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -178,7 +180,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_id, args.query, args.columns, args.getLocalContext()->getSettingsRef());
+        return StorageView::create(args.table_id, args.query, args.columns, args.comment, args.getLocalContext()->getSettingsRef());
     });
 }
 

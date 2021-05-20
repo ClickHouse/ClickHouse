@@ -121,6 +121,7 @@ public:
     const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
+    Names getRequiredColumnsNames() const;
     ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
 
@@ -185,6 +186,14 @@ public:
 #endif
 
     ActionsDAGPtr clone() const;
+
+    /// Execute actions for header. Input block must have empty columns.
+    /// Result should be equal to the execution of ExpressionActions build form this DAG.
+    /// Actions are not changed, no expressions are compiled.
+    ///
+    /// In addition, check that result constants are constants according to DAG.
+    /// In case if function return constant, but arguments are not constant, materialize it.
+    Block updateHeader(Block header) const;
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.

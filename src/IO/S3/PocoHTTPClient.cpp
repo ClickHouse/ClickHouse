@@ -289,29 +289,16 @@ void PocoHTTPClient::makeRequestInternal(
             }
             LOG_DEBUG(log, "Received headers: {}", headers_ss.str());
 
-            if (status_code >= 300)
-            {
-                String error_message;
-                Poco::StreamCopier::copyToString(response_body_stream, error_message);
-
-                if (Aws::Http::IsRetryableHttpResponseCode(response->GetResponseCode()))
-                    response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
-                else
-                    response->SetClientErrorType(Aws::Client::CoreErrors::USER_CANCELLED);
-
-                response->SetClientErrorMessage(error_message);
-
-                if (status_code == 429 || status_code == 503)
-                { // API throttling
-                    ProfileEvents::increment(select_metric(S3MetricType::Throttling));
-                }
-                else
-                {
-                    ProfileEvents::increment(select_metric(S3MetricType::Errors));
-                }
+            if (status_code == 429 || status_code == 503)
+            { // API throttling
+                ProfileEvents::increment(select_metric(S3MetricType::Throttling));
             }
-            else
-                response->SetResponseBody(response_body_stream, session);
+            else if (status_code >= 300)
+            {
+                ProfileEvents::increment(select_metric(S3MetricType::Errors));
+            }
+
+            response->SetResponseBody(response_body_stream, session);
 
             return;
         }
