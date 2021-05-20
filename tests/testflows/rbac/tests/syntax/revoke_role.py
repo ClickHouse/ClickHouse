@@ -166,10 +166,15 @@ def feature(self, node="clickhouse1"):
 
     with Scenario("I revoke a role on fake cluster, throws exception", requirements=[
             RQ_SRS_006_RBAC_Revoke_Role_Cluster("1.0")]):
-        with setup():
-            with When("I revoke a role from user on a cluster"):
-                exitcode, message = errors.cluster_not_found("fake_cluster")
-                node.query("REVOKE ON CLUSTER fake_cluster role0 FROM user0", exitcode=exitcode, message=message)
+        with Given("I have a role and a user on a cluster"):
+            node.query("CREATE USER OR REPLACE user0")
+            node.query("CREATE ROLE OR REPLACE role0")
+        with When("I revoke a role from user on a cluster"):
+            exitcode, message = errors.cluster_not_found("fake_cluster")
+            node.query("REVOKE ON CLUSTER fake_cluster role0 FROM user0", exitcode=exitcode, message=message)
+        with Finally("I drop the user and role"):
+            node.query("DROP USER IF EXISTS user0")
+            node.query("DROP ROLE IF EXISTS role0")
 
     with Scenario("I revoke multiple roles from multiple users on cluster", requirements=[
             RQ_SRS_006_RBAC_Revoke_Role("1.0"),

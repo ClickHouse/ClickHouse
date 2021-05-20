@@ -316,7 +316,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 
 Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH](../../sql-reference/statements/misc.md#detach) queries according to the following hierarchy of privileges:
 
--   `DROP`. Level:
+-   `DROP`. Level: `GROUP`
     -   `DROP DATABASE`. Level: `DATABASE`
     -   `DROP TABLE`. Level: `TABLE`
     -   `DROP VIEW`. Level: `VIEW`
