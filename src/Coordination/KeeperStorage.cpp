@@ -103,8 +103,7 @@ struct KeeperStorageSyncRequest final : public KeeperStorageRequest
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & /* container */, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         auto response = zk_request->makeResponse();
-        dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path
-            = dynamic_cast<Coordination::ZooKeeperSyncRequest &>(*zk_request).path;
+        dynamic_cast<Coordination::ZooKeeperSyncResponse *>(response.get())->path = dynamic_cast<Coordination::ZooKeeperSyncRequest *>(zk_request.get())->path;
         return {response, {}};
     }
 };
@@ -406,6 +405,8 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
 
             response.names.insert(response.names.end(), it->value.children.begin(), it->value.children.end());
 
+            std::sort(response.names.begin(), response.names.end());
+
             response.stat = it->value.stat;
             response.error = Coordination::Error::ZOK;
         }
@@ -547,17 +548,6 @@ struct KeeperStorageCloseRequest final : public KeeperStorageRequest
     }
 };
 
-/// Dummy implementation TODO: implement simple ACL
-struct KeeperStorageAuthRequest final : public KeeperStorageRequest
-{
-    using KeeperStorageRequest::KeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container &, KeeperStorage::Ephemerals &, int64_t, int64_t) const override
-    {
-        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
-        return { response_ptr, {} };
-    }
-};
-
 void KeeperStorage::finalize()
 {
     if (finalized)
@@ -622,7 +612,7 @@ KeeperWrapperFactory::KeeperWrapperFactory()
 {
     registerKeeperRequestWrapper<Coordination::OpNum::Heartbeat, KeeperStorageHeartbeatRequest>(*this);
     registerKeeperRequestWrapper<Coordination::OpNum::Sync, KeeperStorageSyncRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Auth, KeeperStorageAuthRequest>(*this);
+    //registerKeeperRequestWrapper<Coordination::OpNum::Auth, KeeperStorageAuthRequest>(*this);
     registerKeeperRequestWrapper<Coordination::OpNum::Close, KeeperStorageCloseRequest>(*this);
     registerKeeperRequestWrapper<Coordination::OpNum::Create, KeeperStorageCreateRequest>(*this);
     registerKeeperRequestWrapper<Coordination::OpNum::Remove, KeeperStorageRemoveRequest>(*this);

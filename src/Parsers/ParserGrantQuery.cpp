@@ -238,7 +238,8 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     String cluster;
-    parseOnCluster(pos, expected, cluster);
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
 
     bool grant_option = false;
     bool admin_option = false;

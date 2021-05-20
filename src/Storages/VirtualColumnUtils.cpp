@@ -128,7 +128,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 }
 
-bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
+bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, Block block, ASTPtr & expression_ast)
 {
     if (block.rows() == 0)
         throw Exception("Cannot prepare filter with empty block", ErrorCodes::LOGICAL_ERROR);
@@ -184,7 +184,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     return unmodified;
 }
 
-void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
+void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context, ASTPtr expression_ast)
 {
     if (block.rows() == 0)
         return;
@@ -199,7 +199,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     buildSets(expression_ast, analyzer);
-    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
+    ExpressionActionsPtr actions = analyzer.getActions(false);
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);
@@ -211,15 +211,10 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     ConstantFilterDescription constant_filter(*filter_column);
 
     if (constant_filter.always_true)
-    {
         return;
-    }
 
     if (constant_filter.always_false)
-    {
         block = block.cloneEmpty();
-        return;
-    }
 
     FilterDescription filter(*filter_column);
 

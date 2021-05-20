@@ -1,26 +1,19 @@
 #pragma once
 
-#include <Access/RowPolicy.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage_fwd.h>
+#include <Access/RowPolicy.h>
 #include <Common/MultiVersion.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/ThreadPool.h>
-#include <common/types.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -29,16 +22,32 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <Common/RemoteHostFilter.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
-namespace Poco::Net { class IPAddress; }
-namespace zkutil { class ZooKeeper; }
+namespace Poco
+{
+    namespace Net
+    {
+        class IPAddress;
+    }
+}
+
+namespace zkutil
+{
+    class ZooKeeper;
+}
 
 
 namespace DB
 {
 
-struct ContextSharedPart;
+struct ContextShared;
+class Context;
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
@@ -52,8 +61,6 @@ class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
-class InterserverCredentials;
-using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class BackgroundSchedulePool;
 class MergeList;
@@ -116,16 +123,20 @@ struct BackgroundTaskSchedulingSettings;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+#if USE_EMBEDDED_COMPILER
+class CompiledExpressionCache;
+#endif
+
 /// Callback for external tables initializer
-using ExternalTablesInitializer = std::function<void(ContextPtr)>;
+using ExternalTablesInitializer = std::function<void(Context &)>;
 
 /// Callback for initialize input()
-using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
+using InputInitializer = std::function<void(Context &, const StoragePtr &)>;
 /// Callback for reading blocks of data from client for function input()
-using InputBlocksReader = std::function<Block(ContextPtr)>;
+using InputBlocksReader = std::function<Block(Context &)>;
 
-/// Used in distributed task processing
-using ReadTaskCallback = std::function<String()>;
+/// Scalar results of sub queries
+using Scalars = std::map<String, Block>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -142,16 +153,15 @@ struct SharedContextHolder
 {
     ~SharedContextHolder();
     SharedContextHolder();
-    explicit SharedContextHolder(std::unique_ptr<ContextSharedPart> shared_context);
+    SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
     SharedContextHolder & operator=(SharedContextHolder &&);
 
-    ContextSharedPart * get() const { return shared.get(); }
+    ContextShared * get() const { return shared.get(); }
     void reset();
-
 private:
-    std::unique_ptr<ContextSharedPart> shared;
+    std::unique_ptr<ContextShared> shared;
 };
 
 /** A set of known objects that can be used in the query.
@@ -160,10 +170,10 @@ private:
   *
   * Everything is encapsulated for all sorts of checks and locks.
   */
-class Context: public std::enable_shared_from_this<Context>
+class Context
 {
 private:
-    ContextSharedPart * shared;
+    ContextShared * shared;
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -188,9 +198,6 @@ private:
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
 
-    /// Fields for distributed s3 function
-    std::optional<ReadTaskCallback> next_task_callback;
-
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -202,7 +209,6 @@ private:
             databases = rhs.databases;
             tables = rhs.tables;
             columns = rhs.columns;
-            projections = rhs.projections;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -218,7 +224,6 @@ private:
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
-            std::swap(projections, rhs.projections);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -226,7 +231,6 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
-        std::set<std::string> projections;
     };
 
     QueryAccessInfo query_access_info;
@@ -248,19 +252,18 @@ private:
     /// Needs to be chandged while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
-    /// TODO: maybe replace with temporary tables?
+    //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
 
-    ContextWeakPtr query_context;
-    ContextWeakPtr session_context;  /// Session context or nullptr. Could be equal to this.
-    ContextWeakPtr global_context;   /// Global context. Could be equal to this.
-
-    /// XXX: move this stuff to shared part instead.
-    ContextPtr buffer_context;  /// Buffer context. Could be equal to this.
+    Context * query_context = nullptr;
+    Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
+    Context * global_context = nullptr;     /// Global context. Could be equal to this.
+    std::shared_ptr<Context> buffer_context;/// Buffer context. Could be equal to this.
 
 public:
-    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for
+    // a query context.
     OpenTelemetryTraceContext query_trace_context;
 
 private:
@@ -278,7 +281,7 @@ private:
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
                                    /// logger, some query identification information, profiling guards, etc. This field is
-                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::ContextPtr)
+                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
 
     ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
@@ -287,20 +290,16 @@ private:
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
+    /// Use copy constructor or createGlobal() instead
     Context();
-    Context(const Context &);
-    Context & operator=(const Context &);
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static ContextPtr createGlobal(ContextSharedPart * shared);
-    static ContextPtr createCopy(const ContextWeakConstPtr & other);
-    static ContextPtr createCopy(const ContextConstPtr & other);
-    static ContextPtr createCopy(const ContextPtr & other);
+    static Context createGlobal(ContextShared * shared);
     static SharedContextHolder createShared();
 
-    void copyFrom(const ContextPtr & other);
-
+    Context(const Context &);
+    Context & operator=(const Context &);
     ~Context();
 
     String getPath() const;
@@ -433,11 +432,7 @@ public:
     bool hasScalar(const String & name) const;
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
-    void addQueryAccessInfo(
-        const String & quoted_database_name,
-        const String & full_quoted_table_name,
-        const Names & column_names,
-        const String & projection_name = {});
+    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -508,11 +503,7 @@ public:
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalModelsLoader & getExternalModelsLoader();
-    ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries() const;
-    void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
-
-    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
@@ -531,8 +522,8 @@ public:
     std::pair<String, UInt16> getInterserverIOAddress() const;
 
     /// Credentials which server will use to communicate with others
-    void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
-    InterserverCredentialsPtr getInterserverCredentials();
+    void setInterserverCredentials(const String & user, const String & password);
+    std::pair<String, String> getInterserverCredentials() const;
 
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
@@ -555,29 +546,27 @@ public:
 
     /// For methods below you may need to acquire the context lock by yourself.
 
-    ContextPtr getQueryContext() const;
-    bool hasQueryContext() const { return !query_context.expired(); }
-    bool isInternalSubquery() const;
+    const Context & getQueryContext() const;
+    Context & getQueryContext();
+    bool hasQueryContext() const { return query_context != nullptr; }
+    bool isInternalSubquery() const { return hasQueryContext() && query_context != this; }
 
-    ContextPtr getSessionContext() const;
-    bool hasSessionContext() const { return !session_context.expired(); }
+    const Context & getSessionContext() const;
+    Context & getSessionContext();
+    bool hasSessionContext() const { return session_context != nullptr; }
 
-    ContextPtr getGlobalContext() const;
-    bool hasGlobalContext() const { return !global_context.expired(); }
-    bool isGlobalContext() const
-    {
-        auto ptr = global_context.lock();
-        return ptr && ptr.get() == this;
-    }
+    const Context & getGlobalContext() const;
+    Context & getGlobalContext();
+    bool hasGlobalContext() const { return global_context != nullptr; }
 
-    ContextPtr getBufferContext() const;
+    const Context & getBufferContext() const;
 
-    void setQueryContext(ContextPtr context_) { query_context = context_; }
-    void setSessionContext(ContextPtr context_) { session_context = context_; }
+    void setQueryContext(Context & context_) { query_context = &context_; }
+    void setSessionContext(Context & context_) { session_context = &context_; }
 
-    void makeQueryContext() { query_context = shared_from_this(); }
-    void makeSessionContext() { session_context = shared_from_this(); }
-    void makeGlobalContext() { initGlobal(); global_context = shared_from_this(); }
+    void makeQueryContext() { query_context = this; }
+    void makeSessionContext() { session_context = this; }
+    void makeGlobalContext() { initGlobal(); global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
 
@@ -686,7 +675,7 @@ public:
     std::shared_ptr<TraceLog> getTraceLog();
     std::shared_ptr<TextLog> getTextLog();
     std::shared_ptr<MetricLog> getMetricLog();
-    std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
+    std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog();
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog();
 
     /// Returns an object used to log operations with parts if it possible.
@@ -734,8 +723,7 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        LOCAL,          /// clickhouse-local
-        KEEPER,         /// clickhouse-keeper (also daemon)
+        LOCAL           /// clickhouse-local
     };
 
     ApplicationType getApplicationType() const;
@@ -759,7 +747,7 @@ public:
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
 
     /// Add started bridge command. It will be killed after context destruction
-    void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
+    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
@@ -780,10 +768,6 @@ public:
 
     PartUUIDsPtr getPartUUIDs();
     PartUUIDsPtr getIgnoredPartUUIDs();
-
-    ReadTaskCallback getReadTaskCallback() const;
-    void setReadTaskCallback(ReadTaskCallback && callback);
-
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
@@ -804,9 +788,6 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
-
-    /// If the password is not set, the password will not be checked
-    void setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address);
 };
 
 
@@ -820,12 +801,12 @@ struct NamedSession
 {
     NamedSessionKey key;
     UInt64 close_cycle = 0;
-    ContextPtr context;
+    Context context;
     std::chrono::steady_clock::duration timeout;
     NamedSessions & parent;
 
-    NamedSession(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
-        : key(key_), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
+    NamedSession(NamedSessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
+        : key(key_), context(context_), timeout(timeout_), parent(parent_)
     {
     }
 

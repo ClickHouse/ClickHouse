@@ -51,6 +51,7 @@ SRCS(
     HierarchyDictionariesUtils.cpp
     IPAddressDictionary.cpp
     LibraryDictionarySource.cpp
+    LibraryDictionarySourceExternal.cpp
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp

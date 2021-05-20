@@ -6,16 +6,17 @@
 
 namespace DB
 {
-
+class Context;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 
 /** Return all queries for creating access entities and grants.
   */
-class InterpreterShowAccessQuery : public IInterpreter, WithContext
+class InterpreterShowAccessQuery : public IInterpreter
 {
 public:
-    InterpreterShowAccessQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
+    InterpreterShowAccessQuery(const ASTPtr & query_ptr_, Context & context_)
+        : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
@@ -28,6 +29,8 @@ private:
     std::vector<AccessEntityPtr> getEntities() const;
 
     ASTPtr query_ptr;
+    Context & context;
 };
+
 
 }

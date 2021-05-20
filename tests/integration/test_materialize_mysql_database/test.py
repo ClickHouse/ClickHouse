@@ -16,8 +16,7 @@ cluster = ClickHouseCluster(__file__)
 
 node_db_ordinary = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=False, stay_alive=True)
 node_db_atomic = cluster.add_instance('node2', user_configs=["configs/users_db_atomic.xml"], with_mysql=False, stay_alive=True)
-node_disable_bytes_settings = cluster.add_instance('node3', user_configs=["configs/users_disable_bytes_settings.xml"], with_mysql=False, stay_alive=True)
-node_disable_rows_settings = cluster.add_instance('node4', user_configs=["configs/users_disable_rows_settings.xml"], with_mysql=False, stay_alive=True)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -125,7 +124,7 @@ mysql_5_7_docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mys
 mysql_5_7_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, mysql_5_7_docker_compose)
 
 mysql_8_0_docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_8_0_for_materialize_mysql.yml')
-mysql_8_0_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3309, mysql_8_0_docker_compose)
+mysql_8_0_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, mysql_8_0_docker_compose)
 
 
 @pytest.fixture(scope="module")
@@ -151,7 +150,6 @@ def started_mysql_8_0():
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
 def test_materialize_database_dml_with_mysql_5_7(started_cluster, started_mysql_5_7, clickhouse_node):
     materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql1")
-    materialize_with_ddl.materialize_mysql_database_with_views(clickhouse_node, started_mysql_5_7, "mysql1")
     materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_5_7, "mysql1")
     materialize_with_ddl.move_to_prewhere_and_column_filtering(clickhouse_node, started_mysql_5_7, "mysql1")
 
@@ -159,7 +157,6 @@ def test_materialize_database_dml_with_mysql_5_7(started_cluster, started_mysql_
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
 def test_materialize_database_dml_with_mysql_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
-    materialize_with_ddl.materialize_mysql_database_with_views(clickhouse_node, started_mysql_8_0, "mysql8_0")
     materialize_with_ddl.materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, started_mysql_8_0, "mysql8_0")
     materialize_with_ddl.move_to_prewhere_and_column_filtering(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
@@ -292,12 +289,5 @@ def test_multi_table_update(started_cluster, started_mysql_8_0, started_mysql_5_
 
 
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
-def test_system_tables_table(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
-    materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_5_7, "mysql1")
+def test_system_tables_table(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
-
-
-@pytest.mark.parametrize(('clickhouse_node'), [node_disable_bytes_settings, node_disable_rows_settings])
-def test_mysql_settings(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
-    materialize_with_ddl.mysql_settings_test(clickhouse_node, started_mysql_5_7, "mysql1")
-    materialize_with_ddl.mysql_settings_test(clickhouse_node, started_mysql_8_0, "mysql8_0")

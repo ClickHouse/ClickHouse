@@ -28,7 +28,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(&Poco::Logger::get(log_name))
 {
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
+    task = storage.global_context.getSchedulePool().createTask(log_name, [this] { run(); });
     task->schedule();
 }
 
