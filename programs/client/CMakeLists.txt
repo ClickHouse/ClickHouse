@@ -11,8 +11,7 @@ if (WITH_COVERAGE)
         ConnectionParameters.cpp
         QueryFuzzer.cpp
         Suggest.cpp
-
-        PROPERTIES COMPILE_FLAGS "-O3 -finline-functions ${WITHOUT_COVERAGE}")
+        PROPERTIES COMPILE_FLAGS "${WITHOUT_COVERAGE}")
 endif()
 
 set (CLICKHOUSE_CLIENT_LINK

@@ -11,7 +11,6 @@ else ()
     option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
 endif ()
 
-
 if (WITH_COVERAGE)
     set (ENABLE_JEMALLOC ON)
 endif()
@@ -146,10 +145,7 @@ target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
 # for RTLD_NEXT
 target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
 
-if (WITH_COVERAGE)
-    target_compile_options(jemalloc
-        PRIVATE -O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
-endif()
+build_target_without_coverage(jemalloc)
 
 set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
 if (MAKE_STATIC_LIBRARIES)

@@ -17,7 +17,8 @@ namespace detail
 {
 namespace
 {
-inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
+// Unused in Darwin and FreeBSD builds.
+[[maybe_unused]] inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
 {
     /**
      * Writer is a singleton, so it initializes statically.
@@ -25,7 +26,7 @@ inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
      * If no thread was found in the events profiler, a global variable global_counters is used.
      *
      * This variable may get initialized after Writer (static initialization order fiasco).
-     * In fact, the __sanitizer_cov_trace_pc_guard_init is called before the global_counters init.
+     * In fact, __sanitizer_cov_trace_pc_guard_init is called before global_counters init.
      *
      * We can't use constinit on that variable as it has a shared_ptr on it, so we just
      * ultimately initialize it before getting the instance.
@@ -320,12 +321,11 @@ void Writer::onChangedTestName(std::string old_test_name)
         return;
     }
 
-    /// https://godbolt.org/z/qqTYdr5Gz, explicit 0 state generates slightly better assembly than without it.
-    EdgesHit edges_hit_swap(edges_count, 0);
-
     const size_t test_that_will_run_next = test_index;
     const size_t test_that_finished = test_that_will_run_next - 1;
     ++test_index;
+
+    EdgesHit edges_hit_swap(edges_count, 0);
 
     edges_hit.swap(edges_hit_swap);
 
@@ -350,15 +350,13 @@ void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
     test_data.data.resize(source_files_cache.size());
 
     for (size_t edge_index = 0; edge_index < edges_count; ++edge_index)
-    {
-        if (!hits[edge_index]) //char to bool conversion
-            continue;
-
-        if (const EdgeInfo& info = edges_cache[edge_index]; info.isFunctionEntry())
-            test_data.data[info.index].functions_hit.push_back(edge_index);
-        else
-            test_data.data[info.index].lines_hit.push_back(info.line);
-    }
+        if (hits[edge_index]) //char to bool conversion
+        {
+            if (const EdgeInfo& info = edges_cache[edge_index]; info.isFunctionEntry())
+                test_data.data[info.index].functions_hit.push_back(edge_index);
+            else
+                test_data.data[info.index].lines_hit.push_back(info.line);
+        }
 
     LOG_INFO(test_data.log, "Finished filling internal structures");
     writeCCREntry(test_data);

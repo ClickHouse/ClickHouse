@@ -16,7 +16,9 @@ set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
 
 if (WITH_COVERAGE)
-    add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
+    set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
+    separate_arguments(WITHOUT_COVERAGE_LIST)
+    add_compile_options(${WITHOUT_COVERAGE_LIST})
 endif()
 
 if (SANITIZE STREQUAL "undefined")

@@ -283,7 +283,6 @@ endforeach ()
 if (WITH_COVERAGE)
     set_source_files_properties(
         Common/Coverage.cpp
-        Common/CoverageCallbacks.h
         Common/ThreadPool.cpp # Otherwise tests run about x2 slower.
 
         # Otherwise it will slow down stack traces printing too much.
@@ -291,8 +290,7 @@ if (WITH_COVERAGE)
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp
 
-        # TODO remove debug info
-        PROPERTIES COMPILE_FLAGS "-O3 -ggdb -g3 -finline-functions ${WITHOUT_COVERAGE}")
+        PROPERTIES COMPILE_FLAGS "${WITHOUT_COVERAGE}")
 endif()
 
 target_link_libraries (clickhouse_common_io

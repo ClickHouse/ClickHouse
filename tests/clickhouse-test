@@ -371,10 +371,7 @@ def run_tests_array(all_tests_with_params):
         print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
     if args.coverage:
-        res, failures = run_query("SET coverage_tests_count={};".format(len(all_tests)), failures)
-
-        if not res:
-            return False
+        _, failures = run_query("SET coverage_tests_count={};".format(len(all_tests)), failures)
 
     for case in all_tests:
         if SERVER_DIED:

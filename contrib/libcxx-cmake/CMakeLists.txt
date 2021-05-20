@@ -46,14 +46,11 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/vector.cpp"
 )
 
-if (WITH_COVERAGE)
-    add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
-endif()
-
 add_library(cxx ${SRCS})
 
 target_include_directories(cxx SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
+build_target_without_coverage(cxx)
 
 # Enable capturing stack traces for all exceptions.
 if (USE_UNWIND)

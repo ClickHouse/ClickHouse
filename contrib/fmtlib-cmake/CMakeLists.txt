@@ -19,6 +19,4 @@ set (SRCS
 add_library(fmt ${SRCS})
 target_include_directories(fmt SYSTEM PUBLIC ../fmtlib/include)
 
-if (WITH_COVERAGE)
-    target_compile_options(fmt PRIVATE -O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
-endif()
+build_target_without_coverage(fmt)

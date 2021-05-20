@@ -49,10 +49,10 @@ struct SymbolIndexInstance
     struct SymbolPtr { std::string_view name; };
     static constexpr SymbolPtr sym_ptr;
 
-    struct Ptr { constexpr const SymbolPtr * const findSymbol(size_t) const { return &sym_ptr; } }; //NOLINT
+    struct Ptr { constexpr const SymbolPtr * findSymbol(void*) const { return &sym_ptr; } }; //NOLINT
     static constexpr Ptr ptr;
 
-    constexpr const Ptr * const operator->() const { return &ptr; }
+    constexpr const Ptr * operator->() const { return &ptr; }
 };
 
 struct SymbolIndex { static constexpr SymbolIndexInstance instance() { return {}; } };

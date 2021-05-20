@@ -138,23 +138,6 @@ else()
     message (STATUS "Fuzzing instrumentation runtime: OFF")
 endif()
 
-# clang only.
-option(WITH_COVERAGE "Generate functional tests code coverage reports." OFF)
-
-if (WITH_COVERAGE)
-    if (COMPILER_CLANG)
-        message(STATUS "Code coverage runtime: ON")
-
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fsanitize-coverage-blocklist=${CMAKE_CURRENT_SOURCE_DIR}/blocklist.txt")
-        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
-        set(WITHOUT_COVERAGE "-fno-sanitize-coverage=trace-pc-guard,pc-table")
-    else()
-        message(ERROR "As for now, the code coverage is supported in Clang only")
-    endif()
-else()
-    message(STATUS "Code coverage runtime: OFF")
-endif()
-
 # Global libraries
 # See:
 # - default_libs.cmake
@@ -322,6 +305,31 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 endif ()
 
+# clang only.
+option(WITH_COVERAGE "Generate functional tests code coverage reports." OFF)
+
+if (WITH_COVERAGE)
+    if (COMPILER_CLANG)
+        message(STATUS "Code coverage runtime: ON")
+
+        # Provide blocklist to all files (so compiler driver could exclude unneeded)
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fsanitize-coverage-blocklist=${CMAKE_CURRENT_SOURCE_DIR}/blocklist.txt")
+
+        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
+
+        # Coverage build runs in CI only, so we do not need compatibility
+        set(GLIBC_COMPATIBILITY OFF)
+        set(ARCH_NATIVE ON)
+
+        # We can enable LTO without unit tests (coverage is tracked for functional tests only).
+        set(ENABLE_TESTS OFF)
+    else()
+        message(FATAL_ERROR "As for now, the code coverage is supported in Clang only")
+    endif()
+else()
+    message(STATUS "Code coverage runtime: OFF")
+endif()
+
 set(COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -389,6 +397,19 @@ if (COMPILER_CLANG)
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
 endif ()
+
+if (WITH_COVERAGE)
+    # Release flags, applied to contribs.
+    set(WITHOUT_COVERAGE "${CMAKE_CXX_FLAGS} -O3 -finline-functions -fno-sanitize-coverage=trace-pc-guard,pc-table")
+endif()
+
+function(build_target_without_coverage target)
+    if (WITH_COVERAGE)
+        set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
+        separate_arguments(WITHOUT_COVERAGE_LIST)
+        target_compile_options(${target} PRIVATE ${WITHOUT_COVERAGE_LIST})
+    endif()
+endfunction()
 
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
