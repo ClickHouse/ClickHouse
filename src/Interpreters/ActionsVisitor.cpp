@@ -1,6 +1,5 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Core/Row.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -80,7 +79,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     for (size_t i = 0; i < columns_num; ++i)
         columns[i] = types[i]->createColumn();
 
-    Row tuple_values;
+    std::vector<Field> tuple_values;
     for (const auto & value : collection)
     {
         if (columns_num == 1)
@@ -154,7 +153,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
     MutableColumns columns = header.cloneEmptyColumns();
 
     DataTypePtr tuple_type;
-    Row tuple_values;
+    std::vector<Field> tuple_values;
     const auto & list = node->as<ASTExpressionList &>();
     bool transform_null_in = context->getSettingsRef().transform_null_in;
     for (const auto & elem : list.children)

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Row.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -19,9 +18,9 @@ namespace DB
 struct BlockWithPartition
 {
     Block block;
-    Row partition;
+    std::vector<Field> partition;
 
-    BlockWithPartition(Block && block_, Row && partition_)
+    BlockWithPartition(Block && block_, std::vector<Field> && partition_)
         : block(block_), partition(std::move(partition_))
     {
     }
