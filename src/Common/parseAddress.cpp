@@ -39,13 +39,16 @@ std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 defa
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Illegal port prefix passed to function parseAddress: {}", port);
 
+        ++port;
+
         UInt16 port_number;
-        if (!tryParse<UInt16>(port_number, port + 1))
+        ReadBufferFromMemory port_buf(port, end - port);
+        if (!tryReadText<UInt16>(port_number, port_buf) || !port_buf.eof())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Illegal port passed to function parseAddress: {}", port + 1);
+                "Illegal port passed to function parseAddress: {}", port);
         }
-        return { std::string(begin, port), port_number };
+        return { std::string(begin, port - 1), port_number };
     }
     else if (default_port)
     {
