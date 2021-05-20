@@ -111,14 +111,15 @@ template <typename T, typename Data>
 class AggregateFunctionSegmentLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSegmentLengthSum<T, Data>>
 {
 private:
-    UInt64 getSegmentLengthSum(Data & data) const
+    template <typename TResult>
+    TResult getSegmentLengthSum(Data & data) const
     {
         if (data.size() == 0)
             return 0;
 
         data.sort();
 
-        UInt64 res = 0;
+        TResult res = 0;
 
         typename Data::Segment cur_segment = data.segments[0];
 
@@ -146,7 +147,12 @@ public:
     {
     }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
+    DataTypePtr getReturnType() const override
+    {
+        if constexpr (std::is_floating_point_v<T>)
+            return std::make_shared<DataTypeFloat64>();
+        return std::make_shared<DataTypeUInt64>();
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -183,7 +189,10 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnUInt64 &>(to).getData().push_back(getSegmentLengthSum(this->data(place)));
+        if constexpr (std::is_floating_point_v<T>)
+            assert_cast<ColumnFloat64 &>(to).getData().push_back(getSegmentLengthSum<Float64>(this->data(place)));
+        else
+            assert_cast<ColumnUInt64 &>(to).getData().push_back(getSegmentLengthSum<UInt64>(this->data(place)));
     }
 };
 
