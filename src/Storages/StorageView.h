@@ -55,8 +55,6 @@ protected:
         const ColumnsDescription & columns_,
         const String & comment,
         const Settings & settings);
-
-    SettingsChanges settings_changes;
 };
 
 }

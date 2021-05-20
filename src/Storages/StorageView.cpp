@@ -29,6 +29,57 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+void addSettingsChanges(ASTPtr ast, const Settings & settings)
+{
+    auto * settings_ast = ast->as<ASTSetQuery>();
+    if (!settings_ast)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "ASTSetQuery expected");
+
+    settings_ast->is_standalone = false;
+    if (settings_ast->changes.tryGet("join_use_nulls") == nullptr)
+        settings_ast->changes.emplace_back("join_use_nulls", Field(settings.join_use_nulls));
+}
+
+/// Save to AST settings from context that affects view behaviour.
+void saveSettingsToAst(ASTSelectWithUnionQuery * select, const Settings & settings)
+{
+    /// Check SETTINGS section on the top level
+    if (select->settings_ast)
+    {
+        addSettingsChanges(select->settings_ast, settings);
+        return;
+    }
+
+    /// We cannot add SETTINGS on the top level because it will clash with section from inner SELECT
+    /// and will got query: SELECT ... SETTINGS ... SETTINGS ...
+
+    /// Process every select in ast and add SETTINGS section to each
+    for (const auto & child : select->list_of_selects->children)
+    {
+        auto * child_select = child->as<ASTSelectQuery>();
+        if (!child_select)
+            continue;
+
+        ASTPtr ast_set_query = child_select->settings();
+        if (ast_set_query)
+        {
+            /// Modify existing SETTINGS section
+            addSettingsChanges(ast_set_query, settings);
+        }
+        else
+        {
+            /// Add SETTINGS section to query
+            ast_set_query = std::make_shared<ASTSetQuery>();
+            addSettingsChanges(ast_set_query, settings);
+            child_select->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(ast_set_query));
+        }
+    }
+}
+
+}
 
 StorageView::StorageView(
     const StorageID & table_id_,
@@ -37,7 +88,6 @@ StorageView::StorageView(
     const String & comment,
     const Settings & settings)
     : IStorage(table_id_)
-    , settings_changes(settings.changes())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -46,6 +96,7 @@ StorageView::StorageView(
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
+    saveSettingsToAst(query.select, settings);
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
@@ -89,10 +140,7 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    auto modified_context = Context::createCopy(context);
-    modified_context->applySettingsChanges(settings_changes);
-
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, modified_context, {}, column_names);
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.
