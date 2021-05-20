@@ -723,10 +723,10 @@ def do_run_tests(jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_test
         pool.join()
 
         run_tests_array((sequential_tests, len(sequential_tests), suite, suite_dir, suite_tmp_dir))
-        total_tests_run += len(sequential_tests) + len(parallel_tests)
+        return len(sequential_tests) + len(parallel_tests)
     else:
         run_tests_array((all_tests, len(all_tests), suite, suite_dir, suite_tmp_dir))
-        total_tests_run += len(all_tests)
+        return len(all_tests)
 
 
 def main(args):
@@ -892,7 +892,8 @@ def main(args):
                 else:
                     parallel_tests.append(test)
 
-            do_run_tests(jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_tests, sequential_tests, args.parallel)
+            total_tests_run += do_run_tests(
+                jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_tests, sequential_tests, args.parallel)
 
     if args.hung_check:
 
