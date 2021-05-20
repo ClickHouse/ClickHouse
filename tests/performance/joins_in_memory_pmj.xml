@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="2">
+<test max_ignored_relative_change="0.7">
     <create_query>CREATE TABLE ints (i64 Int64, i32 Int32, i16 Int16, i8 Int8) ENGINE = Memory</create_query>
 
     <settings>
