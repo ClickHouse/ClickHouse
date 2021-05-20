@@ -4723,6 +4723,10 @@ void StorageReplicatedMergeTree::alter(
         if (new_indices_str != current_metadata->secondary_indices.toString())
             future_metadata_in_zk.skip_indices = new_indices_str;
 
+        String new_projections_str = future_metadata.projections.toString();
+        if (new_projections_str != current_metadata->projections.toString())
+            future_metadata_in_zk.projections = new_projections_str;
+
         String new_constraints_str = future_metadata.constraints.toString();
         if (new_constraints_str != current_metadata->constraints.toString())
             future_metadata_in_zk.constraints = new_constraints_str;
