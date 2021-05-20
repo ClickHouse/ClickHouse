@@ -28,13 +28,17 @@ std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 defa
             throw Exception("Illegal address passed to function parseAddress: "
                 "the address begins with opening square bracket, but no closing square bracket found", ErrorCodes::BAD_ARGUMENTS);
 
-        port = find_first_symbols<':'>(closing_square_bracket + 1, end);
+        port = closing_square_bracket + 1;
     }
     else
         port = find_first_symbols<':'>(begin, end);
 
     if (port != end)
     {
+        if (*port != ':')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Illegal port prefix passed to function parseAddress: {}", port);
+
         UInt16 port_number;
         if (!tryParse<UInt16>(port_number, port + 1))
         {
