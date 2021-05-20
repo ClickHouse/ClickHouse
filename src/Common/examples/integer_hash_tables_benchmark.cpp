@@ -140,6 +140,7 @@ static void NO_INLINE testForType(size_t method, size_t rows_size)
  *
  *
  * Results of this benchmark on hits_100m_obfuscated AARCH64
+ *
  * File hits_100m_obfuscated/201307_1_96_4/WatchID.bin
  * CH HashMap: Elapsed: 9.530 (10493528.533 elem/sec.), map size: 99997493
  * Google DenseMap: Elapsed: 14.436 (6927091.135 elem/sec.), map size: 99997493
