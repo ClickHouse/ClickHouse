@@ -102,7 +102,7 @@ public:
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view; }
 
-    ASTLiteral * tryGetZooKeeperPath();
+    ASTLiteral * tryGetZooKeeperPath() const;
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
