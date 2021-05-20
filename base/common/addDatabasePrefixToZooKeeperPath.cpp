@@ -23,6 +23,10 @@ bool addDatabasePrefixToZooKeeperPath(std::string & path, const std::string & da
     {
         auto prefix = config.getString("testmode_zk_path_prefix");
         addDatabaseToPrefix(prefix, database);
+
+        if (path.empty() || path[0] != '/')
+            prefix += '/';
+
         path = prefix + path;
         return true;
     }
