@@ -606,7 +606,8 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                 tryLogCurrentException(log);
                 /// If it fails, the data in RAM is incorrect. In order to avoid possible further corruption of data in ZK, we will kill ourselves.
                 /// This is possible only if there is an unknown logical error.
-                std::terminate();
+                /// Turn into readonly mode instead of std::terminate();
+                storage.restarting_thread.setReadonly();
             }
 
             if (!copied_entries.empty())

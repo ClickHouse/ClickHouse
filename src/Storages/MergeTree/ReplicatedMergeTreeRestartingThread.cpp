@@ -384,4 +384,11 @@ void ReplicatedMergeTreeRestartingThread::setReadonly()
     }
 }
 
+void ReplicatedMergeTreeRestartingThread::explicitSetReadonly()
+{
+    setReadonly();
+    force_readonly = true;
+    storage.getZooKeeper()->finalize();
+}
+
 }

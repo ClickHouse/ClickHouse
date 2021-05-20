@@ -30,6 +30,9 @@ public:
 
     void shutdown();
 
+    /// Set readonly mode for table and do not reconnect automatically.
+    void explicitSetReadonly();
+
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
@@ -38,6 +41,9 @@ private:
 
     // We need it besides `storage.is_readonly`, because `shutdown()` may be called many times, that way `storage.is_readonly` will not change.
     bool readonly_mode_was_set = false;
+
+    // When explicit set to be readonly, do not try to reconnect.
+    bool force_readonly = false;
 
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
