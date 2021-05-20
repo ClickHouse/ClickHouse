@@ -1015,7 +1015,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
                         lambda_dag,
-                        ExpressionActionsSettings::fromContext(data.getContext()));
+                        ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
