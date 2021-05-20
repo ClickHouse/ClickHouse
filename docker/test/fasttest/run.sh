@@ -73,7 +73,7 @@ function start_server
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
         --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
-        --keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
+        --keeper_server.storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
