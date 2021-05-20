@@ -62,6 +62,10 @@ static void NO_INLINE testForType(size_t method, size_t rows_size)
     }
     else if (method == 3)
     {
+        test<Key, ::absl::flat_hash_map<Key, UInt64, DefaultHash<Key>>>(data.data(), data.size(), "Abseil HashMap with CH Hash");
+    }
+    else if (method == 4)
+    {
         test<Key, std::unordered_map<Key, UInt64>>(data.data(), data.size(), "std::unordered_map");
     }
     else
@@ -81,8 +85,9 @@ static void NO_INLINE testForType(size_t method, size_t rows_size)
  * ./integer_hash_tables_benchmark 1 $2 100000000 < $1
  * ./integer_hash_tables_benchmark 2 $2 100000000 < $1
  * ./integer_hash_tables_benchmark 3 $2 100000000 < $1
+ * ./integer_hash_tables_benchmark 4 $2 100000000 < $1
  *
- * Results of this benchmark on hits_100m_obfuscated
+ * Results of this benchmark on hits_100m_obfuscated X86-64
  *
  * File hits_100m_obfuscated/201307_1_96_4/WatchID.bin
  * CH HashMap: Elapsed: 7.366 (13575745.933 elem/sec.), map size: 99997493
@@ -125,6 +130,57 @@ static void NO_INLINE testForType(size_t method, size_t rows_size)
  * Google DenseMap: Elapsed: 1.673 (59757144.027 elem/sec.), map size: 32260732 /// Broken because there is 0 key in dataset
  * Abseil HashMap: Elapsed: 0.297 (336589258.845 elem/sec.), map size: 19
  * std::unordered_map: Elapsed: 0.332 (301114451.384 elem/sec.), map size: 19
+ *
+ *
+ * Results of this benchmark on hits_100m_obfuscated AARCH64
+ * File hits_100m_obfuscated/201307_1_96_4/WatchID.bin
+ * CH HashMap: Elapsed: 9.530 (10493528.533 elem/sec.), map size: 99997493
+ * Google DenseMap: Elapsed: 14.436 (6927091.135 elem/sec.), map size: 99997493
+ * Abseil HashMap: Elapsed: 16.671 (5998504.085 elem/sec.), map size: 99997493
+ * Abseil HashMap with CH Hash: Elapsed: 16.803 (5951365.711 elem/sec.), map size: 99997493
+ * std::unordered_map: Elapsed: 50.805 (1968305.658 elem/sec.), map size: 99997493
+ *
+ * File hits_100m_obfuscated/201307_1_96_4/URLHash.bin
+ * CH HashMap: Elapsed: 3.693 (27076878.092 elem/sec.), map size: 20714865
+ * Google DenseMap: Elapsed: 5.051 (19796401.694 elem/sec.), map size: 20714865
+ * Abseil HashMap: Elapsed: 5.617 (17804528.625 elem/sec.), map size: 20714865
+ * Abseil HashMap with CH Hash: Elapsed: 5.702 (17537013.639 elem/sec.), map size: 20714865
+ * std::unordered_map: Elapsed: 10.757 (9296040.953 elem/sec.), map size: 2071486
+ *
+ * File hits_100m_obfuscated/201307_1_96_4/UserID.bin
+ * CH HashMap: Elapsed: 2.982 (33535795.695 elem/sec.), map size: 17630976
+ * Google DenseMap: Elapsed: 3.940 (25381557.959 elem/sec.), map size: 17630976
+ * Abseil HashMap: Elapsed: 4.493 (22259078.458 elem/sec.), map size: 17630976
+ * Abseil HashMap with CH Hash: Elapsed: 4.596 (21759738.710 elem/sec.), map size: 17630976
+ * std::unordered_map: Elapsed: 9.035 (11067903.596 elem/sec.), map size: 17630976
+ *
+ * File hits_100m_obfuscated/201307_1_96_4/RegionID.bin
+ * CH HashMap: Elapsed: 0.302 (331026285.361 elem/sec.), map size: 9040
+ * Google DenseMap: Elapsed: 0.623 (160419421.840 elem/sec.), map size: 9046
+ * Abseil HashMap: Elapsed: 0.981 (101971186.758 elem/sec.), map size: 9040
+ * Abseil HashMap with CH Hash: Elapsed: 0.991 (100932993.199 elem/sec.), map size: 9040
+ * std::unordered_map: Elapsed: 0.809 (123541402.715 elem/sec.), map size: 9040
+ *
+ * File hits_100m_obfuscated/201307_1_96_4/CounterID.bin
+ * CH HashMap: Elapsed: 0.343 (291821742.078 elem/sec.), map size: 6506
+ * Google DenseMap: Elapsed: 0.718 (139191105.450 elem/sec.), map size: 6506
+ * Abseil HashMap: Elapsed: 1.019 (98148285.278 elem/sec.), map size: 6506
+ * Abseil HashMap with CH Hash: Elapsed: 1.048 (95446843.667 elem/sec.), map size: 6506
+ * std::unordered_map: Elapsed: 0.701 (142701070.085 elem/sec.), map size: 6506
+ *
+ * File hits_100m_obfuscated/201307_1_96_4/TraficSourceID.bin
+ * CH HashMap: Elapsed: 0.376 (265905243.103 elem/sec.), map size: 10
+ * Google DenseMap: Elapsed: 1.309 (76420707.298 elem/sec.), map size: 1565609 /// Broken because there is 0 key in dataset
+ * Abseil HashMap: Elapsed: 0.955 (104668109.775 elem/sec.), map size: 10
+ * Abseil HashMap with CH Hash: Elapsed: 0.967 (103456305.391 elem/sec.), map size: 10
+ * std::unordered_map: Elapsed: 1.241 (80591305.890 elem/sec.), map size: 10
+ *
+ * File hits_100m_obfuscated/201307_1_96_4/AdvEngineID.bin
+ * CH HashMap: Elapsed: 0.213 (470208130.105 elem/sec.), map size: 19
+ * Google DenseMap: Elapsed: 2.525 (39607131.523 elem/sec.), map size: 32260732 /// Broken because there is 0 key in dataset
+ * Abseil HashMap: Elapsed: 0.950 (105233678.618 elem/sec.), map size: 19
+ * Abseil HashMap with CH Hash: Elapsed: 0.962 (104001230.717 elem/sec.), map size: 19
+ * std::unordered_map: Elapsed: 0.585 (171059989.837 elem/sec.), map size: 19
  */
 
 int main(int argc, char ** argv)
