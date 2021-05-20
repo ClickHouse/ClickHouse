@@ -1,3 +1,27 @@
+SELECT
+    a,
+    b,
+    c
+FROM 
+(
+    SELECT *
+    FROM 
+    (
+        SELECT
+            number + 1 AS a,
+            number + 11 AS b
+        FROM numbers(2)
+    ) AS t1
+    FULL OUTER JOIN 
+    (
+        SELECT
+            number + 2 AS a,
+            number + 22 AS c
+        FROM numbers(2)
+    ) AS t2 USING (a)
+    ORDER BY a ASC
+    SETTINGS max_block_size = 666, join_use_nulls = 0
+) AS view_no_nulls
 1	11	0
 2	12	22
 3	0	23
