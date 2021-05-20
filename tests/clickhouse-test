@@ -27,8 +27,6 @@ except ImportError:
 import random
 import string
 import multiprocessing
-from collections.abc import Iterable
-#import multiprocessing.queues
 from contextlib import closing
 
 
