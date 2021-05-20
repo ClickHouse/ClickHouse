@@ -316,7 +316,7 @@ void DatabaseConnectionMySQL::shutdown()
     }
 
     for (const auto & [table_name, modify_time_and_storage] : tables_snapshot)
-        modify_time_and_storage.second->shutdown();
+        modify_time_and_storage.second->flushAndShutdown();
 
     std::lock_guard lock(mutex);
     local_tables_cache.clear();
@@ -343,7 +343,7 @@ void DatabaseConnectionMySQL::cleanOutdatedTables()
             {
                 const auto table_lock = (*iterator)->lockExclusively(RWLockImpl::NO_QUERY, lock_acquire_timeout);
 
-                (*iterator)->shutdown();
+                (*iterator)->flushAndShutdown();
                 (*iterator)->is_dropped = true;
                 iterator = outdated_tables.erase(iterator);
             }

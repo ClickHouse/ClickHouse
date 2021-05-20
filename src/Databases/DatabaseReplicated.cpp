@@ -529,7 +529,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_tables.push_back(tryGetTableUUID(table_name));
             dropped_dictionaries += table->isDictionary();
 
-            table->shutdown();
+            table->flushAndShutdown();
             DatabaseAtomic::dropTable(getContext(), table_name, true);
         }
         else

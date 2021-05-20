@@ -649,7 +649,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                     throw Exception("The column " + version_column +
                         " cannot be used as a version column for storage " + storage +
                         " because it is of type " + column.type->getName() +
-                        " (must be of an integer type or of type Date or DateTime)", ErrorCodes::BAD_TYPE_OF_FIELD);
+                        " (must be of an integer type or of type Date/DateTime/DateTime64)", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
@@ -2361,7 +2361,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
     DataPartsVector parts_to_remove;
 
     if (drop_range.min_block > drop_range.max_block)
-        return parts_to_remove;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid drop range: {}", drop_range.getPartName());
 
     auto partition_range = getDataPartsPartitionRange(drop_range.partition_id);
 
