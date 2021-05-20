@@ -29,7 +29,7 @@ function test_max_delay_to_insert_will_throw()
     "
 
     local start_seconds=$SECONDS
-    ${CLICKHOUSE_CLIENT} --testmode -nq "
+    ${CLICKHOUSE_CLIENT} -nq "
         -- first batch is always OK, since there is no pending bytes yet
         insert into dist_01675 select * from numbers(1) settings prefer_localhost_replica=0;
         -- second will fail, because of bytes_to_delay_insert=1 and max_delay_to_insert>0,
@@ -72,7 +72,7 @@ function test_max_delay_to_insert_will_succeed_once()
     local start_seconds=$SECONDS
     # ignore stderr, since it may produce exception if flushing thread will be too slow
     # (this is possible on CI)
-    ${CLICKHOUSE_CLIENT} --testmode -nq "
+    ${CLICKHOUSE_CLIENT} -nq "
         -- first batch is always OK, since there is no pending bytes yet
         insert into dist_01675 select * from numbers(1) settings prefer_localhost_replica=0;
         -- second will succeed, due to SYSTEM FLUSH DISTRIBUTED in background.
