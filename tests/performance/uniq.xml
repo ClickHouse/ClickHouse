@@ -23,8 +23,8 @@
                 -->
                <value>SearchEngineID</value>
                <value>RegionID</value>
-               <value>ClientIP</value>
                <value>SearchPhrase</value>
+               <value>ClientIP</value>
            </values>
        </substitution>
         <substitution>
