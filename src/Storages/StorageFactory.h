@@ -45,6 +45,7 @@ public:
         const ConstraintsDescription & constraints;
         bool attach;
         bool has_force_restore_data_flag;
+        const String & comment;
 
         ContextPtr getContext() const;
         ContextPtr getLocalContext() const;

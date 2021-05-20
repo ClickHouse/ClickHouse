@@ -345,10 +345,12 @@ CodecTestSequence operator*(CodecTestSequence && left, T times)
 
 std::ostream & operator<<(std::ostream & ostr, const Codec & codec)
 {
-    return ostr << "Codec{"
-                << "name: " << codec.codec_statement
-                << ", expected_compression_ratio: " << *codec.expected_compression_ratio
-                << "}";
+    ostr << "Codec{"
+         << "name: " << codec.codec_statement;
+    if (codec.expected_compression_ratio)
+        return ostr << ", expected_compression_ratio: " << *codec.expected_compression_ratio << "}";
+    else
+        return ostr << "}";
 }
 
 std::ostream & operator<<(std::ostream & ostr, const CodecTestSequence & seq)

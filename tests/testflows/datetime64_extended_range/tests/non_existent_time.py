@@ -148,8 +148,6 @@ def dst_time_zone_switch(self):
                         exec_query(request=query, expected=f"{dt1_str}")
 
 
-
-
 @TestFeature
 @Name("non existent time")
 @Requirements(
@@ -161,4 +159,4 @@ def feature(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     for scenario in loads(current_module(), Scenario, Suite):
-        Scenario(run=scenario, flags=TE)
+        Scenario(run=scenario)
