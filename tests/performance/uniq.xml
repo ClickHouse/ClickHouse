@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.9">
+<test>
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
