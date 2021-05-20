@@ -157,6 +157,12 @@ void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const Re
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size_)
     : data(data_), background_pool_size(background_pool_size_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
 {
+    const auto data_settings = data.getSettings();
+
+    if (data_settings->max_threads_for_concurrent_merge == 0)
+        merge_executor = std::make_unique<InlineMergeExecutor>();
+    else
+        merge_executor = std::make_unique<ConcurrentMergeExecutor>(data_settings->max_threads_for_concurrent_merge);
 }
 
 
@@ -945,32 +951,59 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t rows_written = 0;
     const size_t initial_reservation = space_reservation ? space_reservation->getSize() : 0;
 
-    auto is_cancelled = [&]() mutable { return merges_blocker.isCancelled()
-        || (need_remove_expired_values && ttl_merges_blocker.isCancelled()); };
-
-    auto update_for_block = [&] (const Block & block) mutable
+    auto prepare_horizontal = [&] () mutable
     {
-        rows_written += block.rows();
-
-        merge_entry->rows_written = merged_stream->getProfileInfo().rows;
-        merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
-
-        /// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
-        if (space_reservation && sum_input_rows_upper_bound)
-        {
-            /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
-            /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
-            Float64 progress = (chosen_merge_algorithm == MergeAlgorithm::Horizontal)
-                ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
-                : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));
-
-            space_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
-        }
+        merged_stream->readPrefix();
+        to->writePrefix();
     };
 
-    auto task = std::make_shared<MergeTask>(merged_stream, to, is_cancelled, update_for_block, /*priority=*/new_data_part->getBytesOnDisk());
-    merge_executor.schedule(task);
-    task->wait();
+    auto is_cancelled = [&]() mutable
+    {
+        return merges_blocker.isCancelled() || (need_remove_expired_values && ttl_merges_blocker.isCancelled());
+    };
+
+    auto execute_for_block_horizontal = [&] () mutable
+    {
+        Block block;
+        if (!is_cancelled() && (block = merged_stream->read()))
+        {
+            rows_written += block.rows();
+
+            to->write(block);
+
+            merge_entry->rows_written = merged_stream->getProfileInfo().rows;
+            merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
+
+            /// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
+            if (space_reservation && sum_input_rows_upper_bound)
+            {
+                /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
+                /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
+                Float64 progress = (chosen_merge_algorithm == MergeAlgorithm::Horizontal)
+                    ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
+                    : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));
+
+                space_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
+            }
+            return true;
+        }
+        return false;
+    };
+
+    auto finalize_horizontal = [&] () mutable 
+    {
+        merged_stream->readSuffix();
+        merged_stream.reset();
+    };
+
+    /// Depending on the settings it will execute all the merge sequentially in one thread or
+    /// execute merge block by block.
+    /// Each block can be executed in different threads, but the execution of all task is ordered sequentially.
+    /// All tasks are prioritised by size on disk. So, small merges have bigger priority. 
+    auto horizontal_merge_task = std::make_shared<MergeTask>(
+        prepare_horizontal, execute_for_block_horizontal, finalize_horizontal, /*priority=*/new_data_part->getBytesOnDisk());
+    merge_executor->schedule(horizontal_merge_task);
+    horizontal_merge_task->wait();
 
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
@@ -1051,20 +1084,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             size_t column_elems_written = 0;
 
-            column_to.writePrefix();
-            Block block;
-            while (!merges_blocker.isCancelled() && (block = column_gathered_stream.read()))
+            auto prepare_vertical = [&] () mutable
             {
-                column_elems_written += block.rows();
-                column_to.write(block);
-            }
+                column_to.writePrefix();
+            };
 
-            if (merges_blocker.isCancelled())
-                throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+            auto execute_for_block_vertical = [&] () mutable
+            {
+                Block block;
+                if (!merges_blocker.isCancelled() && (block = column_gathered_stream.read()))
+                {
+                    column_elems_written += block.rows();
+                    column_to.write(block);
+                    return true;
+                }
+                return false;
+            };
 
-            column_gathered_stream.readSuffix();
-            auto changed_checksums = column_to.writeSuffixAndGetChecksums(new_data_part, checksums_gathered_columns, need_sync);
-            checksums_gathered_columns.add(std::move(changed_checksums));
+            auto finalize_vertical = [&] () mutable
+            {
+                if (merges_blocker.isCancelled())
+                    throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+
+                column_gathered_stream.readSuffix();
+                auto changed_checksums = column_to.writeSuffixAndGetChecksums(new_data_part, checksums_gathered_columns, need_sync);
+                checksums_gathered_columns.add(std::move(changed_checksums));
+            };
+
+
+            auto vertical_merge = std::make_shared<MergeTask>(prepare_vertical, execute_for_block_vertical, finalize_vertical, /*priority=*/new_data_part->getBytesOnDisk());
+            merge_executor->schedule(vertical_merge);
+            vertical_merge->wait();
+
 
             if (rows_written != column_elems_written)
             {
