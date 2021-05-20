@@ -1,4 +1,6 @@
 #include "ReadIndirectBufferFromRemoteFS.h"
+
+#if USE_AWS_S3 || USE_HDFS
 #include <IO/ReadBufferFromS3.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 
@@ -111,10 +113,16 @@ bool ReadIndirectBufferFromRemoteFS<T>::nextImpl()
 }
 
 
+#if USE_AWS_S3
 template
 class ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>;
+#endif
 
+#if USE_HDFS
 template
 class ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>;
+#endif
 
 }
+
+#endif

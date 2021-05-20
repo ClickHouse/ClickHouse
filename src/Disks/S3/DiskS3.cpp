@@ -21,7 +21,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/checkStackSize.h>
 #include <Common/ThreadPool.h>
-
 #include <boost/algorithm/string.hpp>
 
 
