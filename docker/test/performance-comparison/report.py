@@ -560,7 +560,7 @@ if args.report == 'main':
     # treat as errors.
     if very_unstable_queries:
         status = 'failure'
-        message_array.append(str(unstable_queries) + ' unstable')
+        message_array.append(str(very_unstable_queries) + ' unstable')
 
     error_tests += slow_average_tests
     if error_tests:
