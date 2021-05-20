@@ -67,6 +67,24 @@ void ParquetBlockInputFormat::resetParser()
     row_group_current = 0;
 }
 
+static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
+{
+    if (type->id() == arrow::Type::LIST)
+        return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type());
+
+    int indices = 0;
+    if (type->id() == arrow::Type::STRUCT)
+    {
+        auto * struct_type = static_cast<arrow::StructType *>(type.get());
+        for (int i = 0; i != struct_type->num_fields(); ++i)
+            indices += countIndicesForType(struct_type->field(i)->type());
+    }
+    else
+        indices = 1;
+
+    return indices;
+}
+
 void ParquetBlockInputFormat::prepareReader()
 {
     THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
@@ -76,11 +94,14 @@ void ParquetBlockInputFormat::prepareReader()
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
 
+    int index = 0;
     for (int i = 0; i < schema->num_fields(); ++i)
     {
         if (getPort().getHeader().has(schema->field(i)->name()))
         {
-            column_indices.push_back(i);
+            int indexes_count = countIndicesForType(schema->field(i)->type());
+            for (int j = 0; j != indexes_count; ++j)
+                column_indices.push_back(index++);
         }
     }
 }

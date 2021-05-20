@@ -7,15 +7,17 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <common/DateLUTImpl.h>
 #include <common/types.h>
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Interpreters/castColumn.h>
 #include <algorithm>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -309,8 +311,6 @@ namespace DB
                 break;
             case arrow::Type::LIST:
             {
-                const auto * list_type = static_cast<arrow::ListType *>(arrow_column->type().get());
-                auto list_nested_type = list_type->value_type();
                 arrow::ArrayVector array_vector;
                 array_vector.reserve(arrow_column->num_chunks());
                 for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
@@ -324,6 +324,25 @@ namespace DB
                 ColumnArray & column_array = typeid_cast<ColumnArray &>(internal_column);
                 readColumnFromArrowColumn(arrow_nested_column, column_array.getData(), column_name, format_name, false);
                 fillOffsetsFromArrowListColumn(arrow_column, column_array.getOffsetsColumn());
+                break;
+            }
+            case arrow::Type::STRUCT:
+            {
+                ColumnTuple & column_tuple = typeid_cast<ColumnTuple &>(internal_column);
+                int fields_count = column_tuple.tupleSize();
+                std::vector<arrow::ArrayVector> nested_arrow_columns(fields_count);
+                for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+                {
+                    arrow::StructArray & struct_chunk = static_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
+                    for (int i = 0; i < fields_count; ++i)
+                        nested_arrow_columns[i].emplace_back(struct_chunk.field(i));
+                }
+
+                for (int i = 0; i != fields_count; ++i)
+                {
+                    auto nested_arrow_column = std::make_shared<arrow::ChunkedArray>(nested_arrow_columns[i]);
+                    readColumnFromArrowColumn(nested_arrow_column, column_tuple.getColumn(i), column_name, format_name, false);
+                }
                 break;
             }
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
@@ -370,6 +389,29 @@ namespace DB
                 throw Exception{"Cannot convert arrow LIST type to a not Array ClickHouse type " + column_type->getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return std::make_shared<DataTypeArray>(getInternalType(list_nested_type, array_type->getNestedType(), column_name, format_name));
+        }
+
+        if (arrow_type->id() == arrow::Type::STRUCT)
+        {
+            const auto * struct_type = static_cast<arrow::StructType *>(arrow_type.get());
+            const DataTypeTuple * tuple_type = typeid_cast<const DataTypeTuple *>(column_type.get());
+            if (!tuple_type)
+                throw Exception{"Cannot convert arrow STRUCT type to a not Tuple ClickHouse type " + column_type->getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
+
+            const DataTypes & tuple_nested_types = tuple_type->getElements();
+            int internal_fields_num = tuple_nested_types.size();
+            /// If internal column has less elements then arrow struct, we will select only first internal_fields_num columns.
+            if (internal_fields_num > struct_type->num_fields())
+                throw Exception{
+                    "Cannot convert arrow STRUCT with " + std::to_string(struct_type->num_fields()) + " fields to a ClickHouse Tuple with "
+                        + std::to_string(internal_fields_num) + " elements " + column_type->getName(),
+                    ErrorCodes::CANNOT_CONVERT_TYPE};
+
+            DataTypes nested_types;
+            for (int i = 0; i < internal_fields_num; ++i)
+                nested_types.push_back(getInternalType(struct_type->field(i)->type(), tuple_nested_types[i], column_name, format_name));
+
+            return std::make_shared<DataTypeTuple>(std::move(nested_types));
         }
 
         if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),

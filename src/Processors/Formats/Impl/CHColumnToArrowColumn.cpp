@@ -6,11 +6,13 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <arrow/api.h>
 #include <arrow/builder.h>
@@ -113,7 +115,7 @@ namespace DB
         size_t start,
         size_t end)
     {
-        const auto * column_array = static_cast<const ColumnArray *>(column.get());
+        const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
         ColumnPtr nested_column = column_array->getDataPtr();
         DataTypePtr nested_type = typeid_cast<const DataTypeArray *>(column_type.get())->getNestedType();
         const auto & offsets = column_array->getOffsets();
@@ -124,10 +126,38 @@ namespace DB
 
         for (size_t array_idx = start; array_idx < end; ++array_idx)
         {
-            /// Start new array
+            /// Start new array.
             components_status = builder.Append();
             checkStatus(components_status, nested_column->getName(), format_name);
             fillArrowArray(column_name, nested_column, nested_type, null_bytemap, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx]);
+        }
+    }
+
+    static void fillArrowArrayWithTupleColumnData(
+        const String & column_name,
+        ColumnPtr & column,
+        const std::shared_ptr<const IDataType> & column_type,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        arrow::ArrayBuilder * array_builder,
+        String format_name,
+        size_t start,
+        size_t end)
+    {
+        const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
+        const auto & nested_types =  typeid_cast<const DataTypeTuple *>(column_type.get())->getElements();
+
+        arrow::StructBuilder & builder = assert_cast<arrow::StructBuilder &>(*array_builder);
+
+        for (size_t i = 0; i != column_tuple->tupleSize(); ++i)
+        {
+            ColumnPtr nested_column = column_tuple->getColumnPtr(i);
+            fillArrowArray(column_name + "." + std::to_string(i), nested_column, nested_types[i], null_bytemap, builder.field_builder(i), format_name, start, end);
+        }
+
+        for (size_t i = start; i != end; ++i)
+        {
+            auto status = builder.Append();
+            checkStatus(status, column->getName(), format_name);
         }
     }
 
@@ -251,6 +281,10 @@ namespace DB
         {
             fillArrowArrayWithArrayColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end);
         }
+        else if ("Tuple" == column_type_name)
+        {
+            fillArrowArrayWithTupleColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end);
+        }
         else if (isDecimal(column_type))
         {
             auto fill_decimal = [&](const auto & types) -> bool
@@ -349,6 +383,19 @@ namespace DB
             auto nested_type = typeid_cast<const DataTypeArray *>(column_type.get())->getNestedType();
             auto nested_arrow_type = getArrowType(nested_type, column_name, format_name, is_column_nullable);
             return arrow::list(nested_arrow_type);
+        }
+
+        if (isTuple(column_type))
+        {
+            const auto & nested_types = typeid_cast<const DataTypeTuple *>(column_type.get())->getElements();
+            std::vector<std::shared_ptr<arrow::Field>> nested_fields;
+            for (size_t i = 0; i != nested_types.size(); ++i)
+            {
+                String name = column_name + "." + std::to_string(i);
+                auto nested_arrow_type = getArrowType(nested_types[i], name, format_name, is_column_nullable);
+                nested_fields.push_back(std::make_shared<arrow::Field>(name, nested_arrow_type, *is_column_nullable));
+            }
+            return arrow::struct_(std::move(nested_fields));
         }
 
         const std::string type_name = column_type->getFamilyName();
