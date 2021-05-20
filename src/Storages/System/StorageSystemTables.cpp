@@ -13,6 +13,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <common/addDatabasePrefixToZooKeeperPath.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
@@ -358,6 +359,22 @@ protected:
                 if (columns_mask[src_index] || columns_mask[src_index + 1])
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
+
+                    if (ast && context->getSettingsRef().testmode)
+                    {
+                        if (auto * ast_create_query = ast->as<ASTCreateQuery>())
+                        {
+                            if (auto * literal = ast_create_query->tryGetZooKeeperPath())
+                            {
+                                if (literal->value.getType() == Field::Types::String)
+                                {
+                                    auto zk_path = literal->value.safeGet<String>();
+                                    removeDatabasePrefixFromZooKeeperPath(zk_path);
+                                    literal->value = zk_path;
+                                }
+                            }
+                        }
+                    }
 
                     if (ast && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {

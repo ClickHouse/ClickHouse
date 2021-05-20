@@ -12,6 +12,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <common/addDatabasePrefixToZooKeeperPath.h>
 
 namespace DB
 {
@@ -61,6 +63,20 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
 
         auto & ast_create_query = create_query->as<ASTCreateQuery &>();
+
+        if (getContext()->getSettingsRef().testmode)
+        {
+            if (auto * literal = ast_create_query.tryGetZooKeeperPath())
+            {
+                if (literal->value.getType() == Field::Types::String)
+                {
+                    auto zk_path = literal->value.safeGet<String>();
+                    removeDatabasePrefixFromZooKeeperPath(zk_path);
+                    literal->value = zk_path;
+                }
+            }
+        }
+
         if (query_ptr->as<ASTShowCreateViewQuery>())
         {
             if (!ast_create_query.isView())
@@ -96,6 +112,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     WriteBufferFromOwnString buf;
     formatAST(*create_query, buf, false, false);
     String res = buf.str();
+    std::cerr << "===== Got " << res << std::endl;
 
     MutableColumnPtr column = ColumnString::create();
     column->insert(res);

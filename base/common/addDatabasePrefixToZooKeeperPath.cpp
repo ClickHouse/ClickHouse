@@ -30,7 +30,7 @@ bool addDatabasePrefixToZooKeeperPath(std::string & path, const std::string & da
     return false;
 }
 
-bool removeDatabasePrefixToZooKeeperPath(std::string & path)
+bool removeDatabasePrefixFromZooKeeperPath(std::string & path)
 {
     const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
     if (config.has("testmode_zk_path_prefix"))

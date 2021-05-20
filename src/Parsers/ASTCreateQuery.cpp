@@ -399,4 +399,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
 }
 
+ASTLiteral * ASTCreateQuery::tryGetZooKeeperPath()
+{
+    if (storage && storage->engine && startsWith(storage->engine->name, "Replicated"))
+    {
+        if (!storage->engine->arguments->children.empty())
+        {
+            auto & child = storage->engine->arguments->children.front();
+            return child->as<ASTLiteral>();
+        }
+    }
+
+    return nullptr;
+}
+
 }
