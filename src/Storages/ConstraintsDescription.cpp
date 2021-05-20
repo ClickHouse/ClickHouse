@@ -142,7 +142,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
             // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
             ASTPtr expr = constraint_ptr->expr->clone();
             auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-            res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false));
+            res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false, true, CompileExpressions::yes));
         }
     }
     return res;
