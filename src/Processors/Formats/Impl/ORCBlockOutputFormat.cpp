@@ -157,8 +157,8 @@ void ORCBlockOutputFormat::writeNumbers(
             number_orc_column.notNull[i] = 0;
             continue;
         }
-        else
-            number_orc_column.notNull[i] = 1;
+
+        number_orc_column.notNull[i] = 1;
         number_orc_column.data[i] = convert(number_column.getElement(i));
     }
     number_orc_column.numElements = number_column.size();
@@ -185,9 +185,8 @@ void ORCBlockOutputFormat::writeDecimals(
             decimal_orc_column.notNull[i] = 0;
             continue;
         }
-        else
-            decimal_orc_column.notNull[i] = 1;
 
+        decimal_orc_column.notNull[i] = 1;
         decimal_orc_column.values[i] = convert(decimal_column.getElement(i).value);
     }
     decimal_orc_column.numElements = decimal_column.size();
@@ -210,9 +209,8 @@ void ORCBlockOutputFormat::writeStrings(
             string_orc_column.notNull[i] = 0;
             continue;
         }
-        else
-            string_orc_column.notNull[i] = 1;
 
+        string_orc_column.notNull[i] = 1;
         const StringRef & string = string_column.getDataAt(i);
         string_orc_column.data[i] = const_cast<char *>(string.data);
         string_orc_column.length[i] = string.size;
@@ -239,9 +237,8 @@ void ORCBlockOutputFormat::writeDateTimes(
             timestamp_orc_column.notNull[i] = 0;
             continue;
         }
-        else
-            timestamp_orc_column.notNull[i] = 1;
 
+        timestamp_orc_column.notNull[i] = 1;
         timestamp_orc_column.data[i] = get_seconds(timestamp_column.getElement(i));
         timestamp_orc_column.nanoseconds[i] = get_nanoseconds(timestamp_column.getElement(i));
     }
