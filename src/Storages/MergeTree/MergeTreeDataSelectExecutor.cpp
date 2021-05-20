@@ -1116,17 +1116,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 .num_granules_after = index_and_condition.total_granules - index_and_condition.granules_dropped});
         }
 
-        LOG_DEBUG(
-            log,
-            "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
-            parts.size(),
-            total_parts,
-            parts_with_ranges.size(),
-            sum_marks_pk.load(std::memory_order_relaxed),
-            total_marks_pk.load(std::memory_order_relaxed),
-            sum_marks,
-            sum_ranges);
-
         for (const auto & [granularity, index_and_condition] : merged_indices)
         {
             const auto & index_name = "Merged";
@@ -1144,11 +1133,16 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 .num_granules_after = index_and_condition->total_granules - index_and_condition->granules_dropped});
         }
 
-        LOG_DEBUG(log, "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
-                  parts.size(), total_parts, parts_with_ranges.size(),
-                  sum_marks_pk.load(std::memory_order_relaxed),
-                  total_marks_pk.load(std::memory_order_relaxed),
-                  sum_marks, sum_ranges);
+        LOG_DEBUG(
+            log,
+            "Selected {}/{} pay, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
+            parts.size(),
+            total_parts,
+            parts_with_ranges.size(),
+            sum_marks_pk.load(std::memory_order_relaxed),
+            total_marks_pk.load(std::memory_order_relaxed),
+            sum_marks,
+            sum_ranges);
     }
 
     if (cache)
