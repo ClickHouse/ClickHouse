@@ -14,6 +14,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <ext/scope_guard.h>
+#include <common/defines.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
 #include <common/ErrorHandlers.h>
@@ -86,6 +87,8 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
+#    include <unistd.h>
+#    include <sys/syscall.h>
 #endif
 
 #if USE_SSL
@@ -395,6 +398,19 @@ void checkForUsersNotInMainConfig(
             " Also note that you should place configuration changes to the appropriate *.d directory like 'users.d'.",
             users_config_path, config_path);
     }
+}
+
+
+[[noreturn]] void forceShutdown()
+{
+#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
+    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
+    /// while connection handling threads are still run.
+    (void)syscall(SYS_exit_group, 0);
+    __builtin_unreachable();
+#else
+    _exit(0);
+#endif
 }
 
 
@@ -1407,7 +1423,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
-                _exit(Application::EXIT_OK);
+                forceShutdown();
             }
         });
 
