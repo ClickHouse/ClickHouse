@@ -67,14 +67,9 @@ public:
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
-      * It depends on number of free threads in background_pool and amount of free space in disk.
+      * It depends on an amount of free space in disk.
       */
     UInt64 getMaxSourcePartsSizeForMerge() const;
-
-    /** For explicitly passed size of pool and number of used tasks.
-      * This method could be used to calculate threshold depending on number of tasks in replication queue.
-      */
-    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used) const;
 
     /** Get maximum total size of parts to do mutation, at current moment of time.
       * It depends only on amount of free space in disk.

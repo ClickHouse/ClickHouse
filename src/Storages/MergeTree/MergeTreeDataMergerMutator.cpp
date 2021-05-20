@@ -168,31 +168,12 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, si
 
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
 {
-    size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
-
-    return getMaxSourcePartsSizeForMerge(background_pool_size, busy_threads_in_pool);
-}
-
-
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used) const
-{
-    if (pool_used > pool_size)
-        throw Exception("Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
-
-    size_t free_entries = pool_size - pool_used;
     const auto data_settings = data.getSettings();
 
-    /// Always allow maximum size if one or less pool entries is busy.
-    /// One entry is probably the entry where this function is executed.
-    /// This will protect from bad settings.
-    UInt64 max_size = 0;
-    if (pool_used <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
-        max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
-    else
-        max_size = interpolateExponential(
-            data_settings->max_bytes_to_merge_at_min_space_in_pool,
-            data_settings->max_bytes_to_merge_at_max_space_in_pool,
-            static_cast<double>(free_entries) / data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge);
+    /// Always allow maximum size of merge.
+    /// It will occupy a thread in thread pool for merge, but will be executed
+    /// by an Executor where small merges are preferable.
+    UInt64 max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
 
     return std::min(max_size, static_cast<UInt64>(data.getStoragePolicy()->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
@@ -207,8 +188,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
 
     /// Allow mutations only if there are enough threads, leave free threads for merges else
-    if (busy_threads_in_pool <= 1
-        || background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
+    if (background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
         return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     return 0;
