@@ -205,7 +205,7 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
+if (USE_EMBEDDED_COMPILER)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
