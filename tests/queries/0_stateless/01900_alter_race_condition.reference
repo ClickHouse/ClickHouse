@@ -7,44 +7,45 @@ step 3
 step 4
 0
 step 5
-241
+0
 step 6
-241
+0
 step 7
-241
+0
 step 8
 0
 step 9
-241
+0
 step 10
-241
+0
 step 11
 0
 step 12
-241
+0
 step 13
-241
+0
 step 14
 0
 step 15
-241
+0
 step 16
-241
+0
 step 17
 0
 step 18
-241
+0
 step 19
-241
+0
 step 20
 0
 step 21
-241
+0
 step 22
 0
 step 23
 0
 step 24
+{"t1":"3.4"}
 0
 step 25
 0
@@ -55,6 +56,8 @@ step 27
 step 28
 0
 step 29
+{"t1":""}
+{"t1":""}
 0
 step 30
 0
@@ -71,18 +74,30 @@ step 35
 step 36
 0
 step 37
+{"t1":0}
+{"t1":0}
+{"t1":3.4}
+{"t1":30.01}
 0
 step 38
 0
 step 39
 0
 step 40
+{"t1":""}
+{"t1":""}
+{"t1":""}
+{"t1":""}
 0
 step 41
 0
 step 42
-47
+0
 step 43
+{"t1_new":""}
+{"t1_new":""}
+{"t1_new":""}
+{"t1_new":""}
 0
 step 44
 0
@@ -93,22 +108,33 @@ step 46
 step 47
 0
 step 48
+{"name":"d","type":"Date","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"a","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"b","type":"UInt8","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"x","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"y","type":"Int8","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"t1","type":"String","default_type":"","default_expression":"","comment":"This is a comment.","codec_expression":"","ttl_expression":""}
 0
 step 49
 0
 step 50
-241
+0
 step 51
 0
 step 52
 0
 step 53
-10
+0
 step 54
 0
 step 55
 0
 step 56
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":"3.4"}
 0
 step 57
 0
@@ -119,6 +145,12 @@ step 59
 step 60
 0
 step 61
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
 0
 step 62
 0
@@ -135,18 +167,42 @@ step 67
 step 68
 0
 step 69
+{"t3":0}
+{"t3":0}
+{"t3":0}
+{"t3":0}
+{"t3":0}
+{"t3":0}
+{"t3":3.4}
+{"t3":30.01}
 0
 step 70
 0
 step 71
 0
 step 72
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
+{"t3":""}
 0
 step 73
 0
 step 74
-47
+0
 step 75
+{"t3_new":""}
+{"t3_new":""}
+{"t3_new":""}
+{"t3_new":""}
+{"t3_new":""}
+{"t3_new":""}
+{"t3_new":""}
+{"t3_new":""}
 0
 step 76
 0
@@ -157,22 +213,37 @@ step 78
 step 79
 0
 step 80
+{"name":"d","type":"Date","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"a","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"b","type":"UInt8","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"x","type":"String","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"y","type":"Int8","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":""}
+{"name":"t3","type":"String","default_type":"","default_expression":"","comment":"This is a comment.","codec_expression":"","ttl_expression":""}
 0
 step 81
 0
 step 82
-241
+0
 step 83
 0
 step 84
 0
 step 85
-10
+0
 step 86
 0
 step 87
 0
 step 88
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":"3.4"}
 0
 step 89
 0
@@ -183,6 +254,16 @@ step 91
 step 92
 0
 step 93
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
+{"t4":""}
 0
 step 94
 0
