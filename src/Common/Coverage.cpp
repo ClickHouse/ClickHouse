@@ -39,6 +39,31 @@ inline SymbolIndexInstance getInstanceAndInitGlobalCounters()
 }
 }
 
+void TaskQueue::start()
+{
+    worker = std::thread([this]
+    {
+        while (true)
+        {
+            Task task;
+
+            {
+                std::unique_lock lock(mutex);
+
+                task_or_shutdown.wait(lock, [this] { return shutdown || !tasks.empty(); });
+
+                if (tasks.empty())
+                    return;
+
+                task = std::move(tasks.front());
+                tasks.pop();
+            }
+
+            task();
+        }
+    });
+}
+
 void TaskQueue::wait()
 {
     size_t active_tasks = 0;
@@ -56,29 +81,6 @@ void TaskQueue::wait()
 
     if (worker.joinable())
         worker.join();
-}
-
-void TaskQueue::workerThread()
-{
-    while (true)
-    {
-        Task task;
-
-        {
-            std::unique_lock lock(mutex);
-
-            task_or_shutdown.wait(lock, [this] { return shutdown || !tasks.empty(); });
-
-            // We need to process all tasks before shutting down.
-            if (shutdown && tasks.empty())
-                return;
-
-            task = std::move(tasks.front());
-            tasks.pop();
-        }
-
-        task();
-    }
 }
 
 Writer::Writer()
@@ -150,9 +152,13 @@ void Writer::initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_ar
 
 void Writer::deinitRuntime()
 {
+    if (is_client)
+        return;
+
     tasks_queue.wait();
     writeCCRFooter();
     report_file.close();
+
     LOG_INFO(base_log, "Shut down runtime");
 }
 
@@ -174,6 +180,11 @@ void Writer::hit(EdgeIndex index)
     edges_hit[index] = 1;
 }
 
+void Writer::onClientInitialized()
+{
+    is_client = true;
+}
+
 void Writer::onServerInitialized()
 {
     // Before server initialization we couldn't log data to Poco as Writer constructor gets called in
@@ -188,6 +199,10 @@ void Writer::onServerInitialized()
         throw std::runtime_error("Failed to open " + report_path);
     else
         LOG_INFO(base_log, "Opened report file {}", report_path);
+
+    // We need to start tasks queue only in server mode
+    tasks_queue.start();
+    LOG_INFO(base_log, "Started task queue");
 
     symbolizeInstrumentedData();
 }
@@ -294,6 +309,9 @@ void Writer::symbolizeInstrumentedData()
 void Writer::onChangedTestName(std::string old_test_name)
 {
     /// Note: this function slows down setSetting, so it should be as fast as possible.
+
+    if (is_client)
+        return;
 
     if (test_index == 0) // Processing the first test
     {

@@ -92,8 +92,6 @@ using Threads = std::vector<std::thread>;
 class TaskQueue
 {
 public:
-    TaskQueue(): worker([this] { workerThread(); }) {} //NOLINT
-
     template <class J>
     inline void schedule(J && job)
     {
@@ -105,8 +103,10 @@ public:
         task_or_shutdown.notify_one();
     }
 
-    ~TaskQueue() { wait(); }
+    void start();
     void wait();
+
+    ~TaskQueue() { wait(); }
 
 private:
     using Task = std::function<void()>;
@@ -118,8 +118,6 @@ private:
     std::condition_variable task_or_shutdown;
 
     bool shutdown {false};
-
-    void workerThread();
 };
 
 /**
@@ -140,6 +138,8 @@ public:
     void initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_array_end);
 
     void onServerInitialized();
+
+    void onClientInitialized();
 
     void hit(EdgeIndex index);
 
@@ -166,6 +166,10 @@ private:
 
     const std::filesystem::path clickhouse_src_dir_abs_path { docker_clickhouse_src_dir_abs_path };
     const std::string report_path { docker_report_path };
+
+    // CH client is usually located inside main CH binary, but we don't need to instrument client code.
+    // This variable is set on client initialization so we can ignore coverage for it.
+    bool is_client {false};
 
     size_t functions_count {0}; // Initialized after processing PC table.
     size_t addrs_count {0};

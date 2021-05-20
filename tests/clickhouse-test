@@ -314,7 +314,7 @@ SERVER_DIED = False
 exit_code = 0
 stop_time = None
 
-def run_query(query_to_run: str, failures: int, increment_failures: bool = True):
+def run_query(query_to_run: str, failures: int):
     global SERVER_DIED
 
     clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
@@ -325,9 +325,6 @@ def run_query(query_to_run: str, failures: int, increment_failures: bool = True)
     except:
         failed_to_check = True
 
-    if not increment_failures:
-        return True, failures
-
     if not failed_to_check and clickhouse_proc.returncode == 0:
         return True, failures
 
@@ -337,6 +334,12 @@ def run_query(query_to_run: str, failures: int, increment_failures: bool = True)
     stop_tests()
 
     return False, failures + 1
+
+def print_test_time(test_time):
+    if args.print_time:
+        return " {0:.2f} sec.".format(test_time)
+    else:
+        return ''
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
@@ -364,17 +367,14 @@ def run_tests_array(all_tests_with_params):
 
     client_options = get_additional_client_options(args)
 
-    def print_test_time(test_time):
-        if args.print_time:
-            return " {0:.2f} sec.".format(test_time)
-        else:
-            return ''
-
     if all_tests:
         print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
     if args.coverage:
-        run_query("SET coverage_tests_count={};".format(len(all_tests)), 0, False)
+        res, failures = run_query("SET coverage_tests_count={};".format(len(all_tests)), failures)
+
+        if not res:
+            return False
 
     for case in all_tests:
         if SERVER_DIED:
@@ -435,7 +435,10 @@ def run_tests_array(all_tests_with_params):
                             break
 
                     if args.coverage:
-                        run_query("SET coverage_test_name='{}';".format(case), 0, False)
+                        res, failures = run_query("SET coverage_test_name='{}';".format(case), failures)
+
+                        if not res:
+                            break
 
                     file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
                     reference_file = os.path.join(suite_dir, name) + '.reference'
@@ -565,7 +568,7 @@ def run_tests_array(all_tests_with_params):
             break
 
     if args.coverage:
-        run_query("SET coverage_test_name='';", 0, False)
+        _, failures = run_query("SET coverage_test_name='';", failures)
 
     failures_total = failures_total + failures
 
@@ -1069,7 +1072,7 @@ if __name__ == '__main__':
         help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
-    parser.add_argument('--coverage', action='store_true', default=False,
+    parser.add_argument('--coverage', action='store_true',
         help="Set* internal coverage test name setting before test run, similar to --testname. "
              "Note that setting is not actually set in server, it's just using settings pipeline, see "
              "Context.cpp :: setSetting()")

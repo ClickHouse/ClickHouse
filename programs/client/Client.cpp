@@ -96,6 +96,10 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
+#if WITH_COVERAGE
+#    include <Common/Coverage.h>
+#endif
+
 
 namespace DB
 {
@@ -2676,6 +2680,10 @@ public:
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
+#if WITH_COVERAGE
+    ::detail::Writer::instance().onClientInitialized();
+#endif
+
     try
     {
         DB::Client client;

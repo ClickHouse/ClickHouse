@@ -106,6 +106,6 @@ def main():
         read_report(f)
 
     if args.genhtml_slim_report is not None:
-        convert_to_slim_genhtml_report(args.genhtml_slim_report)
+        convert_to_slim_genhtml_report(args.genhtml_slim_report[0])
 
 main()
