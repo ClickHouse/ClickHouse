@@ -16,12 +16,17 @@ function stress()
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
 export -f stress
 
-for _ in {1..5}; do
+function run()
+{
     # Ten seconds are just barely enough to reproduce the issue in most of runs.
-    timeout 10 bash -c stress &
+    timeout 10 bash -c stress
+
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS table";
+}
+
+for _ in {1..5}; do
+    run &
 done
 
 wait
 echo
-
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS table";
