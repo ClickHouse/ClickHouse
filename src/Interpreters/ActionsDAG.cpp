@@ -293,6 +293,17 @@ NamesAndTypesList ActionsDAG::getRequiredColumns() const
     return result;
 }
 
+Names ActionsDAG::getRequiredColumnsNames() const
+{
+    Names result;
+    result.reserve(inputs.size());
+
+    for (const auto & input : inputs)
+        result.emplace_back(input->result_name);
+
+    return result;
+}
+
 ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
