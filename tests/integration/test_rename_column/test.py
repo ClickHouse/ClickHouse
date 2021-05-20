@@ -3,6 +3,7 @@
 import random
 import time
 from multiprocessing.dummy import Pool
+import datetime
 
 import pytest
 from helpers.client import QueryRuntimeException
@@ -111,7 +112,7 @@ def insert(node, table_name, chunk=1000, col_names=None, iterations=1, ignore_ex
         try:
             query = ["SET max_partitions_per_insert_block = 10000000"]
             if with_many_parts:
-                query.append("SET max_insert_block_size = 64")
+                query.append("SET max_insert_block_size = 256")
             if with_time_column:
                 query.append(
                     "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk})"
@@ -305,35 +306,45 @@ def test_rename_with_parallel_merges(started_cluster):
     table_name = "test_rename_with_parallel_merges"
     drop_table(nodes, table_name)
     try:
+        print("Creating tables", datetime.datetime.now())
         create_table(nodes, table_name)
-        for i in range(20):
+        for i in range(5):
             insert(node1, table_name, 100, ["num", "num2"], 1, False, False, True, offset=i * 100)
 
-        def merge_parts(node, table_name, iterations=1):
-            for i in range(iterations):
-                node.query("OPTIMIZE TABLE %s FINAL" % table_name)
+        print("Data inserted", datetime.datetime.now())
 
+        def merge_parts(node, table_name, iterations=1):
+            for _ in range(iterations):
+                try:
+                    node.query("OPTIMIZE TABLE %s FINAL" % table_name)
+                except Exception as ex:
+                    print("Got an exception while optimizing table", ex)
+
+        print("Creating pool")
         p = Pool(15)
         tasks = []
-        for i in range(1):
-            tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
-            tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
-            tasks.append(p.apply_async(merge_parts, (node1, table_name, 5)))
-            tasks.append(p.apply_async(merge_parts, (node2, table_name, 5)))
-            tasks.append(p.apply_async(merge_parts, (node3, table_name, 5)))
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 2, True)))
+        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 2, True)))
+        tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 2, True)))
+        tasks.append(p.apply_async(merge_parts, (node1, table_name, 2)))
+        tasks.append(p.apply_async(merge_parts, (node2, table_name, 2)))
+        tasks.append(p.apply_async(merge_parts, (node3, table_name, 2)))
 
+        print("Waiting for tasks", datetime.datetime.now())
         for task in tasks:
             task.get(timeout=240)
+        print("Finished waiting", datetime.datetime.now())
 
+        print("Renaming columns", datetime.datetime.now())
         # rename column back to the original name
         rename_column(node1, table_name, "foo3", "num2", 1, True)
         rename_column(node1, table_name, "foo2", "num2", 1, True)
+        print("Finished renaming", datetime.datetime.now())
 
         # check that select still works
-        select(node1, table_name, "num2", "1998\n")
-        select(node2, table_name, "num2", "1998\n")
-        select(node3, table_name, "num2", "1998\n")
+        select(node1, table_name, "num2", "500\n")
+        select(node2, table_name, "num2", "500\n")
+        select(node3, table_name, "num2", "500\n")
     finally:
         drop_table(nodes, table_name)
 
