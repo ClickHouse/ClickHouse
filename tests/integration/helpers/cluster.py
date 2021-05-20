@@ -344,10 +344,15 @@ class ClickHouseCluster:
         self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
         self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
-        self.zookeeper_use_tmpfs = True
+        # available when with_zookeper == True
+        self.use_keeper = True
+        self.keeper_instance_dir_prefix = p.join(p.abspath(self.instances_dir), "keeper") # if use_keeper = True
+        self.zookeeper_instance_dir_prefix = p.join(self.instances_dir, "zk")
+        self.zookeeper_dirs_to_create = []
 
         self.docker_client = None
         self.is_up = False
+        self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
 
     def cleanup(self):
@@ -392,7 +397,6 @@ class ClickHouseCluster:
         except:
             pass
 
-
     def get_docker_handle(self, docker_id):
         return self.docker_client.containers.get(docker_id)
 
@@ -401,6 +405,55 @@ class ClickHouseCluster:
         if p.basename(cmd) == 'clickhouse':
             cmd += " client"
         return cmd
+
+    def setup_zookeeper_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        logging.debug('Setup ZooKeeper')
+        zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper.yml')
+
+        env_variables['ZK_FS'] = 'bind'
+        for i in range(1, 4):
+            zk_data_path = os.path.join(self.zookeeper_instance_dir_prefix + str(i), "data")
+            zk_log_path = os.path.join(self.zookeeper_instance_dir_prefix + str(i), "log")
+            env_variables['ZK_DATA' + str(i)] = zk_data_path
+            env_variables['ZK_DATA_LOG' + str(i)] = zk_log_path
+            self.zookeeper_dirs_to_create += [zk_data_path, zk_log_path]
+            logging.debug(f"DEBUG ZK: {self.zookeeper_dirs_to_create}")
+
+        self.with_zookeeper = True
+        self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
+        self.base_zookeeper_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                    '--file', zookeeper_docker_compose_path]
+        return self.base_zookeeper_cmd
+
+    def setup_keeper_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        logging.debug('Setup Keeper')
+        keeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_keeper.yml')
+
+        binary_path = self.server_bin_path
+        if binary_path.endswith('-server'):
+            binary_path = binary_path[:-len('-server')]
+
+        env_variables['keeper_binary'] = binary_path
+        env_variables['image'] = "yandex/clickhouse-integration-test:" + self.docker_base_tag
+        env_variables['user'] = str(os.getuid())
+        env_variables['keeper_fs'] = 'bind'
+        for i in range(1, 4):
+            keeper_instance_dir = self.keeper_instance_dir_prefix + f"{i}"
+            logs_dir = os.path.join(keeper_instance_dir, "log")
+            configs_dir = os.path.join(keeper_instance_dir, "config")
+            coordination_dir = os.path.join(keeper_instance_dir, "coordination")
+            env_variables[f'keeper_logs_dir{i}'] = logs_dir
+            env_variables[f'keeper_config_dir{i}'] = configs_dir
+            env_variables[f'keeper_db_dir{i}'] = coordination_dir
+            self.zookeeper_dirs_to_create += [logs_dir, configs_dir, coordination_dir]
+        logging.debug(f"DEBUG KEEPER: {self.zookeeper_dirs_to_create}")
+
+
+        self.with_zookeeper = True
+        self.base_cmd.extend(['--file', keeper_docker_compose_path])
+        self.base_zookeeper_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                    '--file', keeper_docker_compose_path]
+        return self.base_zookeeper_cmd
 
     def setup_mysql_client_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql_client = True
@@ -568,6 +621,15 @@ class ClickHouseCluster:
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
         return self.base_minio_cmd
 
+    def setup_cassandra_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_cassandra = True
+        env_variables['CASSANDRA_PORT'] = str(self.cassandra_port)
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
+        self.base_cassandra_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                    '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
+        return self.base_cassandra_cmd
+
+
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
                      with_zookeeper=False, with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False, 
@@ -576,7 +638,7 @@ class ClickHouseCluster:
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None):
+                     zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -596,6 +658,8 @@ class ClickHouseCluster:
             tag = self.docker_base_tag
         if not env_variables:
             env_variables = {}
+
+        self.use_keeper = use_keeper
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
@@ -652,15 +716,10 @@ class ClickHouseCluster:
 
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
-            if not zookeeper_docker_compose_path:
-                zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper.yml')
-
-            self.with_zookeeper = True
-            self.zookeeper_use_tmpfs = zookeeper_use_tmpfs
-            self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
-            self.base_zookeeper_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                       '--file', zookeeper_docker_compose_path]
-            cmds.append(self.base_zookeeper_cmd)
+            if self.use_keeper:
+                cmds.append(self.setup_keeper_cmd(instance, env_variables, docker_compose_yml_dir))
+            else:
+                cmds.append(self.setup_zookeeper_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_mysql_client and not self.with_mysql_client:
             cmds.append(self.setup_mysql_client_cmd(instance, env_variables, docker_compose_yml_dir))
@@ -723,11 +782,7 @@ class ClickHouseCluster:
                 raise Exception("Overwriting minio certs dir") 
 
         if with_cassandra and not self.with_cassandra:
-            self.with_cassandra = True
-            env_variables['CASSANDRA_PORT'] = str(self.cassandra_port)
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
-            self.base_cassandra_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                       '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
+            cmds.append(self.setup_cassandra_cmd(instance, env_variables, docker_compose_yml_dir))
 
         logging.debug("Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
             self.name, self.project_name, name, tag, self.base_cmd, docker_compose_yml_dir))
@@ -769,8 +824,8 @@ class ClickHouseCluster:
     def get_instance_ip(self, instance_name):
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
-        # for cont in self.docker_client.containers.list():
-        #     logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
+        for cont in self.docker_client.containers.list():
+            logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
         handle = self.docker_client.containers.get(docker_id)
         return list(handle.attrs['NetworkSettings']['Networks'].values())[0]['IPAddress']
 
@@ -1123,25 +1178,23 @@ class ClickHouseCluster:
                 logging.debug(('Setup directory for instance: {} destroy_dirs: {}'.format(instance.name, destroy_dirs)))
                 instance.create_dir(destroy_dir=destroy_dirs)
 
+            _create_env_file(os.path.join(self.env_file), self.env_variables)
             self.docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=180)
 
             common_opts = ['up', '-d']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper')
-                env = os.environ.copy()
-                if not self.zookeeper_use_tmpfs:
-                    env['ZK_FS'] = 'bind'
-                    for i in range(1, 4):
-                        zk_data_path = self.instances_dir + '/zkdata' + str(i)
-                        zk_log_data_path = self.instances_dir + '/zklog' + str(i)
-                        if not os.path.exists(zk_data_path):
-                            os.mkdir(zk_data_path)
-                        if not os.path.exists(zk_log_data_path):
-                            os.mkdir(zk_log_data_path)
-                        env['ZK_DATA' + str(i)] = zk_data_path
-                        env['ZK_DATA_LOG' + str(i)] = zk_log_data_path
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=env)
+                logging.debug(f'Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}')
+                for dir in self.zookeeper_dirs_to_create:
+                    os.makedirs(dir)
+                
+                if self.use_keeper: # TODO: remove hardcoded paths from here
+                    for i in range(1,4):
+                        shutil.copy(os.path.join(HELPERS_DIR, f'keeper_config{i}.xml'), os.path.join(self.keeper_instance_dir_prefix + f"{i}", "config" ))
+
+                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
                 self.wait_zookeeper_to_start()
@@ -1264,12 +1317,10 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
                 self.wait_cassandra_to_start()
 
-            _create_env_file(os.path.join(self.env_file), self.env_variables)
-
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             logging.debug(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
             self.up_called = True
-            subprocess_check_call(clickhouse_start_cmd)
+            run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
             start_timeout = 60.0  # seconds
@@ -1323,11 +1374,11 @@ class ClickHouseCluster:
 
             if kill:
                 try:
-                    subprocess_check_call(self.base_cmd + ['stop', '--timeout', '20'])
+                    run_and_check(self.base_cmd + ['stop', '--timeout', '20'])
                 except Exception as e:
                     logging.debug("Kill command failed during shutdown. {}".format(repr(e)))
                     logging.debug("Trying to kill forcefully")
-                    subprocess_check_call(self.base_cmd + ['kill'])
+                    run_and_check(self.base_cmd + ['kill'])
 
             try:
                 subprocess_check_call(self.base_cmd + ['down', '--volumes'])
@@ -1344,15 +1395,6 @@ class ClickHouseCluster:
             instance.docker_client = None
             instance.ip_address = None
             instance.client = None
-
-        if not self.zookeeper_use_tmpfs:
-            for i in range(1, 4):
-                zk_data_path = self.instances_dir + '/zkdata' + str(i)
-                zk_log_data_path = self.instances_dir + '/zklog' + str(i)
-                if os.path.exists(zk_data_path):
-                    shutil.rmtree(zk_data_path)
-                if os.path.exists(zk_log_data_path):
-                    shutil.rmtree(zk_log_data_path)
 
         if sanitizer_assert_instance is not None:
             raise Exception(
@@ -1373,7 +1415,9 @@ class ClickHouseCluster:
         os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
 
     def get_kazoo_client(self, zoo_instance_name):
-        zk = KazooClient(hosts=self.get_instance_ip(zoo_instance_name))
+        ip = self.get_instance_ip(zoo_instance_name)
+        logging.debug(f"get_kazoo_client: {zoo_instance_name}, ip:{ip}")
+        zk = KazooClient(hosts=ip)
         zk.start()
         return zk
 
@@ -1503,7 +1547,7 @@ class ClickHouseInstance:
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker-compose.yml')
         self.env_variables = env_variables or {}
-        self.env_file = None
+        self.env_file = self.cluster.env_file
         if with_odbc_drivers:
             self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
             self.with_mysql = True
@@ -1526,7 +1570,6 @@ class ClickHouseInstance:
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
-        self.env_file = os.path.join(os.path.dirname(self.docker_compose_path), DEFAULT_ENV_NAME)
         self.is_up = False
 
 
@@ -1994,7 +2037,6 @@ class ClickHouseInstance:
             depends_on.append("minio1")
 
         self.cluster.env_variables.update(self.env_variables)
-        _create_env_file(os.path.join(self.env_file), self.env_variables)
 
         odbc_ini_path = ""
         if self.odbc_ini_path:

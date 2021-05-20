@@ -15,6 +15,27 @@ insert into tp_1 select number, number from numbers(5);
 system sync replica tp_2;
 select * from tp_2 order by x;
 
+-- test projection creation, materialization, clear and drop
+alter table tp_1 add projection pp (select x, count() group by x);
+system sync replica tp_2;
+select count() from system.projection_parts where table = 'tp_2' and name = 'pp' and active;
+show create table tp_2;
+
+-- all other three operations are mutations
+set mutations_sync = 2;
+alter table tp_1 materialize projection pp;
+select count() from system.projection_parts where table = 'tp_2' and name = 'pp' and active;
+show create table tp_2;
+
+alter table tp_1 clear projection pp;
+system sync replica tp_2;
+select * from system.projection_parts where table = 'tp_2' and name = 'pp' and active;
+show create table tp_2;
+
+alter table tp_1 drop projection pp;
+system sync replica tp_2;
+select * from system.projection_parts where table = 'tp_2' and name = 'pp' and active;
+show create table tp_2;
+
 drop table if exists tp_1;
 drop table if exists tp_2;
-
