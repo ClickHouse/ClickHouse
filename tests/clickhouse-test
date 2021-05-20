@@ -725,8 +725,9 @@ def do_run_tests(jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_test
         run_tests_array((sequential_tests, len(sequential_tests), suite, suite_dir, suite_tmp_dir))
         return len(sequential_tests) + len(parallel_tests)
     else:
-        run_tests_array((all_tests, len(all_tests), suite, suite_dir, suite_tmp_dir))
-        return len(all_tests)
+        num_tests = len(all_tests)
+        run_tests_array((all_tests, num_tests, suite, suite_dir, suite_tmp_dir))
+        return num_tests
 
 
 def main(args):
