@@ -77,7 +77,7 @@ echo "step 23"
 echo -e "INSERT INTO merge_tree_user_column_privileges_${UUID} (t1) VALUES ('3.4')" | ${CLICKHOUSE_CLIENT} -n  2>&1
 echo $?
 echo "step 24"
-echo -e "SELECT t1 FROM merge_tree_user_column_privileges_${UUID} FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
+echo -e "SELECT t1 FROM merge_tree_user_column_privileges_${UUID} ORDER BY t1 FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
 echo $?
 echo "step 25"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} DROP COLUMN t1" | ${CLICKHOUSE_CLIENT} -n  2>&1
@@ -92,7 +92,7 @@ echo "step 28"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} CLEAR COLUMN t1" | ${CLICKHOUSE_CLIENT} -n --user "user_user_column_privileges_${USER_UUID}"  2>&1
 echo $?
 echo "step 29"
-echo -e "SELECT t1 FROM merge_tree_user_column_privileges_${UUID} FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
+echo -e "SELECT t1 FROM merge_tree_user_column_privileges_${UUID} ORDER BY t1 FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
 echo $?
 echo "step 30"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} DROP COLUMN t1" | ${CLICKHOUSE_CLIENT} -n  2>&1
@@ -131,7 +131,7 @@ echo "step 41"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} RENAME COLUMN t1 TO t1_new" | ${CLICKHOUSE_CLIENT} -n --user "user_user_column_privileges_${USER_UUID}"  2>&1
 echo $?
 echo "step 42"
-echo -e "SELECT t1 FROM merge_tree_user_column_privileges_${UUID} FORMAT JSONEachRow; -- { serverError 47}" | ${CLICKHOUSE_CLIENT} --testmode -n  2>&1
+echo -e "SELECT t1 FROM merge_tree_user_column_privileges_${UUID} ORDER BY t1 FORMAT JSONEachRow; -- { serverError 47}" | ${CLICKHOUSE_CLIENT} --testmode -n  2>&1
 echo $?
 echo "step 43"
 echo -e "SELECT t1_new FROM merge_tree_user_column_privileges_${UUID} ORDER BY t1_new FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
@@ -188,7 +188,7 @@ echo "step 60"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} CLEAR COLUMN t3" | ${CLICKHOUSE_CLIENT} -n --user "user_user_column_privileges_${USER_UUID}"  2>&1
 echo $?
 echo "step 61"
-echo -e "SELECT t3 FROM merge_tree_user_column_privileges_${UUID} FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
+echo -e "SELECT t3 FROM merge_tree_user_column_privileges_${UUID} ORDER BY t3 FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
 echo $?
 echo "step 62"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} DROP COLUMN t3" | ${CLICKHOUSE_CLIENT} -n  2>&1
@@ -212,7 +212,7 @@ echo "step 68"
 echo -e "INSERT INTO merge_tree_user_column_privileges_${UUID} (t3) VALUES (30.01)" | ${CLICKHOUSE_CLIENT} -n  2>&1
 echo $?
 echo "step 69"
-echo -e "SELECT t3 FROM merge_tree_user_column_privileges_${UUID} FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
+echo -e "SELECT t3 FROM merge_tree_user_column_privileges_${UUID} ORDER BY t3 FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
 echo $?
 echo "step 70"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} DROP COLUMN t3" | ${CLICKHOUSE_CLIENT} -n  2>&1
@@ -227,7 +227,7 @@ echo "step 73"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} RENAME COLUMN t3 TO t3_new" | ${CLICKHOUSE_CLIENT} -n --user "user_user_column_privileges_${USER_UUID}"  2>&1
 echo $?
 echo "step 74"
-echo -e "SELECT t3 FROM merge_tree_user_column_privileges_${UUID} FORMAT JSONEachRow; -- { serverError 47}" | ${CLICKHOUSE_CLIENT} --testmode -n  2>&1
+echo -e "SELECT t3 FROM merge_tree_user_column_privileges_${UUID} ORDER BY t3 FORMAT JSONEachRow; -- { serverError 47}" | ${CLICKHOUSE_CLIENT} --testmode -n  2>&1
 echo $?
 echo "step 75"
 echo -e "SELECT t3_new FROM merge_tree_user_column_privileges_${UUID} ORDER BY t3_new FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
@@ -284,7 +284,7 @@ echo "step 92"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} CLEAR COLUMN t4" | ${CLICKHOUSE_CLIENT} -n --user "user_user_column_privileges_${USER_UUID}"  2>&1
 echo $?
 echo "step 93"
-echo -e "SELECT t4 FROM merge_tree_user_column_privileges_${UUID} FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
+echo -e "SELECT t4 FROM merge_tree_user_column_privileges_${UUID} ORDER BY t4 FORMAT JSONEachRow" | ${CLICKHOUSE_CLIENT} -n  2>&1
 echo $?
 echo "step 94"
 echo -e "ALTER TABLE merge_tree_user_column_privileges_${UUID} DROP COLUMN t4" | ${CLICKHOUSE_CLIENT} -n  2>&1
