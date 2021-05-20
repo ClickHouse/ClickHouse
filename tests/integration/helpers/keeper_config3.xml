@@ -1,5 +1,7 @@
 <yandex>
+    <listen_try>true</listen_try>
     <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
 
     <logger>
         <level>trace</level>
@@ -8,38 +10,30 @@
     </logger>
 
     <keeper_server>
-        <tcp_port>9181</tcp_port>
-        <server_id>{id}</server_id>
+        <tcp_port>2181</tcp_port>
+        <server_id>3</server_id>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>30000</session_timeout_ms>
-            <force_sync>false</force_sync>
-            <startup_timeout>120000</startup_timeout>
             <raft_logs_level>trace</raft_logs_level>
-            <heart_beat_interval_ms>1000</heart_beat_interval_ms>
-            <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
-            <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
-            <quorum_reads>{quorum_reads}</quorum_reads>
-            <snapshot_distance>{snapshot_distance}</snapshot_distance>
-            <stale_log_gap>{stale_log_gap}</stale_log_gap>
-            <reserved_log_items>{reserved_log_items}</reserved_log_items>
+            <force_sync>false</force_sync>
         </coordination_settings>
 
         <raft_configuration>
             <server>
                 <id>1</id>
-                <hostname>{srv1}</hostname>
+                <hostname>zoo1</hostname>
                 <port>9444</port>
             </server>
             <server>
                 <id>2</id>
-                <hostname>{srv2}</hostname>
+                <hostname>zoo2</hostname>
                 <port>9444</port>
             </server>
             <server>
                 <id>3</id>
-                <hostname>{srv3}</hostname>
+                <hostname>zoo3</hostname>
                 <port>9444</port>
             </server>
         </raft_configuration>
