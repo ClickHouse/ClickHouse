@@ -128,7 +128,7 @@ private:
     UpdateForBlockCallback update_for_block;
 
 
-    MergeTaskState state;
+    MergeTaskState state{MergeTaskState::NEED_PREPARE};
     BlockInputStreamPtr merged_stream;
     BlockOutputStreamPtr to;
     std::exception_ptr exception;

@@ -945,10 +945,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t rows_written = 0;
     const size_t initial_reservation = space_reservation ? space_reservation->getSize() : 0;
 
-    auto is_cancelled = [&]() { return merges_blocker.isCancelled()
+    auto is_cancelled = [&]() mutable { return merges_blocker.isCancelled()
         || (need_remove_expired_values && ttl_merges_blocker.isCancelled()); };
 
-    auto update_for_block = [&] (const Block & block) 
+    auto update_for_block = [&] (const Block & block) mutable
     {
         rows_written += block.rows();
 
