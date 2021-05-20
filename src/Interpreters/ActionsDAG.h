@@ -121,6 +121,7 @@ public:
     const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
+    Names getRequiredColumnsNames() const;
     ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
 

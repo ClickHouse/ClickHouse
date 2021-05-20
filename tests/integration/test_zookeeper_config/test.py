@@ -16,10 +16,10 @@ def test_chroot_with_same_root():
 
     node1 = cluster_1.add_instance('node1',
                                    main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
+                                   with_zookeeper=True)
     node2 = cluster_2.add_instance('node2',
                                    main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
+                                   with_zookeeper=True)
     nodes = [node1, node2]
 
     def create_zk_root(zk):
@@ -59,10 +59,10 @@ def test_chroot_with_different_root():
 
     node1 = cluster_1.add_instance('node1',
                                    main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
+                                   with_zookeeper=True)
     node2 = cluster_2.add_instance('node2',
                                    main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_b.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
+                                   with_zookeeper=True)
     nodes = [node1, node2]
 
     def create_zk_roots(zk):
@@ -100,11 +100,11 @@ def test_identity():
     cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_with_password.xml')
     cluster_2 = ClickHouseCluster(__file__)
 
+    # TODO ACL not implemented in Keeper.
     node1 = cluster_1.add_instance('node1', main_configs=["configs/remote_servers.xml",
                                                           "configs/zookeeper_config_with_password.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
-    node2 = cluster_2.add_instance('node2', main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
-                                   zookeeper_use_tmpfs=False)
+                                   with_zookeeper=True, use_keeper=False)
+    node2 = cluster_2.add_instance('node2', main_configs=["configs/remote_servers.xml"], with_zookeeper=True, use_keeper=False)
 
     try:
         cluster_1.start()
@@ -126,6 +126,7 @@ def test_identity():
         cluster_2.shutdown()
 
 
+# NOTE this test have to be ported to Keeper
 def test_secure_connection():
     # We need absolute path in zookeeper volumes. Generate it dynamically.
     TEMPLATE = '''
@@ -162,12 +163,12 @@ def test_secure_connection():
                                                         "configs_secure/conf.d/remote_servers.xml",
                                                         "configs_secure/conf.d/ssl_conf.xml"],
                                  with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name,
-                                 zookeeper_use_tmpfs=False)
+                                 )
     node2 = cluster.add_instance('node2', main_configs=["configs_secure/client.crt", "configs_secure/client.key",
                                                         "configs_secure/conf.d/remote_servers.xml",
                                                         "configs_secure/conf.d/ssl_conf.xml"],
                                  with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name,
-                                 zookeeper_use_tmpfs=False)
+                                 )
 
     try:
         cluster.start()
