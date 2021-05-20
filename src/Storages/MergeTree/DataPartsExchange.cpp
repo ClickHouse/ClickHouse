@@ -379,7 +379,6 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 
 MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
     const String & part_name,
     const String & replica_path,
     const String & host,
@@ -494,7 +493,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             if (e.code() != ErrorCodes::S3_ERROR)
                 throw;
             /// Try again but without S3 copy
-            return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
+            return fetchPart(metadata_snapshot, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, to_detached, tmp_prefix_, nullptr, false);
         }
     }
@@ -558,7 +557,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     MergeTreeData::DataPart::Checksums checksums;
     return part_type == "InMemory"
-        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, std::move(reservation), in, projections)
+        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, std::move(reservation), in, projections)
         : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, reservation->getDisk(), in, projections, checksums);
 }
 
@@ -566,7 +565,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
     const UUID & part_uuid,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
     ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in,
     size_t projections)
@@ -621,7 +619,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
     new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
-    new_data_part->partition.create(metadata_snapshot, block, 0, context);
+    new_data_part->partition.create(metadata_snapshot, block, 0);
 
     MergedBlockOutputStream part_out(
         new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));

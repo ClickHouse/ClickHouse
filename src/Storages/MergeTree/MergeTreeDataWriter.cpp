@@ -140,8 +140,7 @@ void updateTTL(
 
 }
 
-BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-        const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
@@ -156,12 +155,12 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     }
 
     Block block_copy = block;
-    /// After expression execution partition key columns will be added to block_copy with names regarding partition function.
-    auto partition_key_sample_block = MergeTreePartition::executePartitionByExpression(metadata_snapshot, block_copy, context);
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    partition_key.expression->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
-    partition_columns.reserve(partition_key_sample_block.columns());
-    for (const ColumnWithTypeAndName & element : partition_key_sample_block)
+    partition_columns.reserve(partition_key.sample_block.columns());
+    for (const ColumnWithTypeAndName & element : partition_key.sample_block)
         partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;

@@ -41,13 +41,7 @@ public:
 
     void assign(const MergeTreePartition & other) { value.assign(other.value); }
 
-    void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context);
-
-    /// Adjust partition key and execute its expression on block. Return sample block according to used expression.
-    static Block executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context);
-
-    /// Make a modified partition key with substitution from modulo to moduloLegacy. Used in paritionPruner.
-    static KeyDescription adjustPartitionKey(const StorageMetadataPtr & partition_key, ContextPtr context);
+    void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row);
 };
 
 }
