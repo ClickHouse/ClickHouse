@@ -67,7 +67,7 @@ void ORCBlockInputFormat::resetParser()
     stripe_current = 0;
 }
 
-size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
+static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 {
     if (type->id() == arrow::Type::LIST)
         return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type()) + 1;
