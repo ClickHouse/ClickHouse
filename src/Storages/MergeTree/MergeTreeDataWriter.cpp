@@ -150,7 +150,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
-        result.emplace_back(Block(block), Row());
+        result.emplace_back(Block(block), std::vector<Field>{});
         return result;
     }
 
@@ -172,7 +172,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 
     auto get_partition = [&](size_t num)
     {
-        Row partition(partition_columns.size());
+        std::vector<Field> partition(partition_columns.size());
         for (size_t i = 0; i < partition_columns.size(); ++i)
             partition[i] = Field((*partition_columns[i])[partition_num_to_first_row[num]]);
         return partition;
