@@ -92,7 +92,10 @@ def test_jbod_balanced_merge(start_cluster):
         node1.query("create table tmp1 as tbl")
         node1.query("create table tmp2 as tbl")
 
-        for i in range(200):
+        p = Pool(20)
+
+        def task(i):
+            print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
                 "insert into tbl select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
@@ -103,6 +106,8 @@ def test_jbod_balanced_merge(start_cluster):
             node1.query(
                 "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
+
+        p.map(task, range(200))
 
         time.sleep(1)
 
@@ -151,8 +156,10 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             node.query("create table tmp2 as tmp1")
 
         node2.query("alter table tbl modify setting always_fetch_merged_part = 1")
+        p = Pool(20)
 
-        for i in range(200):
+        def task(i):
+            print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
                 "insert into tbl select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
@@ -169,6 +176,8 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             node2.query(
                 "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
+
+        p.map(task, range(200))
 
         node2.query("SYSTEM SYNC REPLICA tbl", timeout=10)
 
