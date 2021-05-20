@@ -1186,6 +1186,15 @@ class ClickHouseCluster:
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper')
                 logging.debug(f'Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}')
+                if self.use_keeper:
+                    for i in range(1,4):
+                        if os.path.exists(self.keeper_instance_dir_prefix + f"{i}"):
+                            shutil.rmtree(self.keeper_instance_dir_prefix + f"{i}")
+                else:
+                    for i in range(1,3):
+                        if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
+                            shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
+
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
                 
