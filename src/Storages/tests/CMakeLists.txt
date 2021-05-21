@@ -1,3 +1,6 @@
+add_executable (part_name part_name.cpp)
+target_link_libraries (part_name PRIVATE dbms)
+
 add_executable (remove_symlink_directory remove_symlink_directory.cpp)
 target_link_libraries (remove_symlink_directory PRIVATE dbms)
 

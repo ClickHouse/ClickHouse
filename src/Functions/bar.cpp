@@ -16,7 +16,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -29,7 +28,7 @@ class FunctionBar : public IFunction
 {
 public:
     static constexpr auto name = "bar";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBar>();
     }
@@ -110,9 +109,6 @@ public:
                 arguments[1].column->getFloat64(i),
                 arguments[2].column->getFloat64(i),
                 max_width);
-
-            if (!isFinite(width))
-                throw Exception("Value of width must not be NaN and Inf", ErrorCodes::BAD_ARGUMENTS);
 
             size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
             dst_chars.resize(next_size);

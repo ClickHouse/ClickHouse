@@ -1,17 +1,18 @@
 #pragma once
 
-#include <Access/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Common/ThreadPool.h>
+#include <Access/AccessRightsElement.h>
 
 
 namespace DB
 {
 
+class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
@@ -22,10 +23,10 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 /** Allows to create new table or database,
   *  or create an object for existing table or database.
   */
-class InterpreterCreateQuery : public IInterpreter, WithContext
+class InterpreterCreateQuery : public IInterpreter
 {
 public:
-    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_);
 
     BlockIO execute() override;
 
@@ -53,12 +54,12 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context, bool attach);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
-    static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
+    static void prepareOnClusterQuery(ASTCreateQuery & create, const Context & context, const String & cluster_name);
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
 
 private:
     struct TableProperties
@@ -87,6 +88,7 @@ private:
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
     ASTPtr query_ptr;
+    Context & context;
 
     /// Skip safety threshold when loading tables.
     bool has_force_restore_data_flag = false;

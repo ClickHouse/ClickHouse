@@ -26,7 +26,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
 {
     MergeTreeWriterSettings writer_settings(
-        storage.getContext()->getSettings(),
+        storage.global_context.getSettings(),
         storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         /* rewrite_primary_key = */ true,
@@ -91,7 +91,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->calculateColumnsSizesOnDisk();
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
-    new_part->storage.lockSharedData(*new_part);
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
@@ -186,6 +185,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
+
     rows_count += rows;
 }
 

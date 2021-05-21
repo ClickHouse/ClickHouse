@@ -96,7 +96,7 @@ def cluster():
 
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
-        run_s3_mocks(cluster)
+        run_s3_mock(cluster)
 
         yield cluster
     finally:
@@ -113,18 +113,13 @@ def run_query(instance, query, stdin=None, settings=None):
     return result
 
 
-# Test simple put. Also checks that wrong credentials produce an error with every compression method.
-@pytest.mark.parametrize("maybe_auth,positive,compression", [
-    ("", True, 'auto'),
-    ("'minio','minio123',", True, 'auto'),
-    ("'wrongid','wrongkey',", False, 'auto'),
-    ("'wrongid','wrongkey',", False, 'gzip'),
-    ("'wrongid','wrongkey',", False, 'deflate'),
-    ("'wrongid','wrongkey',", False, 'brotli'),
-    ("'wrongid','wrongkey',", False, 'xz'),
-    ("'wrongid','wrongkey',", False, 'zstd')
+# Test simple put.
+@pytest.mark.parametrize("maybe_auth,positive", [
+    ("", True),
+    ("'minio','minio123',", True),
+    ("'wrongid','wrongkey',", False)
 ])
-def test_put(cluster, maybe_auth, positive, compression):
+def test_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
     bucket = cluster.minio_bucket if not maybe_auth else cluster.minio_restricted_bucket
@@ -133,8 +128,8 @@ def test_put(cluster, maybe_auth, positive, compression):
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
-    put_query = f"""insert into table function s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
-                    {maybe_auth}'CSV', '{table_format}', {compression}) values {values}"""
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') values {}".format(
+        cluster.minio_host, cluster.minio_port, bucket, filename, maybe_auth, table_format, values)
 
     try:
         run_query(instance, put_query)
@@ -384,32 +379,26 @@ def test_s3_glob_scheherazade(cluster):
     assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
 
 
-def run_s3_mocks(cluster):
-    logging.info("Starting s3 mocks")
-    mocks = (
-        ("mock_s3.py", "resolver", "8080"),
-        ("unstable_server.py", "resolver", "8081"),
-    )
-    for mock_filename, container, port in mocks:
-        container_id = cluster.get_container_id(container)
-        current_dir = os.path.dirname(__file__)
-        cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mocks", mock_filename), mock_filename)
-        cluster.exec_in_container(container_id, ["python", mock_filename, port], detach=True)
+def run_s3_mock(cluster):
+    logging.info("Starting s3 mock")
+    container_id = cluster.get_container_id('resolver')
+    current_dir = os.path.dirname(__file__)
+    cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mock", "mock_s3.py"), "mock_s3.py")
+    cluster.exec_in_container(container_id, ["python", "mock_s3.py"], detach=True)
 
-    # Wait for S3 mocks to start
-    for mock_filename, container, port in mocks:
-        for attempt in range(10):
-            ping_response = cluster.exec_in_container(cluster.get_container_id(container),
-                                                      ["curl", "-s", f"http://{container}:{port}/"], nothrow=True)
-            if ping_response != 'OK':
-                if attempt == 9:
-                    assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
-                else:
-                    time.sleep(1)
+    # Wait for S3 mock start
+    for attempt in range(10):
+        ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
+                                                  ["curl", "-s", "http://resolver:8080/"], nothrow=True)
+        if ping_response != 'OK':
+            if attempt == 9:
+                assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
             else:
-                break
+                time.sleep(1)
+        else:
+            break
 
-    logging.info("S3 mocks started")
+    logging.info("S3 mock started")
 
 
 def replace_config(old, new):
@@ -527,15 +516,6 @@ def test_storage_s3_get_gzip(cluster, extension, method):
 
     finally:
         run_query(instance, f"DROP TABLE {name}")
-
-
-def test_storage_s3_get_unstable(cluster):
-    bucket = cluster.minio_bucket
-    instance = cluster.instances["dummy"]
-    table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
-    get_query = f"SELECT count(), sum(column3) FROM s3('http://resolver:8081/{cluster.minio_bucket}/test.csv', 'CSV', '{table_format}') FORMAT CSV"
-    result = run_query(instance, get_query)
-    assert result.splitlines() == ["500000,500000"]
 
 
 def test_storage_s3_put_uncompressed(cluster):

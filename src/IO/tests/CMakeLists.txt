@@ -39,9 +39,11 @@ target_link_libraries (o_direct_and_dirty_pages PRIVATE clickhouse_common_io)
 
 add_executable (hashing_write_buffer hashing_write_buffer.cpp)
 target_link_libraries (hashing_write_buffer PRIVATE clickhouse_common_io)
+add_check(hashing_write_buffer)
 
 add_executable (hashing_read_buffer hashing_read_buffer.cpp)
 target_link_libraries (hashing_read_buffer PRIVATE clickhouse_common_io)
+add_check (hashing_read_buffer)
 
 add_executable (io_operators io_operators.cpp)
 target_link_libraries (io_operators PRIVATE clickhouse_common_io)

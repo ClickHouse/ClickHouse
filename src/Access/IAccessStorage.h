@@ -16,7 +16,6 @@ namespace Poco::Net { class IPAddress; }
 namespace DB
 {
 struct User;
-class Credentials;
 class ExternalAuthenticators;
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -143,11 +142,11 @@ public:
     bool hasSubscription(EntityType type) const;
     bool hasSubscription(const UUID & id) const;
 
-    /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
-    /// Throws an exception if no such user or credentials are invalid.
-    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
+    /// Finds an user, check its password and returns the ID of the user.
+    /// Throws an exception if no such user or password is incorrect.
+    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
 
-    /// Returns the ID of a user who has logged in (maybe on another node).
+    /// Returns the ID of an user who has logged in (maybe on another node).
     /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
     UUID getIDOfLoggedUser(const String & user_name) const;
 
@@ -165,8 +164,8 @@ protected:
     virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const = 0;
     virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
     virtual bool hasSubscriptionImpl(EntityType type) const = 0;
-    virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
-    virtual bool areCredentialsValidImpl(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
+    virtual UUID loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const;
     virtual bool isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const;
     virtual UUID getIDOfLoggedUserImpl(const String & user_name) const;
 
@@ -184,7 +183,7 @@ protected:
     [[noreturn]] void throwReadonlyCannotUpdate(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(EntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
-    [[noreturn]] static void throwInvalidCredentials();
+    [[noreturn]] static void throwInvalidPassword();
     [[noreturn]] static void throwCannotAuthenticate(const String & user_name);
 
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;

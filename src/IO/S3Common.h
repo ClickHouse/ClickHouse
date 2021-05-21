@@ -5,8 +5,8 @@
 #if USE_AWS_S3
 
 #include <common/types.h>
-#include <aws/core/Aws.h>  // Y_IGNORE
-#include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
+#include <aws/core/Aws.h>
+#include <aws/core/client/ClientConfiguration.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
 
@@ -38,8 +38,7 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request);
+        bool use_environment_credentials);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const RemoteHostFilter & remote_host_filter,

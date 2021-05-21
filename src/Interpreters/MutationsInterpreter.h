@@ -23,13 +23,13 @@ bool isStorageTouchedByMutations(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context_copy
+    Context context_copy
 );
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const MutationCommand & command,
     const StoragePtr & storage,
-    ContextPtr context
+    const Context & context
 );
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
@@ -43,7 +43,7 @@ public:
         StoragePtr storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
-        ContextPtr context_,
+        const Context & context_,
         bool can_execute_);
 
     void validate();
@@ -74,7 +74,7 @@ private:
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
-    ContextPtr context;
+    Context context;
     bool can_execute;
     SelectQueryOptions select_limits;
 
@@ -101,7 +101,7 @@ private:
 
     struct Stage
     {
-        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
+        Stage(const Context & context_) : expressions_chain(context_) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;

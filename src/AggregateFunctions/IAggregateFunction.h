@@ -1,23 +1,21 @@
 #pragma once
 
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/Field.h>
-#include <Interpreters/Context_fwd.h>
-#include <Common/Exception.h>
-#include <common/types.h>
-
 #include <cstddef>
 #include <memory>
 #include <vector>
 #include <type_traits>
 
+#include <common/types.h>
+#include <Common/Exception.h>
+#include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Field.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -104,7 +102,7 @@ public:
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
-    virtual bool allocatesMemoryInArena() const = 0;
+    virtual bool allocatesMemoryInArena() const { return false; }
 
     /// Inserts results into a column. This method might modify the state (e.g.
     /// sort an array), so must be called once, from single thread. The state
@@ -122,7 +120,7 @@ public:
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        ContextPtr /*context*/) const
+        const Context & /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -267,15 +265,14 @@ public:
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
             {
-                if (flags[i] && places[i])
+                if (flags[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
             }
         }
         else
         {
             for (size_t i = 0; i < batch_size; ++i)
-                if (places[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
         }
     }
 
@@ -350,8 +347,7 @@ public:
         {
             size_t next_offset = offsets[i];
             for (size_t j = current_offset; j < next_offset; ++j)
-                if (places[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
         }
     }

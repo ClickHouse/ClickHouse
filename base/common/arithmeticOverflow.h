@@ -26,12 +26,6 @@ namespace common
     }
 
     template <typename T>
-    inline auto NO_SANITIZE_UNDEFINED negateIgnoreOverflow(T x)
-    {
-        return -x;
-    }
-
-    template <typename T>
     inline bool addOverflow(T x, T y, T & res)
     {
         return __builtin_add_overflow(x, y, &res);

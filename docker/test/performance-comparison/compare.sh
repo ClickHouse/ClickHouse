@@ -2,9 +2,7 @@
 set -exu
 set -o pipefail
 trap "exit" INT TERM
-# The watchdog is in the separate process group, so we have to kill it separately
-# if the script terminates earlier.
-trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
+trap 'kill $(jobs -pr) ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -243,12 +241,9 @@ function run_tests
     profile_seconds_left=600
 
     # Run the tests.
-    total_tests=$(echo "$test_files" | wc -w)
-    current_test=0
     test_name="<none>"
     for test in $test_files
     do
-        echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
@@ -276,7 +271,6 @@ function run_tests
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
-        current_test=$((current_test + 1))
     done
 
     unset TIMEFORMAT
@@ -764,7 +758,7 @@ create view test_times_view as
         total_client_time,
         queries,
         query_max,
-        real / if(queries > 0, queries, 1) avg_real_per_query,
+        real / queries avg_real_per_query,
         query_min,
         runs
     from test_time
@@ -785,7 +779,7 @@ create view test_times_view_total as
         sum(total_client_time),
         sum(queries),
         max(query_max),
-        sum(real) / if(sum(queries) > 0, sum(queries), 1) avg_real_per_query,
+        sum(real) / sum(queries) avg_real_per_query,
         min(query_min),
         -- Totaling the number of runs doesn't make sense, but use the max so
         -- that the reporting script doesn't complain about queries being too
@@ -1153,21 +1147,20 @@ function upload_results
         return 0
     fi 
 
+    # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+    # so I have to extract host and port with clickhouse-local. I tried to use
+    # Poco URI parser to support this in the client, but it's broken and can't
+    # parse host:port.
     set +x # Don't show password in the log
-    client=(clickhouse-client
-        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-        # so I have to extract host and port with clickhouse-local. I tried to use
-        # Poco URI parser to support this in the client, but it's broken and can't
-        # parse host:port.
-        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
-        --secure
-        --user "${CHPC_DATABASE_USER}"
-        --password "${CHPC_DATABASE_PASSWORD}"
-        --config "right/config/client_config.xml"
-        --database perftest
-        --date_time_input_format=best_effort)
-
-    "${client[@]}" --query "
+    clickhouse-client \
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV") \
+        --secure \
+        --user "${CHPC_DATABASE_USER}" \
+        --password "${CHPC_DATABASE_PASSWORD}" \
+        --config "right/config/client_config.xml" \
+        --database perftest \
+        --date_time_input_format=best_effort \
+        --query "
             insert into query_metrics_v2
             select
                 toDate(event_time) event_date,
@@ -1190,25 +1183,6 @@ function upload_results
             format TSV
             settings date_time_input_format='best_effort'
 " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
-
-    # Upload some run attributes. I use this weird form because it is the same
-    # form that can be used for historical data when you only have compare.log.
-    cat compare.log \
-        | sed -n '
-            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
-            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
-            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
-            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
-            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
-            s/.*left_sha=\(.*\)$/old-sha	\1/p;
-            s/.*right_sha=\(.*\)/new-sha	\1/p' \
-        | awk '
-            BEGIN { FS = "\t"; OFS = "\t" }
-            /^old-sha/ { old_sha=$2 }
-            /^new-sha/ { new_sha=$2 }
-            /^metric/ { print old_sha, new_sha, $2, $3 }' \
-        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
-
     set -x
 }
 
@@ -1291,4 +1265,3 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
-

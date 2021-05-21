@@ -88,7 +88,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
 
     disk->createDirectories(destination_path);
 
-    auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
+    auto compression_codec = storage.global_context.chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec);
     out.writePrefix();

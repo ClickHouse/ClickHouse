@@ -2,7 +2,7 @@
 
 #include <Common/UInt128.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/DataTypeWithSimpleSerialization.h>
 
 
 namespace DB
@@ -14,7 +14,7 @@ class ColumnVector;
 /** Implements part of the IDataType interface, common to all numbers and for Date and DateTime.
   */
 template <typename T>
-class DataTypeNumberBase : public IDataType
+class DataTypeNumberBase : public DataTypeWithSimpleSerialization
 {
     static_assert(IsNumber<T>);
 
@@ -30,7 +30,20 @@ public:
     const char * getFamilyName() const override { return family_name; }
     TypeIndex getTypeId() const override { return type_id; }
 
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     Field getDefault() const override;
+
+    /** Format is platform-dependent. */
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
     MutableColumnPtr createColumn() const override;
 
@@ -40,7 +53,7 @@ public:
     bool shouldAlignRightInPrettyFormats() const override
     {
         /// Just a number, without customizations. Counterexample: IPv4.
-        return !custom_serialization;
+        return !custom_text_serialization;
     }
 
     bool textCanContainOnlyValidUTF8() const override { return true; }
@@ -53,8 +66,6 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
-
-    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
 };
 
 /// Prevent implicit template instantiation of DataTypeNumberBase for common numeric types

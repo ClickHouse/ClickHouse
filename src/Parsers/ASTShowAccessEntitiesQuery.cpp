@@ -43,7 +43,7 @@ void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormatSettings & settings
 }
 
 
-void ASTShowAccessEntitiesQuery::replaceEmptyDatabase(const String & current_database)
+void ASTShowAccessEntitiesQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
 {
     if (database_and_table_name)
     {

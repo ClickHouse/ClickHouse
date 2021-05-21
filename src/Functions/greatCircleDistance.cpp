@@ -287,7 +287,7 @@ template <Method method>
 class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
 {
 public:
-    explicit FunctionGeoDistance(ContextPtr context) : selector(context)
+    explicit FunctionGeoDistance(const Context & context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGeoDistance<method>>();
@@ -307,7 +307,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionGeoDistance<method>>(context);
     }

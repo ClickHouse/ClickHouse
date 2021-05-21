@@ -107,9 +107,9 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
-                    IDataType::StreamCallbackWithType callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+                    IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
                     {
-                        if (ISerialization::isSpecialCompressionAllowed(substream_path))
+                        if (IDataType::isSpecialCompressionAllowed(substream_path))
                         {
                             result_codec = getImpl(codec_family_name, codec_arguments, &substream_type);
 
@@ -121,8 +121,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                         }
                     };
 
-                    ISerialization::SubstreamPath stream_path;
-                    column_type->enumerateStreams(column_type->getDefaultSerialization(), callback, stream_path);
+                    IDataType::SubstreamPath stream_path;
+                    column_type->enumerateStreams(callback, stream_path);
 
                     if (!result_codec)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find any substream with data type for type {}. It's a bug", column_type->getName());

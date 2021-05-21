@@ -32,8 +32,6 @@
     M(UncompressedCacheHits, "") \
     M(UncompressedCacheMisses, "") \
     M(UncompressedCacheWeightLost, "") \
-    M(MMappedFileCacheHits, "") \
-    M(MMappedFileCacheMisses, "") \
     M(IOBufferAllocs, "") \
     M(IOBufferAllocBytes, "") \
     M(ArenaAllocChunks, "") \
@@ -146,11 +144,6 @@
     M(StorageBufferPassedTimeMaxThreshold, "") \
     M(StorageBufferPassedRowsMaxThreshold, "") \
     M(StorageBufferPassedBytesMaxThreshold, "") \
-    M(StorageBufferPassedTimeFlushThreshold, "") \
-    M(StorageBufferPassedRowsFlushThreshold, "") \
-    M(StorageBufferPassedBytesFlushThreshold, "") \
-    M(StorageBufferLayerLockReadersWaitMilliseconds, "Time for waiting for Buffer layer during reading") \
-    M(StorageBufferLayerLockWritersWaitMilliseconds, "Time for waiting free Buffer layer to write to (can be used to tune Buffer layers)") \
     \
     M(DictCacheKeysRequested, "") \
     M(DictCacheKeysRequestedMiss, "") \

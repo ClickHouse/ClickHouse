@@ -9,8 +9,6 @@
 #include <Common/quoteString.h>
 #include <Common/hex.h>
 #include <Common/ActionBlocker.h>
-#include <Common/formatReadable.h>
-#include <Common/Stopwatch.h>
 #include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -231,12 +229,7 @@ namespace
         block_in.readSuffix();
     }
 
-    void writeRemoteConvert(
-        const DistributedHeader & distributed_header,
-        RemoteBlockOutputStream & remote,
-        bool compression_expected,
-        ReadBufferFromFile & in,
-        Poco::Logger * log)
+    void writeRemoteConvert(const DistributedHeader & distributed_header, RemoteBlockOutputStream & remote, ReadBufferFromFile & in, Poco::Logger * log)
     {
         if (!remote.getHeader())
         {
@@ -267,14 +260,6 @@ namespace
             return;
         }
 
-        /// If connection does not use compression, we have to uncompress the data.
-        if (!compression_expected)
-        {
-            writeAndConvert(remote, in);
-            return;
-        }
-
-        /// Otherwise write data as it was already prepared (more efficient path).
         CheckingCompressedReadBuffer checking_in(in);
         remote.writePrepared(checking_in);
     }
@@ -293,14 +278,14 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , disk(disk_)
     , relative_path(relative_path_)
     , path(disk->getPath() + relative_path + '/')
-    , should_batch_inserts(storage.getContext()->getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
-    , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
+    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path(path + "current_batch.txt")
-    , default_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
     , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
@@ -475,7 +460,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory, storage.log);
 
-    const auto settings = storage.getContext()->getSettings();
+    const auto settings = storage.global_context.getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -538,8 +523,8 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    Stopwatch watch;
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
+    LOG_TRACE(log, "Started processing `{}`", file_path);
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
 
     try
     {
@@ -548,18 +533,13 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        LOG_DEBUG(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
-            formatReadableQuantity(distributed_header.rows),
-            formatReadableSizeWithBinarySuffix(distributed_header.bytes));
-
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         RemoteBlockOutputStream remote{*connection, timeouts,
             distributed_header.insert_query,
             distributed_header.insert_settings,
             distributed_header.client_info};
         remote.writePrefix();
-        bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-        writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
+        writeRemoteConvert(distributed_header, remote, in, log);
         remote.writeSuffix();
     }
     catch (const Exception & e)
@@ -570,7 +550,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
     auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     markAsSend(file_path);
-    LOG_TRACE(log, "Finished processing `{}` (took {} ms)", file_path, watch.elapsedMilliseconds());
+    LOG_TRACE(log, "Finished processing `{}`", file_path);
 }
 
 struct StorageDistributedDirectoryMonitor::BatchHeader
@@ -643,12 +623,6 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
-        Stopwatch watch;
-
-        LOG_DEBUG(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
-            formatReadableQuantity(total_rows),
-            formatReadableSizeWithBinarySuffix(total_bytes));
-
         if (!recovered)
         {
             /// For deduplication in Replicated tables to work, in case of error
@@ -675,7 +649,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.getContext()->getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
@@ -704,8 +678,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                         distributed_header.client_info);
                     remote->writePrefix();
                 }
-                bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-                writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
+                writeRemoteConvert(distributed_header, *remote, in, parent.log);
             }
 
             if (remote)
@@ -724,7 +697,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         if (!batch_broken)
         {
-            LOG_TRACE(parent.log, "Sent a batch of {} files (took {} ms).", file_indices.size(), watch.elapsedMilliseconds());
+            LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
 
             auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
             for (UInt64 file_index : file_indices)
@@ -891,7 +864,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
 
             if (!total_rows || !header)
             {
-                LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
+                LOG_TRACE(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                 CompressedReadBuffer decompressing_in(in);
                 NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);

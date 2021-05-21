@@ -46,7 +46,7 @@ void ArrayJoinStep::updateInputStream(DataStream input_stream, Block result_head
     res_header = std::move(result_header);
 }
 
-void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
+void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
@@ -60,7 +60,7 @@ void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQuery
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 res_header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
+        auto actions = std::make_shared<ExpressionActions>(actions_dag);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {

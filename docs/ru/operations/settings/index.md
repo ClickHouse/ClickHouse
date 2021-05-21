@@ -54,3 +54,4 @@ SELECT getSetting('custom_a');
 
 -   [Конфигурационные параметры сервера](../../operations/server-configuration-parameters/settings.md)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/) <!--hide-->

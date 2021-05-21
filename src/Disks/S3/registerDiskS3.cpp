@@ -1,17 +1,9 @@
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
-
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/ReadHelpers.h>
+#include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
-
-
-#if USE_AWS_S3
-
-#include <aws/core/client/DefaultRetryStrategy.h>
-#include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
 #include "Disks/DiskFactory.h"
@@ -117,13 +109,13 @@ void registerDiskS3(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextConstPtr context) -> DiskPtr {
-        Poco::File disk{context->getPath() + "disks/" + name};
+                      const Context & context) -> DiskPtr {
+        Poco::File disk{context.getPath() + "disks/" + name};
         disk.createDirectories();
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-            context->getRemoteHostFilter(),
-            context->getGlobalContext()->getSettingsRef().s3_max_redirects);
+            context.getRemoteHostFilter(),
+            context.getGlobalContext().getSettingsRef().s3_max_redirects);
 
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
         if (uri.key.back() != '/')
@@ -148,11 +140,10 @@ void registerDiskS3(DiskFactory & factory)
             config.getString(config_prefix + ".secret_access_key", ""),
             config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
             {},
-            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-            config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false))
+            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false))
         );
 
-        String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
+        String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
 
         auto s3disk = std::make_shared<DiskS3>(
             name,
@@ -161,9 +152,8 @@ void registerDiskS3(DiskFactory & factory)
             uri.bucket,
             uri.key,
             metadata_path,
-            context->getSettingsRef().s3_max_single_read_retries,
-            context->getSettingsRef().s3_min_upload_part_size,
-            context->getSettingsRef().s3_max_single_part_upload_size,
+            context.getSettingsRef().s3_min_upload_part_size,
+            context.getSettingsRef().s3_max_single_part_upload_size,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
             config.getBool(config_prefix + ".send_metadata", false),
             config.getInt(config_prefix + ".thread_pool_size", 16),
@@ -184,7 +174,7 @@ void registerDiskS3(DiskFactory & factory)
 
         if (cache_enabled)
         {
-            String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
+            String cache_path = config.getString(config_prefix + ".cache_path", context.getPath() + "disks/" + name + "/cache/");
 
             if (metadata_path == cache_path)
                 throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
@@ -206,10 +196,3 @@ void registerDiskS3(DiskFactory & factory)
 }
 
 }
-
-#else
-
-void registerDiskS3(DiskFactory &) {}
-
-#endif
-

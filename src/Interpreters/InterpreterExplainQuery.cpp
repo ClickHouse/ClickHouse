@@ -14,8 +14,6 @@
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/printPipeline.h>
 
 namespace DB
@@ -33,9 +31,9 @@ namespace
 {
     struct ExplainAnalyzedSyntaxMatcher
     {
-        struct Data : public WithContext
+        struct Data
         {
-            explicit Data(ContextPtr context_) : WithContext(context_) {}
+            const Context & context;
         };
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
@@ -52,7 +50,7 @@ namespace
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+                node, data.context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -129,7 +127,6 @@ struct QueryPlanSettings
             {"header", query_plan_options.header},
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
-            {"indexes", query_plan_options.indexes},
             {"optimize", optimize},
     };
 };
@@ -237,7 +234,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN SYNTAX query.", ErrorCodes::UNKNOWN_SETTING);
 
-        ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+        ExplainAnalyzedSyntaxVisitor::Data data{.context = context};
         ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
         ast.getExplainedQuery()->format(IAST::FormatSettings(buf, false));
@@ -250,11 +247,11 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
         QueryPlan plan;
 
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
         if (settings.optimize)
-            plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
+            plan.optimize(QueryPlanOptimizationSettings(context.getSettingsRef()));
 
         plan.explainPlan(buf, settings.query_plan_options);
     }
@@ -266,11 +263,9 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
         QueryPlan plan;
 
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
-        auto pipeline = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(getContext()),
-            BuildQueryPipelineSettings::fromContext(getContext()));
+        auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()));
 
         if (settings.graph)
         {

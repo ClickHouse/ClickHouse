@@ -36,7 +36,7 @@ void registerStorageNull(StorageFactory & factory)
     });
 }
 
-void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
+void StorageNull::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
     auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
@@ -61,7 +61,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 }
 
 
-void StorageNull::alter(const AlterCommands & params, ContextPtr context, TableLockHolder &)
+void StorageNull::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
     auto table_id = getStorageID();
 

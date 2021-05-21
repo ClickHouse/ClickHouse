@@ -2,7 +2,6 @@ import uuid
 
 from contextlib import contextmanager
 from multiprocessing.dummy import Pool
-from multiprocessing import TimeoutError as PoolTaskTimeoutError
 
 from testflows.core.name import basename, parentname
 from testflows._core.testtype import TestSubType
@@ -28,16 +27,9 @@ def instrument_clickhouse_server_log(self, node=None, clickhouse_server_log="/va
     try:
         with And("adding test name start message to the clickhouse-server.log"):
             node.command(f"echo -e \"\\n-- start: {current().name} --\\n\" >> {clickhouse_server_log}")
-        with And("dump memory info"):
-            node.command(f"echo -e \"\\n-- {current().name} -- top --\\n\" && top -bn1")
-            node.command(f"echo -e \"\\n-- {current().name} -- df --\\n\" && df -h")
-            node.command(f"echo -e \"\\n-- {current().name} -- free --\\n\" && free -mh")
         yield
 
     finally:
-        if self.context.cluster.terminating is True:
-            return
-
         with Finally("adding test name end message to the clickhouse-server.log", flags=TE):
            node.command(f"echo -e \"\\n-- end: {current().name} --\\n\" >> {clickhouse_server_log}")
 
@@ -46,20 +38,14 @@ def instrument_clickhouse_server_log(self, node=None, clickhouse_server_log="/va
                 with Then("dumping clickhouse-server.log for this test"):
                     node.command(f"tail -c +{logsize} {clickhouse_server_log}")
 
-def join(tasks, polling_timeout=5):
+def join(tasks):
     """Join all parallel tests.
     """
     exc = None
     while tasks:
         try:
-            try:
-                tasks[0].get(timeout=polling_timeout)
-                tasks.pop(0)
-
-            except PoolTaskTimeoutError as e:
-                task = tasks.pop(0)
-                tasks.append(task)
-                continue
+            tasks[0].get()
+            tasks.pop(0)
 
         except KeyboardInterrupt as e:
             current().context.cluster.terminating = True
@@ -147,23 +133,6 @@ def role(node, role):
         for role in roles:
             with Finally("I drop the role"):
                 node.query(f"DROP ROLE IF EXISTS {role}")
-
-@TestStep(Given)
-def row_policy(self, name, table, node=None):
-    """Create a row policy with a given name on a given table.
-    """
-    if node is None:
-        node = self.context.node
-
-    try:
-        with Given(f"I create row policy {name}"):
-            node.query(f"CREATE ROW POLICY {name} ON {table}")
-        yield
-
-    finally:
-        with Finally(f"I delete row policy {name}"):
-            node.query(f"DROP ROW POLICY IF EXISTS {name} ON {table}")
-
 tables = {
     "table0" : 1 << 0,
     "table1" : 1 << 1,

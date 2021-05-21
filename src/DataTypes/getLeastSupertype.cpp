@@ -8,7 +8,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -160,36 +159,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 common_tuple_types[elem_idx] = getLeastSupertype(nested_types[elem_idx]);
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
-        }
-    }
-
-    /// For maps
-    {
-        bool have_maps = false;
-        bool all_maps = true;
-        DataTypes key_types;
-        DataTypes value_types;
-        key_types.reserve(types.size());
-        value_types.reserve(types.size());
-
-        for (const auto & type : types)
-        {
-            if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
-            {
-                have_maps = true;
-                key_types.emplace_back(type_map->getKeyType());
-                value_types.emplace_back(type_map->getValueType());
-            }
-            else
-                all_maps = false;
-        }
-
-        if (have_maps)
-        {
-            if (!all_maps)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
-
-            return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
         }
     }
 

@@ -127,8 +127,6 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         /// NOTE Slightly inefficient.

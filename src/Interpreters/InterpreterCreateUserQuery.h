@@ -6,14 +6,14 @@
 
 namespace DB
 {
-
 class ASTCreateUserQuery;
 struct User;
 
-class InterpreterCreateUserQuery : public IInterpreter, WithContext
+
+class InterpreterCreateUserQuery : public IInterpreter
 {
 public:
-    InterpreterCreateUserQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
+    InterpreterCreateUserQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
@@ -21,6 +21,6 @@ public:
 
 private:
     ASTPtr query_ptr;
+    Context & context;
 };
-
 }

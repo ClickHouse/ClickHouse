@@ -24,7 +24,7 @@ public:
 
     String getName() const override { return "TotalsHaving"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
     void describeActions(FormatSettings & settings) const override;
 

@@ -11,7 +11,7 @@
 #include <Core/Block.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
-#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
+#include <Storages/StoragePostgreSQL.h>
 #include <pqxx/pqxx>
 
 
@@ -26,6 +26,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix,
+        PostgreSQLConnectionPtr connection_,
         const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
@@ -47,11 +48,10 @@ public:
 private:
     std::string getUpdateFieldAndDate();
     std::string doInvalidateQuery(const std::string & request) const;
-    BlockInputStreamPtr loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
     Block sample_block;
-    postgres::PoolWithFailoverPtr connection;
+    PostgreSQLConnectionPtr connection;
     Poco::Logger * log;
 
     const std::string db;

@@ -24,8 +24,6 @@
 #   include <DataTypes/DataTypeMap.h>
 #   include <DataTypes/DataTypeNullable.h>
 #   include <DataTypes/DataTypeTuple.h>
-#   include <DataTypes/Serializations/SerializationDecimal.h>
-#   include <DataTypes/Serializations/SerializationFixedString.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufWriter.h>
 #   include <IO/ReadBufferFromString.h>
@@ -585,11 +583,11 @@ namespace
             {
                 if (row_num < old_size)
                 {
-                    SerializationFixedString::alignStringLength(n, text_buffer, 0);
+                    fixed_string_data_type->alignStringLength(text_buffer, 0);
                     memcpy(data.data() + row_num * n, text_buffer.data(), n);
                 }
                 else
-                    SerializationFixedString::alignStringLength(n, data, old_data_size);
+                    fixed_string_data_type->alignStringLength(data, old_data_size);
             }
             else
             {
@@ -819,7 +817,7 @@ namespace
                 auto str = default_function();
                 arr.insert(str.data(), str.data() + str.size());
                 if constexpr (is_fixed_string)
-                    SerializationFixedString::alignStringLength(n, arr, 0);
+                    fixed_string_data_type->alignStringLength(arr, 0);
                 default_string = std::move(arr);
             }
             return *default_string;
@@ -1328,7 +1326,7 @@ namespace
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
                 readDateTime64Text(decimal, scale, buf);
             else
-                SerializationDecimal<DecimalType>::readText(decimal, buf, precision, scale);
+                DataTypeDecimal<DecimalType>::readText(decimal, buf, precision, scale);
             return decimal;
         }
 
@@ -1488,8 +1486,6 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf);
-            if (tm < 0)
-                tm = 0;
             return tm;
         }
 

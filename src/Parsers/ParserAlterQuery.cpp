@@ -61,10 +61,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_detached_partition("DROP DETACHED PARTITION");
     ParserKeyword s_drop_detached_part("DROP DETACHED PART");
     ParserKeyword s_fetch_partition("FETCH PARTITION");
-    ParserKeyword s_fetch_part("FETCH PART");
     ParserKeyword s_replace_partition("REPLACE PARTITION");
     ParserKeyword s_freeze("FREEZE");
-    ParserKeyword s_unfreeze("UNFREEZE");
     ParserKeyword s_partition("PARTITION");
 
     ParserKeyword s_first("FIRST");
@@ -429,21 +427,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
             command->type = ASTAlterCommand::FETCH_PARTITION;
         }
-        else if (s_fetch_part.ignore(pos, expected))
-        {
-            if (!parser_string_literal.parse(pos, command->partition, expected))
-                return false;
-
-            if (!s_from.ignore(pos, expected))
-                return false;
-
-            ASTPtr ast_from;
-            if (!parser_string_literal.parse(pos, ast_from, expected))
-                return false;
-            command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
-            command->part = true;
-            command->type = ASTAlterCommand::FETCH_PARTITION;
-        }
         else if (s_freeze.ignore(pos, expected))
         {
             if (s_partition.ignore(pos, expected))
@@ -469,37 +452,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
-            }
-        }
-        else if (s_unfreeze.ignore(pos, expected))
-        {
-            if (s_partition.ignore(pos, expected))
-            {
-                if (!parser_partition.parse(pos, command->partition, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::UNFREEZE_PARTITION;
-            }
-            else
-            {
-                command->type = ASTAlterCommand::UNFREEZE_ALL;
-            }
-
-            /// WITH NAME 'name' - remove local backup to directory with specified name
-            if (s_with.ignore(pos, expected))
-            {
-                if (!s_name.ignore(pos, expected))
-                    return false;
-
-                ASTPtr ast_with_name;
-                if (!parser_string_literal.parse(pos, ast_with_name, expected))
-                    return false;
-
-                command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
-            }
-            else
-            {
-                return false;
             }
         }
         else if (s_modify_column.ignore(pos, expected))

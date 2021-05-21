@@ -88,6 +88,7 @@ void checkColumn(
                 if (num_collisions <= max_collisions_to_print)
                 {
                     collisions_str << "Collision:\n";
+                    collisions_str << print_for_row(it->second) << '\n';
                     collisions_str << print_for_row(i) << std::endl;
                 }
 

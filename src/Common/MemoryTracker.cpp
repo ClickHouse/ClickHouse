@@ -24,8 +24,8 @@ namespace
 ///
 /// - when it is explicitly blocked with LockExceptionInThread
 ///
-/// - when there are uncaught exceptions objects in the current thread
-///   (to avoid std::terminate())
+/// - to avoid std::terminate(), when stack unwinding is currently in progress
+///   in this thread.
 ///
 ///   NOTE: that since C++11 destructor marked with noexcept by default, and
 ///   this means that any throw from destructor (that is not marked with

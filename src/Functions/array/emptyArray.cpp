@@ -29,7 +29,7 @@ struct FunctionEmptyArray : public IFunction
 {
     static constexpr auto base_name = "emptyArray";
     static const String name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArray>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
     String getName() const override

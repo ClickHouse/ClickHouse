@@ -62,7 +62,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 }
 
 
-static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
+static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -76,7 +76,7 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, Contex
     }
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
     return block.getByPosition(0).column;
 }
 
@@ -104,12 +104,12 @@ public:
         Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
-        ContextPtr context_)
+        const Context & context_)
         : SourceWithProgress(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
-        , context(Context::createCopy(context_)) {}
+        , context(context_) {}
 
     String getName() const override { return "Tables"; }
 
@@ -121,7 +121,7 @@ protected:
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
-        const auto access = context->getAccess();
+        const auto access = context.getAccess();
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
@@ -148,9 +148,9 @@ protected:
             /// This is for temporary tables. They are output in single block regardless to max_block_size.
             if (database_idx >= databases->size())
             {
-                if (context->hasSessionContext())
+                if (context.hasSessionContext())
                 {
-                    Tables external_tables = context->getSessionContext()->getExternalTables();
+                    Tables external_tables = context.getSessionContext().getExternalTables();
 
                     for (auto & table : external_tables)
                     {
@@ -278,7 +278,7 @@ protected:
                     }
                     try
                     {
-                        lock = table->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+                        lock = table->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                     }
                     catch (const Exception & e)
                     {
@@ -355,11 +355,10 @@ protected:
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
-                    if (ast && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+                    if (ast && !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {
                         auto & create = ast->as<ASTCreateQuery &>();
                         create.uuid = UUIDHelpers::Nil;
-                        create.to_inner_uuid = UUIDHelpers::Nil;
                     }
 
                     if (columns_mask[src_index++])
@@ -442,7 +441,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_rows = table->totalRows(context->getSettingsRef());
+                    auto total_rows = table->totalRows(context.getSettingsRef());
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -452,7 +451,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_bytes = table->totalBytes(context->getSettingsRef());
+                    auto total_bytes = table->totalBytes(context.getSettingsRef());
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -490,7 +489,7 @@ private:
     ColumnPtr databases;
     size_t database_idx = 0;
     DatabaseTablesIteratorPtr tables_it;
-    ContextPtr context;
+    const Context context;
     bool done = false;
     DatabasePtr database;
     std::string database_name;
@@ -501,7 +500,7 @@ Pipe StorageSystemTables::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
@@ -525,7 +524,7 @@ Pipe StorageSystemTables::read(
         }
     }
 
-    ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
+    ColumnPtr filtered_databases_column = getFilteredDatabases(query_info.query, context);
 
     return Pipe(std::make_shared<TablesBlockSource>(
         std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));

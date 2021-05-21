@@ -293,8 +293,11 @@ String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {
     SipHash hash_of_all_files;
 
-    for (const auto & [name, checksum] : files)
+    for (const auto & elem : files)
     {
+        const String & name = elem.first;
+        const auto & checksum = elem.second;
+
         updateHash(hash_of_all_files, name);
         hash_of_all_files.update(checksum.file_hash);
     }
@@ -373,8 +376,11 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
     SipHash hash_of_uncompressed_files_state;
     SipHash uncompressed_hash_of_compressed_files_state;
 
-    for (const auto & [name, checksum] : full_checksums_.files)
+    for (const auto & elem : full_checksums_.files)
     {
+        const String & name = elem.first;
+        const auto & checksum = elem.second;
+
         updateHash(hash_of_all_files_state, name);
         hash_of_all_files_state.update(checksum.file_hash);
 

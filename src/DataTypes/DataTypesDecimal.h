@@ -42,9 +42,17 @@ public:
     bool canBePromoted() const override { return true; }
     DataTypePtr promoteNumericType() const override;
 
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
     bool equals(const IDataType & rhs) const override;
+
     T parseFromString(const String & str) const;
-    SerializationPtr doGetDefaultSerialization() const override;
+    void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, this->precision, this->scale, csv); }
+
+    static void readText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false);
+    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_);
 };
 
 template <typename T>

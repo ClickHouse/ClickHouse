@@ -10,8 +10,6 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
-#include <Poco/Event.h>
 
 namespace DB
 {
@@ -200,7 +198,6 @@ private:
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
 
-    Poco::Event first_parser_finished;
 
     std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
@@ -254,9 +251,6 @@ private:
         {
             parserThreadFunction(group, ticket_number);
         });
-        /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
-        if (ticket_number == 0)
-            first_parser_finished.wait();
     }
 
     void finishAndWait()

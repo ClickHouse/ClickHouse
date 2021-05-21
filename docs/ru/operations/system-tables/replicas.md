@@ -120,4 +120,5 @@ WHERE
 
 Если этот запрос ничего не возвращает - значит всё хорошо.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/replicas) <!--hide-->
 

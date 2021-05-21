@@ -33,14 +33,12 @@ struct S3AuthSettings
     HeaderCollection headers;
 
     std::optional<bool> use_environment_credentials;
-    std::optional<bool> use_insecure_imds_request;
 
     inline bool operator==(const S3AuthSettings & other) const
     {
         return access_key_id == other.access_key_id && secret_access_key == other.secret_access_key
             && server_side_encryption_customer_key_base64 == other.server_side_encryption_customer_key_base64 && headers == other.headers
-            && use_environment_credentials == other.use_environment_credentials
-            && use_insecure_imds_request == other.use_insecure_imds_request;
+            && use_environment_credentials == other.use_environment_credentials;
     }
 };
 

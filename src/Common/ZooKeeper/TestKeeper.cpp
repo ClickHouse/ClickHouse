@@ -421,38 +421,26 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
 
     try
     {
-        auto request_it = requests.begin();
-        response.error = Error::ZOK;
-        while (request_it != requests.end())
+        for (const auto & request : requests)
         {
-            const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
-            ++request_it;
+            const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(*request);
             auto [ cur_response, undo_action ] = concrete_request.process(container, zxid);
             response.responses.emplace_back(cur_response);
             if (cur_response->error != Error::ZOK)
             {
                 response.error = cur_response->error;
-                break;
-            }
 
-            undo_actions.emplace_back(std::move(undo_action));
+                for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
+                    if (*it)
+                        (*it)();
+
+                return { std::make_shared<MultiResponse>(response), {} };
+            }
+            else
+                undo_actions.emplace_back(std::move(undo_action));
         }
 
-        if (response.error != Error::ZOK)
-        {
-            for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
-                if (*it)
-                    (*it)();
-
-            while (request_it != requests.end())
-            {
-                const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
-                ++request_it;
-                response.responses.emplace_back(concrete_request.createResponse());
-                response.responses.back()->error = Error::ZRUNTIMEINCONSISTENCY;
-            }
-        }
-
+        response.error = Error::ZOK;
         return { std::make_shared<MultiResponse>(response), {} };
     }
     catch (...)

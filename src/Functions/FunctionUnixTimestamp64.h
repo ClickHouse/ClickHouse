@@ -33,7 +33,7 @@ public:
 
     static_assert(std::is_same_v<SourceDataType, DataTypeDateTime64> || std::is_same_v<ResultDataType, DataTypeDateTime64>);
 
-    static auto create(ContextPtr)
+    static auto create(const Context &)
     {
         return std::make_shared<FunctionUnixTimestamp64<Impl>>();
     }

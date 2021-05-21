@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
 #include <Common/ZooKeeper/Types.h>
@@ -19,7 +18,6 @@ namespace DB
 
 class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
-using ClusterPtr = std::shared_ptr<Cluster>;
 class DatabaseReplicated;
 
 class ZooKeeperMetadataTransaction;
@@ -58,16 +56,15 @@ struct HostID
 
 struct DDLLogEntry
 {
-    UInt64 version = 1;
     String query;
     std::vector<HostID> hosts;
     String initiator; // optional
-    std::optional<SettingsChanges> settings;
 
-    void setSettingsIfRequired(ContextPtr context);
+    static constexpr int CURRENT_VERSION = 1;
+
     String toString() const;
+
     void parse(const String & data);
-    void assertVersion() const;
 };
 
 struct DDLTaskBase
@@ -94,11 +91,11 @@ struct DDLTaskBase
     DDLTaskBase(const DDLTaskBase &) = delete;
     virtual ~DDLTaskBase() = default;
 
-    virtual void parseQueryFromEntry(ContextPtr context);
+    void parseQueryFromEntry(const Context & context);
 
     virtual String getShardID() const = 0;
 
-    virtual ContextPtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
+    virtual std::unique_ptr<Context> makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper);
 
     inline String getActiveNodePath() const { return entry_path + "/active/" + host_id_str; }
     inline String getFinishedNodePath() const { return entry_path + "/finished/" + host_id_str; }
@@ -112,15 +109,15 @@ struct DDLTask : public DDLTaskBase
 {
     DDLTask(const String & name, const String & path) : DDLTaskBase(name, path) {}
 
-    bool findCurrentHostID(ContextPtr global_context, Poco::Logger * log);
+    bool findCurrentHostID(const Context & global_context, Poco::Logger * log);
 
-    void setClusterInfo(ContextPtr context, Poco::Logger * log);
+    void setClusterInfo(const Context & context, Poco::Logger * log);
 
     String getShardID() const override;
 
 private:
     bool tryFindHostInCluster();
-    bool tryFindHostInClusterViaResolving(ContextPtr context);
+    bool tryFindHostInClusterViaResolving(const Context & context);
 
     HostID host_id;
     String cluster_name;
@@ -135,8 +132,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_);
 
     String getShardID() const override;
-    void parseQueryFromEntry(ContextPtr context) override;
-    ContextPtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
+    std::unique_ptr<Context> makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
 };
@@ -195,7 +191,5 @@ public:
 
     ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions()); }
 };
-
-ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 
 }

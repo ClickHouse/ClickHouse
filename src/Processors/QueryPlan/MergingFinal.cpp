@@ -53,7 +53,7 @@ MergingFinal::MergingFinal(
 //    output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
-void MergingFinal::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void MergingFinal::transformPipeline(QueryPipeline & pipeline)
 {
     const auto & header = pipeline.getHeader();
     size_t num_outputs = pipeline.getNumStreams();

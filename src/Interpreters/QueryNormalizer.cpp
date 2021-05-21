@@ -72,12 +72,6 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     if (!IdentifierSemantic::getColumnName(node))
         return;
 
-    if (data.settings.prefer_column_name_to_alias)
-    {
-        if (data.source_columns_set.find(node.name()) != data.source_columns_set.end())
-            return;
-    }
-
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name());
     if (it_alias != data.aliases.end() && current_alias != node.name())
@@ -137,20 +131,8 @@ static bool needVisitChild(const ASTPtr & child)
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
     for (auto & child : select.children)
-    {
-        if (child == select.groupBy() || child == select.orderBy() || child == select.having())
-        {
-            bool old_setting = data.settings.prefer_column_name_to_alias;
-            data.settings.prefer_column_name_to_alias = false;
+        if (needVisitChild(child))
             visit(child, data);
-            data.settings.prefer_column_name_to_alias = old_setting;
-        }
-        else
-        {
-            if (needVisitChild(child))
-                visit(child, data);
-        }
-    }
 
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
     /// but also in where_expression and having_expression.

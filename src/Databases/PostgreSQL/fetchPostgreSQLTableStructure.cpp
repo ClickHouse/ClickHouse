@@ -40,8 +40,6 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         res = std::make_shared<DataTypeInt32>();
     else if (type == "bigint")
         res = std::make_shared<DataTypeInt64>();
-    else if (type == "boolean")
-        res = std::make_shared<DataTypeUInt8>();
     else if (type == "real")
         res = std::make_shared<DataTypeFloat32>();
     else if (type == "double precision")
@@ -96,7 +94,7 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
 
 
 std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
-    postgres::ConnectionHolderPtr connection, const String & postgres_table_name, bool use_nulls)
+    std::shared_ptr<pqxx::connection> connection, const String & postgres_table_name, bool use_nulls)
 {
     auto columns = NamesAndTypesList();
 
@@ -115,7 +113,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
            "AND NOT attisdropped AND attnum > 0", postgres_table_name);
     try
     {
-        pqxx::read_transaction tx(connection->conn());
+        pqxx::read_transaction tx(*connection);
         pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
 
         std::tuple<std::string, std::string, std::string, uint16_t> row;
@@ -135,7 +133,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
     {
         throw Exception(fmt::format(
                     "PostgreSQL table {}.{} does not exist",
-                    connection->conn().dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
+                    connection->dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
     }
     catch (Exception & e)
     {

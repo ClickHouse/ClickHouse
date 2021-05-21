@@ -1,6 +1,6 @@
 ---
 toc_priority: 31
-toc_title: "Синтаксис"
+toc_title: "\u0421\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441"
 ---
 
 # Синтаксис {#sintaksis}
@@ -181,3 +181,4 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 Список выражений - одно выражение или несколько выражений через запятую.
 Функции и операторы, в свою очередь, в качестве аргументов, могут иметь произвольные выражения.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/syntax/) <!--hide-->

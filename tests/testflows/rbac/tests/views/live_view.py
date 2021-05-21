@@ -1133,13 +1133,9 @@ def feature(self, stress=None, parallel=None, node="clickhouse1"):
     tasks = []
     pool = Pool(3)
 
-
     with allow_experimental_live_view(self.context.node):
         try:
-            try:
-                for suite in loads(current_module(), Suite):
-                    run_scenario(pool, tasks, suite)
-            finally:
-                join(tasks)
+            for suite in loads(current_module(), Suite):
+                run_scenario(pool, tasks, suite)
         finally:
-            pool.close()
+            join(tasks)

@@ -21,7 +21,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , header(header_)
 {
-    const auto & global_settings = data_part->storage.getContext()->getSettings();
+    const auto & global_settings = data_part->storage.global_context.getSettings();
     const auto & storage_settings = data_part->storage.getSettings();
 
     MergeTreeWriterSettings writer_settings(

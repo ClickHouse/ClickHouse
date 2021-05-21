@@ -15,7 +15,7 @@ namespace DB
 struct Null {};
 
 /// Ignore strange gcc warning https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55776
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 #endif
@@ -59,7 +59,7 @@ enum class TypeIndex
     LowCardinality,
     Map,
 };
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 

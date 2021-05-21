@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 #include "ProxyConfiguration.h"
@@ -26,7 +25,6 @@ class DiskS3 : public IDisk
 {
 public:
     using ObjectMetadata = std::map<std::string, std::string>;
-    using Futures = std::vector<std::future<void>>;
 
     friend class DiskS3Reservation;
 
@@ -41,7 +39,6 @@ public:
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
-        UInt64 s3_max_single_read_retries_,
         size_t min_upload_part_size_,
         size_t max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
@@ -92,21 +89,17 @@ public:
         size_t buf_size,
         size_t estimated_size,
         size_t aio_threshold,
-        size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        size_t mmap_threshold) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
         WriteMode mode) override;
 
-    void removeFile(const String & path) override { removeSharedFile(path, false); }
+    void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
-    void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
-
-    void removeSharedFile(const String & path, bool keep_s3) override;
-    void removeSharedRecursive(const String & path, bool keep_s3) override;
+    void removeRecursive(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
@@ -121,14 +114,6 @@ public:
     DiskType::Type getType() const override { return DiskType::Type::S3; }
 
     void shutdown() override;
-
-    /// Return some uniq string for file
-    /// Required for distinguish different copies of the same part on S3
-    String getUniqueId(const String & path) const override;
-
-    /// Check file exists and ClickHouse has an access to it
-    /// Required for S3 to ensure that replica has access to data wroten by other node
-    bool checkUniqueId(const String & id) const override;
 
     /// Actions performed after disk creation.
     void startup();
@@ -150,43 +135,29 @@ private:
     Metadata createMeta(const String & path) const;
 
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
-    /// Converts revision to binary string with leading zeroes (64 bit).
     static String revisionToString(UInt64 revision);
 
-    bool checkObjectExists(const String & source_bucket, const String & prefix);
-    void findLastRevision();
-
-    int readSchemaVersion(const String & source_bucket, const String & source_path);
-    void saveSchemaVersion(const int & version);
-    void updateObjectMetadata(const String & key, const ObjectMetadata & metadata);
-    void migrateFileToRestorableSchema(const String & path);
-    void migrateToRestorableSchemaRecursive(const String & path, Futures & results);
-    void migrateToRestorableSchema();
-
+    bool checkObjectExists(const String & prefix);
     Aws::S3::Model::HeadObjectResult headObject(const String & source_bucket, const String & key);
     void listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback);
     void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key);
 
     void readRestoreInformation(RestoreInformation & restore_information);
-    void restoreFiles(const RestoreInformation & restore_information);
+    void restoreFiles(const String & source_bucket, const String & source_path, UInt64 target_revision);
     void processRestoreFiles(const String & source_bucket, const String & source_path, std::vector<String> keys);
-    void restoreFileOperations(const RestoreInformation & restore_information);
+    void restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision);
 
     /// Remove 'path' prefix from 'key' to get relative key.
     /// It's needed to store keys to metadata files in RELATIVE_PATHS version.
     static String shrinkKey(const String & path, const String & key);
     std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const String & key);
 
-    /// Forms detached path '../../detached/part_name/' from '../../part_name/'
-    static String pathToDetached(const String & source_path);
-
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
     std::shared_ptr<S3::ProxyConfiguration> proxy_configuration;
     const String bucket;
     const String s3_root_path;
-    String metadata_path;
-    UInt64 s3_max_single_read_retries;
+    const String metadata_path;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;
@@ -197,25 +168,16 @@ private:
     std::mutex reservation_mutex;
 
     std::atomic<UInt64> revision_counter;
-    static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();
+    static constexpr UInt64 LATEST_REVISION = (static_cast<UInt64>(1)) << 63;
     static constexpr UInt64 UNKNOWN_REVISION = 0;
 
     /// File at path {metadata_path}/restore contains metadata restore information
-    inline static const String RESTORE_FILE_NAME = "restore";
+    const String restore_file_name = "restore";
     /// The number of keys listed in one request (1000 is max value)
     int list_object_keys_size;
 
     /// Key has format: ../../r{revision}-{operation}
     const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
-
-    /// Object contains information about schema version.
-    inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
-    /// Version with possibility to backup-restore metadata.
-    static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
-    /// Directories with data.
-    const std::vector<String> data_roots {"data", "store"};
-
-    Poco::Logger * log = &Poco::Logger::get("DiskS3");
 };
 
 }

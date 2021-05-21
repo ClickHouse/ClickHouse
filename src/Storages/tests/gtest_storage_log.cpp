@@ -19,7 +19,7 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
 
-#if !defined(__clang__)
+#if !__clang__
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
@@ -70,7 +70,7 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
+std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -108,7 +108,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
+std::string readData(DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();

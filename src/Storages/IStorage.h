@@ -5,15 +5,13 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/StorageID.h>
-#include <Processors/QueryPipeline.h>
-#include <Storages/CheckResults.h>
-#include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/SelectQueryDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/CheckResults.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/ColumnDependency.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -31,10 +29,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class Context;
+
 using StorageActionBlockType = size_t;
 
 class ASTCreateQuery;
-class ASTInsertQuery;
 
 struct Settings;
 
@@ -50,9 +49,6 @@ using Processors = std::vector<ProcessorPtr>;
 class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
-
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
@@ -180,7 +176,7 @@ public:
 
     Names getAllRegisteredNames() const override;
 
-    NameDependencies getDependentViewsByColumn(ContextPtr context) const;
+    NameDependencies getDependentViewsByColumn(const Context & context) const;
 
 protected:
     /// Returns whether the column is virtual - by default all columns are real.
@@ -230,7 +226,7 @@ public:
       * QueryProcessingStage::Enum required for Distributed over Distributed,
       * since it cannot return Complete for intermediate queries never.
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
     {
         return QueryProcessingStage::FetchColumns;
     }
@@ -257,7 +253,7 @@ public:
     virtual BlockInputStreams watch(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
+        const Context & /*context*/,
         QueryProcessingStage::Enum & /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/)
@@ -289,7 +285,7 @@ public:
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
+        const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/);
@@ -301,7 +297,7 @@ public:
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
+        const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/);
@@ -318,22 +314,9 @@ public:
     virtual BlockOutputStreamPtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/)
+        const Context & /*context*/)
     {
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Writes the data to a table in distributed manner.
-      * It is supposed that implementation looks into SELECT part of the query and executes distributed
-      * INSERT SELECT if it is possible with current storage as a receiver and query SELECT part as a producer.
-      *
-      * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
-      */
-    virtual QueryPipelinePtr distributedWrite(
-        const ASTInsertQuery & /*query*/,
-        ContextPtr /*context*/)
-    {
-        return nullptr;
     }
 
     /** Delete the table data. Called before deleting the directory with the data.
@@ -350,7 +333,7 @@ public:
     virtual void truncate(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /* metadata_snapshot */,
-        ContextPtr /* context */,
+        const Context & /* context */,
         TableExclusiveLockHolder &)
     {
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -378,12 +361,12 @@ public:
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
       */
-    virtual void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & alter_lock_holder);
+    virtual void alter(const AlterCommands & params, const Context & context, TableLockHolder & alter_lock_holder);
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */
-    virtual void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const;
+    virtual void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const;
 
     /**
       * Checks that mutation commands can be applied to storage.
@@ -396,7 +379,7 @@ public:
     virtual Pipe alterPartition(
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & /* commands */,
-        ContextPtr /* context */);
+        const Context & /* context */);
 
     /// Checks that partition commands can be applied to storage.
     virtual void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const;
@@ -411,13 +394,13 @@ public:
         bool /*final*/,
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
-        ContextPtr /*context*/)
+        const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Mutate the table contents
-    virtual void mutate(const MutationCommands &, ContextPtr)
+    virtual void mutate(const MutationCommands &, const Context &)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -461,10 +444,10 @@ public:
     virtual bool supportsIndexForIn() const { return false; }
 
     /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, const Context & /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
     /// Checks validity of the data
-    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }
+    virtual CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
@@ -497,7 +480,7 @@ public:
     virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

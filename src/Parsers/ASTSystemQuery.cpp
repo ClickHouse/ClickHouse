@@ -30,8 +30,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "DROP MARK CACHE";
         case Type::DROP_UNCOMPRESSED_CACHE:
             return "DROP UNCOMPRESSED CACHE";
-        case Type::DROP_MMAP_CACHE:
-            return "DROP MMAP CACHE";
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             return "DROP COMPILED EXPRESSION CACHE";
@@ -54,10 +52,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RELOAD DICTIONARY";
         case Type::RELOAD_DICTIONARIES:
             return "RELOAD DICTIONARIES";
-        case Type::RELOAD_MODEL:
-            return "RELOAD MODEL";
-        case Type::RELOAD_MODELS:
-            return "RELOAD MODELS";
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             return "RELOAD EMBEDDED DICTIONARIES";
         case Type::RELOAD_CONFIG:

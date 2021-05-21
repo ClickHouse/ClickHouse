@@ -6,3 +6,4 @@ toc_priority: 3
 
 Вычисляет максимум.
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/max/) <!--hide-->

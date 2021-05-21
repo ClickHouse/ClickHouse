@@ -125,23 +125,23 @@ static Field convertDecimalType(const Field & from, const To & type)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
-    // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatible type.
-    if (from_type_hint && from_type_hint->equals(type))
-    {
-        return src;
-    }
-
     WhichDataType which_type(type);
     WhichDataType which_from_type;
     if (from_type_hint)
     {
         which_from_type = WhichDataType(*from_type_hint);
+
+        // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatible type.
+        if (from_type_hint && from_type_hint->equals(type))
+        {
+            return src;
+        }
     }
 
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
-        return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>()).toUnderType());
+        return static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>());
     }
     else if (which_type.isDateTime() && which_from_type.isDate())
     {
@@ -344,7 +344,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         ReadBufferFromString in_buffer(src.get<String>());
         try
         {
-            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, FormatSettings{});
+            type_to_parse->deserializeAsWholeText(*col, in_buffer, FormatSettings{});
         }
         catch (Exception & e)
         {
@@ -397,11 +397,8 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
     Field converted = convertFieldToType(from_value, to_type, from_type_hint);
     if (!is_null && converted.isNull())
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-            "Cannot convert value '{}'{}: it cannot be represented as {}",
-            toString(from_value),
-            from_type_hint ? " from " + from_type_hint->getName() : "",
-            to_type.getName());
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot convert value{}: it cannot be represented as {}",
+                        from_type_hint ? " from " + from_type_hint->getName() : "", to_type.getName());
     return converted;
 }
 
