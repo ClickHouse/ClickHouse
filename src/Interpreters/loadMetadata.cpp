@@ -112,15 +112,15 @@ void loadMetadata(ContextPtr context, const String & default_database_name)
         if (!it->is_directory())
         {
             /// TODO: DETACH DATABASE PERMANENTLY ?
-            if (endsWith(current_file, ".sql"))
+            if (fs::path(current_file).extension() == ".sql")
             {
                 String db_name = current_file.substr(0, current_file.size() - 4);
                 if (db_name != DatabaseCatalog::SYSTEM_DATABASE)
-                    databases.emplace(unescapeForFileName(db_name), path + "/" + db_name);
+                    databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
             }
 
             /// Temporary fails may be left from previous server runs.
-            if (endsWith(current_file, ".tmp"))
+            if (fs::path(current_file).extension() == ".tmp")
             {
                 LOG_WARNING(log, "Removing temporary file {}", it->path().string());
                 try

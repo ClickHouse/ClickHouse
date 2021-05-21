@@ -6532,7 +6532,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         ops.emplace_back(zkutil::makeCheckRequest(alter_partition_version_path, alter_partition_version_stat.version));
         ops.emplace_back(zkutil::makeSetRequest(alter_partition_version_path, "", -1));
         /// Just update version, because merges assignment relies on it
-        ops.emplace_back(zkutil::makeSetRequest(fs:path(dest_table_storage->zookeeper_path) / "log", "", -1));
+        ops.emplace_back(zkutil::makeSetRequest(fs::path(dest_table_storage->zookeeper_path) / "log", "", -1));
         ops.emplace_back(zkutil::makeCreateRequest(fs::path(dest_table_storage->zookeeper_path) / "log/log-",
                                                    entry.toString(), zkutil::CreateMode::PersistentSequential));
 

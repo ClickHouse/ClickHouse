@@ -11,7 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FILE_ALREADY_EXISTS;
-extern const int OPERATION_NOT_PERMITTED;
+extern const int PATH_ACCESS_DENIED;
 extern const int NOT_ENOUGH_SPACE;
 extern const int CANNOT_CREATE_FILE;
 }
@@ -26,7 +26,7 @@ namespace FS
         case EEXIST:
             throw DB::Exception(DB::ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exist", path);
         case EPERM:
-            throw DB::Exception(DB::ErrorCodes::OPERATION_NOT_PERMITTED, "Not enough permissions to create file {}", path);
+            throw DB::Exception(DB::ErrorCodes::PATH_ACCESS_DENIED, "Not enough permissions to create file {}", path);
         case ENOSPC:
             throw DB::Exception(DB::ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space to create file {}", path);
         case ENAMETOOLONG:
