@@ -7,10 +7,14 @@
 #include <IO/ReadHelpers.h>
 
 #include <unordered_map>
+
 namespace DB
 {
-
-
+/**
+  * Determines the sentiment of text data. 
+  * Uses a marked-up sentiment dictionary, each word has a tonality ranging from -3 to 3.
+  * For each text, calculate the average sentiment value of its words and return NEG, POS or NEUT
+  */
 struct TonalityClassificationImpl
 {
 
@@ -33,9 +37,10 @@ struct TonalityClassificationImpl
 
         String answer;
         String word;
-
+        /// Select all Russian words from the string
         for (size_t i = 0; i < data.size();)
         {
+            /// Assume that all non-Ascii characters are Russian letters
             if (!isASCII(data[i]))
             {
                 word.push_back(data[i]);
@@ -45,6 +50,7 @@ struct TonalityClassificationImpl
                     word.push_back(data[i]);
                     ++i;
                 }
+                /// Try to find a russian word in the tonality dictionary
                 if (emotional_dict.find(word) != emotional_dict.cend())
                 {
                     count_words += 1;
@@ -57,7 +63,7 @@ struct TonalityClassificationImpl
                 ++i;
             }
         }
-
+        /// Calculate average value of tonality
         Float64 total_tonality = weight / count_words;
         res += get_tonality(total_tonality);
     }
@@ -90,7 +96,7 @@ struct TonalityClassificationImpl
 
             String answer;
             String word;
-
+            /// Select all Russian words from the string
             for (size_t ind = 0; ind < str.size();)
             {
                 if (!isASCII(str[ind]))
@@ -102,6 +108,7 @@ struct TonalityClassificationImpl
                         word.push_back(str[ind]);
                         ++ind;
                     }
+                    /// Try to find a russian word in the tonality dictionary
                     if (emotional_dict.find(word) != emotional_dict.cend())
                     {
                         count_words += 1;
@@ -114,7 +121,7 @@ struct TonalityClassificationImpl
                     ++ind;
                 }
             }
-
+            /// Calculate average value of tonality
             Float64 total_tonality = weight / count_words;
             buf = get_tonality(total_tonality);
 

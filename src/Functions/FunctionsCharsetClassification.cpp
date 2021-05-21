@@ -4,19 +4,19 @@
 #include <Common/UTF8Helpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <algorithm>
+
 #include <cstring>
 #include <cmath>
-#include <limits>
 #include <unordered_map>
 #include <memory>
 #include <utility>
-#include <sstream>
-#include <set>
 
 namespace DB
 {
-
+/* Determine language and charset of text data. For each text, we build the distribution of bigrams bytes.
+ * Then we use marked-up dictionaries with distributions of bigram bytes of various languages ​​and charsets.
+ * Using a naive Bayesian classifier, find the most likely charset and language and return it
+ */
 
 template <size_t N, bool detect_language>
 struct CharsetClassificationImpl
@@ -25,7 +25,11 @@ struct CharsetClassificationImpl
     using ResultType = String;
     using CodePoint = UInt8;
 
-    static constexpr Float64 zero_frequency = 0.000001;
+    /* We need to solve zero-frequency problem for Naive Bayes Classifier
+     * If the bigram is not found in the text, we assume that the probability of its meeting is 1e-06.
+     * 1e-06 is minimal value in our marked-up dictionary.
+     */
+    static constexpr Float64 zero_frequency = 1e-06;
 
     /// If the data size is bigger than this, behaviour is unspecified for this function.
     static constexpr size_t max_string_size = 1u << 15;
@@ -36,7 +40,6 @@ struct CharsetClassificationImpl
     /// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
 
-    using NgramCount = UInt16;
 
     static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64>& standart,
         std::unordered_map<UInt16, Float64>& model,
@@ -45,6 +48,7 @@ struct CharsetClassificationImpl
         Float64 res = 0;
         for (auto & el : model)
         {
+            /// Try to find bigram in the dictionary.
             if (standart.find(el.first) != standart.end())
             {
                 res += el.second * log(standart[el.first]);
@@ -52,13 +56,13 @@ struct CharsetClassificationImpl
             {
                 res += el.second * log(zero_frequency);
             }
+            /// If at some step the result has become less than the current maximum, then it makes no sense to count it fully.
             if (res < max_result) {
                 return res;
             }
         }
         return res;
     }
-
 
 
     static ALWAYS_INLINE size_t readCodePoints(CodePoint * code_points, const char *& pos, const char * end)
@@ -72,7 +76,7 @@ struct CharsetClassificationImpl
         return default_padding;
     }
 
-
+    /// Сount how many times each bigram occurs in the text.
     static ALWAYS_INLINE inline size_t calculateStats(
         const char * data,
         const size_t size,
@@ -120,6 +124,7 @@ struct CharsetClassificationImpl
 
         Float64 max_result = log(zero_frequency) * (max_string_size);
         String poss_ans;
+        /// Go through the dictionary and find the charset with the highest weight
         for (auto& item : encodings_freq)
         {
             Float64 score = Naive_bayes(item.second, model, max_result);
@@ -129,6 +134,12 @@ struct CharsetClassificationImpl
                 max_result = score;
             }
         }
+
+        /* In our dictionary we have lines with form: <Language>_<Charset>
+         * If we need to find language of data, we return <Language>
+         * If we need to find charset of data, we return <Charset>.
+         */ 
+        
         size_t sep = poss_ans.find('_');
         if (detect_language)
         {
