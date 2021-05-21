@@ -6,7 +6,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
 from helpers.test_tools import assert_eq_with_retry
 
-cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
+cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", with_zookeeper=True)
 
 
@@ -60,7 +60,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
         </zookeeper2>
     </auxiliary_zookeepers>
 </yandex>"""
-    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
+    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config)
 
     node.query("SYSTEM RELOAD CONFIG")
 
@@ -79,7 +79,7 @@ def test_reload_auxiliary_zookeepers(start_cluster):
         <session_timeout_ms>2000</session_timeout_ms>
     </zookeeper>
 </yandex>"""
-    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
+    node.replace_config("/etc/clickhouse-server/conf.d/zookeeper_config.xml", new_config)
     node.query("SYSTEM RELOAD CONFIG")
     with pytest.raises(QueryRuntimeException):
         node.query(
