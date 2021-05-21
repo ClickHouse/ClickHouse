@@ -150,7 +150,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
-        result.emplace_back(Block(block), Row());
+        result.emplace_back(Block(block), Row{});
         return result;
     }
 
