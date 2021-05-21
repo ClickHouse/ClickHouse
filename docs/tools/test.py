@@ -8,16 +8,16 @@ import subprocess
 
 
 def test_amp(paths, lang):
-    # Get latest amp validator version
+    # Get latest amp validator version # TODO This makes "leftpad" attack possible, remove it.
     subprocess.check_call('command -v sudo && sudo npm install --global amphtml-validator || npm install --global amphtml-validator', shell=True)
 
-    paths = ' '.join(paths)
-    command = f'amphtml-validator {paths}'
-    try:
-        subprocess.check_output(command, shell=True).decode('utf-8')
-    except subprocess.CalledProcessError:
-        logging.error(f'Invalid AMP for {lang}')
-        raise
+    for path in paths:
+        command = f'amphtml-validator {path}'
+        try:
+            subprocess.check_output(command, shell=True).decode('utf-8')
+        except subprocess.CalledProcessError:
+            logging.error(f'Invalid AMP for {lang}, {path}')
+            raise
 
 
 def test_template(template_path):
