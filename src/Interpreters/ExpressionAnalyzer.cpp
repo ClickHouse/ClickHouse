@@ -381,15 +381,11 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 if (!unique_keys.count(key.name))
                 {
                     unique_keys.insert(key.name);
+                    aggregation_keys.push_back(key);
                     if (select_query->group_by_with_grouping_sets)
                     {
                         aggregation_keys_list.push_back({key});
-                        aggregation_keys.push_back(key);
                         LOG_DEBUG(poco_log, "pushed grouping set of 1 column: " + key.name);
-                    }
-                    else
-                    {
-                        aggregation_keys.push_back(key);
                     }
 
                     /// Key is no longer needed, therefore we can save a little by moving it.
@@ -1662,7 +1658,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             /// TODO correct conditions
             optimize_aggregation_in_order =
                     context->getSettingsRef().optimize_aggregation_in_order
-                    && storage && query.groupBy() && !query.group_by_with_grouping_sets;
+                    && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
