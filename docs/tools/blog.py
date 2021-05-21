@@ -62,7 +62,7 @@ def build_for_lang(lang, args):
             strict=True,
             theme=theme_cfg,
             nav=blog_nav,
-            copyright='©2016–2020 Yandex LLC',
+            copyright='©2016–2021 Yandex LLC',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
