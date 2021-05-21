@@ -322,33 +322,48 @@ void ConfigProcessor::doIncludesRecursive(
         }
         else
         {
-            Element & element = dynamic_cast<Element &>(*node);
-
-            for (const auto & attr_name : SUBSTITUTION_ATTRS)
-                element.removeAttribute(attr_name);
-
-            if (replace)
+            /// Replace the whole node not just contents.
+            if (node->nodeName() == "include")
             {
-                while (Node * child = node->firstChild())
-                    node->removeChild(child);
+                const NodeListPtr children = node_to_include->childNodes();
+                for (size_t i = 0, size = children->length(); i < size; ++i)
+                {
+                    NodePtr new_node = config->importNode(children->item(i), true);
+                    node->parentNode()->insertBefore(new_node, node);
+                }
 
-                element.removeAttribute("replace");
+                node->parentNode()->removeChild(node);
             }
-
-            const NodeListPtr children = node_to_include->childNodes();
-            for (size_t i = 0, size = children->length(); i < size; ++i)
+            else
             {
-                NodePtr new_node = config->importNode(children->item(i), true);
-                node->appendChild(new_node);
-            }
+                Element & element = dynamic_cast<Element &>(*node);
 
-            const NamedNodeMapPtr from_attrs = node_to_include->attributes();
-            for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
-            {
-                element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
-            }
+                for (const auto & attr_name : SUBSTITUTION_ATTRS)
+                    element.removeAttribute(attr_name);
 
-            included_something = true;
+                if (replace)
+                {
+                    while (Node * child = node->firstChild())
+                        node->removeChild(child);
+
+                    element.removeAttribute("replace");
+                }
+
+                const NodeListPtr children = node_to_include->childNodes();
+                for (size_t i = 0, size = children->length(); i < size; ++i)
+                {
+                    NodePtr new_node = config->importNode(children->item(i), true);
+                    node->appendChild(new_node);
+                }
+
+                const NamedNodeMapPtr from_attrs = node_to_include->attributes();
+                for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
+                {
+                    element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
+                }
+
+                included_something = true;
+            }
         }
     };
 
