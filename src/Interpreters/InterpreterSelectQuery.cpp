@@ -562,19 +562,17 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     ///
     /// But if we ignore aggregation, plan header does not match result_header.
     /// TODO: add special stage for InterpreterSelectQuery?
-    LOG_DEBUG(log, "query_plan header: {}", query_plan.getCurrentDataStream().header.dumpStructure());
-    LOG_DEBUG(log, "result header: {}", result_header.dumpStructure());
-//    if (!options.ignore_aggregation && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
-//    {
-//        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-//                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
-//                result_header.getColumnsWithTypeAndName(),
-//                ActionsDAG::MatchColumnsMode::Name,
-//                true);
-//
-//        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
-//        query_plan.addStep(std::move(converting));
-//    }
+    if (!options.ignore_aggregation && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    {
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                result_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                true);
+
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
+        query_plan.addStep(std::move(converting));
+    }
 }
 
 BlockIO InterpreterSelectQuery::execute()
