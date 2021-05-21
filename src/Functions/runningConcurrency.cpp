@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <common/defines.h>
 #include <set>
