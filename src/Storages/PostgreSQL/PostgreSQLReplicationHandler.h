@@ -5,6 +5,10 @@
 #include <Core/PostgreSQL/Utils.h>
 
 
+/// TODO: Add test for multiple databases to be replicated. Add test to make sure unneeded tables fo not get into replication slot.
+/// Test behavior of publication.
+
+
 namespace DB
 {
 
