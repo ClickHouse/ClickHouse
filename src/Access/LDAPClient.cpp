@@ -1,6 +1,9 @@
-#include <ldap.h>
-
 #include <Access/LDAPClient.h>
+
+#if USE_LDAP
+    #include <ldap.h>
+#endif
+
 #include <Common/Exception.h>
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
