@@ -17,7 +17,10 @@
 
 #include <Storages/QueryCache.h>
 
-namespace Poco { class Logger; }
+namespace Poco 
+{ 
+    class Logger; 
+}
 
 namespace DB
 {

@@ -8,7 +8,7 @@
 #include <atomic>
 
 #include <common/logger_useful.h>
-
+#include <Common/TypePromotion.h>
 
 namespace DB
 {
@@ -21,7 +21,6 @@ struct ITrivialWeightFunction
         return 1;
     }
 };
-
 
 
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = ITrivialWeightFunction<TMapped>>
@@ -147,22 +146,24 @@ public:
         resetImpl();
     }
 
-    virtual ~Cache() {}
+    virtual ~Cache() = default;
 
 protected:
 
     mutable std::mutex mutex;
 
-    struct Cell : public std::enable_shared_from_this<Cell>, public TypePromotion<Cell>
+    struct Cell : public std::enable_shared_from_this<Cell>
     {
         MappedPtr value;
         size_t size;
+        virtual ~Cell() = default;
     };
 
-    using Cells = std::unordered_map<Key, std::shared_ptr<Cell>, HashFunction>;
+    using CellPtr = std::shared_ptr<Cell>;
+
+    using Cells = std::unordered_map<Key, CellPtr, HashFunction>;
 
     Cells cells;
-
 
 private:
 
@@ -252,6 +253,8 @@ protected:
     virtual MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
 
     virtual void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+
+    virtual void deleteImpl(const Key & key) = 0;
 };
 
 

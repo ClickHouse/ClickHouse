@@ -566,7 +566,7 @@ BlockIO InterpreterSelectQuery::execute()
     BlockIO res;
     BlockInputStreamPtr stream;
     QueryPipelinePtr pipeline;
-    String key;
+    UInt128 key;
 
     auto & query = getSelectQuery();
 

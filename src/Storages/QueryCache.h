@@ -5,7 +5,6 @@
 #include <memory>
 
 #include <Core/Block.h>
-// #include <Common/LRUCache.h>
 #include <Common/Cache/LRUCache.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -39,11 +38,9 @@ class QueryCacheValue
 public:
     QueryCacheValue(
         BlocksList && blocks_, 
-        size_t bytes_size_, 
-        UInt64 cache_ttl_) : 
+        size_t bytes_size_) : 
         blocks(std::move(blocks_)), 
-        bytes_size(bytes_size_), 
-        cache_ttl(cache_ttl_) 
+        bytes_size(bytes_size_)
         {}
     
     const BlocksList& getBlocks() const { return blocks; }
@@ -52,16 +49,11 @@ public:
     { 
         return std::make_shared<BlocksListBlockInputStream>(blocks.begin(), blocks.end()); 
     }
-    UInt64 getCacheTtl() const { return cache_ttl; }
-    // UInt32 getExpiresMs() const { return expires_ms; }
     size_t getSize() const { return bytes_size; }
 
 private:
     BlocksList blocks;
-    // UInt32 accessed_ms;
-    // UInt32 expires_ms;
     size_t bytes_size;
-    UInt64 cache_ttl;
 };
 
 
@@ -79,20 +71,19 @@ struct QueryCacheWeightFunction
 };
 
 
-using QueryCacheBase = ILRUCache<String, QueryCacheValue, std::hash<String>, QueryCacheWeightFunction>;
+using QueryCacheBase = ILRUCache<UInt128, QueryCacheValue, std::hash<UInt128>, QueryCacheWeightFunction>;
 
-
+// template <Class TCache>
 class QueryCache : public QueryCacheBase
 {
-
 public:
 
     QueryCache(size_t max_size_in_bytes)
         : QueryCacheBase(max_size_in_bytes) {}
 
-    using Key = typename QueryCacheBase::Key;
-    using Mapped = typename QueryCacheBase::Mapped;
-    using MappedPtr = std::shared_ptr<Mapped>;
+    // using Key = typename QueryCacheBase::Key;
+    // using Mapped = typename QueryCacheBase::Mapped;
+    // using MappedPtr = std::shared_ptr<Mapped>;
 
 
     /// Calculate key from serialized query AST and offset.
@@ -107,17 +98,26 @@ public:
         return key;
     }
 
-    static String hash_tree(const ASTPtr & select_query)
+    static UInt128 hash_tree(const ASTPtr & select_query)
     {
-        auto hash = select_query->getTreeHash();
-        return toString(hash.first) + '_' + toString(hash.second);
+        String str_hash;
+        {
+            auto tree_hash = select_query->getTreeHash();
+            str_hash = toString(tree_hash.first) + '_' + toString(tree_hash.second);
+        }
+        UInt128 key;
+        SipHash hash;
+        hash.update(str_hash.data(), str_hash.size() + 1);
+        hash.get128(key);
+        return key;
     }
 
 
     BlockInputStreamPtr getOrSet(const Key & key, BlockInputStreamPtr stream, UInt64 cache_ttl)
     {
-        auto load_func = [this, &stream, cache_ttl]() { 
-            auto cache_value = this->streamHandler(stream, cache_ttl);
+        cache_ttl = 0;
+        auto load_func = [this, &stream]() { 
+            auto cache_value = this->streamHandler(stream);
             if (!cache_value)
                 throw Exception("Too large dataset", ErrorCodes::TOO_LARGE_DATASET);
             return cache_value; 
@@ -141,7 +141,6 @@ public:
             }
             throw e;
         }
-
         return cache_value->getInputStream();
     }
 
@@ -161,8 +160,8 @@ public:
     {
         BlockInputStreamPtr result;
         MappedPtr mapped;
-
-        mapped = streamHandler(stream, cache_ttl);
+        cache_ttl = 0;
+        mapped = streamHandler(stream);
         if (mapped)
             QueryCacheBase::set(key, mapped);
         else
@@ -172,7 +171,7 @@ public:
     }
 
 private: 
-    MappedPtr streamHandler(BlockInputStreamPtr & stream, UInt64 cache_ttl, size_t max_size_=(1u << 20))
+    MappedPtr streamHandler(BlockInputStreamPtr & stream, size_t max_size_=(1u << 20))
     {
         Block block;
         BlocksList blocks;
@@ -187,7 +186,7 @@ private:
         }
         if (cur_size <= max_size_) 
         {
-            cache_value = std::make_shared<QueryCacheValue>(std::move(blocks), cur_size, cache_ttl);
+            cache_value = std::make_shared<QueryCacheValue>(std::move(blocks), cur_size);
             stream = cache_value->getInputStream();
         }
         else

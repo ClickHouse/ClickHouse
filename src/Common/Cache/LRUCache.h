@@ -5,11 +5,6 @@
 namespace DB
 {
 
-/// Thread-safe cache that evicts entries which are not used for a long time.
-/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
-/// of that value.
-/// Cache starts to evict entries when their total weight exceeds max_size.
-/// Value weight should not change after insertion.
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = ITrivialWeightFunction<TMapped>>
 class ILRUCache : public Cache<TKey, TMapped, HashFunction, WeightFunction>
 {
@@ -21,7 +16,7 @@ public:
     using Mapped = typename Base::Mapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    ILRUCache(size_t max_size_)
+    explicit ILRUCache(size_t max_size_)
         : Base(max_size_) {}
 
 
@@ -42,90 +37,85 @@ protected:
         queue.clear();
     }
 
-    MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    virtual MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
-        auto it = this->cells.find(key);
-        if (it == this->cells.end())
+        auto it = Base::cells.find(key);
+        if (it == Base::cells.end())
         {
             return MappedPtr();
         }
-
-        LRUCell & cell = it->second->as<LRUCell &>();
+        auto cell = std::dynamic_pointer_cast<LRUCell>(it->second);
 
         /// Move the key to the end of the queue. The iterator remains valid.
-        queue.splice(queue.end(), queue, cell.queue_iterator);
+        queue.splice(queue.end(), queue, cell->queue_iterator);
 
-        return cell.value;
+        return cell->value;
     }
 
-    void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    virtual void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
-        auto [it, inserted] = cells.emplace(std::piecewise_construct,
+        auto [it, inserted] = Base::cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
             std::forward_as_tuple());
 
-        LRUCell & cell = it->second->as<LRUCell &>();
+        auto cell = std::dynamic_pointer_cast<LRUCell>(it->second);
 
         if (inserted)
         {
             try
             {
-                cell.queue_iterator = queue.insert(queue.end(), key);
+                cell->queue_iterator = queue.insert(queue.end(), key);
             }
             catch (...)
             {
-                cells.erase(it);
+                Base::cells.erase(it);
                 throw;
             }
         }
         else
         {
-            current_size -= cell.size;
-            queue.splice(queue.end(), queue, cell.queue_iterator);
+            Base::current_size -= cell->size;
+            queue.splice(queue.end(), queue, cell->queue_iterator);
         }
 
-        cell.value = mapped;
-        cell.size = cell.value ? weight_function(*cell.value) : 0;
-        current_size += cell.size;
+        cell->value = mapped;
+        cell->size = cell->value ? Base::weight_function(*cell->value) : 0;
+        Base::current_size += cell->size;
 
         removeOverflow();
     }
 
     void removeOverflow()
     {
-        size_t current_weight_lost = 0;
-        size_t queue_size = cells.size();
-        while ((current_size > max_size) && (queue_size > 1))
+        while ((Base::current_size > Base::max_size) && (queue.size()))
         {
             const Key & key = queue.front();
             deleteImpl(key);
         }
 
 
-        if (current_size > (1ull << 63))
+        if (Base::current_size > (1ull << 63))
         {
             LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
     }
 
-    virtual void deleteImpl(const Key & key)
+    virtual void deleteImpl(const Key & key) override
     {
-        auto it = cells.find(key);
-        if (it == cells.end())
+        auto it = Base::cells.find(key);
+        if (it == Base::cells.end())
         {
             LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
 
-        const auto & cell = it->second->as<LRUCell &>();
+        const auto cell = std::dynamic_pointer_cast<LRUCell>(it->second);
 
-        this->current_size -= cell.size;
-        current_weight_lost += cell.size;
+        Base::current_size -= cell->size;
 
-        cells.erase(it);
+        Base::cells.erase(it);
         queue.pop_front();
-        --queue_size;
     }
 
 };
