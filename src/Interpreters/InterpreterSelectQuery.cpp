@@ -586,8 +586,6 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     ///
     /// But if it's a projection query, plan header does not match result_header.
     /// TODO: add special stage for InterpreterSelectQuery?
-    LOG_DEBUG(log, "query_plan header: {}", query_plan.getCurrentDataStream().header.dumpStructure());
-    LOG_DEBUG(log, "result header: {}", result_header.dumpStructure());
     if (!options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
