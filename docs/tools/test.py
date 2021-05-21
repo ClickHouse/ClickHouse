@@ -3,25 +3,13 @@
 import logging
 import os
 import sys
-
 import bs4
-
-import logging
-import os
 import subprocess
-
-import bs4
 
 
 def test_amp(paths, lang):
-    try:
-        # Get latest amp validator version
-        subprocess.check_call('amphtml-validator --help',
-                              stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL,
-                              shell=True)
-    except subprocess.CalledProcessError:
-        subprocess.check_call('npm i -g amphtml-validator', stderr=subprocess.DEVNULL, shell=True)
+    # Get latest amp validator version
+    subprocess.check_call('command -v sudo && sudo npm install --global amphtml-validator || npm install --global amphtml-validator', shell=True)
 
     paths = ' '.join(paths)
     command = f'amphtml-validator {paths}'
