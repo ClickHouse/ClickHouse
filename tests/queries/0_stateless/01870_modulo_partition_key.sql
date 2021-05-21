@@ -6,9 +6,11 @@ PARTITION BY id % 200 ORDER BY id;
 INSERT INTO table1 SELECT number-205, number FROM numbers(10);
 INSERT INTO table1 SELECT number-205, number FROM numbers(400, 10);
 SELECT toInt64(partition) as p FROM system.parts WHERE table='table1' ORDER BY p;
-select 'where id % 200 > 0 ';
+select 'where id % 200 = +-2:';
+select id from table1 where id % 200 = 2 OR id % 200 = -2 order by id;
+select 'where id % 200 > 0:';
 select id from table1 where id % 200 > 0 order by id;
-select 'where id % 200 < 0 ';
+select 'where id % 200 < 0:';
 select id from table1 where id % 200 < 0 order by id;
 
 SELECT 'tuple as partition key:';

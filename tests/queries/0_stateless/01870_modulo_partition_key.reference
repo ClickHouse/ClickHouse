@@ -19,7 +19,10 @@ simple partition key:
 58
 59
 60
-where id % 200 > 0 
+where id % 200 = +-2:
+-202
+202
+where id % 200 > 0:
 195
 196
 197
@@ -29,7 +32,7 @@ where id % 200 > 0
 202
 203
 204
-where id % 200 < 0 
+where id % 200 < 0:
 -205
 -204
 -203
