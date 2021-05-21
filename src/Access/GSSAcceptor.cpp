@@ -1,7 +1,10 @@
+#include <Access/GSSAcceptor.h>
+
+#if USE_KRB5
 #include <gssapi/gssapi.h>
 #include <gssapi/gssapi_ext.h>
+#endif
 
-#include <Access/GSSAcceptor.h>
 #include <Common/Exception.h>
 #include <ext/scope_guard.h>
 
@@ -21,7 +24,7 @@ namespace ErrorCodes
     extern const int KERBEROS_ERROR;
 }
 
-GSSAcceptorContext::GSSAcceptorContext(const GSSAcceptorContext::Params& params_)
+GSSAcceptorContext::GSSAcceptorContext(const GSSAcceptorContext::Params & params_)
     : params(params_)
 {
 }
@@ -53,7 +56,6 @@ std::recursive_mutex gss_global_mutex;
 struct PrincipalName
 {
     explicit PrincipalName(String principal);
-//  operator String() const;
 
     String name;
     std::vector<String> instances;
@@ -77,24 +79,6 @@ PrincipalName::PrincipalName(String principal)
         instances.assign(++it, st.end());
     }
 }
-
-/*
-PrincipalName::operator String() const
-{
-    String principal = name;
-
-    for (const auto & instance : instances)
-    {
-        principal += '/';
-        principal += instance;
-    }
-
-    principal += '@';
-    principal += realm;
-
-    return principal;
-}
-*/
 
 String bufferToString(const gss_buffer_desc & buf)
 {
