@@ -35,6 +35,7 @@ MESSAGES_TO_RETRY = [
     "DB::Exception: Connection loss",
     "Coordination::Exception: Session expired",
     "Coordination::Exception: Connection loss",
+    "Coordination::Exception: Operation timeout",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
 ]
@@ -128,7 +129,7 @@ def get_db_engine(args, database_name):
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
 
-def configure_testcase_args(args, case_file, suite_tmp_dir):
+def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
     testcase_args = copy.deepcopy(args)
 
     testcase_args.testcase_start_time = datetime.now()
@@ -147,12 +148,13 @@ def configure_testcase_args(args, case_file, suite_tmp_dir):
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-        clickhouse_proc_create = Popen(shlex.split(testcase_args.testcase_client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
-        try:
-            clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(testcase_args, database)), timeout=testcase_args.timeout)
-        except TimeoutExpired:
-            total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
-            return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
+        with open(stderr_file, 'w') as stderr:
+            clickhouse_proc_create = Popen(shlex.split(testcase_args.testcase_client), stdin=PIPE, stdout=PIPE, stderr=stderr, universal_newlines=True)
+            try:
+                clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(testcase_args, database)), timeout=testcase_args.timeout)
+            except TimeoutExpired:
+                total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
+                return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
 
         os.environ["CLICKHOUSE_DATABASE"] = database
         # Set temporary directory to match the randomly generated database,
@@ -183,14 +185,16 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         'stderr': stderr_file,
     }
 
-    pattern = '{test} > {stdout} 2> {stderr}'
+    # >> append to stdout and stderr, because there are also output of per test database creation
+    if not args.database:
+        pattern = '{test} >> {stdout} 2>> {stderr}'
+    else:
+        pattern = '{test} > {stdout} 2> {stderr}'
 
     if ext == '.sql':
         pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
 
     command = pattern.format(**params)
-
-    # print(command)
 
     proc = Popen(command, shell=True, env=os.environ)
 
@@ -203,7 +207,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         need_drop_database = not maybe_passed
 
     if need_drop_database:
-        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
+        with open(stderr_file, 'a') as stderr:
+            clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=stderr, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
             drop_database_query = "DROP DATABASE " + database
@@ -309,11 +314,12 @@ def colored(text, args, color=None, on_color=None, attrs=None):
 SERVER_DIED = False
 exit_code = 0
 stop_time = None
+queue = multiprocessing.Queue(maxsize=1)
 
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
-    all_tests, suite, suite_dir, suite_tmp_dir = all_tests_with_params
+    all_tests, num_tests, suite, suite_dir, suite_tmp_dir = all_tests_with_params
     global exit_code
     global SERVER_DIED
     global stop_time
@@ -343,10 +349,21 @@ def run_tests_array(all_tests_with_params):
         else:
             return ''
 
-    if all_tests:
-        print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
+    if num_tests > 0:
+        about = 'about ' if is_concurrent else ''
+        print(f"\nRunning {about}{num_tests} {suite} tests ({multiprocessing.current_process().name}).\n")
 
-    for case in all_tests:
+    while True:
+        if is_concurrent:
+            case = queue.get()
+            if not case:
+                break
+        else:
+            if all_tests:
+                case = all_tests.pop(0)
+            else:
+                break
+
         if SERVER_DIED:
             stop_tests()
             break
@@ -419,8 +436,7 @@ def run_tests_array(all_tests_with_params):
                     stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
 
 
-                    testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir)
-
+                    testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                     proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
 
                     if proc.returncode is None:
@@ -440,7 +456,7 @@ def run_tests_array(all_tests_with_params):
                     else:
                         counter = 1
                         while need_retry(stderr):
-                            testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir)
+                            testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                             proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                             sleep(2**counter)
                             counter += 1
@@ -673,6 +689,47 @@ def collect_build_flags(client):
     return result
 
 
+def do_run_tests(jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_tests, sequential_tests, parallel):
+    if jobs > 1 and len(parallel_tests) > 0:
+        print("Found", len(parallel_tests), "parallel tests and", len(sequential_tests), "sequential tests")
+        run_n, run_total = parallel.split('/')
+        run_n = float(run_n)
+        run_total = float(run_total)
+        tests_n = len(parallel_tests)
+        if run_total > tests_n:
+            run_total = tests_n
+
+        if jobs > tests_n:
+            jobs = tests_n
+        if jobs > run_total:
+            run_total = jobs
+
+        batch_size = max(1, len(parallel_tests) // jobs)
+        parallel_tests_array = []
+        for _ in range(jobs):
+            parallel_tests_array.append((None, batch_size, suite, suite_dir, suite_tmp_dir))
+
+        with closing(multiprocessing.Pool(processes=jobs)) as pool:
+            pool.map_async(run_tests_array, parallel_tests_array)
+
+            for suit in parallel_tests:
+                queue.put(suit)
+
+            for _ in range(jobs):
+                queue.put(None)
+
+            queue.close()
+
+        pool.join()
+
+        run_tests_array((sequential_tests, len(sequential_tests), suite, suite_dir, suite_tmp_dir))
+        return len(sequential_tests) + len(parallel_tests)
+    else:
+        num_tests = len(all_tests)
+        run_tests_array((all_tests, num_tests, suite, suite_dir, suite_tmp_dir))
+        return num_tests
+
+
 def main(args):
     global SERVER_DIED
     global stop_time
@@ -836,34 +893,8 @@ def main(args):
                 else:
                     parallel_tests.append(test)
 
-            if jobs > 1 and len(parallel_tests) > 0:
-                print("Found", len(parallel_tests), "parallel tests and", len(sequential_tests), "sequential tests")
-                run_n, run_total = args.parallel.split('/')
-                run_n = float(run_n)
-                run_total = float(run_total)
-                tests_n = len(parallel_tests)
-                if run_total > tests_n:
-                    run_total = tests_n
-
-                if jobs > tests_n:
-                    jobs = tests_n
-                if jobs > run_total:
-                    run_total = jobs
-
-                # Create two batches per process for more uniform execution time.
-                batch_size = max(1, len(parallel_tests) // (jobs * 2))
-                parallel_tests_array = []
-                for i in range(0, len(parallel_tests), batch_size):
-                    parallel_tests_array.append((parallel_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir))
-
-                with closing(multiprocessing.Pool(processes=jobs)) as pool:
-                    pool.map(run_tests_array, parallel_tests_array)
-
-                run_tests_array((sequential_tests, suite, suite_dir, suite_tmp_dir))
-                total_tests_run += len(sequential_tests) + len(parallel_tests)
-            else:
-                run_tests_array((all_tests, suite, suite_dir, suite_tmp_dir))
-                total_tests_run += len(all_tests)
+            total_tests_run += do_run_tests(
+                jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_tests, sequential_tests, args.parallel)
 
     if args.hung_check:
 
