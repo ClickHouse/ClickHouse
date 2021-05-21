@@ -44,6 +44,9 @@ struct QuantileBFloat16Histogram
 {
     using BFloat16 = UInt16;
     using Weight = UInt64;
+
+    /// Make automatic memory for 16 elements to avoid allocations for small states.
+    /// The usage of trivial hash is ok, because we effectively take logarithm of the values and pathological cases are unlikely.
     using Data = HashMapWithStackMemory<BFloat16, Weight, TrivialHash, 4>;
 
     Data data;
