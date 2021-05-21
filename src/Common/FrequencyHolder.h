@@ -1,5 +1,4 @@
 #pragma once
-//#include <Common/TLDListsHolder.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -34,22 +33,22 @@ public:
     void parseEncodingFrequencies(const String & pt)
     {
         path_to_enc_freq = pt;
-        //loadEncodingsFrequency(pt);
-        loadEncodingsFrequency("/home/sergey/ClickHouse/programs/server/charset_freq.txt");
+        loadEncodingsFrequency(pt);
+        //loadEncodingsFrequency("/home/sergey/ClickHouse/programs/server/charset_freq.txt");
     }
 
     void parseEmotionalDict(const String & pt)
     {
         path_to_emo_dict = pt;
-        //loadEmotionalDict(pt);
-        loadEmotionalDict("/home/sergey/ClickHouse/programs/server/emotional_dictionary_rus.txt");
+        loadEmotionalDict(pt);
+        //loadEmotionalDict("/home/sergey/ClickHouse/programs/server/emotional_dictionary_rus.txt");
     }
 
     void parseProgrammingFrequency(const String & pt) 
     {
         path_to_prog_freq = pt;
-        //loadProgrammingFrequency(pt);
-        loadProgrammingFrequency("/home/sergey/ClickHouse/programs/server/prog_freq.txt");
+        loadProgrammingFrequency(pt);
+        //loadProgrammingFrequency("/home/sergey/ClickHouse/programs/server/prog_freq.txt");
     }
 
 
