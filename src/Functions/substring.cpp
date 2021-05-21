@@ -4,7 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
