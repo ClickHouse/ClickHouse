@@ -61,13 +61,14 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
         {
             /// Single LowCardinality column is supported now.
             if (indexes)
-                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
 
             const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
 
             if (!low_cardinality_type)
-                throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Incompatible type for low cardinality column: {}",
+                    column.type->getName());
 
             if (can_be_executed_on_default_arguments)
             {
@@ -121,7 +122,10 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
     /// Check that these arguments are really constant.
     for (auto arg_num : arguments_to_remain_constants)
         if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
-            throw Exception("Argument at index " + toString(arg_num) + " for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Argument at index {} for function {} must be constant",
+                toString(arg_num),
+                getName());
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
         return nullptr;
@@ -150,8 +154,9 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
       *  not in "arguments_to_remain_constants" set. Otherwise we get infinite recursion.
       */
     if (!have_converted_columns)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: the function requires more arguments",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: the function requires more arguments",
+            getName());
 
     ColumnPtr result_column = executeWithoutLowCardinalityColumns(temporary_columns, result_type, 1, dry_run);
 
@@ -266,9 +271,11 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
     size_t expected_number_of_arguments = getNumberOfArguments();
 
     if (number_of_arguments != expected_number_of_arguments)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, should be {}",
+            getName(),
+            toString(number_of_arguments),
+            toString(expected_number_of_arguments));
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
@@ -299,11 +306,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
                 ++num_full_ordinary_columns;
         }
 
-        for (auto & arg : args_without_low_cardinality)
-        {
-            arg.column = recursiveRemoveLowCardinality(arg.column);
-            arg.type = recursiveRemoveLowCardinality(arg.type);
-        }
+        convertLowCardinalityColumnsToFull(args_without_low_cardinality);
 
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
 
