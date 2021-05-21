@@ -9,10 +9,212 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+
+const Authentication::TypeInfo & Authentication::TypeInfo::get(Type type_)
+{
+    static constexpr auto make_info = [](const char * raw_name_)
+    {
+        String init_name = raw_name_;
+        boost::to_lower(init_name);
+        return TypeInfo{raw_name_, std::move(init_name)};
+    };
+
+    switch (type_)
+    {
+        case NO_PASSWORD:
+        {
+            static const auto info = make_info("NO_PASSWORD");
+            return info;
+        }
+        case PLAINTEXT_PASSWORD:
+        {
+            static const auto info = make_info("PLAINTEXT_PASSWORD");
+            return info;
+        }
+        case SHA256_PASSWORD:
+        {
+            static const auto info = make_info("SHA256_PASSWORD");
+            return info;
+        }
+        case DOUBLE_SHA1_PASSWORD:
+        {
+            static const auto info = make_info("DOUBLE_SHA1_PASSWORD");
+            return info;
+        }
+        case LDAP:
+        {
+            static const auto info = make_info("LDAP");
+            return info;
+        }
+        case KERBEROS:
+        {
+            static const auto info = make_info("KERBEROS");
+            return info;
+        }
+        case MAX_TYPE:
+            break;
+    }
+    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type_)), ErrorCodes::LOGICAL_ERROR);
+}
+
+String toString(Authentication::Type type_)
+{
+    return Authentication::TypeInfo::get(type_).raw_name;
+}
+
+
+Authentication::Digest Authentication::encodeSHA256(const std::string_view & text [[maybe_unused]])
+{
+#if USE_SSL
+    Digest hash;
+    hash.resize(32);
+    ::DB::encodeSHA256(text, hash.data());
+    return hash;
+#else
+    throw DB::Exception(
+        "SHA256 passwords support is disabled, because ClickHouse was built without SSL library",
+        DB::ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+}
+
+Authentication::Digest Authentication::encodeSHA1(const std::string_view & text)
+{
+    Poco::SHA1Engine engine;
+    engine.update(text.data(), text.size());
+    return engine.digest();
+}
+
+
+void Authentication::setPassword(const String & password_)
+{
+    switch (type)
+    {
+        case PLAINTEXT_PASSWORD:
+            return setPasswordHashBinary(encodePlainText(password_));
+
+        case SHA256_PASSWORD:
+            return setPasswordHashBinary(encodeSHA256(password_));
+
+        case DOUBLE_SHA1_PASSWORD:
+            return setPasswordHashBinary(encodeDoubleSHA1(password_));
+
+        case NO_PASSWORD:
+        case LDAP:
+        case KERBEROS:
+            throw Exception("Cannot specify password for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
+
+        case MAX_TYPE:
+            break;
+    }
+    throw Exception("setPassword(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
+String Authentication::getPassword() const
+{
+    if (type != PLAINTEXT_PASSWORD)
+        throw Exception("Cannot decode the password", ErrorCodes::LOGICAL_ERROR);
+    return String(password_hash.data(), password_hash.data() + password_hash.size());
+}
+
+
+void Authentication::setPasswordHashHex(const String & hash)
+{
+    Digest digest;
+    digest.resize(hash.size() / 2);
+
+    try
+    {
+        boost::algorithm::unhex(hash.begin(), hash.end(), digest.data());
+    }
+    catch (const std::exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read password hash in hex, check for valid characters [0-9a-fA-F] and length");
+    }
+
+    setPasswordHashBinary(digest);
+}
+
+String Authentication::getPasswordHashHex() const
+{
+    if (type == LDAP || type == KERBEROS)
+        throw Exception("Cannot get password hex hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
+
+    String hex;
+    hex.resize(password_hash.size() * 2);
+    boost::algorithm::hex(password_hash.begin(), password_hash.end(), hex.data());
+    return hex;
+}
+
+
+void Authentication::setPasswordHashBinary(const Digest & hash)
+{
+    switch (type)
+    {
+        case PLAINTEXT_PASSWORD:
+        {
+            password_hash = hash;
+            return;
+        }
+
+        case SHA256_PASSWORD:
+        {
+            if (hash.size() != 32)
+                throw Exception(
+                    "Password hash for the 'SHA256_PASSWORD' authentication type has length " + std::to_string(hash.size())
+                        + " but must be exactly 32 bytes.",
+                    ErrorCodes::BAD_ARGUMENTS);
+            password_hash = hash;
+            return;
+        }
+
+        case DOUBLE_SHA1_PASSWORD:
+        {
+            if (hash.size() != 20)
+                throw Exception(
+                    "Password hash for the 'DOUBLE_SHA1_PASSWORD' authentication type has length " + std::to_string(hash.size())
+                        + " but must be exactly 20 bytes.",
+                    ErrorCodes::BAD_ARGUMENTS);
+            password_hash = hash;
+            return;
+        }
+
+        case NO_PASSWORD:
+        case LDAP:
+        case KERBEROS:
+            throw Exception("Cannot specify password binary hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
+
+        case MAX_TYPE:
+            break;
+    }
+    throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+const String & Authentication::getLDAPServerName() const
+{
+    return ldap_server_name;
+}
+
+void Authentication::setLDAPServerName(const String & name)
+{
+    ldap_server_name = name;
+}
+
+const String & Authentication::getKerberosRealm() const
+{
+    return kerberos_realm;
+}
+
+void Authentication::setKerberosRealm(const String & realm)
+{
+    kerberos_realm = realm;
 }
 
 

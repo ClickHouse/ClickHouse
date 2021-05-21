@@ -197,7 +197,8 @@ void AccessControlManager::addUsersConfigStorage(
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
     new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
     addStorage(new_storage);
-    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
+        String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
 void AccessControlManager::reloadUsersConfigs()

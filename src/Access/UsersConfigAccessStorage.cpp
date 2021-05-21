@@ -207,8 +207,19 @@ namespace
 
         std::vector<AccessEntityPtr> users;
         users.reserve(user_names.size());
+
         for (const auto & user_name : user_names)
-            users.push_back(parseUser(config, user_name));
+        {
+            try
+            {
+                users.push_back(parseUser(config, user_name));
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("while parsing user '{}' in users configuration file", user_name));
+                throw;
+            }
+        }
 
         return users;
     }
@@ -517,21 +528,29 @@ void UsersConfigAccessStorage::load(
     const String & preprocessed_dir,
     const zkutil::GetZooKeeper & get_zookeeper_function)
 {
-    std::lock_guard lock{load_mutex};
-    path = std::filesystem::path{users_config_path}.lexically_normal();
-    config_reloader.reset();
-    config_reloader = std::make_unique<ConfigReloader>(
-        users_config_path,
-        include_from_path,
-        preprocessed_dir,
-        zkutil::ZooKeeperNodeCache(get_zookeeper_function),
-        std::make_shared<Poco::Event>(),
-        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
-        {
-            parseFromConfig(*new_config);
-            Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
-        },
-        /* already_loaded = */ false);
+    try
+    {
+        std::lock_guard lock{load_mutex};
+        path = std::filesystem::path{users_config_path}.lexically_normal();
+        config_reloader.reset();
+        config_reloader = std::make_unique<ConfigReloader>(
+            users_config_path,
+            include_from_path,
+            preprocessed_dir,
+            zkutil::ZooKeeperNodeCache(get_zookeeper_function),
+            std::make_shared<Poco::Event>(),
+            [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
+            {
+                parseFromConfig(*new_config);
+                Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
+            },
+            /* already_loaded = */ false);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("while loading configuration file '{}'", users_config_path));
+        throw;
+    }
 }
 
 void UsersConfigAccessStorage::reload()
