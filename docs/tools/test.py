@@ -7,19 +7,6 @@ import bs4
 import subprocess
 
 
-def test_amp(paths, lang):
-    # Get latest amp validator version # TODO This makes "leftpad" attack possible, remove it.
-    subprocess.check_call('command -v sudo && sudo npm install --global amphtml-validator || npm install --global amphtml-validator', shell=True)
-
-    for path in paths:
-        command = f'amphtml-validator {path}'
-        try:
-            subprocess.check_output(command, shell=True).decode('utf-8')
-        except subprocess.CalledProcessError:
-            logging.error(f'Invalid AMP for {lang}, {path}')
-            raise
-
-
 def test_template(template_path):
     if template_path.endswith('amp.html'):
         # Inline CSS/JS is ok for AMP pages
