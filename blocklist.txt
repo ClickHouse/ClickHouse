@@ -1,12 +1,11 @@
 # There's no way to portably mangle the type name, so it's just for x86_64
-# TODO write a script or so.
-#
 # Place here files that are instrumented even when providing noinstrument flags
 #
 # Global variables init for iostream
 fun:__cxx_global_var_init*
 fun:_GLOBAL_*
 fun:_ZN2DB12_GLOBAL_*
+fun:_ZN12_GLOBAL_*
 # std::__1
 fun:_ZNSt3*
 fun:_ZNKSt3*
@@ -37,6 +36,12 @@ fun:_ZNKllvm*
 # internal memory routines
 fun:_ZN6Memory*
 fun:_ZN6Memory*
+# ext::
+fun:_ZN3ext*
+fun:_ZNK3ext*
+# mysqlxx
+fun:_ZN7mysqlxx*
+fun:_ZNK7mysqlxx*
 # coverage runtime
 fun:_ZN6detail*
 fun:_ZNK6detail*

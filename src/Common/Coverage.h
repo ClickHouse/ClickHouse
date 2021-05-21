@@ -154,9 +154,9 @@ private:
     static constexpr std::string_view docker_clickhouse_src_dir_abs_path = "/build/src";
     static constexpr std::string_view docker_report_path = "/report.ccr";
 
-    static constexpr std::string_view logger_base_name = "Coverage";
-
     static constexpr size_t total_source_files_hint {5000}; // each LocalCache pre-allocates this / pool_size.
+
+    const std::string logger_base_name {"Coverage"};
 
     const size_t hardware_concurrency { std::thread::hardware_concurrency() };
     const Poco::Logger * base_log {nullptr}; // Initialized when server initializes Poco internal structures.
@@ -238,7 +238,7 @@ private:
         inline void set(const std::string& pathname, const char * mode) { handle = fopen(pathname.data(), mode); }
         inline FILE * file() { return handle; }
         inline void close() { fclose(handle); handle = nullptr; }
-        inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), 1, mb.size(), handle); }
+        inline void write(const fmt::memory_buffer& mb) { fwrite(mb.data(), sizeof(char), mb.size(), handle); }
     };
 
     FileWrapper report_file;

@@ -322,7 +322,7 @@ if (WITH_COVERAGE)
         set(ARCH_NATIVE ON)
 
         # We can enable LTO without unit tests (coverage is tracked for functional tests only).
-        set(ENABLE_TESTS OFF)
+        # set(ENABLE_TESTS OFF)
     else()
         message(FATAL_ERROR "As for now, the code coverage is supported in Clang only")
     endif()

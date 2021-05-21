@@ -90,6 +90,8 @@ def read_report(f: TextIO):
 
     tests_names = f.readlines()
 
+    assert len(tests_names) == len(tests)
+
     print("Read the report, took {}s. {} tests, {} source files".format(
         int(time() - elapsed), len(tests), len(files)))
 

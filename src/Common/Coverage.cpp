@@ -188,22 +188,27 @@ void Writer::onClientInitialized()
 
 void Writer::onServerInitialized()
 {
-    // Before server initialization we couldn't log data to Poco as Writer constructor gets called in
+    // We can't log data using Poco before server initialization as Writer constructor gets called in
     // sanitizer callback which occurs before Poco internal structures initialization.
-    base_log = &Poco::Logger::get(std::string{logger_base_name});
+    base_log = &Poco::Logger::get(logger_base_name);
+
+    // Some functional .sh tests spawn own server instances.
+    // In coverage mode it leads to concurrent file writes (file write + open in "w" truncate mode, to be precise).
+    // This leads to data corruption.
+    // To prevent such situation, target file is not allowed to exist by server start.
+    if (std::filesystem::exists(report_path))
+        throw std::runtime_error("Report file already exists " + report_path);
 
     // fwrite also cannot be called before server initialization (some internal state is left uninitialized if we
-    // try to write file in the pc table callback).
+    // try to write file in PC table callback).
     report_file.set(report_path, "w");
 
     if (report_file.file() == nullptr)
-        throw std::runtime_error("Failed to open " + report_path);
+        throw std::runtime_error(fmt::format("Failed to open {}: {}", report_path, strerror(errno)));
     else
         LOG_INFO(base_log, "Opened report file {}", report_path);
 
-    // We need to start tasks queue only in server mode
     tasks_queue.start();
-    LOG_INFO(base_log, "Started task queue");
 
     symbolizeInstrumentedData();
 }
@@ -335,7 +340,7 @@ void Writer::onChangedTestName(std::string old_test_name)
     {
         TestData & data = tests[test_that_finished];
         data.test_index = test_that_finished;
-        data.log = &Poco::Logger::get(std::string{logger_base_name} + "." + data.name);
+        data.log = &Poco::Logger::get(logger_base_name + "." + data.name);
         prepareDataAndDump(data, edges);
     });
 
@@ -347,7 +352,7 @@ void Writer::onChangedTestName(std::string old_test_name)
 
 void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
 {
-    LOG_INFO(test_data.log, "Started filling internal structures");
+    LOG_INFO(test_data.log, "Started processing test entry");
 
     test_data.data.resize(source_files_cache.size());
 
@@ -360,22 +365,20 @@ void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
                 test_data.data[info.index].lines_hit.push_back(info.line);
         }
 
-    LOG_INFO(test_data.log, "Finished filling internal structures");
     writeCCREntry(test_data);
 }
 
 void Writer::writeCCRHeader()
 {
     /**
-     * /absolute/path/to/ch/src/directory <- e.g.  /home/user/ch/src (note no / in the end)
+     * /absolute/path/to/ch/src/directory  (note no / in the end)
      * FILES <source files count>
-     * <source file 1 relative path from src/> <functions> <lines> <- e.g. Access/Myaccess.cpp 8 100
+     * <source file 1 relative path from src/> <functions> <lines>
      * <sf 1 function 1 mangled name> <function start line> <function edge index>
      * <sf 1 function 2 mangled name> <function start line> <function edge index>
      * <sf 1 instrumented line 1>
      * <sf 1 instrumented line 2>
      * <source file 2 relative path from src/> <functions> <lines>
-     * // Need of function edge index: multiple functions may be called in single line
      */
     fmt::print(report_file.file(), "{}\nFILES {}\n",
         clickhouse_src_dir_abs_path.string(),
@@ -388,6 +391,7 @@ void Writer::writeCCRHeader()
 
         for (EdgeIndex index : file.instrumented_functions)
         {
+            // Note: need of function edge index: multiple functions may be called in single line
             const EdgeInfo& func_info = edges_cache[index];
             fmt::print(report_file.file(), "{} {} {}\n", func_info.name, func_info.line, index);
         }
@@ -396,8 +400,6 @@ void Writer::writeCCRHeader()
             fmt::print(report_file.file(), "{}\n", fmt::join(file.instrumented_lines, "\n"));
     }
 
-    // Without fflush, last 8-9 source files' formatted info sometimes gets corrupted while writing to report file --
-    // \0 are written instead, so flush explicitly.
     fflush(report_file.file());
 
     LOG_INFO(base_log, "Wrote CCR header");
@@ -405,13 +407,11 @@ void Writer::writeCCRHeader()
 
 void Writer::writeCCREntry(const Writer::TestData& test_data)
 {
-    LOG_INFO(test_data.log, "Started writing test entry");
-
     /// Frequent writes to file are better than a single huge write, so don't use fmt::memory_buffer here.
 
     /**
-     * TEST //Note -- test index is not written. Test name will be found in footer (TESTS section)
-     * SOURCE <source file id> <functions count> <lines count>
+     * TEST
+     * SOURCE <source file id>
      * <function 1 edge index> <function 2 edge index>
      * <line 1 number> <line 2 number>
      */
@@ -429,7 +429,7 @@ void Writer::writeCCREntry(const Writer::TestData& test_data)
         fmt::print(report_file.file(), "SOURCE {}\n{}\n{}\n", i, fmt::join(funcs, " "), fmt::join(lines, " "));
     }
 
-    LOG_INFO(test_data.log, "Finished writing test entry");
+    LOG_INFO(test_data.log, "Finished processing test entry");
 }
 
 void Writer::writeCCRFooter()
