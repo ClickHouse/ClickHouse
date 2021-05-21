@@ -7,18 +7,23 @@
 
 namespace DB
 {
-
-
+/**
+  * Determine the programming language from the source code.
+  * We calculate all the unigrams and bigrams of commands in the source code.
+  * Then using a marked-up dictionary with weights of unigrams and bigrams of commands for various programming languages
+  * Find the biggest weight of the programming language and return it
+  */
 struct ProgrammingClassificationImpl
 {
 
     using ResultType = String;
-
+    /// Calculate total weight
     static ALWAYS_INLINE inline Float64 state_machine(std::unordered_map<String, Float64>& standart, std::unordered_map<String, Float64>& model)
     {
         Float64 res = 0;
         for (auto & el : model)
         {
+            /// Try to find each n-gram in dictionary
             if (standart.find(el.first) != standart.end())
             {
                 res += el.second * standart[el.first];
@@ -36,9 +41,10 @@ struct ProgrammingClassificationImpl
 
         String prev_command;
         String command;
-
+        /// Select all commands from the string
         for (size_t i = 0; i < data.size();)
         {
+            /// Assume that all commands are splitted by spaces
             if (!isspace(data[i]))
             {
                 command.push_back(data[i]);
@@ -54,6 +60,7 @@ struct ProgrammingClassificationImpl
                 else
                 {
                     data_freq[prev_command + command] += 1;
+                    data_freq[prev_command] += 1;
                     prev_command = command;
                 }
                 command = "";
@@ -66,7 +73,7 @@ struct ProgrammingClassificationImpl
 
         String most_liked;
         Float64 max_result = 0;
-
+        /// Iterate over all programming languages ​​and find the language with the highest weight
         for (auto& item : programming_freq)
         {
             Float64 result = state_machine(item.second, data_freq);
@@ -76,6 +83,7 @@ struct ProgrammingClassificationImpl
                 most_liked = item.first; 
             }
         }
+        /// If all weights are zero, then we assume that the language is undefined
         if (most_liked == "")
         {
             most_liked = "Undefined";
@@ -106,9 +114,10 @@ struct ProgrammingClassificationImpl
 
             String prev_command;
             String command;
-
+            /// Select all commands from the string
             for (size_t ind = 0; ind < str_data.size();)
             {
+                /// Assume that all commands are splitted by spaces
                 if (!isspace(str_data[ind]))
                 {
                     command.push_back(str_data[ind]);
@@ -124,6 +133,7 @@ struct ProgrammingClassificationImpl
                     else
                     {
                         data_freq[prev_command + command] += 1;
+                        data_freq[prev_command] += 1;
                         prev_command = command;
                     }
                     command = "";
@@ -136,7 +146,7 @@ struct ProgrammingClassificationImpl
 
             String most_liked;
             Float64 max_result = 0;
-
+            /// Iterate over all programming languages ​​and find the language with the highest weight
             for (auto& item : programming_freq)
             {
                 Float64 result = state_machine(item.second, data_freq);
@@ -146,7 +156,7 @@ struct ProgrammingClassificationImpl
                     most_liked = item.first; 
                 }
             }
-
+            /// If all weights are zero, then we assume that the language is undefined
             if (most_liked == "")
             {
                 most_liked = "Undefined";

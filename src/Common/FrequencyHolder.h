@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/TLDListsHolder.h>
+//#include <Common/TLDListsHolder.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -34,22 +34,22 @@ public:
     void parseEncodingFrequencies(const String & pt)
     {
         path_to_enc_freq = pt;
-        loadEncodingsFrequency(pt);
-        //loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
+        //loadEncodingsFrequency(pt);
+        loadEncodingsFrequency("/home/sergey/ClickHouse/programs/server/charset_freq.txt");
     }
 
     void parseEmotionalDict(const String & pt)
     {
         path_to_emo_dict = pt;
-        loadEmotionalDict(pt);
-        //loadEmotionalDict("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/emotional_dictionary_rus.txt");
+        //loadEmotionalDict(pt);
+        loadEmotionalDict("/home/sergey/ClickHouse/programs/server/emotional_dictionary_rus.txt");
     }
 
     void parseProgrammingFrequency(const String & pt) 
     {
         path_to_prog_freq = pt;
-        loadProgrammingFrequency(pt);
-        //loadProgrammingFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/programming_freq.txt");
+        //loadProgrammingFrequency(pt);
+        loadProgrammingFrequency("/home/sergey/ClickHouse/programs/server/prog_freq.txt");
     }
 
 
@@ -110,8 +110,6 @@ public:
         {
             char * newline = find_first_symbols<'\n'>(in.position(), in.buffer().end());
 
-            //if (newline >= in.buffer().end()) { break; }
-
             ReadBufferFromMemory buf_line(in.position(), newline - in.position());
             in.position() = newline + 1;
 
@@ -152,11 +150,12 @@ public:
 
             if (line.empty())
                 continue;
-            // Start load new charset
+            // Start load new language
             if (line.size() > 2 && line[0] == '/' && line[1] == '/')
             {
                 ReadBufferFromMemory bufline(in.position() + 3, newline - in.position());
                 readString(programming_language, bufline);
+                LOG_TRACE(log, "Loading {}", programming_language);
             } else
             {
                 ReadBufferFromMemory buf_line(in.position(), newline - in.position());
@@ -164,6 +163,7 @@ public:
                 buf_line.ignore();
                 readFloatText(frequency, buf_line);
                 programming_freq[programming_language][bigram] = frequency;
+                LOG_TRACE(log, "Word {}", bigram);
             }
             in.position() = newline + 1;
         }
