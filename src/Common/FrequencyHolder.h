@@ -135,7 +135,7 @@ public:
 
         Poco::Logger * log = &Poco::Logger::get("ProgrammingFrequency");
 
-        LOG_TRACE(log, "Programming langugages frequencies loading from {}", path_to_programming_freq);
+        LOG_TRACE(log, "Programming languages frequencies loading from {}", path_to_programming_freq);
 
         size_t buf_size = 10000000;
         ReadBufferFromFile in(path_to_programming_freq, buf_size);
