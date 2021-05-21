@@ -40,7 +40,7 @@ def build_for_lang(lang, args):
 
         site_names = {
             'en': 'ClickHouse Blog',
-            'ru': 'Блог ClickHouse '
+            'ru': 'Блог ClickHouse'
         }
 
         assert len(site_names) == len(languages)
