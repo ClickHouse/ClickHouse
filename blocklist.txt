@@ -6,6 +6,7 @@
 # Global variables init for iostream
 fun:__cxx_global_var_init*
 fun:_GLOBAL_*
+fun:_ZN2DB12_GLOBAL_*
 # std::__1
 fun:_ZNSt3*
 fun:_ZNKSt3*

@@ -302,9 +302,11 @@ void Writer::symbolizeInstrumentedData()
 
     mergeDataToCaches<false, AddrSym>(addr_caches);
 
-    LOG_INFO(base_log, "Symbolized all addresses");
-
     writeCCRHeader();
+
+    // Testing script in docker (/docker/test/coverage/run.sh) waits for this message and starts tests afterwards.
+    // If we place it before writeCCRHeader(), concurrent writes to report file will happen and data will corrupt.
+    LOG_INFO(base_log, "Symbolized all addresses");
 }
 
 void Writer::onChangedTestName(std::string old_test_name)
@@ -364,11 +366,8 @@ void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
 
 void Writer::writeCCRHeader()
 {
-    fmt::memory_buffer mb;
-    mb.reserve(10 * 1024 * 1024); //small speedup
-
     /**
-     * /absolute/path/to/ch/src/directory <- e.g.  /home/user/ch/src
+     * /absolute/path/to/ch/src/directory <- e.g.  /home/user/ch/src (note no / in the end)
      * FILES <source files count>
      * <source file 1 relative path from src/> <functions> <lines> <- e.g. Access/Myaccess.cpp 8 100
      * <sf 1 function 1 mangled name> <function start line> <function edge index>
@@ -378,28 +377,30 @@ void Writer::writeCCRHeader()
      * <source file 2 relative path from src/> <functions> <lines>
      * // Need of function edge index: multiple functions may be called in single line
      */
-    fmt::format_to(mb, "{}\nFILES {}\n",
+    fmt::print(report_file.file(), "{}\nFILES {}\n",
         clickhouse_src_dir_abs_path.string(),
         source_files_cache.size());
 
     for (const SourceFileInfo& file : source_files_cache)
     {
-        fmt::format_to(mb, "{} {} {}\n",
+        fmt::print(report_file.file(), "{} {} {}\n",
             file.relative_path, file.instrumented_functions.size(), file.instrumented_lines.size());
 
         for (EdgeIndex index : file.instrumented_functions)
         {
             const EdgeInfo& func_info = edges_cache[index];
-            fmt::format_to(mb, "{} {} {}\n", func_info.name, func_info.line, index);
+            fmt::print(report_file.file(), "{} {} {}\n", func_info.name, func_info.line, index);
         }
 
         if (!file.instrumented_lines.empty())
-            fmt::format_to(mb, "{}\n", fmt::join(file.instrumented_lines, "\n"));
+            fmt::print(report_file.file(), "{}\n", fmt::join(file.instrumented_lines, "\n"));
     }
 
-    report_file.write(mb);
+    // Without fflush, last 8-9 source files' formatted info sometimes gets corrupted while writing to report file --
+    // \0 are written instead, so flush explicitly.
+    fflush(report_file.file());
 
-    LOG_INFO(base_log, "Wrote CCR header, {}b", mb.size());
+    LOG_INFO(base_log, "Wrote CCR header");
 }
 
 void Writer::writeCCREntry(const Writer::TestData& test_data)

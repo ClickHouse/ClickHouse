@@ -26,7 +26,7 @@ def convert_to_slim_genhtml_report(file_name: str):
                     lines_hit.update(test_lines_hit)
 
         for i, (rel_path, funcs_instrumented, lines_instrumented) in enumerate(files):
-            f.write("SF:{}\n".format(abs_path_to_src + rel_path))
+            f.write("SF:{}\n".format(abs_path_to_src + "/" + rel_path))
 
             funcs_hit, lines_hit = data[i] if i in data else (set(), set())
 
