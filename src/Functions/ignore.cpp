@@ -35,6 +35,8 @@ public:
     /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+
     String getName() const override
     {
         return name;

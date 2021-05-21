@@ -366,8 +366,7 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
 
         while (auto block = stream->read())
         {
-            for (auto & column : block)
-                column.column = recursiveRemoveSparse(column.column);
+            convertToFullIfSparse(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)

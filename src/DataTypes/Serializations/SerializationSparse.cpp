@@ -20,11 +20,14 @@ namespace ErrorCodes
 namespace
 {
 
+/// 2^62, because VarInt supports only values < 2^63.
 static constexpr auto END_OF_GRANULE_FLAG = 1ULL << 62;
 
 struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkState
 {
+    /// Number of default values, that remain from previous read.
     size_t num_trailing_defaults = 0;
+    /// Do we have non-default value after @num_trailing_defaults?
     bool has_value_after_defaults = false;
     ISerialization::DeserializeBinaryBulkStatePtr nested;
 
@@ -50,6 +53,9 @@ void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size
     writeVarUInt(group_size, ostr);
 }
 
+
+/// Returns number of read rows.
+/// @start is the size of column before reading offsets.
 size_t deserializeOffsets(IColumn::Offsets & offsets,
     ReadBuffer & istr, size_t start, size_t limit, DeserializeStateSparse & state)
 {
@@ -87,6 +93,8 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
 
         if (limit && next_total_rows >= limit)
         {
+            /// If it was not last group in granule,
+            /// we have to add current non-default value at further reads.
             state.num_trailing_defaults = next_total_rows - limit;
             state.has_value_after_defaults = !end_of_granule;
             return limit;
@@ -99,6 +107,9 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
         }
         else
         {
+            /// If we add value to column for first time in current read,
+            /// start from column's current size, because it can have some defaults after last offset,
+            /// otherwise just start from previous offset.
             size_t start_of_group = start;
             if (!first && !offsets.empty())
                 start_of_group = offsets.back() + 1;
@@ -239,9 +250,12 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent sizes of values and offsets in SerializationSparse."
         " Offsets size: {}, values size: {}", offsets_data.size(), values_column->size());
 
+    /// 'insertManyDefaults' just increases size of column.
     column_sparse.insertManyDefaults(read_rows);
     column = std::move(mutable_column);
 }
+
+/// All methods below just wrap nested serialization.
 
 void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {

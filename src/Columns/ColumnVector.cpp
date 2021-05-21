@@ -583,14 +583,18 @@ void ColumnVector<T>::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, s
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows) const
+ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const
 {
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
     auto res = this->create();
     auto & res_data = res->getData();
 
     res_data.resize_fill(total_rows, data[0]);
     for (size_t i = 0; i < offsets.size(); ++i)
-        res_data[offsets[i]] = data[i + 1];
+        res_data[offsets[i]] = data[i + shift];
 
     return res;
 }

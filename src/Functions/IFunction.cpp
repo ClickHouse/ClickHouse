@@ -509,7 +509,7 @@ ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & argu
             if (!res->isDefaultAt(0))
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
-                return res->createWithOffsets(offsets_data, input_rows_count);
+                return res->createWithOffsets(offsets_data, input_rows_count, 1);
             }
 
             return ColumnSparse::create(res, sparse_offsets, input_rows_count);

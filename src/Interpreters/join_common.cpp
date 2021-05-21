@@ -77,6 +77,7 @@ void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_car
 
     if (column.column->isSparse())
         column.column = recursiveRemoveSparse(column.column);
+
     if (remove_low_card && column.type->lowCardinality())
     {
         column.column = recursiveRemoveLowCardinality(column.column);

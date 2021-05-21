@@ -6,6 +6,15 @@
 namespace DB
 {
 
+/** Contains information about kinds of serialization of columns.
+ *  Also contains information about content of columns,
+ *  that helps to choose kind of serialization of column.
+ *
+ *  Currently has only information about number of default rows,
+ *  that helps to choose sparse serialization.
+ *
+ *  Should be extended, when new kinds of serialization will be implemented.
+ */
 class SerializationInfo
 {
 public:
@@ -31,6 +40,8 @@ private:
     void fromJSON(const String & json_str);
     String toJSON() const;
 
+    /// Information about one column.
+    /// Can be extended, when new kinds of serialization will be implemented.
     struct Column
     {
         ISerialization::Kind kind = ISerialization::Kind::DEFAULT;
@@ -47,6 +58,7 @@ private:
 
 using SerializationInfoPtr = std::shared_ptr<SerializationInfo>;
 
+/// Builder, that helps to create SerializationInfo.
 class SerializationInfoBuilder
 {
 public:
@@ -55,12 +67,20 @@ public:
         double ratio_for_sparse_serialization_,
         size_t default_rows_search_step_ = IColumn::DEFAULT_ROWS_SEARCH_STEP);
 
+    /// Add information about column from block.
     void add(const Block & block);
+
+    /// Add information about column from other SerializationInfo.
     void add(const SerializationInfo & other);
 
+    /// Choose kind of serialization for every column
+    /// according its content and return finalized SerializationInfo.
     SerializationInfoPtr build();
+
+    /// Create SerializationInfo from other.
+    /// Respects kinds of serialization for columns, that exist in other SerializationInfo,
+    /// but keeps information about content of column from current SerializationInfo.
     SerializationInfoPtr buildFrom(const SerializationInfo & other);
-    static SerializationInfoPtr buildFromBlock(const Block & block);
 
     double getRatioForSparseSerialization() const { return ratio_for_sparse_serialization; }
 

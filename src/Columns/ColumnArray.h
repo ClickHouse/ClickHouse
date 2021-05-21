@@ -140,8 +140,8 @@ public:
         return false;
     }
 
-    // size_t getNumberOfDefaultRows(size_t step) const override;
-    // void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+    size_t getNumberOfDefaultRows(size_t step) const override;
+    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 

@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 String IColumn::dumpStructure() const
 {
     WriteBufferFromOwnString res;
@@ -38,8 +43,12 @@ void IColumn::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_
         indices.push_back(i);
 }
 
-ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows) const
+ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows, size_t shift) const
 {
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
     auto res = cloneEmpty();
     res->reserve(total_rows);
 
@@ -52,7 +61,7 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows)
         if (offsets_diff > 1)
             res->insertManyFrom(*this, 0, offsets_diff - 1);
 
-        res->insertFrom(*this, i + 1);
+        res->insertFrom(*this, i + shift);
     }
 
     ssize_t offsets_diff = static_cast<ssize_t>(total_rows) - current_offset;

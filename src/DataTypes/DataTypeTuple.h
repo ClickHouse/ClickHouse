@@ -56,7 +56,6 @@ public:
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
 
-    // SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const override;
     SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const override;
 
     SerializationPtr getSubcolumnSerialization(

@@ -64,9 +64,11 @@ public:
     virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
 
     /// If column isn't ColumnLowCardinality, return itself.
-    /// If column is ColumnLowCardinality, transforms is to full column.
+    /// If column is ColumnLowCardinality, transforms it to full column.
     virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
 
+    /// If column isn't ColumnSparse, return itself.
+    /// If column is ColumnSparse, transforms it to full column.
     virtual Ptr convertToFullColumnIfSparse() const { return getPtr(); }
 
     Ptr convertToFullIfNeeded() const
@@ -378,11 +380,20 @@ public:
     static constexpr auto MIN_ROWS_TO_SEARCH_DEFAULTS = DEFAULT_ROWS_SEARCH_STEP * 16;
     static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.95;
 
+    /// Returns number of values in column, that equal to default value of column.
+    /// Checks every @step-th value. So, if step is not 1, returns number,
+    /// that lower than actual. 0 means, that such statistic is unknown for column.
     virtual size_t getNumberOfDefaultRows(size_t /* step */) const { return 0; }
 
+    /// Returns indices of values in column, that not equal to default value of column.
     virtual void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const;
 
-    virtual Ptr createWithOffsets(const Offsets & offsets, size_t total_rows) const;
+    /// Returns column with @total_size elements.
+    /// In result column values from current column are at positions from @offsets.
+    /// Other values are filled by defaults.
+    /// @shift means how much rows to skip from the beginning of current column.
+    /// Used to create full column from sparse.
+    virtual Ptr createWithOffsets(const Offsets & offsets, size_t total_rows, size_t shift) const;
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.

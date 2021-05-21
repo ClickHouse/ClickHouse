@@ -33,6 +33,7 @@ void SerializationInfoBuilder::add(const Block & block)
     info->number_of_rows += block.rows();
     for (const auto & elem : block)
     {
+        /// Multiply by step to restore approximate number of default values.
         info->columns[elem.name].num_defaults += elem.column->getNumberOfDefaultRows(default_rows_search_step) * default_rows_search_step;
         for (const auto & subname : elem.type->getSubcolumnNames())
         {

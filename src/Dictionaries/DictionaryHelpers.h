@@ -501,8 +501,7 @@ void mergeBlockWithStream(
 
     while (Block block = stream->read())
     {
-        for (auto & column : block)
-            column.column = recursiveRemoveSparse(column.column);
+        convertToFullIfSparse(block);
 
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);
