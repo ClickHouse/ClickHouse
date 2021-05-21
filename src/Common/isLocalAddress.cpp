@@ -5,7 +5,6 @@
 #include <cstring>
 #include <optional>
 #include <common/types.h>
-#include <common/unaligned.h>
 #include <Common/Exception.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -96,8 +95,8 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
     {
         if (address.family() == Poco::Net::AddressFamily::IPv4)
         {
-            using Digits = std::array<UInt8, 4>;
-            Digits digits = unalignedLoad<Digits>(address.addr());  /// The address is located in memory in big endian form.
+            /// The address is located in memory in big endian form (network byte order).
+            const unsigned char * digits = static_cast<const unsigned char *>(address.addr());
 
             if (digits[0] == 127
                 && digits[1] <= 1
