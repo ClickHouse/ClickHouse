@@ -19,14 +19,14 @@ ALTER TABLE replica2 DETACH PART 'all_1_1_0';
 
 SELECT v FROM replica1 ORDER BY v;
 
-SELECT name FROM system.detached_parts WHERE table = 'replica2';
+SELECT name FROM system.detached_parts WHERE database = currentDatabase() AND table = 'replica2';
 
 ALTER TABLE replica2 ATTACH PART 'all_1_1_0';
 
 SYSTEM SYNC REPLICA replica1;
 SELECT v FROM replica1 ORDER BY v;
 
-SELECT name FROM system.detached_parts WHERE table = 'replica2';
+SELECT name FROM system.detached_parts WHERE database = currentDatabase() AND table = 'replica2';
 
 SELECT '-- drop part --';
 
@@ -43,7 +43,7 @@ OPTIMIZE TABLE replica1 FINAL;
 
 SELECT v FROM replica1 ORDER BY v;
 
-SELECT name FROM system.parts WHERE table = 'replica2' AND active;
+SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 'replica2' AND active;
 
 DROP TABLE replica1;
 DROP TABLE replica2;
