@@ -590,9 +590,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                 Columns key_columns;
                 key_columns.reserve(skip_keys_size_offset);
 
-                for (auto & column : block)
-                    column.column = recursiveRemoveSparse(column.column);
-
+                convertToFullIfSparse(block);
                 auto block_columns = block.getColumns();
 
                 /// Split into keys columns and attribute columns

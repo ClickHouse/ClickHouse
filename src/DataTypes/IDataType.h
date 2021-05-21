@@ -80,14 +80,17 @@ public:
     virtual SerializationPtr getSubcolumnSerialization(
         const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
 
-    /// Chooses serialziation accordind to column content.
+    /// Chooses serialziation according to column content.
     virtual SerializationPtr getSerialization(const IColumn & column) const;
 
-    /// Chooses serialization accosrding to collected information about content of columns.
+    /// Chooses serialization according to collected information about content of columns.
     virtual SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
 
+    /// Chooses serialization according to settings.
     SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
 
+    /// Chooses beetween subcolumn serialization and regular serialization according to @column.
+    /// This method typically should be used to get serialization for reading column or subcolumn.
     static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
 
     using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
@@ -103,10 +106,12 @@ protected:
     DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
 
 public:
-    /** Create empty column for corresponding type.
+    /** Create empty column for corresponding type and default serialization.
       */
     virtual MutableColumnPtr createColumn() const = 0;
 
+    /** Create empty column for corresponding type and serialization.
+     */
     virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.

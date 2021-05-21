@@ -677,4 +677,10 @@ void Block::updateHash(SipHash & hash) const
             col.column->updateHashWithValue(row_no, hash);
 }
 
+void convertToFullIfSparse(Block & block)
+{
+    for (auto & column : block)
+        column.column = recursiveRemoveSparse(column.column);
+}
+
 }

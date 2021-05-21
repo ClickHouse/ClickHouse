@@ -154,6 +154,7 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
 
+    /// The version of "addBatch", that handle sparse columns as arguments.
     virtual void addBatchSparse(
         AggregateDataPtr * places,
         size_t place_offset,
@@ -172,6 +173,7 @@ public:
     virtual void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
 
+    /// The version of "addBatchSinglePlace", that handle sparse columns as arguments.
     virtual void addBatchSparseSinglePlace(
         AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
@@ -231,8 +233,6 @@ public:
       * Otherwise return nullptr.
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
-
-    virtual bool supportsSparseArguments() const { return false; }
 
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }

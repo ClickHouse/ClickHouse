@@ -72,8 +72,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     while (auto block = stream->read())
     {
-        for (auto & column : block)
-            column.column = recursiveRemoveSparse(column.column);
+        convertToFullIfSparse(block);
 
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)

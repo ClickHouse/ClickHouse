@@ -184,6 +184,8 @@ public:
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 };
@@ -229,6 +231,8 @@ public:
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
+
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
     /** Some arguments could remain constant during this implementation.
       */
