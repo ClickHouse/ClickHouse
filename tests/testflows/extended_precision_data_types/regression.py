@@ -35,7 +35,7 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
     nodes = {
         "clickhouse":
-            ("clickhouse1", "clickhouse2", "clickhouse3")
+            ("clickhouse1",)
     }
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "extended-precision-data-type_env")) as cluster:
