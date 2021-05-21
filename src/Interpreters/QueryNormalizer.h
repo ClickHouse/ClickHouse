@@ -22,7 +22,7 @@ class QueryNormalizer
     {
         const UInt64 max_ast_depth;
         const UInt64 max_expanded_ast_elements;
-        bool prefer_column_name_to_alias;
+        UInt64 prefer_column_name_to_alias;
 
         template <typename T>
         ExtractedSettings(const T & settings)

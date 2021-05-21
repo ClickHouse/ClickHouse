@@ -141,8 +141,27 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 {
     for (auto & child : select.children)
     {
-        if (needVisitChild(child))
+        if (child == select.with() ||  child == select.select() || child == select.prewhere() || child == select.where()
+            // prefer_column_name_to_alias before and include GROUP-BY
+            || (data.settings.prefer_column_name_to_alias == 2 && child == select.groupBy()))
+
+        {
             visit(child, data);
+        }
+        else
+        {
+            // prefer_column_name_to_alias only before GROUP-BY
+            if (data.settings.prefer_column_name_to_alias >= 2)
+            {
+                UInt64 old_setting = data.settings.prefer_column_name_to_alias;
+                data.settings.prefer_column_name_to_alias = 0;
+                if (needVisitChild(child))
+                    visit(child, data);
+                data.settings.prefer_column_name_to_alias = old_setting;
+            }
+            else if (needVisitChild(child))
+                visit(child, data);
+        }
     }
 
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
@@ -152,7 +171,17 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
     if (select.where())
         visit(select.refWhere(), data);
     if (select.having())
-        visit(select.refHaving(), data);
+    {
+        if (data.settings.prefer_column_name_to_alias >= 2)
+        {
+            UInt64 old_setting = data.settings.prefer_column_name_to_alias;
+            data.settings.prefer_column_name_to_alias = 0;
+            visit(select.refHaving(), data);
+            data.settings.prefer_column_name_to_alias = old_setting;
+        }
+        else
+            visit(select.refHaving(), data);
+    }
 }
 
 /// Don't go into subqueries.
