@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from testflows.core import *
@@ -7,7 +8,7 @@ append_path(sys.path, "..")
 
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
-from map_type.requirements import SRS018_ClickHouse_Map_Data_Type 
+from map_type.requirements import SRS018_ClickHouse_Map_Data_Type
 
 xfails = {
     "tests/table map with key integer/Int:":
@@ -65,7 +66,7 @@ xfails = {
     "tests/select map with key integer/toNullable(NULL)":
         [(Fail, "Nullable type as key not supported")],
     "tests/select map with key string/Nullable":
-        [(Fail, "Nullable type as key not supported")],   
+        [(Fail, "Nullable type as key not supported")],
     "tests/select map with key string/Nullable(NULL)":
         [(Fail, "Nullable type as key not supported")],
     "tests/table map queries/select map with nullable value":
@@ -104,16 +105,20 @@ xflags = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """Map type regression.
     """
+    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
-        self.context.stress = stress
 
-        if parallel is not None:
-            self.context.parallel = parallel
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
+
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "map_type_env")) as cluster:
+        self.context.cluster = cluster
 
         Feature(run=load("map_type.tests.feature", "feature"))
 

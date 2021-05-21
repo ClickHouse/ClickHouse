@@ -90,6 +90,53 @@ SELECT splitByString('', 'abcde')
 └────────────────────────────┘
 ```
 
+## splitByRegexp(regexp, s) {#splitbyregexpseparator-s}
+
+Splits a string into substrings separated by a regular expression. It uses a regular expression string `regexp` as the separator. If the `regexp` is empty, it will split the string s into an array of single characters. If no match is found for this regex expression, the string `s` won't be split.
+
+**Syntax**
+
+``` sql
+splitByRegexp(<regexp>, <s>)
+```
+
+**Arguments**
+
+-   `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+
+**Returned value(s)**
+
+Returns an array of selected substrings. Empty substrings may be selected when:
+
+
+-   A non-empty regular expression match occurs at the beginning or end of the string;
+-   There are multiple consecutive non-empty regular expression matches;
+-   The original string `s` is empty while the regular expression is not empty.
+
+Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
+**Example**
+
+``` sql
+SELECT splitByRegexp('\\d+', 'a12bc23de345f')
+```
+
+``` text
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
+```
+
+``` sql
+SELECT splitByRegexp('', 'abcde')
+```
+
+``` text
+┌─splitByRegexp('', 'abcde')─┐
+│ ['a','b','c','d','e']      │
+└────────────────────────────┘
+```
+
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
 Concatenates the strings listed in the array with the separator.’separator’ is an optional parameter: a constant string, set to an empty string by default.
@@ -149,4 +196,3 @@ Result:
 │ [['abc','123'],['8','"hkl"']]                                         │
 └───────────────────────────────────────────────────────────────────────┘
 ```
-

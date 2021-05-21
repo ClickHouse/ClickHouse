@@ -6,7 +6,7 @@
 
 #if USE_EMBEDDED_COMPILER
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/JIT/CHJIT.h>
 
 namespace DB
@@ -39,7 +39,7 @@ using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
   * It is important that ColumnData parameter of JITCompiledFunction is result column,
   * and will be filled by compiled function.
   */
-CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBaseImpl & function);
+CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBase & function);
 
 }
 
