@@ -2,15 +2,18 @@
 set -e
 
 mkdir -p /etc/docker/
-cat > /etc/docker/daemon.json << EOF
-{
+echo '{
     "ipv6": true,
     "fixed-cidr-v6": "fd00::/8",
     "ip-forward": true,
+    "log-level": "debug",
+    "storage-driver": "overlay2",
     "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
     "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
-}
-EOF
+}' | dd of=/etc/docker/daemon.json
+
+/etc/init.d/dbus start
+firewalld --debug --log-file /ClickHouse/tests/integration/firewalld.log
 
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
 
