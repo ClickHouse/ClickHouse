@@ -46,7 +46,8 @@ struct TonalityClassificationImpl
                 word.push_back(data[i]);
                 ++i;
 
-                while ((i < data.size()) && (!isASCII(data[i]))) {
+                while ((i < data.size()) && (!isASCII(data[i])))
+                {
                     word.push_back(data[i]);
                     ++i;
                 }
@@ -104,7 +105,8 @@ struct TonalityClassificationImpl
                     word.push_back(str[ind]);
                     ++ind;
 
-                    while ((ind < str.size()) && (!isASCII(str[ind]))) {
+                    while ((ind < str.size()) && (!isASCII(str[ind])))
+                    {
                         word.push_back(str[ind]);
                         ++ind;
                     }

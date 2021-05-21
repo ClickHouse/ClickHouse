@@ -41,7 +41,7 @@ struct CharsetClassificationImpl
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
 
 
-    static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64>& standart,
+    static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64>& standard,
         std::unordered_map<UInt16, Float64>& model,
         Float64 max_result)
     {
@@ -49,15 +49,16 @@ struct CharsetClassificationImpl
         for (auto & el : model)
         {
             /// Try to find bigram in the dictionary.
-            if (standart.find(el.first) != standart.end())
+            if (standard.find(el.first) != standard.end())
             {
-                res += el.second * log(standart[el.first]);
+                res += el.second * log(standard[el.first]);
             } else
             {
                 res += el.second * log(zero_frequency);
             }
             /// If at some step the result has become less than the current maximum, then it makes no sense to count it fully.
-            if (res < max_result) {
+            if (res < max_result)
+            {
                 return res;
             }
         }
@@ -97,11 +98,13 @@ struct CharsetClassificationImpl
             for (; i + N <= found; ++i)
             {
                 UInt32 hash = 0;
-                for (size_t j = 0; j < N; ++j) {
+                for (size_t j = 0; j < N; ++j)
+                {
                     hash <<= 8;
                     hash += *(cp + i + j);
                 }
-                if (model[hash] == 0) {
+                if (model[hash] == 0)
+                {
                     model[hash] = 1;
                     ++len;
                 }

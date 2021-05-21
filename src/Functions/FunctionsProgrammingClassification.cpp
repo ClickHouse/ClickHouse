@@ -18,15 +18,15 @@ struct ProgrammingClassificationImpl
 
     using ResultType = String;
     /// Calculate total weight
-    static ALWAYS_INLINE inline Float64 state_machine(std::unordered_map<String, Float64>& standart, std::unordered_map<String, Float64>& model)
+    static ALWAYS_INLINE inline Float64 state_machine(std::unordered_map<String, Float64>& standard, std::unordered_map<String, Float64>& model)
     {
         Float64 res = 0;
         for (auto & el : model)
         {
             /// Try to find each n-gram in dictionary
-            if (standart.find(el.first) != standart.end())
+            if (standard.find(el.first) != standard.end())
             {
-                res += el.second * standart[el.first];
+                res += el.second * standard[el.first];
             }
         }
         return res;
@@ -50,11 +50,13 @@ struct ProgrammingClassificationImpl
                 command.push_back(data[i]);
                 ++i;
 
-                while ((i < data.size()) && (!isspace(data[i]))) {
+                while ((i < data.size()) && (!isspace(data[i])))
+                {
                     command.push_back(data[i]);
                     ++i;
                 }
-                if (prev_command == "") {
+                if (prev_command == "")
+                {
                     prev_command = command;
                 }
                 else
@@ -123,11 +125,13 @@ struct ProgrammingClassificationImpl
                     command.push_back(str_data[ind]);
                     ++ind;
 
-                    while ((ind < str_data.size()) && (!isspace(str_data[ind]))) {
+                    while ((ind < str_data.size()) && (!isspace(str_data[ind])))
+                    {
                         command.push_back(str_data[ind]);
                         ++ind;
                     }
-                    if (prev_command == "") {
+                    if (prev_command == "")
+                    {
                         prev_command = command;
                     }
                     else
