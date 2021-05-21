@@ -35,6 +35,6 @@ TEST(LocalAddress, Localhost)
     EXPECT_FALSE(DB::isLocalAddress(Poco::Net::IPAddress{"::"}));
     EXPECT_FALSE(DB::isLocalAddress(Poco::Net::IPAddress{"::2"}));
 
-    /// The the comment in the implementation of isLocalAddress.
+    /// See the comment in the implementation of isLocalAddress.
     EXPECT_FALSE(DB::isLocalAddress(Poco::Net::IPAddress{"127.0.0.2"}));
 }
