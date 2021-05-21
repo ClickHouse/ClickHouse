@@ -915,8 +915,10 @@ public:
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             VolumePtr tmp_volume_, size_t max_threads_,
-            size_t min_free_disk_space_)
+            size_t min_free_disk_space_,
+            const Block & intermediate_header_ = {})
             : src_header(src_header_),
+            intermediate_header(intermediate_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
             group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
@@ -982,6 +984,8 @@ public:
     using BucketToBlocks = std::map<Int32, BlocksList>;
     /// Merge partially aggregated blocks separated to buckets into one data structure.
     void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads);
+
+    bool mergeBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys);
 
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.

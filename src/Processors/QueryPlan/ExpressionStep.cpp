@@ -31,7 +31,7 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions)
 ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_)
     : ITransformingStep(
         input_stream_,
-        Transform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_dag_, ExpressionActionsSettings{})),
+        ExpressionTransform::transformHeader(input_stream_.header, *actions_dag_),
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
 {
@@ -42,8 +42,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr a
 void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = keep_header ? std::move(output_stream->header)
-                                   : Transform::transformHeader(input_stream.header,
-                                                                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{}));
+                                   : ExpressionTransform::transformHeader(input_stream.header, *actions_dag);
     output_stream = createOutputStream(
             input_stream,
             std::move(out_header),
@@ -56,9 +55,10 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
 void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
+
     pipeline.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<Transform>(header, expression);
+        return std::make_shared<ExpressionTransform>(header, expression);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
@@ -81,7 +81,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
     bool first = true;
 
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
@@ -98,7 +98,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     map.add("Expression", expression->toTree());
 }
 

@@ -10,7 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
 #include <ext/chrono_io.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -910,7 +910,7 @@ private:
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true};
+            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
             loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
@@ -947,8 +947,16 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async)
+    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupStatusPtr thread_group = {})
     {
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
+
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
+
         LOG_TRACE(log, "Start loading object '{}'", name);
         try
         {
