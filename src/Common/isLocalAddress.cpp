@@ -1,6 +1,7 @@
 #include <Common/isLocalAddress.h>
 
 #include <ifaddrs.h>
+#include <array>
 #include <cstring>
 #include <optional>
 #include <common/types.h>
@@ -95,17 +96,13 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
     {
         if (address.family() == Poco::Net::AddressFamily::IPv4)
         {
-            union
-            {
-                UInt32 word;
-                unsigned char digits[4];
-            } digits_union;
+            using Digits = std::array<UInt8, 4>;
+            Digits digits = unalignedLoad<Digits>(address.addr());  /// The address is located in memory in big endian form.
 
-            digits_union.word = ntohl(unalignedLoad<UInt32>(address.addr()));
-            if (digits_union.digits[0] == 127
-                && digits_union.digits[1] <= 1
-                && digits_union.digits[2] <= 1
-                && digits_union.digits[3] <= 1)
+            if (digits[0] == 127
+                && digits[1] <= 1
+                && digits[2] <= 1
+                && digits[3] <= 1)
             {
                 return true;
             }
