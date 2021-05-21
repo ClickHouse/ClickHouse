@@ -2,7 +2,6 @@
 
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -87,25 +86,28 @@ KeyDescription KeyDescription::getKeyFromAST(
     return getSortingKeyFromAST(definition_ast, columns, context, {});
 }
 
-void KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
+bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 {
     if (!node_expr)
         return;
 
     auto * function_expr = node_expr->as<ASTFunction>();
+    bool modulo_in_ast = false;
     if (function_expr)
     {
         if (function_expr->name == "modulo")
         {
             function_expr->name = "moduloLegacy";
+            modulo_in_ast = true;
         }
         if (function_expr->arguments)
         {
             auto children = function_expr->arguments->children;
             for (const auto & child : children)
-                moduloToModuloLegacyRecursive(child);
+                modulo_in_ast |= moduloToModuloLegacyRecursive(child);
         }
     }
+    return modulo_in_ast;
 }
 
 KeyDescription KeyDescription::getSortingKeyFromAST(
@@ -115,11 +117,8 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     const std::optional<String> & additional_column)
 {
     KeyDescription result;
-    ASTPtr adjusted_ast = definition_ast;
-    moduloToModuloLegacyRecursive(adjusted_ast);
-
-    result.definition_ast = adjusted_ast;
-    result.expression_list_ast = extractKeyExpressionList(adjusted_ast);
+    result.definition_ast = definition_ast;
+    result.expression_list_ast = extractKeyExpressionList(definition_ast);
 
     if (additional_column)
     {

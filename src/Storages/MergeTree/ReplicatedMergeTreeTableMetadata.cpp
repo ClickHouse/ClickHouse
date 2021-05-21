@@ -206,18 +206,16 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
             ", local: " + DB::toString(data_format_version.toUnderType()),
             ErrorCodes::METADATA_MISMATCH);
 
-    //if (partition_key != from_zk.partition_key)
-    //    throw Exception(
-    //        "Existing table metadata in ZooKeeper differs in partition key expression."
-    //        " Stored in ZooKeeper: " + from_zk.partition_key + ", local: " + partition_key,
-    //        ErrorCodes::METADATA_MISMATCH);
+    if (partition_key != from_zk.partition_key)
+        throw Exception(
+            "Existing table metadata in ZooKeeper differs in partition key expression."
+            " Stored in ZooKeeper: " + from_zk.partition_key + ", local: " + partition_key,
+            ErrorCodes::METADATA_MISMATCH);
 
 }
 
 void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
-    std::cerr << "\n\nKSSENII partitition key: " << partition_key << ", in zk: " << from_zk.partition_key << std::endl;
-    //String parsed = IndicesDescription::parse(from_zk.partition_key, columns, context).toString();
 
     checkImmutableFieldsEquals(from_zk);
 

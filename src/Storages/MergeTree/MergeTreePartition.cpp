@@ -169,22 +169,55 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     out->finalize();
 }
 
-void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row)
+void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context)
 {
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    partition_key.expression->execute(block);
-    size_t partition_columns_num = partition_key.sample_block.columns();
+    auto partition_key_sample_block = executePartitionByExpression(metadata_snapshot, block, context);
+    size_t partition_columns_num = partition_key_sample_block.columns();
     value.resize(partition_columns_num);
+    const String modulo_legacy_function_name = "moduloLegacy";
 
     for (size_t i = 0; i < partition_columns_num; ++i)
     {
-        const auto & column_name = partition_key.sample_block.getByPosition(i).name;
-        const auto & partition_column = block.getByName(column_name).column;
-        partition_column->get(row, value[i]);
+        const auto & column_name = partition_key_sample_block.getByPosition(i).name;
+        auto & partition_column = block.getByName(column_name);
+
+        /// Executing partition_by expression adds new columns to passed block according to partition functions.
+        /// The block is passed by reference and is used afterwards. `moduloLegacy` needs to be substituted back
+        /// with just `modulo`, because it was a temporary substitution.
+        if (column_name.starts_with(modulo_legacy_function_name))
+            partition_column.name = "modulo" + partition_column.name.substr(modulo_legacy_function_name.size());
+
+        partition_column.column->get(row, value[i]);
     }
+}
+
+Block MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
+{
+    auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
+    adjusted_partition_key.expression->execute(block);
+    return adjusted_partition_key.sample_block;
+}
+
+KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+{
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    if (!partition_key.definition_ast)
+        return partition_key;
+
+    ASTPtr ast_copy = partition_key.definition_ast->clone();
+
+    /// Implementation of modulo function was changed from 8bit result type to 16bit. For backward compatibility partition by expression is always
+    /// calculated according to previous version - `moduloLegacy`.
+    if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
+    {
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
+        return adjusted_partition_key;
+    }
+
+    return partition_key;
 }
 
 }
