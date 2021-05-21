@@ -67,7 +67,7 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
                 return x;
         }
         auto hints = this->getHints(field_name.toString());
-        auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+        auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
         throw Exception{"Unknown element '" + field_name.toString() + "' for enum" + hints_string, ErrorCodes::BAD_ARGUMENTS};
     }
     return it->getMapped();

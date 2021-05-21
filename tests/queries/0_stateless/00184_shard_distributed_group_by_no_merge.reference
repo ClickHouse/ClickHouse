@@ -39,3 +39,5 @@ GROUP BY w/ ALIAS
 1
 ORDER BY w/ ALIAS
 0
+func(aggregate function) GROUP BY
+0

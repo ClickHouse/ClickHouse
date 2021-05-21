@@ -55,6 +55,7 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
 void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
+
     pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExpressionTransform>(header, expression);
@@ -80,7 +81,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
     bool first = true;
 
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
@@ -97,7 +98,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
     map.add("Expression", expression->toTree());
 }
 

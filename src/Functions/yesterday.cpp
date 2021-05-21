@@ -4,7 +4,7 @@
 
 #include <DataTypes/DataTypeDate.h>
 
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
 

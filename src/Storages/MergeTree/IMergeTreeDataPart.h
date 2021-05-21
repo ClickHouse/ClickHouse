@@ -45,11 +45,6 @@ class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 
-
-namespace ErrorCodes
-{
-}
-
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {

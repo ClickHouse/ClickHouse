@@ -262,7 +262,14 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
+
+    /// When max_threads > 1, the order of returning blocks is uncentain,
+    /// which will lead to inconsistency after updateBlockData.
+    auto new_context = Context::createCopy(context);
+    new_context->setSetting("max_streams_to_max_threads_ratio", 1);
+    new_context->setSetting("max_threads", 1);
+
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
     auto in = interpreter->execute();
 
     in->readPrefix();
@@ -311,8 +318,8 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         rows += buffer.rows();
         bytes += buffer.bytes();
     }
-    total_size_bytes.store(rows, std::memory_order_relaxed);
-    total_size_rows.store(bytes, std::memory_order_relaxed);
+    total_size_bytes.store(bytes, std::memory_order_relaxed);
+    total_size_rows.store(rows, std::memory_order_relaxed);
     data.set(std::move(new_data));
 }
 
