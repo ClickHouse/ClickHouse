@@ -115,17 +115,18 @@ off_t ReadBufferFromS3::getPosition()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}, Range End: {})",
-              bucket, key, getPosition(), read_end);
+    std::string read_bytes_range;
+    if (getPosition() != 0 || read_end != 0)
+        read_bytes_range = std::to_string(getPosition())  + "-" + (read_end ? std::to_string(read_end) : "");
+
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Read range: '{}'", bucket, key, read_bytes_range);
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
 
-    if (getPosition() != 0 || read_end != 0)
-    {
-        req.SetRange("bytes=" + std::to_string(getPosition())  + "-" + (read_end != 0 ? std::to_string(read_end) : ""));
-    }
+    if (!read_bytes_range.empty())
+        req.SetRange("bytes=" + read_bytes_range);
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
