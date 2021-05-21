@@ -527,6 +527,7 @@ include (cmake/find/nanodbc.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
 include (cmake/find/nuraft.cmake)
+include (cmake/find/yaml-cpp.cmake)
 
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
