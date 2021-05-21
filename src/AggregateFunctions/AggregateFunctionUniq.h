@@ -125,15 +125,15 @@ struct AggregateFunctionUniqExactData<String>
 };
 
 
-/// uniqThetaSketch
+/// uniqTheta
 #if USE_DATASKETCHES
 
-struct AggregateFunctionUniqThetaSketchData
+struct AggregateFunctionUniqThetaData
 {
     using Set = ThetaSketchData<UInt64>;
     Set set;
 
-    static String getName() { return "uniqThetaSketch"; }
+    static String getName() { return "uniqTheta"; }
 };
 
 #endif
@@ -202,7 +202,7 @@ struct OneAdder
             }
         }
 #if USE_DATASKETCHES
-        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaSketchData>)
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaData>)
         {
             data.set.insertOriginal(column.getDataAt(row_num));
         }

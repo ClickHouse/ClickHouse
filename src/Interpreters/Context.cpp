@@ -315,8 +315,8 @@ struct ContextSharedPart
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
 #if USE_NURAFT
-    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+    mutable std::mutex keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperStorageDispatcher> keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -341,6 +341,8 @@ struct ContextSharedPart
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     ConfigurationPtr external_models_config;
     ext::scope_guard models_repository_guard;
+
+    ext::scope_guard dictionaries_xmls;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -450,6 +452,17 @@ struct ContextSharedPart
 
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
             /// TODO: Get rid of this.
+
+            /// Dictionaries may be required:
+            /// - for storage shutdown (during final flush of the Buffer engine)
+            /// - before storage startup (because of some streaming of, i.e. Kafka, to
+            ///   the table with materialized column that has dictGet)
+            ///
+            /// So they should be created before any storages and preserved until storages will be terminated.
+            ///
+            /// But they cannot be created before storages since they may required table as a source,
+            /// but at least they can be preserved for storage termination.
+            dictionaries_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
 
@@ -994,7 +1007,8 @@ bool Context::hasScalar(const String & name) const
 }
 
 
-void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
+void Context::addQueryAccessInfo(
+    const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names, const String & projection_name)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
@@ -1002,6 +1016,8 @@ void Context::addQueryAccessInfo(const String & quoted_database_name, const Stri
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
+    if (!projection_name.empty())
+        query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
 }
 
 
@@ -1419,6 +1435,16 @@ void Context::tryCreateEmbeddedDictionaries() const
     static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
+void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.getBool("dictionaries_lazy_load", true))
+    {
+        tryCreateEmbeddedDictionaries();
+        getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
+    }
+    shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
+        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+}
 
 void Context::setProgressCallback(ProgressCallback callback)
 {
@@ -1682,16 +1708,16 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 void Context::initializeKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
 
-    if (shared->nu_keeper_storage_dispatcher)
+    if (shared->keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        shared->nu_keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
-        shared->nu_keeper_storage_dispatcher->initialize(config);
+        shared->keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
+        shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
     }
 #endif
 }
@@ -1699,22 +1725,22 @@ void Context::initializeKeeperStorageDispatcher() const
 #if USE_NURAFT
 std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
 {
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
-    if (!shared->nu_keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    if (!shared->keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->nu_keeper_storage_dispatcher;
+    return shared->keeper_storage_dispatcher;
 }
 #endif
 
 void Context::shutdownKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
-    if (shared->nu_keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    if (shared->keeper_storage_dispatcher)
     {
-        shared->nu_keeper_storage_dispatcher->shutdown();
-        shared->nu_keeper_storage_dispatcher.reset();
+        shared->keeper_storage_dispatcher->shutdown();
+        shared->keeper_storage_dispatcher.reset();
     }
 #endif
 }

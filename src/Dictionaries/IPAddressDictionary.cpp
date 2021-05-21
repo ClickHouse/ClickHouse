@@ -417,7 +417,7 @@ void IPAddressDictionary::loadData()
                 return cmpres;
             });
         if (deleted_count > 0)
-            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
+            LOG_TRACE(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv6_col = ip_column.emplace<IPv6Container>();
         ipv6_col.resize_fill(IPV6_BINARY_LENGTH * ip_records.size());
@@ -444,7 +444,7 @@ void IPAddressDictionary::loadData()
                 return compareTo(a, b);
             });
         if (deleted_count > 0)
-            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
+            LOG_TRACE(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv4_col = ip_column.emplace<IPv4Container>();
         ipv4_col.reserve(ip_records.size());

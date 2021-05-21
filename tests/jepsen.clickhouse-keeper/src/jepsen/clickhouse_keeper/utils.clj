@@ -143,7 +143,7 @@
   [node test]
   (info "Checking server alive on" node)
   (try
-    (c/exec binary-path :client :--query "SELECT 1")
+    (zk-connect (name node) 9181 30000)
     (catch Exception _ false)))
 
 (defn wait-clickhouse-alive!
@@ -169,16 +169,13 @@
      :logfile stderr-file
      :chdir data-dir}
     binary-path
-    :server
-    :--config (str configs-dir "/config.xml")
+    :keeper
+    :--config (str configs-dir "/keeper_config.xml")
     :--
-    :--path (str data-dir "/")
-    :--user_files_path (str data-dir "/user_files")
-    :--top_level_domains_path (str data-dir "/top_level_domains")
-    :--logger.log (str logs-dir "/clickhouse-server.log")
-    :--logger.errorlog (str logs-dir "/clickhouse-server.err.log")
+    :--logger.log (str logs-dir "/clickhouse-keeper.log")
+    :--logger.errorlog (str logs-dir "/clickhouse-keeper.err.log")
     :--keeper_server.snapshot_storage_path coordination-snapshots-dir
-    :--keeper_server.logs_storage_path coordination-logs-dir)
+    :--keeper_server.log_storage_path coordination-logs-dir)
    (wait-clickhouse-alive! node test)))
 
 (defn md5 [^String s]

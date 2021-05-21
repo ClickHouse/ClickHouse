@@ -4,6 +4,9 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Interpreters/AggregateDescription.h>
+
 #include <memory>
 
 namespace DB
@@ -110,6 +113,34 @@ struct InputOrderInfo
     bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
 };
 
+class IMergeTreeDataPart;
+
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
+
+struct MergeTreeDataSelectCache;
+
+// The projection selected to execute current query
+struct ProjectionCandidate
+{
+    const ProjectionDescription * desc;
+    PrewhereInfoPtr prewhere_info;
+    ActionsDAGPtr before_where;
+    String where_column_name;
+    bool remove_where_filter = false;
+    ActionsDAGPtr before_aggregation;
+    Names required_columns;
+    NamesAndTypesList aggregation_keys;
+    AggregateDescriptions aggregate_descriptions;
+    bool aggregate_overflow_row = false;
+    bool aggregate_final = false;
+    bool complete = false;
+    ReadInOrderOptimizerPtr order_optimizer;
+    InputOrderInfoPtr input_order_info;
+    ManyExpressionActions group_by_elements_actions;
+    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
+    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
+};
+
 /** Query along with some additional data,
   *  that can be used during query processing
   *  inside storage engines.
@@ -139,7 +170,15 @@ struct SelectQueryInfo
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
 
+    /// Cached value of ExpressionAnalysisResult::has_window
+    bool has_window = false;
+
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
+
+    /// If not null, it means we choose a projection to execute current query.
+    std::optional<ProjectionCandidate> projection;
+    bool ignore_projections = false;
+    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_cache;
 };
 
 }

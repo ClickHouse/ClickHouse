@@ -119,9 +119,12 @@ StorageMaterializedView::StorageMaterializedView(
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
-    ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+    ContextPtr local_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageMetadataPtr &,
+    SelectQueryInfo & query_info) const
 {
-    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, query_info);
+    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getInMemoryMetadataPtr(), query_info);
 }
 
 Pipe StorageMaterializedView::read(
@@ -363,17 +366,18 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     auto metadata_snapshot = getInMemoryMetadataPtr();
     bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
 
-    if (has_inner_table && tryGetTargetTable() && !from_atomic_to_atomic_database)
+    if (!from_atomic_to_atomic_database && has_inner_table && tryGetTargetTable())
     {
         auto new_target_table_name = generateInnerTableName(new_table_id);
         auto rename = std::make_shared<ASTRenameQuery>();
 
         ASTRenameQuery::Table from;
+        assert(target_table_id.database_name == old_table_id.database_name);
         from.database = target_table_id.database_name;
         from.table = target_table_id.table_name;
 
         ASTRenameQuery::Table to;
-        to.database = target_table_id.database_name;
+        to.database = new_table_id.database_name;
         to.table = new_target_table_name;
 
         ASTRenameQuery::Element elem;
@@ -382,10 +386,16 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         rename->elements.emplace_back(elem);
 
         InterpreterRenameQuery(rename, getContext()).execute();
+        target_table_id.database_name = new_table_id.database_name;
         target_table_id.table_name = new_target_table_name;
     }
 
     IStorage::renameInMemory(new_table_id);
+    if (from_atomic_to_atomic_database && has_inner_table)
+    {
+        assert(target_table_id.database_name == old_table_id.database_name);
+        target_table_id.database_name = new_table_id.database_name;
+    }
     const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());

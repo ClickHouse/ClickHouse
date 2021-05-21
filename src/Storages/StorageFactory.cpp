@@ -65,7 +65,7 @@ StoragePtr StorageFactory::get(
     const ConstraintsDescription & constraints,
     bool has_force_restore_data_flag) const
 {
-    String name;
+    String name, comment;
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
@@ -146,6 +146,9 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
+            if (storage_def->comment)
+                comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
+
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
                 if (!feature_matcher_fn(it->second.features))
@@ -183,12 +186,16 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "skipping indices",
                     [](StorageFeatures features) { return features.supports_skipping_indices; });
+
+            if (query.columns_list && query.columns_list->projections && !query.columns_list->projections->children.empty())
+                check_feature(
+                    "projections",
+                    [](StorageFeatures features) { return features.supports_projections; });
         }
     }
 
     ASTs empty_engine_args;
-    Arguments arguments
-    {
+    Arguments arguments{
         .engine_name = name,
         .engine_args = has_engine_args ? storage_def->engine->arguments->children : empty_engine_args,
         .storage_def = storage_def,
@@ -200,8 +207,9 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .attach = query.attach,
-        .has_force_restore_data_flag = has_force_restore_data_flag
-    };
+        .has_force_restore_data_flag = has_force_restore_data_flag,
+        .comment = comment};
+
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);
