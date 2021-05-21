@@ -293,6 +293,17 @@ NamesAndTypesList ActionsDAG::getRequiredColumns() const
     return result;
 }
 
+Names ActionsDAG::getRequiredColumnsNames() const
+{
+    Names result;
+    result.reserve(inputs.size());
+
+    for (const auto & input : inputs)
+        result.emplace_back(input->result_name);
+
+    return result;
+}
+
 ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
@@ -986,10 +997,8 @@ void ActionsDAG::addMaterializingOutputActions()
 
 const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
 {
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(
+                            std::make_shared<FunctionMaterialize>());
 
     const auto & name = node.result_name;
     const auto * func = &addFunction(func_builder_materialize, {&node}, {});
@@ -1016,10 +1025,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     auto actions_dag = std::make_shared<ActionsDAG>(source);
     NodeRawConstPtrs projection(num_result_columns);
 
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     std::map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
@@ -1046,11 +1052,19 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             {
                 auto & input = inputs[res_elem.name];
                 if (input.empty())
-                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
-                                    ErrorCodes::THERE_IS_NO_COLUMN);
-
-                src_node = dst_node = actions_dag->inputs[input.front()];
-                input.pop_front();
+                {
+                    const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get());
+                    if (ignore_constant_values && res_const)
+                        src_node = dst_node = &actions_dag->addColumn(res_elem);
+                    else
+                        throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
+                                        ErrorCodes::THERE_IS_NO_COLUMN);
+                }
+                else
+                {
+                    src_node = dst_node = actions_dag->inputs[input.front()];
+                    input.pop_front();
+                }
                 break;
             }
         }
@@ -1085,9 +1099,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             const auto * left_arg = dst_node;
 
             FunctionCast::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
-            FunctionOverloadResolverPtr func_builder_cast =
-                    std::make_shared<FunctionOverloadResolverAdaptor>(
-                            CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic)));
+            FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {});
@@ -1137,10 +1149,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 {
     auto adding_column_action = std::make_shared<ActionsDAG>();
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     auto column_name = column.name;
     const auto * column_node = &adding_column_action->addColumn(std::move(column));
@@ -1655,10 +1664,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
 
     auto actions = std::make_shared<ActionsDAG>();
 
-    FunctionOverloadResolverPtr func_builder_and =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionAnd>()));
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> nodes_mapping;
     std::unordered_map<std::string, std::list<const Node *>> required_inputs;
@@ -1863,9 +1869,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 predicate->children = {left_arg, right_arg};
                 auto arguments = prepareFunctionArguments(predicate->children);
 
-                FunctionOverloadResolverPtr func_builder_cast =
-                        std::make_shared<FunctionOverloadResolverAdaptor>(
-                                CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
+                FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
 
                 predicate->function_builder = func_builder_cast;
                 predicate->function_base = predicate->function_builder->build(arguments);
