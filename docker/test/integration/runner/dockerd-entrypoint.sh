@@ -12,9 +12,6 @@ echo '{
     "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
 }' | dd of=/etc/docker/daemon.json
 
-/etc/init.d/dbus start
-firewalld --debug --log-file /ClickHouse/tests/integration/firewalld.log
-
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
 
 set +e
