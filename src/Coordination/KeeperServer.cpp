@@ -14,6 +14,7 @@
 #include <chrono>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <string>
+#include <filesystem>
 #include <Poco/Util/Application.h>
 
 namespace DB
@@ -59,6 +60,21 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
 }
 #endif
 
+std::string getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
+{
+    /// the most specialized path
+    if (config.has("keeper_server.snapshot_storage_path"))
+        return config.getString("keeper_server.snapshot_storage_path");
+
+    if (config.has("keeper_server.storage_path"))
+        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "snapshots";
+
+    if (standalone_keeper)
+        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "snapshots";
+    else
+        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots";
+}
+
 }
 
 KeeperServer::KeeperServer(
@@ -66,14 +82,15 @@ KeeperServer::KeeperServer(
     const CoordinationSettingsPtr & coordination_settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
-    SnapshotsQueue & snapshots_queue_)
+    SnapshotsQueue & snapshots_queue_,
+    bool standalone_keeper)
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
     , state_machine(nuraft::cs_new<KeeperStateMachine>(
                         responses_queue_, snapshots_queue_,
-                        config.getString("keeper_server.snapshot_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/snapshots"),
+                        getSnapshotsPathFromConfig(config, standalone_keeper),
                         coordination_settings))
-    , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", config, coordination_settings))
+    , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", config, coordination_settings, standalone_keeper))
     , log(&Poco::Logger::get("KeeperServer"))
 {
     if (coordination_settings->quorum_reads)
@@ -110,6 +127,7 @@ void KeeperServer::startup()
     params.client_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds();
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
     params.auto_forwarding_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds() * 2;
+    params.max_append_size_ = coordination_settings->max_requests_batch_size;
 
     params.return_method_ = nuraft::raft_params::async_handler;
 

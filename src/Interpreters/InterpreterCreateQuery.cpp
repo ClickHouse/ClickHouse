@@ -51,8 +51,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
-
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
@@ -145,7 +143,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
     }
-    else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
+    else if ((create.columns_list
+              && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
+                  || (create.columns_list->projections && !create.columns_list->projections->children.empty()))))
     {
         /// Currently, there are no database engines, that support any arguments.
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
@@ -362,6 +362,16 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
     return res;
 }
 
+ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & projections)
+{
+    auto res = std::make_shared<ASTExpressionList>();
+
+    for (const auto & projection : projections)
+        res->children.push_back(projection.definition_ast->clone());
+
+    return res;
+}
+
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     const ASTExpressionList & columns_ast, ContextPtr context_, bool attach)
 {
@@ -520,6 +530,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
                 properties.indices.push_back(
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
 
+        if (create.columns_list->projections)
+            for (const auto & projection_ast : create.columns_list->projections->children)
+            {
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
+                properties.projections.add(std::move(projection));
+            }
+
         properties.constraints = getConstraintsDescription(create.columns_list->constraints);
     }
     else if (!create.as_table.empty())
@@ -566,10 +583,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
+    ASTPtr new_projections = formatProjections(properties.projections);
 
     create.columns_list->setOrReplace(create.columns_list->columns, new_columns);
     create.columns_list->setOrReplace(create.columns_list->indices, new_indices);
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
+    create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
 
     validateTableStructure(create, properties);
     /// Set the table engine if it was not specified explicitly.
