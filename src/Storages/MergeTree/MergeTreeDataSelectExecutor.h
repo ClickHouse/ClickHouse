@@ -24,7 +24,7 @@ struct MergeTreeDataSelectSamplingData
 struct MergeTreeDataSelectCache
 {
     RangesInDataParts parts_with_ranges;
-    MergeTreeDataSelectSamplingData sampling;
+    MergeTreeDataSelectSamplingData sampling{};
     std::unique_ptr<ReadFromMergeTree::IndexStats> index_stats;
     size_t sum_marks = 0;
     size_t sum_ranges = 0;

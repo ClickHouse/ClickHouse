@@ -1135,7 +1135,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
         LOG_DEBUG(
             log,
-            "Selected {}/{} pay, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
+            "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
             parts.size(),
             total_parts,
             parts_with_ranges.size(),
