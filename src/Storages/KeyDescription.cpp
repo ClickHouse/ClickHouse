@@ -2,6 +2,7 @@
 
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -89,7 +90,7 @@ KeyDescription KeyDescription::getKeyFromAST(
 bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 {
     if (!node_expr)
-        return;
+        return false;
 
     auto * function_expr = node_expr->as<ASTFunction>();
     bool modulo_in_ast = false;
