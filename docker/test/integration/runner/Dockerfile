@@ -31,6 +31,8 @@ RUN apt-get update \
     libkrb5-dev \
     krb5-user \
     g++ \
+    dbus \
+    firewalld \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -84,6 +86,7 @@ RUN python3 -m pip install \
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY compose/ /compose/
+COPY misc/ /misc/
 
 RUN set -x \
   && addgroup --system dockremap \

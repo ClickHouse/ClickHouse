@@ -98,7 +98,7 @@ def subprocess_check_call(args):
 def subprocess_call(args):
     # Uncomment for debugging..;
     # logging.debug('run:', ' ' . join(args))
-    subprocess.call(args)
+    run_and_check(args)
 
 def get_odbc_bridge_path():
     path = os.environ.get('CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH')
@@ -174,7 +174,8 @@ class ClickHouseCluster:
     """
 
     def __init__(self, base_path, name=None, base_config_dir=None, server_bin_path=None, client_bin_path=None,
-                 odbc_bridge_bin_path=None, library_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
+                 odbc_bridge_bin_path=None, library_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None,
+                 zookeeper_keyfile=None, zookeeper_certfile=None):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_dir = p.dirname(base_path)
@@ -220,6 +221,7 @@ class ClickHouseCluster:
         self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
+        self.with_zookeeper_secure = False
         self.with_mysql_client = False
         self.with_mysql = False
         self.with_mysql8 = False
@@ -344,8 +346,14 @@ class ClickHouseCluster:
         self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
         self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
+        # available when with_zookeper_secure == True
+        self.zookeeper_secure_port = 2281
+        self.zookeeper_keyfile = zookeeper_keyfile
+        self.zookeeper_certfile = zookeeper_certfile
+
         # available when with_zookeper == True
         self.use_keeper = True
+        self.zookeeper_port = 2181
         self.keeper_instance_dir_prefix = p.join(p.abspath(self.instances_dir), "keeper") # if use_keeper = True
         self.zookeeper_instance_dir_prefix = p.join(self.instances_dir, "zk")
         self.zookeeper_dirs_to_create = []
@@ -405,6 +413,25 @@ class ClickHouseCluster:
         if p.basename(cmd) == 'clickhouse':
             cmd += " client"
         return cmd
+
+    def setup_zookeeper_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        logging.debug('Setup ZooKeeper Secure')
+        zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper_secure.yml')
+        env_variables['ZOO_SECURE_CLIENT_PORT'] = str(self.zookeeper_secure_port)
+        env_variables['ZK_FS'] = 'bind'
+        for i in range(1, 4):
+            zk_data_path = os.path.join(self.zookeeper_instance_dir_prefix + str(i), "data")
+            zk_log_path = os.path.join(self.zookeeper_instance_dir_prefix + str(i), "log")
+            env_variables['ZK_DATA' + str(i)] = zk_data_path
+            env_variables['ZK_DATA_LOG' + str(i)] = zk_log_path
+            self.zookeeper_dirs_to_create += [zk_data_path, zk_log_path]
+            logging.debug(f"DEBUG ZK: {self.zookeeper_dirs_to_create}")
+
+        self.with_zookeeper_secure = True
+        self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
+        self.base_zookeeper_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                    '--file', zookeeper_docker_compose_path]
+        return self.base_zookeeper_cmd
 
     def setup_zookeeper_cmd(self, instance, env_variables, docker_compose_yml_dir):
         logging.debug('Setup ZooKeeper')
@@ -631,8 +658,8 @@ class ClickHouseCluster:
 
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
-                     macros=None,
-                     with_zookeeper=False, with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False, 
+                     macros=None, with_zookeeper=False, with_zookeeper_secure=False,
+                     with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False, 
                      with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
@@ -646,6 +673,7 @@ class ClickHouseCluster:
         main_configs - a list of config files that will be added to config.d/ directory
         user_configs - a list of config files that will be added to users.d/ directory
         with_zookeeper - if True, add ZooKeeper configuration to configs and ZooKeeper instances to the cluster.
+        with_zookeeper_secure - if True, add ZooKeeper Secure configuration to configs and ZooKeeper instances to the cluster.
         """
 
         if self.is_up:
@@ -715,6 +743,9 @@ class ClickHouseCluster:
         self.base_cmd.extend(['--file', instance.docker_compose_path])
 
         cmds = []
+        if with_zookeeper_secure and not self.with_zookeeper_secure:
+            cmds.append(self.setup_zookeeper_secure_cmd(instance, env_variables, docker_compose_yml_dir))
+
         if with_zookeeper and not self.with_zookeeper:
             if self.use_keeper:
                 cmds.append(self.setup_keeper_cmd(instance, env_variables, docker_compose_yml_dir))
@@ -824,8 +855,8 @@ class ClickHouseCluster:
     def get_instance_ip(self, instance_name):
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
-        for cont in self.docker_client.containers.list():
-            logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
+        # for cont in self.docker_client.containers.list():
+            # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
         handle = self.docker_client.containers.get(docker_id)
         return list(handle.attrs['NetworkSettings']['Networks'].values())[0]['IPAddress']
 
@@ -1000,12 +1031,29 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait RabbitMQ container")
 
-    def wait_zookeeper_to_start(self, timeout=180):
+    def wait_zookeeper_secure_to_start(self, timeout=20):
+        logging.debug("Wait ZooKeeper Secure to start")
         start = time.time()
         while time.time() - start < timeout:
             try:
                 for instance in ['zoo1', 'zoo2', 'zoo3']:
-                    conn = self.get_kazoo_client(instance)
+                    conn = self.get_kazoo_client(instance, self.zookeeper_secure_port, use_ssl=True)
+                    conn.get_children('/')
+                logging.debug("All instances of ZooKeeper Secure started")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to ZooKeeper secure " + str(ex))
+                time.sleep(0.5)
+
+        raise Exception("Cannot wait ZooKeeper secure container")
+
+    def wait_zookeeper_to_start(self, timeout=180):
+        logging.debug("Wait ZooKeeper to start")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                for instance in ['zoo1', 'zoo2', 'zoo3']:
+                    conn = self.get_kazoo_client(instance, self.zookeeper_port)
                     conn.get_children('/')
                 logging.debug("All instances of ZooKeeper started")
                 return
@@ -1183,6 +1231,20 @@ class ClickHouseCluster:
 
             common_opts = ['up', '-d']
 
+            if self.with_zookeeper_secure and self.base_zookeeper_cmd:
+                logging.debug('Setup ZooKeeper Secure')
+                logging.debug(f'Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}')
+                for i in range(1,3):
+                    if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
+                        shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
+                for dir in self.zookeeper_dirs_to_create:
+                    os.makedirs(dir)
+                run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+
+                self.wait_zookeeper_secure_to_start()
+                for command in self.pre_zookeeper_commands:
+                    self.run_kazoo_commands_with_retries(command, repeats=5, secure=True)
+
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper')
                 logging.debug(f'Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}')
@@ -1204,9 +1266,9 @@ class ClickHouseCluster:
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
 
+                self.wait_zookeeper_to_start()
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
-                self.wait_zookeeper_to_start()
 
             if self.with_mysql_client and self.base_mysql_client_cmd:
                 logging.debug('Setup MySQL Client')
@@ -1423,23 +1485,24 @@ class ClickHouseCluster:
     def open_bash_shell(self, instance_name):
         os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
 
-    def get_kazoo_client(self, zoo_instance_name):
+    def get_kazoo_client(self, zoo_instance_name, port, use_ssl=False):
         ip = self.get_instance_ip(zoo_instance_name)
-        logging.debug(f"get_kazoo_client: {zoo_instance_name}, ip:{ip}")
-        zk = KazooClient(hosts=ip)
+        logging.debug(f"get_kazoo_client: {zoo_instance_name}, ip:{ip}, port:{port}, use_ssl:{use_ssl}")
+        zk = KazooClient(hosts=f"{ip}:{port}", use_ssl=use_ssl, verify_certs=False, certfile=self.zookeeper_certfile,
+                         keyfile=self.zookeeper_keyfile)
         zk.start()
         return zk
 
-    def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name='zoo1', repeats=1, sleep_for=1):
+    def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name='zoo1', repeats=1, sleep_for=1, secure=False):
+        logging.debug(f"run_kazoo_commands_with_retries: {zoo_instance_name}, {secure}, {kazoo_callback}")
         for i in range(repeats - 1):
             try:
-                kazoo_callback(self.get_kazoo_client(zoo_instance_name))
+                kazoo_callback(self.get_kazoo_client(zoo_instance_name, self.zookeeper_secure_port if secure else self.zookeeper_port))
                 return
             except KazooException as e:
                 logging.debug(repr(e))
                 time.sleep(sleep_for)
-
-        kazoo_callback(self.get_kazoo_client(zoo_instance_name))
+        kazoo_callback(self.get_kazoo_client(zoo_instance_name, self.zookeeper_secure_port if secure else self.zookeeper_port))
 
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
