@@ -31,8 +31,6 @@ RUN apt-get update \
     libkrb5-dev \
     krb5-user \
     g++ \
-    dbus \
-    firewalld \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

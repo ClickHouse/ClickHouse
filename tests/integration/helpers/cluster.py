@@ -388,13 +388,13 @@ class ClickHouseCluster:
         #     pass
 
         # Remove unused images
-        try:
-            logging.debug("Trying to prune unused images...")
+        # try:
+        #     logging.debug("Trying to prune unused images...")
 
-            subprocess_call(['docker', 'image', 'prune', '-f'])
-            logging.debug("Images pruned")
-        except:
-            pass
+        #     subprocess_call(['docker', 'image', 'prune', '-f'])
+        #     logging.debug("Images pruned")
+        # except:
+        #     pass
 
         # Remove unused volumes
         try:
