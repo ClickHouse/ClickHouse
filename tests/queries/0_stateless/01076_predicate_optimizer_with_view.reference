@@ -8,6 +8,7 @@ FROM
     SELECT *
     FROM default.test
     HAVING id = 1
+    SETTINGS join_use_nulls = 0
 ) AS test_view
 WHERE id = 1
 SELECT
@@ -20,6 +21,7 @@ FROM
     SELECT *
     FROM default.test
     HAVING id = 2
+    SETTINGS join_use_nulls = 0
 ) AS test_view
 WHERE id = 2
 SELECT id
@@ -28,6 +30,7 @@ FROM
     SELECT *
     FROM default.test
     HAVING id = 1
+    SETTINGS join_use_nulls = 0
 ) AS test_view
 WHERE id = 1
 SELECT id
@@ -36,5 +39,6 @@ FROM
     SELECT *
     FROM default.test
     HAVING id = 1
+    SETTINGS join_use_nulls = 0
 ) AS s
 WHERE id = 1

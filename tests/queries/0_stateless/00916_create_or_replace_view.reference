@@ -1,2 +1,2 @@
-CREATE VIEW default.t\n(\n    `number` UInt64\n) AS\nSELECT number\nFROM system.numbers
-CREATE VIEW default.t\n(\n    `next_number` UInt64\n) AS\nSELECT number + 1 AS next_number\nFROM system.numbers
+CREATE VIEW default.t\n(\n    `number` UInt64\n) AS\nSELECT number\nFROM system.numbers\nSETTINGS join_use_nulls = 0
+CREATE VIEW default.t\n(\n    `next_number` UInt64\n) AS\nSELECT number + 1 AS next_number\nFROM system.numbers\nSETTINGS join_use_nulls = 0
