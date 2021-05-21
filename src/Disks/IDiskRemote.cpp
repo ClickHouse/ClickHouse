@@ -357,20 +357,20 @@ void IDiskRemote::removeFileIfExists(const String & path)
 }
 
 
-void IDiskRemote::removeSharedFile(const String & path, bool keep_remote_fs)
+void IDiskRemote::removeSharedFile(const String & path, bool keep_in_remote_fs)
 {
     RemoteFSPathKeeper fs_paths_keeper;
     removeMeta(path, fs_paths_keeper);
-    if (!keep_remote_fs)
+    if (!keep_in_remote_fs)
         removeFromRemoteFS(fs_paths_keeper);
 }
 
 
-void IDiskRemote::removeSharedRecursive(const String & path, bool keep_remote_fs)
+void IDiskRemote::removeSharedRecursive(const String & path, bool keep_in_remote_fs)
 {
     RemoteFSPathKeeper fs_paths_keeper;
     removeMetaRecursive(path, fs_paths_keeper);
-    if (!keep_remote_fs)
+    if (!keep_in_remote_fs)
         removeFromRemoteFS(fs_paths_keeper);
 }
 

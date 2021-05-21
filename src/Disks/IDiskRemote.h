@@ -170,13 +170,13 @@ struct IDiskRemote::Metadata
     String metadata_file_path;
 
     /// Total size of all remote FS (S3, HDFS) objects.
-    size_t total_size;
+    size_t total_size = 0;
 
     /// Remote FS (S3, HDFS) objects paths and their sizes.
     std::vector<PathAndSize> remote_fs_objects;
 
     /// Number of references (hardlinks) to this metadata file.
-    UInt32 ref_count;
+    UInt32 ref_count = 0;
 
     /// Flag indicates that file is read only.
     bool read_only = false;

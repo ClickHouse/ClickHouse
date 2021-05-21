@@ -3,8 +3,8 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
-#include <IO/ReadIndirectBufferFromRemoteFS.h>
-#include <IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
@@ -17,9 +17,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int PATH_ACCESS_DENIED;
-    extern const int CANNOT_DELETE_DIRECTORY;
-    extern const int UNKNOWN_FORMAT;
 }
 
 /// Reads data from HDFS using stored paths in metadata.
@@ -109,7 +106,7 @@ void DiskHDFS::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
     {
         for (const auto & hdfs_object_path : chunk)
         {
-            const String hdfs_path = hdfs_object_path.GetKey();
+            const String & hdfs_path = hdfs_object_path.GetKey();
             const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
 
             /// Add path from root to file name
