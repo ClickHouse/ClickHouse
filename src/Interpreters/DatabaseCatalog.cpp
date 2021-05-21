@@ -356,7 +356,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
         /// Old ClickHouse versions did not store database.sql files
         fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
         if (fs::exists(database_metadata_file))
-            fs::remove_all(database_metadata_file);
+            fs::remove(database_metadata_file);
     }
 
     return db;

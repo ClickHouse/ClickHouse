@@ -416,16 +416,15 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     std::set<std::string> merge_dirs;
 
     /// Add path_to_config/config_name.d dir
-    merge_dir_path = merge_dir_path.parent_path() / (merge_dir_path.stem().string() + ".d");
+    merge_dir_path.replace_extension("d");
     merge_dirs.insert(merge_dir_path);
     /// Add path_to_config/conf.d dir
-    merge_dir_path = merge_dir_path.parent_path() / "conf.d";
+    merge_dir_path.replace_filename("conf.d");
     merge_dirs.insert(merge_dir_path);
 
     for (const std::string & merge_dir_name : merge_dirs)
     {
-        fs::path merge_dir(merge_dir_name);
-        if (!fs::exists(merge_dir) || !is_directory(merge_dir))
+        if (!fs::exists(merge_dir_name) || !fs::is_directory(merge_dir_name))
             continue;
 
         for (fs::directory_iterator it(merge_dir_name); it != fs::directory_iterator(); ++it)
@@ -635,7 +634,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                     fs::path parent_path = fs::path(loaded_config.config_path).parent_path();
                     preprocessed_dir = parent_path.string();
                     fs::path fs_new_path(new_path);
-                    fs_new_path = fs_new_path.parent_path() / (fs_new_path.stem().string() + PREPROCESSED_SUFFIX + fs_new_path.extension().string());
+                    fs_new_path.replace_filename(fs_new_path.stem().string() + PREPROCESSED_SUFFIX + fs_new_path.extension().string());
                     new_path = fs_new_path.string();
                 }
                 else
@@ -652,7 +651,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
 
             preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
             auto preprocessed_path_parent = fs::path(preprocessed_path).parent_path();
-            if (!preprocessed_path_parent.string().empty())
+            if (!preprocessed_path_parent.empty())
                 fs::create_directories(preprocessed_path_parent);
         }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);

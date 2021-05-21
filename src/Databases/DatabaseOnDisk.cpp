@@ -19,8 +19,6 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
 #include <filesystem>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Common/createFile.h>
 
 namespace fs = std::filesystem;
