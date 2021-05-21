@@ -1,7 +1,6 @@
 #include <Common/isLocalAddress.h>
 
 #include <ifaddrs.h>
-#include <array>
 #include <cstring>
 #include <optional>
 #include <common/types.h>
