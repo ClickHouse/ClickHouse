@@ -497,7 +497,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         DataTypes minmax_columns_types;
         if (metadata_snapshot_base->hasPartitionKey())
         {
-            const auto & partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot_base, context);
+            const auto & partition_key = metadata_snapshot_base->getPartitionKey();
             auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
             minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
@@ -1175,8 +1175,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             settings,
             reader_settings,
             result_projection,
-            query_id,
-            context);
+            query_id);
     }
     else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
     {
@@ -1677,8 +1676,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
     ActionsDAGPtr & out_projection,
-    const String & query_id,
-    ContextPtr context) const
+    const String & query_id) const
 {
     const auto data_settings = data.getSettings();
     size_t sum_marks = 0;
@@ -1828,7 +1826,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
-        Names partition_key_columns = MergeTreePartition::adjustPartitionKey(metadata_snapshot, context).column_names;
+        Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
 
         const auto & header = plan->getCurrentDataStream().header;
         for (size_t i = 0; i < sort_columns_size; ++i)

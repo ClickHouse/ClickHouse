@@ -114,8 +114,7 @@ private:
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
         ActionsDAGPtr & out_projection,
-        const String & query_id,
-        ContextPtr context) const;
+        const String & query_id) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
