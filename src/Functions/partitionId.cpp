@@ -52,7 +52,7 @@ public:
         auto result_column = ColumnString::create();
         for (size_t j = 0; j < input_rows_count; ++j)
         {
-            std::vector<Field> row(size);
+            Row row(size);
             for (size_t i = 0; i < size; ++i)
                 arguments[i].column->get(j, row[i]);
             MergeTreePartition partition(std::move(row));

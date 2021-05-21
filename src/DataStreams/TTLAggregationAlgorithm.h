@@ -32,7 +32,7 @@ private:
 
     const Block header;
     std::unique_ptr<Aggregator> aggregator;
-    std::vector<Field> current_key_value;
+    Row current_key_value;
     AggregatedDataVariants aggregation_result;
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns columns_for_aggregator;
