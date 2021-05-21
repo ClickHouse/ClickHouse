@@ -581,9 +581,9 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeFunctionsToSubcolumns(ASTPtr & query, const NameSet & source_columns)
+void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & metadata_snapshot)
 {
-    RewriteFunctionToSubcolumnVisitor::Data data{source_columns};
+    RewriteFunctionToSubcolumnVisitor::Data data{metadata_snapshot};
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
@@ -607,8 +607,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    if (result.storage && result.storage->supportsSubcolumns() && settings.optimize_functions_to_subcolumns)
-        optimizeFunctionsToSubcolumns(query, result.source_columns_set);
+    if (settings.optimize_functions_to_subcolumns && result.storage
+        && result.storage->supportsSubcolumns() && result.metadata_snapshot)
+        optimizeFunctionsToSubcolumns(query, result.metadata_snapshot);
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 

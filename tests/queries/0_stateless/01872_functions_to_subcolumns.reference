@@ -1,11 +1,29 @@
-3	0	1	['foo','bar']	[1,2]
-1	1	0	[]	[]
+0	0	1
+0	1	0
+SELECT
+    isNull(id),
+    `n.null`,
+    NOT `n.null`
+FROM t_func_to_subcolumns
+3	0	1	0
+0	1	0	\N
 SELECT
     `arr.size0`,
-    `n.null`,
-    NOT `n.null`,
+    `arr.size0` = 0,
+    `arr.size0` != 0,
+    empty(n)
+FROM t_func_to_subcolumns
+['foo','bar']	[1,2]
+[]	[]
+SELECT
     `m.keys`,
     `m.values`
+FROM t_func_to_subcolumns
+1
+SELECT sum(NOT `n.null`)
+FROM t_func_to_subcolumns
+2
+SELECT count(id)
 FROM t_func_to_subcolumns
 1	0	0
 2	1	0
@@ -25,3 +43,5 @@ ALL FULL OUTER JOIN
         3 AS id,
         \'www\'
 ) AS right USING (id)
+0	10
+0	20

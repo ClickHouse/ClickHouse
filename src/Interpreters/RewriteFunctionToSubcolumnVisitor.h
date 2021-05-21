@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ public:
     using TypeToVisit = ASTFunction;
     void visit(ASTFunction & function, ASTPtr & ast);
 
-    const NameSet & columns_to_rewrite;
+    StorageMetadataPtr metadata_snapshot;
 };
 
 using RewriteFunctionToSubcolumnMatcher = OneTypeMatcher<RewriteFunctionToSubcolumnData>;
