@@ -1,5 +1,5 @@
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>

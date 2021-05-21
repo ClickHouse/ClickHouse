@@ -16,21 +16,21 @@
 2	2
 3	3
 SELECT groupArray(x)
-FROM 
+FROM
 (
     SELECT number AS x
     FROM numbers(3)
     ORDER BY x ASC
 )
 SELECT groupArray(x)
-FROM 
+FROM
 (
     SELECT number AS x
     FROM numbers(3)
     ORDER BY x ASC
 )
 SELECT groupArray(x)
-FROM 
+FROM
 (
     SELECT number AS x
     FROM numbers(3)
@@ -43,7 +43,7 @@ SELECT
     a,
     b,
     c
-FROM 
+FROM
 (
     SELECT number + 2 AS key
     FROM numbers(4)
@@ -84,7 +84,7 @@ ORDER BY
 2	2
 3	3
 SELECT groupArray(x)
-FROM 
+FROM
 (
     SELECT number AS x
     FROM numbers(3)
@@ -93,7 +93,7 @@ FROM
         exp(x) ASC
 )
 SELECT groupArray(x)
-FROM 
+FROM
 (
     SELECT number AS x
     FROM numbers(3)
@@ -102,7 +102,7 @@ FROM
         exp(exp(x)) ASC
 )
 SELECT groupArray(x)
-FROM 
+FROM
 (
     SELECT number AS x
     FROM numbers(3)
@@ -115,7 +115,7 @@ SELECT
     a,
     b,
     c
-FROM 
+FROM
 (
     SELECT number + 2 AS key
     FROM numbers(4)

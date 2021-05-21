@@ -293,6 +293,17 @@ NamesAndTypesList ActionsDAG::getRequiredColumns() const
     return result;
 }
 
+Names ActionsDAG::getRequiredColumnsNames() const
+{
+    Names result;
+    result.reserve(inputs.size());
+
+    for (const auto & input : inputs)
+        result.emplace_back(input->result_name);
+
+    return result;
+}
+
 ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
@@ -1041,11 +1052,19 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             {
                 auto & input = inputs[res_elem.name];
                 if (input.empty())
-                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
-                                    ErrorCodes::THERE_IS_NO_COLUMN);
-
-                src_node = dst_node = actions_dag->inputs[input.front()];
-                input.pop_front();
+                {
+                    const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get());
+                    if (ignore_constant_values && res_const)
+                        src_node = dst_node = &actions_dag->addColumn(res_elem);
+                    else
+                        throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
+                                        ErrorCodes::THERE_IS_NO_COLUMN);
+                }
+                else
+                {
+                    src_node = dst_node = actions_dag->inputs[input.front()];
+                    input.pop_front();
+                }
                 break;
             }
         }

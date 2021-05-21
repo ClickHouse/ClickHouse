@@ -23,7 +23,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include "Core/DecimalFunctions.h"
-#include "IFunctionOld.h"
+#include "IFunction.h"
 #include "FunctionHelpers.h"
 #include "IsOperation.h"
 #include "DivisionUtils.h"
