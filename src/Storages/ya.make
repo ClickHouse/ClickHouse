@@ -112,6 +112,7 @@ SRCS(
     MergeTree/localBackup.cpp
     MergeTree/registerStorageMergeTree.cpp
     MutationCommands.cpp
+    MySQL/MySQLSettings.cpp
     PartitionCommands.cpp
     ProjectionsDescription.cpp
     ReadInOrderOptimizer.cpp

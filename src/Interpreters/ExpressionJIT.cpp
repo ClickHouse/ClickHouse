@@ -315,28 +315,6 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
 }
 
-static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Node & node, const IFunctionBase & impl)
-{
-    static std::unordered_set<std::string_view> comparison_functions
-    {
-        NameEquals::name,
-        NameNotEquals::name,
-        NameLess::name,
-        NameGreater::name,
-        NameLessOrEquals::name,
-        NameGreaterOrEquals::name
-    };
-
-    auto it = comparison_functions.find(impl.getName());
-    if (it == comparison_functions.end())
-        return false;
-
-    const auto * lhs_node = node.children[0];
-    const auto * rhs_node = node.children[1];
-
-    return lhs_node == rhs_node && !isTuple(lhs_node->result_type);
-}
-
 static bool isCompilableFunction(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
@@ -352,9 +330,6 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
         if (!canBeNativeType(*type))
             return false;
     }
-
-    if (checkIfFunctionIsComparisonEdgeCase(node, *node.function_base))
-        return false;
 
     return function.isCompilable();
 }
