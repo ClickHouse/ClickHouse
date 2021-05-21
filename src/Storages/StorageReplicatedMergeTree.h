@@ -595,9 +595,11 @@ private:
     bool partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const;
 
     /// Creates new block number if block with such block_id does not exist
+    /// If zookeeper_path_prefix specified then allocate block number on this path
+    /// (can be used if we want to allocate blocks on other replicas)
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
-        const String & zookeeper_block_id_path = "") const;
+        const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .

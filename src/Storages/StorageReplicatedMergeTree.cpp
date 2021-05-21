@@ -2583,7 +2583,18 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
 
     Strings replicas = zookeeper->getChildren(entry.source_shard + "/replicas");
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
-    String replica = replicas.front();
+    String replica;
+    for (const String & candidate : replicas)
+    {
+        if (zookeeper->exists(entry.source_shard + "/replicas/" + candidate + "/is_active"))
+        {
+            replica = candidate;
+            break;
+        }
+    }
+
+    if (replica.empty())
+        throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Not found active replica on shard {} to clone part {}", entry.source_shard, entry.new_part_name);
 
     LOG_INFO(log, "Will clone part from shard " + entry.source_shard + " and replica " + replica);
 
@@ -2611,9 +2622,10 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         };
 
         part = get_part();
-
-        ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, getContext(), false);
-        output.writeExistingPart(part, "clone_part_from_shard_" + entry.block_id);
+        // The fetched part is valuable and should not be cleaned like a temp part.
+        part->is_temp = false;
+        part->renameTo("detached/" + entry.new_part_name, true);
+        LOG_INFO(log, "Cloned part {} to detached directory", part->name);
     }
 }
 
@@ -5175,8 +5187,14 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path) cons
 
 std::optional<EphemeralLockInZooKeeper>
 StorageReplicatedMergeTree::allocateBlockNumber(
-    const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_block_id_path) const
+    const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_block_id_path, const String & zookeeper_path_prefix) const
 {
+    String zookeeper_table_path;
+    if (zookeeper_path_prefix.empty())
+        zookeeper_table_path = zookeeper_path;
+    else
+        zookeeper_table_path = zookeeper_path_prefix;
+
     /// Lets check for duplicates in advance, to avoid superfluous block numbers allocation
     Coordination::Requests deduplication_check_ops;
     if (!zookeeper_block_id_path.empty())
@@ -5185,7 +5203,7 @@ StorageReplicatedMergeTree::allocateBlockNumber(
         deduplication_check_ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_block_id_path, -1));
     }
 
-    String block_numbers_path = zookeeper_path + "/block_numbers";
+    String block_numbers_path = zookeeper_table_path + "/block_numbers";
     String partition_path = block_numbers_path + "/" + partition_id;
 
     if (!existsNodeCached(partition_path))
@@ -5208,7 +5226,7 @@ StorageReplicatedMergeTree::allocateBlockNumber(
     try
     {
         lock = EphemeralLockInZooKeeper(
-            partition_path + "/block-", zookeeper_path + "/temp", *zookeeper, &deduplication_check_ops);
+            partition_path + "/block-", zookeeper_table_path + "/temp", *zookeeper, &deduplication_check_ops);
     }
     catch (const zkutil::KeeperMultiException & e)
     {

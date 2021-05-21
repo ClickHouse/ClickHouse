@@ -30,6 +30,7 @@ public:
             SYNC_SOURCE,
             SYNC_DESTINATION,
             DESTINATION_FETCH,
+            DESTINATION_ATTACH,
             SOURCE_DROP_PRE_DELAY,
             SOURCE_DROP,
             SOURCE_DROP_POST_DELAY,
@@ -51,6 +52,7 @@ public:
                 case SYNC_SOURCE: return "SYNC_SOURCE";
                 case SYNC_DESTINATION: return "SYNC_DESTINATION";
                 case DESTINATION_FETCH: return "DESTINATION_FETCH";
+                case DESTINATION_ATTACH: return "DESTINATION_ATTACH";
                 case SOURCE_DROP_PRE_DELAY: return "SOURCE_DROP_PRE_DELAY";
                 case SOURCE_DROP: return "SOURCE_DROP";
                 case SOURCE_DROP_POST_DELAY: return "SOURCE_DROP_POST_DELAY";
@@ -68,6 +70,7 @@ public:
             else if (in == "SYNC_SOURCE") return SYNC_SOURCE;
             else if (in == "SYNC_DESTINATION") return SYNC_DESTINATION;
             else if (in == "DESTINATION_FETCH") return DESTINATION_FETCH;
+            else if (in == "DESTINATION_ATTACH") return DESTINATION_ATTACH;
             else if (in == "SOURCE_DROP_PRE_DELAY") return SOURCE_DROP_PRE_DELAY;
             else if (in == "SOURCE_DROP") return SOURCE_DROP;
             else if (in == "SOURCE_DROP_POST_DELAY") return SOURCE_DROP_POST_DELAY;
