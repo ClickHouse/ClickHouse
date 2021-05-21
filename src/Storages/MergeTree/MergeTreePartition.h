@@ -20,12 +20,12 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// This class represents a partition value of a single part and encapsulates its loading/storing logic.
 struct MergeTreePartition
 {
-    std::vector<Field> value;
+    Row value;
 
 public:
     MergeTreePartition() = default;
 
-    explicit MergeTreePartition(std::vector<Field> value_) : value(std::move(value_)) {}
+    explicit MergeTreePartition(Row value_) : value(std::move(value_)) {}
 
     /// For month-based partitioning.
     explicit MergeTreePartition(UInt32 yyyymm) : value(1, yyyymm) {}

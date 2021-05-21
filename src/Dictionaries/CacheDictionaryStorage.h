@@ -232,7 +232,7 @@ private:
 
             if (unlikely(attribute.is_complex_type))
             {
-                auto & container = std::get<std::vector<Field>>(attribute.attribute_container);
+                auto & container = std::get<Row>(attribute.attribute_container);
 
                 for (size_t fetched_key_index = 0; fetched_key_index < fetched_columns_index; ++fetched_key_index)
                 {
@@ -506,7 +506,7 @@ private:
 
         if (unlikely(attribute.is_complex_type))
         {
-            auto & container = std::get<std::vector<Field>>(attribute.attribute_container);
+            auto & container = std::get<Row>(attribute.attribute_container);
             std::forward<GetContainerFunc>(func)(container);
         }
         else
@@ -564,7 +564,7 @@ private:
                 last_attribute.is_complex_type = dictionary_attribute.is_nullable || dictionary_attribute.is_array;
 
                 if (dictionary_attribute.is_nullable)
-                    last_attribute.attribute_container = std::vector<Field>();
+                    last_attribute.attribute_container = Row();
                 else
                     last_attribute.attribute_container = PaddedPODArray<ValueType>();
             };
@@ -609,7 +609,7 @@ private:
             PaddedPODArray<Float64>,
             PaddedPODArray<UUID>,
             PaddedPODArray<StringRef>,
-            std::vector<Field>> attribute_container;
+            Row> attribute_container;
     };
 
     CacheDictionaryStorageConfiguration configuration;

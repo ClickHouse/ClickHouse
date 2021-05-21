@@ -18,9 +18,9 @@ namespace DB
 struct BlockWithPartition
 {
     Block block;
-    std::vector<Field> partition;
+    Row partition;
 
-    BlockWithPartition(Block && block_, std::vector<Field> && partition_)
+    BlockWithPartition(Block && block_, Row && partition_)
         : block(block_), partition(std::move(partition_))
     {
     }

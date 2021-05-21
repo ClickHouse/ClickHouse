@@ -3144,7 +3144,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             ErrorCodes::INVALID_PARTITION_VALUE);
 
     const FormatSettings format_settings;
-    std::vector<Field> partition_row(fields_count);
+    Row partition_row(fields_count);
 
     if (fields_count)
     {

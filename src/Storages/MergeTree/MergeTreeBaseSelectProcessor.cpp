@@ -214,7 +214,7 @@ namespace
 
         virtual void insertPartitionValueColumn(
             size_t rows,
-            const std::vector<Field> & partition_value,
+            const Row & partition_value,
             const DataTypePtr & partition_value_type,
             const String & name) = 0;
     };
@@ -322,7 +322,7 @@ namespace
         }
 
         void insertPartitionValueColumn(
-            size_t rows, const std::vector<Field> & partition_value, const DataTypePtr & partition_value_type, const String & name) final
+            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String & name) final
         {
             ColumnPtr column;
             if (rows)
@@ -362,7 +362,7 @@ namespace
         }
 
         void insertPartitionValueColumn(
-            size_t rows, const std::vector<Field> & partition_value, const DataTypePtr & partition_value_type, const String &) final
+            size_t rows, const Row & partition_value, const DataTypePtr & partition_value_type, const String &) final
         {
             ColumnPtr column;
             if (rows)
