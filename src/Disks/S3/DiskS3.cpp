@@ -8,8 +8,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromS3.h>
-#include <IO/ReadIndirectBufferFromRemoteFS.h>
-#include <IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -31,7 +31,6 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
