@@ -1,3 +1,5 @@
+#include <ldap.h>
+
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <ext/scope_guard.h>

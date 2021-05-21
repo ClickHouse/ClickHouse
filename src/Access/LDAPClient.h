@@ -7,10 +7,11 @@
 #include <common/types.h>
 
 #if USE_LDAP
-#   include <ldap.h>
-#   define MAYBE_NORETURN
+    struct ldap;
+    typedef struct ldap LDAP;
+    #define MAYBE_NORETURN
 #else
-#   define MAYBE_NORETURN [[noreturn]]
+    #define MAYBE_NORETURN [[noreturn]]
 #endif
 
 #include <chrono>

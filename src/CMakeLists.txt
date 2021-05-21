@@ -127,9 +127,9 @@ list (APPEND dbms_headers
     AggregateFunctions/parseAggregateFunctionParameters.h)
 
 list (APPEND dbms_sources TableFunctions/ITableFunction.cpp TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers TableFunctions/ITableFunction.h   TableFunctions/TableFunctionFactory.h)
-list (APPEND dbms_sources Dictionaries/DictionaryFactory.cpp Dictionaries/DictionarySourceFactory.cpp Dictionaries/DictionaryStructure.cpp  Dictionaries/getDictionaryConfigurationFromAST.cpp)
-list (APPEND dbms_headers Dictionaries/DictionaryFactory.h   Dictionaries/DictionarySourceFactory.h   Dictionaries/DictionaryStructure.h Dictionaries/getDictionaryConfigurationFromAST.h)
+list (APPEND dbms_headers TableFunctions/ITableFunction.h TableFunctions/TableFunctionFactory.h)
+list (APPEND dbms_sources Dictionaries/DictionaryFactory.cpp Dictionaries/DictionarySourceFactory.cpp Dictionaries/DictionaryStructure.cpp Dictionaries/getDictionaryConfigurationFromAST.cpp)
+list (APPEND dbms_headers Dictionaries/DictionaryFactory.h Dictionaries/DictionarySourceFactory.h Dictionaries/DictionaryStructure.h Dictionaries/getDictionaryConfigurationFromAST.h)
 
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources Common/OpenSSLHelpers.cpp)
@@ -171,7 +171,6 @@ macro(add_object_library name common_path)
     endif ()
 endmacro()
 
-add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
@@ -278,21 +277,20 @@ endif ()
 
 # Otherwise it will slow down stack traces printing too much.
 set_source_files_properties(
-        Common/Elf.cpp
-        Common/Dwarf.cpp
-        Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
+    Common/Elf.cpp
+    Common/Dwarf.cpp
+    Common/SymbolIndex.cpp
+    PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
-        PRIVATE
-            string_utils
-            widechar_width
-            ${LINK_LIBRARIES_ONLY_ON_X86_64}
-        PUBLIC
-            common
-            ${DOUBLE_CONVERSION_LIBRARIES}
-            dragonbox_to_chars
-)
+    PRIVATE
+        string_utils
+        widechar_width
+        ${LINK_LIBRARIES_ONLY_ON_X86_64}
+    PUBLIC
+        common
+        ${DOUBLE_CONVERSION_LIBRARIES}
+        dragonbox_to_chars)
 
 if(RE2_LIBRARY)
     target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
@@ -302,35 +300,23 @@ if(RE2_ST_LIBRARY)
 endif()
 
 target_link_libraries(clickhouse_common_io
-        PRIVATE
-            ${EXECINFO_LIBRARIES}
-            cpuid
-        PUBLIC
-            boost::program_options
-            boost::system
-            ${CITYHASH_LIBRARIES}
-            ${ZLIB_LIBRARIES}
-            pcg_random
-            Poco::Foundation
-            roaring
-)
-
-
+    PRIVATE
+        ${EXECINFO_LIBRARIES}
+        cpuid
+    PUBLIC
+        boost::program_options
+        boost::system
+        ${CITYHASH_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+        pcg_random
+        Poco::Foundation
+        roaring)
 
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
         dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif()
-endif()
-
-if (USE_CYRUS_SASL)
-    dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
-endif()
-
-if (USE_KRB5)
-    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${KRB5_INCLUDE_DIR})
-    dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
 if (USE_NURAFT)
@@ -349,6 +335,7 @@ dbms_target_link_libraries (
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         clickhouse_parsers
+        clickhouse_access
         lz4
         Poco::JSON
         Poco::MongoDB
@@ -408,10 +395,6 @@ if (OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries (clickhouse_common_io PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
 
-if (USE_LDAP)
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIRS})
-    dbms_target_link_libraries (PRIVATE ${OPENLDAP_LIBRARIES})
-endif ()
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
 if (USE_PROTOBUF)
@@ -506,6 +489,7 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers
+        clickhouse_access
         clickhouse_storages_system
         dbms
         clickhouse_common_zookeeper

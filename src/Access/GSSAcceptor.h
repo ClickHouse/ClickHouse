@@ -9,20 +9,22 @@
 #include <memory>
 
 #if USE_KRB5
-#   include <gssapi/gssapi.h>
-#   include <gssapi/gssapi_ext.h>
-#   define MAYBE_NORETURN
+    struct gss_cred_id_struct;
+    struct gss_ctx_id_struct;
+    typedef struct gss_cred_id_struct * gss_cred_id_t;
+    typedef struct gss_ctx_id_struct * gss_ctx_id_t;
+    #define MAYBE_NORETURN
 #else
-#   define MAYBE_NORETURN [[noreturn]]
+    #define MAYBE_NORETURN [[noreturn]]
 #endif
+
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
 
-class GSSAcceptorContext
-    : public Credentials
+class GSSAcceptorContext : public Credentials
 {
 public:
     struct Params
@@ -56,8 +58,8 @@ private:
     String realm;
 
 #if USE_KRB5
-    gss_ctx_id_t context_handle = GSS_C_NO_CONTEXT;
-    gss_cred_id_t acceptor_credentials_handle = GSS_C_NO_CREDENTIAL;
+    gss_ctx_id_t context_handle = nullptr;
+    gss_cred_id_t acceptor_credentials_handle = nullptr;
 #endif
 };
 

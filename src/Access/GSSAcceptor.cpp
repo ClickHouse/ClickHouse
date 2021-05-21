@@ -1,3 +1,6 @@
+#include <gssapi/gssapi.h>
+#include <gssapi/gssapi_ext.h>
+
 #include <Access/GSSAcceptor.h>
 #include <Common/Exception.h>
 #include <ext/scope_guard.h>
