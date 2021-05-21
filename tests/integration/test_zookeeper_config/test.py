@@ -162,12 +162,12 @@ def test_secure_connection():
     node1 = cluster.add_instance('node1', main_configs=["configs_secure/client.crt", "configs_secure/client.key",
                                                         "configs_secure/conf.d/remote_servers.xml",
                                                         "configs_secure/conf.d/ssl_conf.xml"],
-                                 with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name,
+                                 with_zookeeper=True, with_keeper=False, zookeeper_docker_compose_path=docker_compose.name,
                                  )
     node2 = cluster.add_instance('node2', main_configs=["configs_secure/client.crt", "configs_secure/client.key",
                                                         "configs_secure/conf.d/remote_servers.xml",
                                                         "configs_secure/conf.d/ssl_conf.xml"],
-                                 with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name,
+                                 with_zookeeper=True, with_keeper=False, zookeeper_docker_compose_path=docker_compose.name,
                                  )
 
     try:

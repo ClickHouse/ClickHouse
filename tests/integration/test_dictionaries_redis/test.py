@@ -1,5 +1,5 @@
 import os
-
+import shutil
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
@@ -95,8 +95,9 @@ def setup_module(module):
 
     cluster = ClickHouseCluster(__file__)
 
-    for f in os.listdir(dict_configs_path):
-        os.remove(os.path.join(dict_configs_path, f))
+    if os.path.exists(dict_configs_path):
+        shutil.rmtree(dict_configs_path)
+    os.mkdir(dict_configs_path)
 
     for i, field in enumerate(FIELDS):
         DICTIONARIES.append([])
