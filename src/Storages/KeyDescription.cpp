@@ -87,7 +87,7 @@ KeyDescription KeyDescription::getKeyFromAST(
     return getSortingKeyFromAST(definition_ast, columns, context, {});
 }
 
-static void moduloToModuloLegacyRecursive(ASTPtr node_expr)
+void KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 {
     if (!node_expr)
         return;

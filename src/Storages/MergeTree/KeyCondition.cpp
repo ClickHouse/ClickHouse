@@ -21,6 +21,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Storages/KeyDescription.h>
 
 #include <cassert>
 #include <stack>
@@ -591,7 +592,6 @@ void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & 
     rpn.emplace_back(std::move(element));
 }
 
-
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const ASTPtr & node,
     size_t & out_key_column_num,
@@ -599,8 +599,11 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
+    auto adjusted_node = node->clone();
+    KeyDescription::moduloToModuloLegacyRecursive(adjusted_node);
+
     // Constant expr should use alias names if any
-    String expr_name = node->getColumnName();
+    String expr_name = adjusted_node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -667,8 +670,11 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
+    auto adjusted_ast = ast->clone();
+    KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+
     // Constant expr should use alias names if any
-    String expr_name = ast->getColumnName();
+    String expr_name = adjusted_ast->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
