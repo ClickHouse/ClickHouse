@@ -6,22 +6,57 @@
 #include <common/types.h>
 #include <ext/bit_cast.h>
 
+
 namespace DB
 {
+
+/** `bfloat16` is a 16-bit floating point data type that is the same as the corresponding most significant 16 bits of the `float`.
+  * https://en.wikipedia.org/wiki/Bfloat16_floating-point_format
+  *
+  * To calculate quantile, simply convert input value to 16 bit (convert to float, then take the most significant 16 bits),
+  * and calculate the histogram of these values.
+  *
+  * Hash table is the preferred way to store histogram, because the number of distinct values is small:
+  * ```
+  * SELECT uniq(bfloat)
+  * FROM
+  * (
+  *     SELECT
+  *         number,
+  *         toFloat32(number) AS f,
+  *         bitShiftRight(bitAnd(reinterpretAsUInt32(reinterpretAsFixedString(f)), 4294901760) AS cut, 16),
+  *         reinterpretAsFloat32(reinterpretAsFixedString(cut)) AS bfloat
+  *     FROM numbers(100000000)
+  * )
+  *
+  * ┌─uniq(bfloat)─┐
+  * │         2623 │
+  * └──────────────┘
+  * ```
+  * (when increasing the range of values 1000 times, the number of distinct bfloat16 values increases just by 1280).
+  *
+  * Then calculate quantile from the histogram.
+  *
+  * This sketch is very simple and rough. Its relative precision is constant 1 / 256 = 0.390625%.
+  */
 template <typename Value>
 struct QuantileBFloat16Histogram
 {
-    using bfloat16 = UInt16;
+    using BFloat16 = UInt16;
     using Weight = UInt64;
-    using Data = HashMap<bfloat16, Weight>;
+    using Data = HashMapWithStackMemory<BFloat16, Weight, TrivialHash, 4>;
+
     Data data;
 
-    void add(const Value & x) { add(x, 1); }
+    void add(const Value & x)
+    {
+        add(x, 1);
+    }
 
     void add(const Value & x, Weight w)
     {
         if (!isNaN(x))
-            data[to_bfloat16(x)] += w;
+            data[toBFloat16(x)] += w;
     }
 
     void merge(const QuantileBFloat16Histogram & rhs)
@@ -30,18 +65,30 @@ struct QuantileBFloat16Histogram
             data[pair.getKey()] += pair.getMapped();
     }
 
-    void serialize(WriteBuffer & buf) const { data.write(buf); }
+    void serialize(WriteBuffer & buf) const
+    {
+        data.write(buf);
+    }
 
-    void deserialize(ReadBuffer & buf) { data.read(buf); }
+    void deserialize(ReadBuffer & buf)
+    {
+        data.read(buf);
+    }
 
-    Value get(Float64 level) const { return getImpl<Value>(level); }
+    Value get(Float64 level) const
+    {
+        return getImpl<Value>(level);
+    }
 
     void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) const
     {
         getManyImpl(levels, indices, size, result);
     }
 
-    Float64 getFloat(Float64 level) const { return getImpl<Float64>(level); }
+    Float64 getFloat(Float64 level) const
+    {
+        return getImpl<Float64>(level);
+    }
 
     void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result) const
     {
@@ -49,9 +96,17 @@ struct QuantileBFloat16Histogram
     }
 
 private:
-    bfloat16 to_bfloat16(const Value & x) const { return ext::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16; }
+    /// Take the most significant 16 bits of the floating point number.
+    BFloat16 toBFloat16(const Value & x) const
+    {
+        return ext::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
+    }
 
-    Float32 to_Float32(const bfloat16 & x) const { return ext::bit_cast<Float32>(x << 16); }
+    /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
+    Float32 toFloat32(const BFloat16 & x) const
+    {
+        return ext::bit_cast<Float32>(x << 16);
+    }
 
     using Pair = PairNoInit<Float32, Weight>;
 
@@ -71,7 +126,7 @@ private:
         for (const auto & pair : data)
         {
             sum_weight += pair.getMapped();
-            *arr_it = {to_Float32(pair.getKey()), pair.getMapped()};
+            *arr_it = {toFloat32(pair.getKey()), pair.getMapped()};
             ++arr_it;
         }
 
@@ -112,7 +167,7 @@ private:
         for (const auto & pair : data)
         {
             sum_weight += pair.getMapped();
-            *arr_it = {to_Float32(pair.getKey()), pair.getMapped()};
+            *arr_it = {toFloat32(pair.getKey()), pair.getMapped()};
             ++arr_it;
         }
 
