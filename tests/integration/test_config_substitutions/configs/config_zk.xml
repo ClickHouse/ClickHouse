@@ -10,5 +10,8 @@
           <profile>default</profile>
           <quota>default</quota>
       </default>
+
+      <include from_zk="/users_from_zk_1" />
+      <include from_zk="/users_from_zk_2" />
   </users>
 </yandex>

@@ -20,6 +20,8 @@ def start_cluster():
     try:
         def create_zk_roots(zk):
             zk.create(path="/setting/max_query_size", value=b"77777", makepath=True)
+            zk.create(path="/users_from_zk_1", value=b"<user_1><password></password><profile>default</profile></user_1>", makepath=True)
+            zk.create(path="/users_from_zk_2", value=b"<user_2><password></password><profile>default</profile></user_2>", makepath=True)
 
         cluster.add_zookeeper_startup_command(create_zk_roots)
 
@@ -35,6 +37,11 @@ def test_config(start_cluster):
     assert node3.query("select value from system.settings where name = 'max_query_size'") == "77777\n"
     assert node4.query("select value from system.settings where name = 'max_query_size'") == "99999\n"
     assert node6.query("select value from system.settings where name = 'max_query_size'") == "99999\n"
+
+
+def test_include_config(start_cluster):
+    assert node3.query("select 1", user="user_1")
+    assert node3.query("select 1", user="user_2")
 
 
 def test_allow_databases(start_cluster):
