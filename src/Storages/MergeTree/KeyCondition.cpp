@@ -602,10 +602,17 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     auto adjusted_node = node->clone();
     KeyDescription::moduloToModuloLegacyRecursive(adjusted_node);
 
+    String adjusted_expr_name = adjusted_node->getColumnName();
     // Constant expr should use alias names if any
-    String expr_name = adjusted_node->getColumnName();
+    String passed_expr_name = node->getColumnName();
+    String expr_name;
+
     const auto & sample_block = key_expr->getSampleBlock();
-    if (!sample_block.has(expr_name))
+    if (sample_block.has(passed_expr_name))
+        expr_name = passed_expr_name;
+    else if (sample_block.has(adjusted_expr_name))
+        expr_name = adjusted_expr_name;
+    else
         return false;
 
     /// TODO Nullable index is not yet landed.
@@ -673,10 +680,17 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     auto adjusted_ast = ast->clone();
     KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
 
+    String adjusted_expr_name = adjusted_ast->getColumnName();
     // Constant expr should use alias names if any
-    String expr_name = adjusted_ast->getColumnName();
+    String passed_expr_name = ast->getColumnName();
+    String expr_name;
+
     const auto & sample_block = key_expr->getSampleBlock();
-    if (!sample_block.has(expr_name))
+    if (sample_block.has(passed_expr_name))
+        expr_name = passed_expr_name;
+    else if (sample_block.has(adjusted_expr_name))
+        expr_name = adjusted_expr_name;
+    else
         return false;
 
     /// TODO Nullable index is not yet landed.

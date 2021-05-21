@@ -71,7 +71,7 @@ struct KeyDescription
     KeyDescription & operator=(const KeyDescription & other);
 
     /// Substitute modulo with moduloLegacy. Used in KeyCondition to allow proper comparison with keys.
-    static void moduloToModuloLegacyRecursive(ASTPtr node_expr);
+    static bool moduloToModuloLegacyRecursive(ASTPtr node_expr);
 };
 
 }
