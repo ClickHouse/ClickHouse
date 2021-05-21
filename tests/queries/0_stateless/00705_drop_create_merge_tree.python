@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+import os
+import sys
+import time
+import requests
+import multiprocessing
+from contextlib import closing
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
+
+CLICKHOUSE_DATABASE = os.environ['CLICKHOUSE_DATABASE']
+CLICKHOUSE_HOST = os.environ['CLICKHOUSE_HOST']
+CLICKHOUSE_PORT_HTTP = os.environ['CLICKHOUSE_PORT_HTTP']
+CLICKHOUSE_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in [CLICKHOUSE_HOST, CLICKHOUSE_PORT_HTTP]) + "/"
+
+queue = multiprocessing.Queue(1)
+
+def run_query(query, ignore_exception=False):
+    r = requests.post(
+                CLICKHOUSE_SERVER_URL_STR,
+                params = {},
+                timeout = 10,
+                data = query)
+
+    if r.status_code == 200:
+        return r.text
+
+    if r.status_code == 500:
+        if ignore_exception:
+            return r.text
+
+    raise ValueError(r.text)
+
+
+def run_thread(i):
+    while True:
+        run_query(f'CREATE TABLE IF NOT EXISTS {CLICKHOUSE_DATABASE}.table (x UInt8) ENGINE = MergeTree ORDER BY tuple()')
+        run_query(f'DROP TABLE {CLICKHOUSE_DATABASE}.table', ignore_exception=True)
+
+        if not queue.empty():
+            return
+
+
+def main():
+    num_threads = 10
+    timeout = 10
+
+    with closing(multiprocessing.Pool(processes=num_threads)) as p:
+        p.map_async(run_thread, range(num_threads))
+
+    time.sleep(timeout)
+    queue.put(None)
+    p.join()
+
+    run_query(f'DROP TABLE if exists {CLICKHOUSE_DATABASE}.table')
+
+if __name__ == "__main__":
+    main()
+    print('OK')
