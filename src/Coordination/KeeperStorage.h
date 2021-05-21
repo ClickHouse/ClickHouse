@@ -58,7 +58,13 @@ public:
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionIDs = std::vector<int64_t>;
 
+    /// Just vector of SHA1 from user:password
+    using AuthIDs = std::vector<std::string>;
+    using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
+    SessionAndAuth session_and_auth;
+
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
+
 
     Container container;
     Ephemerals ephemerals;
