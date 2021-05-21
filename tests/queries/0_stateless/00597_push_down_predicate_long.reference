@@ -5,7 +5,7 @@
 2000-01-01	1	test string 1	1
 -------Forbid push down-------
 SELECT count()
-FROM 
+FROM
 (
     SELECT
         [number] AS a,
@@ -21,11 +21,11 @@ WHERE NOT ignore(a + b)
 SELECT
     a,
     b
-FROM 
+FROM
 (
     SELECT 1 AS a
 )
-ANY LEFT JOIN 
+ANY LEFT JOIN
 (
     SELECT
         1 AS a,
@@ -35,13 +35,13 @@ WHERE b = 0
 SELECT
     a,
     b
-FROM 
+FROM
 (
     SELECT
         1 AS a,
         1 AS b
 )
-ANY RIGHT JOIN 
+ANY RIGHT JOIN
 (
     SELECT 1 AS a
 ) USING (a)
@@ -49,11 +49,11 @@ WHERE b = 0
 SELECT
     a,
     b
-FROM 
+FROM
 (
     SELECT 1 AS a
 )
-ANY FULL OUTER JOIN 
+ANY FULL OUTER JOIN
 (
     SELECT
         1 AS a,
@@ -63,26 +63,26 @@ WHERE b = 0
 SELECT
     a,
     b
-FROM 
+FROM
 (
     SELECT
         1 AS a,
         1 AS b
 )
-ANY FULL OUTER JOIN 
+ANY FULL OUTER JOIN
 (
     SELECT 1 AS a
 ) USING (a)
 WHERE b = 0
 -------Need push down-------
 SELECT toString(value) AS value
-FROM 
+FROM
 (
     SELECT 1 AS value
 )
 1
 SELECT id
-FROM 
+FROM
 (
     SELECT 1 AS id
     UNION ALL
@@ -92,7 +92,7 @@ FROM
 WHERE id = 1
 1
 SELECT id
-FROM 
+FROM
 (
     SELECT arrayJoin([1, 2, 3]) AS id
     WHERE id = 1
@@ -100,7 +100,7 @@ FROM
 WHERE id = 1
 1
 SELECT id
-FROM 
+FROM
 (
     SELECT arrayJoin([1, 2, 3]) AS id
     WHERE id = 1
@@ -110,7 +110,7 @@ WHERE id = 1
 SELECT
     id,
     subquery
-FROM 
+FROM
 (
     SELECT
         1 AS id,
@@ -122,7 +122,7 @@ WHERE subquery = 1
 SELECT
     a,
     b
-FROM 
+FROM
 (
     SELECT
         toUInt64(sum(id) AS b) AS a,
@@ -137,7 +137,7 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -156,7 +156,7 @@ WHERE id = 1
 SELECT
     a,
     b
-FROM 
+FROM
 (
     SELECT
         toUInt64(sum(id) AS b) AS a,
@@ -171,7 +171,7 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -188,14 +188,14 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
         id,
         name,
         value
-    FROM 
+    FROM
     (
         SELECT
             date,
@@ -214,14 +214,14 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
         id,
         name,
         value
-    FROM 
+    FROM
     (
         SELECT
             date,
@@ -240,7 +240,7 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -257,14 +257,14 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
         id,
         name,
         value
-    FROM 
+    FROM
     (
         SELECT
             date,
@@ -283,7 +283,7 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -300,14 +300,14 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
         id,
         name,
         value
-    FROM 
+    FROM
     (
         SELECT
             date,
@@ -325,7 +325,7 @@ SELECT
     id,
     date,
     value
-FROM 
+FROM
 (
     SELECT
         id,
@@ -344,7 +344,7 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -373,7 +373,7 @@ SELECT
     date,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -383,7 +383,7 @@ FROM
     FROM test_00597
     WHERE id = 1
 )
-ANY LEFT JOIN 
+ANY LEFT JOIN
 (
     SELECT id
     FROM test_00597
@@ -395,11 +395,11 @@ SELECT
     date,
     name,
     value
-FROM 
+FROM
 (
     SELECT toInt8(1) AS id
 )
-ANY LEFT JOIN 
+ANY LEFT JOIN
 (
     SELECT
         date,
@@ -411,7 +411,7 @@ ANY LEFT JOIN
 WHERE value = 1
 1	2000-01-01	test string 1	1
 SELECT value
-FROM 
+FROM
 (
     SELECT toInt8(1) AS id
 )
@@ -423,7 +423,7 @@ SELECT
     id,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -433,7 +433,7 @@ FROM
         date,
         name,
         value
-    FROM 
+    FROM
     (
         SELECT
             date,
@@ -443,7 +443,7 @@ FROM
         FROM test_00597
         WHERE id = 1
     )
-    ANY LEFT JOIN 
+    ANY LEFT JOIN
     (
         SELECT id
         FROM test_00597
@@ -460,7 +460,7 @@ SELECT
     b.date,
     b.name,
     b.value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -469,7 +469,7 @@ FROM
         value
     FROM test_00597
 )
-ANY LEFT JOIN 
+ANY LEFT JOIN
 (
     SELECT
         date,
@@ -485,7 +485,7 @@ SELECT
     date,
     name,
     value
-FROM 
+FROM
 (
     SELECT
         toInt8(1) AS id,
@@ -493,7 +493,7 @@ FROM
     FROM system.numbers
     LIMIT 1
 )
-ANY LEFT JOIN 
+ANY LEFT JOIN
 (
     SELECT
         date,
@@ -513,7 +513,7 @@ SELECT
     `b.id`,
     `b.name`,
     `b.value`
-FROM 
+FROM
 (
     SELECT
         date,
@@ -524,7 +524,7 @@ FROM
         b.id,
         b.name,
         b.value
-    FROM 
+    FROM
     (
         SELECT
             date,
@@ -534,7 +534,7 @@ FROM
         FROM test_00597
         WHERE id = 1
     ) AS a
-    ANY LEFT JOIN 
+    ANY LEFT JOIN
     (
         SELECT
             date,
@@ -555,7 +555,7 @@ SELECT
     r.date,
     r.name,
     r.value
-FROM 
+FROM
 (
     SELECT
         date,
@@ -564,14 +564,14 @@ FROM
         value
     FROM test_00597
 )
-SEMI LEFT JOIN 
+SEMI LEFT JOIN
 (
     SELECT
         date,
         id,
         name,
         value
-    FROM 
+    FROM
     (
         SELECT
             date,
@@ -586,7 +586,7 @@ SEMI LEFT JOIN
 WHERE r.id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 SELECT value + t1.value AS expr
-FROM 
+FROM
 (
     SELECT
         value,
