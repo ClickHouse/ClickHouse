@@ -1636,7 +1636,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 column_expr = column_default->expression->clone();
                 // recursive visit for alias to alias
                 replaceAliasColumnsInQuery(
-                    column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), context);
+                    column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->array_join_result_to_source, context);
 
                 column_expr = addTypeConversionToAST(
                     std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), context);

@@ -929,14 +929,15 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
-    setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
-                        result.analyzed_join->table_join);
+    setJoinStrictness(
+        *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join->table_join);
+
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     if (settings.optimize_respect_aliases && result.metadata_snapshot)
     {
-        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), getContext());
+        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
     }
 
     result.aggregates = getAggregates(query, *select_query);
