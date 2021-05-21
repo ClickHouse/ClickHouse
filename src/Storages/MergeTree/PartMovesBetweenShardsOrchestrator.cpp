@@ -246,7 +246,6 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
 
         case EntryState::DESTINATION_FETCH:
         {
-            /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
             /// Make sure table structure doesn't change when there are part movements in progress.
             {
                 Coordination::Requests ops;
@@ -259,7 +258,55 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 log_entry.new_part_name = entry.part_name;
                 log_entry.source_replica = storage.replica_name;
                 log_entry.source_shard = zookeeper_path;
-                log_entry.block_id = toString(entry.task_uuid);
+                ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                ops.emplace_back(zkutil::makeCreateRequest(
+                    entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+                Coordination::Responses responses;
+                Coordination::Error rc = zk->tryMulti(ops, responses);
+                zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+                log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+            }
+
+            {
+                /// State transition.
+                Entry entry_copy = entry;
+                entry_copy.state = EntryState::DESTINATION_ATTACH;
+                entry_copy.update_time = std::time(nullptr);
+                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            }
+        }
+        break;
+
+        case EntryState::DESTINATION_ATTACH:
+        {
+            /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
+            {
+                Coordination::Requests ops;
+                ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
+                auto part = storage.getActiveContainingPart(entry.part_name);
+                /// Allocating block number in other replicas zookeeper path
+                /// TODO Maybe we can do better.
+                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, "", entry.to_shard);
+                auto block_number = block_number_lock->getNumber();
+
+                auto part_info = part->info;
+                part_info.min_block = block_number;
+                part_info.max_block = block_number;
+                part_info.level = 0;
+                part_info.mutation = 0;
+
+                /// Attach log entry (all replicas already fetched part)
+                ReplicatedMergeTreeLogEntryData log_entry;
+                log_entry.type = ReplicatedMergeTreeLogEntryData::ATTACH_PART;
+                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+                log_entry.create_time = std::time(nullptr);
+                log_entry.new_part_name = part_info.getPartName();
                 ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
                 ops.emplace_back(zkutil::makeCreateRequest(
                     entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
