@@ -42,7 +42,7 @@ public:
         return type.createColumnConst(input_rows_count, type.getDefault());
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const override
+    ColumnPtr getConstantResultForArguments(const ColumnsWithTypeAndName & arguments) const override
     {
         const IDataType & type = *arguments[0].type;
         return type.createColumnConst(1, type.getDefault());

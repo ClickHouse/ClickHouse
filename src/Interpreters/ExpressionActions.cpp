@@ -55,6 +55,15 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
         actions_dag->compileExpressions(settings.min_count_to_compile_expression);
 #endif
 
+    std::cerr << "ExpressionActions::ExpressionActions " << this << std::endl;
+    std::cerr << actions_dag->dumpDAG() << std::endl;
+
+    auto actions_required_columns = actions_dag->getRequiredColumns();
+    for (auto & required_column : actions_required_columns)
+    {
+        std::cerr << "Required column " << required_column.name << " type " << required_column.type->getName() << std::endl;
+    }
+
     linearizeActions();
 
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
@@ -440,6 +449,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
 void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
 {
+    std::cerr << "ExpressionActions::execute " << this << std::endl;
+
     ExecutionContext execution_context
     {
         .inputs = block.data,

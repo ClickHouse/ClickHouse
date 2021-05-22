@@ -160,7 +160,7 @@ public:
       * There is no need to implement function if it has zero arguments.
       * Must return ColumnConst with single row or nullptr.
       */
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/) const { return nullptr; }
+    virtual ColumnPtr getConstantResultForArguments(const ColumnsWithTypeAndName & /* columns */ ) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
@@ -377,7 +377,7 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getConstantResultForArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
