@@ -209,10 +209,10 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 StorageFile::StorageFile(CommonArguments args)
     : IStorage(args.table_id)
     , format_name(args.format_name)
+    , format_header(args.format_header)
     , format_settings(args.format_settings)
     , compression_method(args.compression_method)
     , base_path(args.getContext()->getPath())
-    , skip_prefix_reading(args.skip_prefix_reading)
 {
     StorageInMemoryMetadata storage_metadata;
     if (args.format_name != "Distributed")
@@ -279,6 +279,7 @@ public:
 
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
+        std::optional<IInputFormatHeader> format_header_,
         const StorageMetadataPtr & metadata_snapshot_,
         ContextPtr context_,
         UInt64 max_block_size_,
@@ -286,6 +287,7 @@ public:
         ColumnsDescription columns_description_)
         : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, files_info_))
         , storage(std::move(storage_))
+        , format_header(format_header_)
         , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))
         , columns_description(std::move(columns_description_))
@@ -319,6 +321,17 @@ public:
             if (!shared_lock)
                 throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
         }
+    }
+
+    StorageFileSource(
+        std::shared_ptr<StorageFile> storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const Context & context_,
+        UInt64 max_block_size_,
+        FilesInfoPtr files_info_,
+        ColumnsDescription columns_description_)
+        : StorageFileSource(storage_, std::nullopt, metadata_snapshot_, context_, max_block_size_, files_info_, columns_description_)
+    {
     }
 
     String getName() const override
@@ -374,14 +387,24 @@ public:
 
                 auto format = FormatFactory::instance().getInput(
                     storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
+                
+                InputFormatPtr format;
+                if (format_header)
+                {
+                    format = FormatFactory::instance().getInput(
+                    storage->format_name, *read_buf, *format_header, context, max_block_size, storage->format_settings);
+                } else
+                {
+                    format = FormatFactory::instance().getInput(
+                    storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size, storage->format_settings);
+                }
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
                 if (columns_description.hasDefaults())
                     reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
 
-                if (!storage->skip_prefix_reading)
-                    reader->readPrefix();
+                reader->readPrefix();
             }
 
             if (auto res = reader->read())
@@ -423,6 +446,7 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
+    std::optional<IInputFormatHeader> format_header;
     StorageMetadataPtr metadata_snapshot;
     FilesInfoPtr files_info;
     String current_path;
@@ -688,20 +712,8 @@ void registerStorageFile(StorageFactory & factory)
                 {},
                 factory_args.columns,
                 factory_args.constraints,
-                factory_args.comment,
-                skip_prefix_reading = false
+                factory_args.comment
             };
-            struct CommonArguments
-    {
-        StorageID table_id;
-        std::string format_name;
-        std::optional<FormatSettings> format_settings;
-        std::string compression_method;
-        ColumnsDescription & columns;
-        const ConstraintsDescription & constraints;
-        const Context & context;
-        bool skip_prefix_reading;
-    };
 
             ASTs & engine_args_ast = factory_args.engine_args;
 
@@ -799,31 +811,28 @@ void registerStorageFile(StorageFactory & factory)
                     method = chooseCompressionMethod("", storage_args.compression_method);
                 }
                 else
-                    throw Exception("Schema inference from files has not been implemented yet, \
-                                     plase use stdandard file descriptors", 
-                                    ErrorCodes::NOT_IMPLEMENTED);
+                {
+                    auto paths = StorageFile::getPathsList(source_path, factory_args.context.getUserFilesPath(), storage_args.context);
+                    String first_path = paths[0];
+                    nested_buffer = std::make_unique<ReadBufferFromFile>(first_path);
+                    method = chooseCompressionMethod(first_path, storage_args.compression_method);
+                }
                 // TODO: think how to use read buffer creation from StorageFile here.
 
                 auto read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
                 
                 FormatFactory & format_factory = FormatFactory::instance();
-                if (!format_factory.checkIfInputFormatSupportsSchemaInference(storage_args.format_name))
+                if (!format_factory.checkIfInputFormatSupportsFormatHeader(storage_args.format_name))
                     throw Exception("InputFormat " + storage_args.format_name + " doesn't support schema inference", 
                                     ErrorCodes::LOGICAL_ERROR);
 
-                auto format = format_factory.getInput(
-                    storage_args.format_name, *read_buf, Block{}, storage_args.context, 0, storage_args.format_settings);
+                auto format_header = format_factory.getInputFormatHeader(
+                    storage_args.format_name, *read_buf, storage_args.context, 0, storage_args.format_settings);
 
-                Block sample_block = format->readSchemaFromPrefix();
-                StorageFile::CommonArguments new_storage_args{
-                    .table_id = storage_args.table_id,
-                    .columns = ColumnsDescription(sample_block.getNamesAndTypesList()),
-                    .constraints = storage_args.constraints,
-                    .context = storage_args.context,
-                    .skip_prefix_reading = true
-                };
-                // storage_args = new_storage_args;
-                // TODO: come up with some ideas how to change columns field.
+                format_header->readPrefix();
+                Block sample_block = format_header->getHeader();
+                storage_args.columns = ColumnsDescription(sample_block.getNamesAndTypesList());
+                storage_args.format_header.emplace(*format_header);
             }
 
             if (use_table_fd) /// File descriptor

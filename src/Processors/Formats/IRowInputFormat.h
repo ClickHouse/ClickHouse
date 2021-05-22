@@ -3,6 +3,7 @@
 #include <string>
 #include <Columns/IColumn.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IInputFormatHeader.h>
 #include <DataStreams/SizeLimits.h>
 #include <Poco/Timespan.h>
 #include <Common/Stopwatch.h>

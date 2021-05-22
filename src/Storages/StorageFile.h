@@ -1,6 +1,11 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Processors/Formats/IInputFormatHeader.h>
+
+#include <Poco/File.h>
+#include <Poco/Path.h>
+
 #include <common/logger_useful.h>
 
 #include <atomic>
@@ -49,13 +54,13 @@ public:
     {
         StorageID table_id;
         std::string format_name;
+        std::optional<IInputFormatHeader> format_header;
         std::optional<FormatSettings> format_settings;
         std::string compression_method;
-        const ColumnsDescription & columns;
+        ColumnsDescription columns;
         const ConstraintsDescription & constraints;
         const String & comment;
         const Context & context;
-        bool skip_prefix_reading;
     };
 
     NamesAndTypesList getVirtuals() const override;
@@ -85,6 +90,7 @@ private:
     explicit StorageFile(CommonArguments args);
 
     std::string format_name;
+    std::optional<IInputFormatHeader> format_header;
     // We use format settings from global context + CREATE query for File table
     // function -- in this case, format_settings is set.
     // For `file` table function, we use format settings from current user context,
@@ -97,7 +103,6 @@ private:
     std::string base_path;
     std::vector<std::string> paths;
 
-    bool skip_prefix_reading = false;
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
     bool use_table_fd = false;                    /// Use table_fd instead of path
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
