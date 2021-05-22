@@ -8,6 +8,8 @@
 #include <sstream>
 #include <iomanip>
 #include <Poco/SHA1Engine.h>
+#include <Poco/Base64Encoder.h>
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -32,6 +34,17 @@ static std::string getBaseName(const String & path)
     return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
 }
 
+static String base64Encode(const String & decoded)
+{
+    std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ostr.exceptions(std::ios::failbit);
+    Poco::Base64Encoder encoder(ostr);
+    encoder.rdbuf()->setLineLength(0);
+    encoder << decoded;
+    encoder.close();
+    return ostr.str();
+}
+
 static String getSHA1(const String & userdata)
 {
     Poco::SHA1Engine engine;
@@ -40,18 +53,32 @@ static String getSHA1(const String & userdata)
     return String{digest_id.begin(), digest_id.end()};
 }
 
-static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<String> & session_auths)
+static String generateDigest(const String & userdata)
+{
+    std::vector<String> user_password;
+    boost::split(user_password, userdata, [](char c) { return c == ':'; });
+    return user_password[0] + base64Encode(getSHA1(user_password[1]));
+}
+
+static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
 {
     if (node_acls.empty())
         return true;
 
-    for (size_t i = 0; i < node_acls.size(); ++i)
-    {
-        if (!(node_acls[i].permissions & permission))
+    for (const auto & session_auth :  session_auths)
+        if (session_auth.scheme == "super")
             return true;
 
-        if (node_acls[i].id == session_auths[i])
-            return true;
+    for (size_t i = 0; i < node_acls.size(); ++i)
+    {
+        if (node_acls[i].permissions & permission)
+        {
+            if (node_acls[i].scheme == "world" && node_acls[i].id == "anyone")
+                return true;
+
+            if (node_acls[i].scheme == session_auths[i].scheme && node_acls[i].id == session_auths[i].id)
+                return true;
+        }
     }
 
     return false;
@@ -91,6 +118,34 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
         list_watches.erase(it);
     }
     return result;
+}
+
+static bool fixupACL(
+    const std::vector<Coordination::ACL> & request_acls,
+    const std::vector<KeeperStorage::AuthID> & current_ids,
+    std::vector<Coordination::ACL> & result_acls)
+{
+    if (request_acls.empty())
+        return false;
+
+    for (const auto & request_acl : request_acls)
+    {
+        if (request_acl.scheme == "world" && request_acl.id == "anyone")
+        {
+            result_acls.push_back(request_acl);
+        }
+        else if (request_acl.scheme == "auth")
+        {
+            for (const auto & current_id : current_ids)
+            {
+                Coordination::ACL new_acl = request_acl;
+                new_acl.scheme = current_id.scheme;
+                new_acl.id = current_id.id;
+                result_acls.push_back(new_acl);
+            }
+        }
+    }
+    return !result_acls.empty();
 }
 
 KeeperStorage::KeeperStorage(int64_t tick_time_ms)
@@ -193,31 +248,15 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
             else
             {
                 auto & session_auth_ids = storage.session_and_auth[session_id];
-                for (size_t i = 0; i < request.acls.size(); ++i)
-                {
-                    if (request.acls[i].id.empty())
-                    {
-                        if (!session_auth_ids[i].empty())
-                            request.acls[i].id = session_auth_ids[i];
-                    }
-                    else
-                    {
-                        auto request_sha = getSHA1(request.acls[i].id);
-                        if (session_auth_ids[i] != request_sha) /// User specified strange user:password in request
-                        {
-                            /// User specified strange user:password in request
-                            response.error = Coordination::Error::ZAUTHFAILED;
-                            return { response_ptr, {} };
-                        }
-                        else
-                        {
-                            request.acls[i].id = request_sha;
-                            break;
-                        }
-                    }
-                }
 
                 KeeperStorage::Node created_node;
+
+                if (!fixupACL(request.acls, session_auth_ids, created_node.acls))
+                {
+                    response.error = Coordination::Error::ZINVALIDACL;
+                    return {response_ptr, {}};
+                }
+
                 created_node.stat.czxid = zxid;
                 created_node.stat.mzxid = zxid;
                 created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
@@ -227,7 +266,6 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 created_node.stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
                 created_node.data = request.data;
                 created_node.is_sequental = request.is_sequential;
-                created_node.acls = request.acls;
 
                 std::string path_created = request.path;
 
@@ -722,18 +760,35 @@ struct KeeperStorageAuthRequest final : public KeeperStorageRequest
         Coordination::ZooKeeperAuthRequest & auth_request = dynamic_cast<Coordination::ZooKeeperAuthRequest &>(*zk_request);
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperAuthResponse & auth_response =  dynamic_cast<Coordination::ZooKeeperAuthResponse &>(*response_ptr);
+        auto & sessions_and_auth = storage.session_and_auth;
 
-        if (auth_request.scheme != "digest")
+        if (auth_request.scheme == "super")
+        {
+            if (generateDigest(auth_request.data) == storage.superdigest)
+            {
+                KeeperStorage::AuthID auth{"super", ""};
+                sessions_and_auth[session_id].emplace_back(auth);
+            }
+            else
+            {
+                auth_response.error = Coordination::Error::ZAUTHFAILED;
+            }
+        }
+        else if (auth_request.scheme == "world" && auth_request.data == "anyone")
+        {
+            KeeperStorage::AuthID auth{"world", "anyone"};
+            sessions_and_auth[session_id].emplace_back(auth);
+        }
+        else if (auth_request.scheme != "digest")
         {
             auth_response.error = Coordination::Error::ZAUTHFAILED;
         }
         else
         {
-            auto & sessions_and_auth = storage.session_and_auth;
-            std::string id = getSHA1(auth_request.data);
+            KeeperStorage::AuthID auth{auth_request.scheme, generateDigest(auth_request.data)};
             auto & session_ids = sessions_and_auth[session_id];
-            if (std::find(session_ids.begin(), session_ids.end(), id) == session_ids.end())
-                sessions_and_auth[session_id].emplace_back(id);
+            if (std::find(session_ids.begin(), session_ids.end(), auth) == session_ids.end())
+                sessions_and_auth[session_id].emplace_back(auth);
         }
 
         return { response_ptr, {} };

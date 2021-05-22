@@ -51,6 +51,17 @@ public:
         Coordination::ZooKeeperRequestPtr request;
     };
 
+    struct AuthID
+    {
+        std::string scheme;
+        std::string id;
+
+        bool operator==(const AuthID & other) const
+        {
+            return scheme == other.scheme && id == other.id;
+        }
+    };
+
     using RequestsForSessions = std::vector<RequestForSession>;
 
     using Container = SnapshotableHashTable<Node>;
@@ -59,12 +70,11 @@ public:
     using SessionIDs = std::vector<int64_t>;
 
     /// Just vector of SHA1 from user:password
-    using AuthIDs = std::vector<std::string>;
+    using AuthIDs = std::vector<AuthID>;
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     SessionAndAuth session_and_auth;
 
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
-
 
     Container container;
     Ephemerals ephemerals;
@@ -84,6 +94,8 @@ public:
     {
         return zxid;
     }
+
+    const String superdigest;
 
 public:
     KeeperStorage(int64_t tick_time_ms);
