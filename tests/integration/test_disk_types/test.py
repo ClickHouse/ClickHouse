@@ -5,6 +5,7 @@ disk_types = {
     "default": "local",
     "disk_s3": "s3",
     "disk_memory": "memory",
+    "disk_encrypted": "encrypted",
 }
 
 
