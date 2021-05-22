@@ -236,6 +236,60 @@ void AsynchronousMetrics::update()
     }
 #endif
 
+    /// Process memory information according to OS 
+#if defined(OS_LINUX)
+    {
+        MemoryInfoOS::Data data = memory_info.get();
+
+        new_values["MemoryTotal"] = data.total;
+        new_values["MemoryFree"] = data.free;
+        new_values["MemoryBuffers"] = data.buffers;
+        new_values["MemoryCached"] = data.cached;
+        new_values["MemoryFreeAndCached"] = data.free_and_cached;
+        new_values["MemorySwapTotal"] = data.swap_total;
+        new_values["MemorySwapFree"] = data.swap_free;
+        new_values["MemorySwapCached"] = data.swap_cached;
+    }
+#endif
+
+    /// Process processor usage according to OS 
+#if defined(OS_LINUX)
+    {
+        ProcessorStatisticsOS::Data data = proc_stat.get();
+
+        new_values["LoadAvg1"] = data.loadavg.avg1;
+        new_values["LoadAvg5"] = data.loadavg.avg5;
+        new_values["LoadAvg15"] = data.loadavg.avg15;
+
+        new_values["FreqMin"] = data.freq.min;
+        new_values["FreqMax"] = data.freq.max;
+        new_values["FreqAvg"] = data.freq.avg;
+
+        new_values["TimeLoadUser"] = data.stload.user_time;
+        new_values["TimeLoadNice"] = data.stload.nice_time;
+        new_values["TimeLoadSystem"] = data.stload.system_time;
+        new_values["TimeLoadIDLE"] = data.stload.idle_time;
+        new_values["TimeLoadIowait"] = data.stload.iowait_time;
+        new_values["TimeLoadSteal"] = data.stload.steal_time;
+        new_values["TimeLoadGuest"] = data.stload.guest_time;
+        new_values["TimeLoadGuestNice"] = data.stload.guest_nice_time;
+
+        new_values["Processess"] = data.stload.processes;
+        new_values["ProcessesRunning"] = data.stload.procs_running;
+        new_values["ProcessesBlocked"] = data.stload.procs_blocked;
+    }
+#endif
+
+    /// Process disk usage according to OS 
+#if defined(OS_LINUX)
+    {
+        DiskStatisticsOS::Data data = disk_stat.get();
+
+        new_values["DiskTotal"] = data.total;
+        new_values["DiskUsed"] = data.used;
+    }
+#endif
+
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
 
