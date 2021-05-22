@@ -11,11 +11,10 @@
 namespace DB 
 {
 
-/** Opens files: /proc/loadavg, /proc/stat, /proc/cpuinfo. Keeps it open and reads processor statistics.
+/** Opens files: /proc/loadavg, /proc/stat, /proc/cpuinfo and reads processor statistics in get() method.
   * This is Linux specific.
   * See: man procfs
   */
-   
 class ProcessorStatisticsOS 
 {
 public:
@@ -78,10 +77,6 @@ private:
     void readProcTimeAndProcesses(ProcTime & proc_time, ProcStLoad& stload);
 
 private:
-    ReadBufferFromFile loadavg_in;
-    ReadBufferFromFile procst_in;
-    ReadBufferFromFile cpuinfo_in;
-
     std::time_t last_stload_call_time;
     ProcTime last_proc_time;
 };

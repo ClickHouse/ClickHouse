@@ -12,11 +12,10 @@
 namespace DB 
 {
 
-/** Opens file /proc/meminfo. Keeps it open and reads statistics about memory usage.
+/** Opens file /proc/meminfo and reads statistics about memory usage.
   * This is Linux specific.
   * See: man procfs
   */
-
 class MemoryInfoOS 
 {
 public:
@@ -39,9 +38,7 @@ public:
     Data get();
 
 private:
-    ReadBufferFromFile meminfo_in;
-    
-    std::pair<String, uint64_t> readField();
+    std::pair<String, uint64_t> readField(ReadBuffer& meminfo_in);
 };
 
 }

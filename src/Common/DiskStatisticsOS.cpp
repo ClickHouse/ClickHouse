@@ -17,31 +17,32 @@ namespace ErrorCodes
     extern const int CANNOT_STATVFS;
 }
 
+namespace 
+{
+    void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
+    {
+        readStringUntilWhitespace(s, buf);
+        skipWhitespaceIfAny(buf);
+    }
+}
+
 static constexpr auto mounts_filename = "/proc/mounts";
 
 static constexpr std::size_t READ_BUFFER_BUF_SIZE = (64 << 10);
 
-void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf) 
-{
-    readStringUntilWhitespace(s, buf);
-    skipWhitespaceIfAny(buf);
-}
-
-DiskStatisticsOS::DiskStatisticsOS()
-    : mounts_in(mounts_filename, READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC)
-{}
+DiskStatisticsOS::DiskStatisticsOS() {}
 
 DiskStatisticsOS::~DiskStatisticsOS() {}
 
 DiskStatisticsOS::Data DiskStatisticsOS::get() 
 {
-    mounts_in.seek(0, SEEK_SET);
+    ReadBufferFromFile mounts_in(mounts_filename, READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC);
 
     DiskStatisticsOS::Data data = {0, 0};
 
     while (!mounts_in.eof()) 
     {
-        String filesystem = readNextFilesystem();
+        String filesystem = readNextFilesystem(mounts_in);
         
         struct statvfs stat;
 
@@ -60,7 +61,7 @@ DiskStatisticsOS::Data DiskStatisticsOS::get()
     return data;
 }
 
-String DiskStatisticsOS::readNextFilesystem() 
+String DiskStatisticsOS::readNextFilesystem(ReadBuffer& mounts_in) 
 {   
     String filesystem, unused;
 
