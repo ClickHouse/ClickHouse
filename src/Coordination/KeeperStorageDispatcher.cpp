@@ -320,6 +320,8 @@ void KeeperStorageDispatcher::shutdown()
                 break;
             }
         }
+
+        std::lock_guard lock(session_to_response_callback_mutex);
         session_to_response_callback.clear();
     }
     catch (...)
