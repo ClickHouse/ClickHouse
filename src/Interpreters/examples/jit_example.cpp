@@ -38,7 +38,7 @@ int main(int argc, char **argv)
 
     //     b.CreateCall(func_declaration);
 
-    //     auto * load_argument = b.CreateLoad(argument);
+    //     auto * load_argument = b.CreateLoad(value_type, argument);
     //     auto * value = b.CreateAdd(load_argument, load_argument);
     //     b.CreateRet(value);
     // });
