@@ -1,4 +1,5 @@
 <yandex>
+    <shutdown_wait_unfinished>3</shutdown_wait_unfinished>
     <logger>
         <level>trace</level>
         <log>/var/log/clickhouse-server/log.log</log>

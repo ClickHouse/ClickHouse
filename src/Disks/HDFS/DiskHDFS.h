@@ -47,7 +47,7 @@ public:
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 
-    void removeFromRemoteFS(const RemoteFSPathKeeper & remote_paths_keeper) override;
+    void removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper) override;
 
 private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }
