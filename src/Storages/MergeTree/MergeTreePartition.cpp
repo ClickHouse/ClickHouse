@@ -129,27 +129,18 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
     auto partition_file_path = part_path + "partition.dat";
     auto file = openForReading(disk, partition_file_path);
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
-    {
-        if (partition_key_sample.getByPosition(i).name.starts_with("modulo"))
-        {
-            SerializationNumber<UInt8>().deserializeBinary(value[i], *file);
-        }
-        else
-        {
-            partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
-        }
-    }
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
 }
 
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
     store(partition_key_sample, disk, part_path, checksums);
 }
 

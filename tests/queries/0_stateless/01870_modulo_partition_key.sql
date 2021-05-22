@@ -32,6 +32,8 @@ INSERT INTO table3 SELECT number-205, number FROM numbers(400, 10);
 SELECT partition as p FROM system.parts WHERE table='table3' ORDER BY p;
 DETACH TABLE table3;
 ATTACH TABLE table3;
+SELECT 'After detach:';
+SELECT partition as p FROM system.parts WHERE table='table3' ORDER BY p;
 
 SELECT 'comparison:';
 SELECT v, v-205 as vv, modulo(vv, 200), moduloLegacy(vv, 200) FROM table1 ORDER BY v;
