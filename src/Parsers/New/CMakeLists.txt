@@ -79,7 +79,7 @@ if (HAS_SHADOW)
     )
 endif ()
 
-target_link_libraries (clickhouse_parsers_new PUBLIC antlr4-runtime clickhouse_common_io)
+target_link_libraries (clickhouse_parsers_new PUBLIC antlr4-runtime dbms clickhouse_common_io)
 
 # ANTLR generates u8 string literals, which are incompatible with |std::string| in C++20.
 # See https://github.com/antlr/antlr4/issues/2683
