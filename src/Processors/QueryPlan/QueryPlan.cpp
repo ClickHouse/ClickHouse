@@ -142,7 +142,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
 
     struct Frame
     {
-        Node * node;
+        Node * node = {};
         QueryPipelines pipelines = {};
     };
 
@@ -158,7 +158,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
         if (last_pipeline)
         {
             frame.pipelines.emplace_back(std::move(last_pipeline));
-            last_pipeline = nullptr;
+            last_pipeline = nullptr; //-V1048
         }
 
         size_t next_child = frame.pipelines.size();
@@ -242,7 +242,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
 
     struct Frame
     {
-        Node * node;
+        Node * node = {};
         size_t next_child = 0;
         std::unique_ptr<JSONBuilder::JSONMap> node_map = {};
         std::unique_ptr<JSONBuilder::JSONArray> children_array = {};
@@ -352,7 +352,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
     struct Frame
     {
-        Node * node;
+        Node * node = {};
         bool is_description_printed = false;
         size_t next_child = 0;
     };
@@ -398,7 +398,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
     struct Frame
     {
-        Node * node;
+        Node * node = {};
         size_t offset = 0;
         bool is_description_printed = false;
         size_t next_child = 0;

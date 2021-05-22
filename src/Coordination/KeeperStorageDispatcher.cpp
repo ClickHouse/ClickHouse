@@ -109,7 +109,7 @@ void KeeperStorageDispatcher::requestThread()
                     }
                     else
                     {
-                        addErrorResponses(current_batch, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                        addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
                         current_batch.clear();
                     }
 
@@ -123,7 +123,7 @@ void KeeperStorageDispatcher::requestThread()
                     if (server->isLeaderAlive())
                         server->putLocalReadRequest(request);
                     else
-                        addErrorResponses({request}, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                        addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                 }
             }
         }
@@ -234,7 +234,7 @@ bool KeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     return true;
 }
 
-void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
+void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
     int myid = config.getInt("keeper_server.server_id");
@@ -246,7 +246,8 @@ void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(myid, coordination_settings, config, responses_queue, snapshots_queue);
+    server = std::make_unique<KeeperServer>(
+        myid, coordination_settings, config, responses_queue, snapshots_queue, standalone_keeper);
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
@@ -405,7 +406,7 @@ void KeeperStorageDispatcher::forceWaitAndProcessResult(RaftAppendResult & resul
     if (!result->get_accepted() || result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
         addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
     else if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
 
     result = nullptr;
     requests_for_sessions.clear();

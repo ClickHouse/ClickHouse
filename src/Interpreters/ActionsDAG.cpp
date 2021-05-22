@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
@@ -292,6 +293,17 @@ NamesAndTypesList ActionsDAG::getRequiredColumns() const
     return result;
 }
 
+Names ActionsDAG::getRequiredColumnsNames() const
+{
+    Names result;
+    result.reserve(inputs.size());
+
+    for (const auto & input : inputs)
+        result.emplace_back(input->result_name);
+
+    return result;
+}
+
 ColumnsWithTypeAndName ActionsDAG::getResultColumns() const
 {
     ColumnsWithTypeAndName result;
@@ -437,6 +449,257 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
     auto it = std::remove_if(inputs.begin(), inputs.end(), [&](const Node * node) { return visited_nodes.count(node) == 0; });
     inputs.erase(it, inputs.end());
+}
+
+static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments)
+{
+    ColumnWithTypeAndName res_column;
+    res_column.type = node->result_type;
+    res_column.name = node->result_name;
+
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            // bool all_args_are_const = true;
+
+            // for (const auto & argument : arguments)
+            //     if (typeid_cast<const ColumnConst *>(argument.column.get()) == nullptr)
+            //         all_args_are_const = false;
+
+            res_column.column = node->function->execute(arguments, res_column.type, 0, true);
+
+            // if (!all_args_are_const)
+            //     res_column.column = res_column.column->convertToFullColumnIfConst();
+
+            break;
+        }
+
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+        {
+            auto key = arguments.at(0);
+            key.column = key.column->convertToFullColumnIfConst();
+
+            const ColumnArray * array = typeid_cast<const ColumnArray *>(key.column.get());
+            if (!array)
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                                "ARRAY JOIN of not array: {}", node->result_name);
+
+            res_column.column = array->getDataPtr()->cloneEmpty();
+            break;
+        }
+
+        case ActionsDAG::ActionType::COLUMN:
+        {
+            res_column.column = node->column->cloneResized(0);
+            break;
+        }
+
+        case ActionsDAG::ActionType::ALIAS:
+        {
+            res_column.column = arguments.at(0).column;
+            break;
+        }
+
+        case ActionsDAG::ActionType::INPUT:
+        {
+            break;
+        }
+    }
+
+    return res_column;
+}
+
+Block ActionsDAG::updateHeader(Block header) const
+{
+    std::unordered_map<const Node *, ColumnWithTypeAndName> node_to_column;
+    std::set<size_t> pos_to_remove;
+
+    {
+        std::unordered_map<std::string_view, std::list<size_t>> input_positions;
+
+        for (size_t pos = 0; pos < inputs.size(); ++pos)
+            input_positions[inputs[pos]->result_name].emplace_back(pos);
+
+        for (size_t pos = 0; pos < header.columns(); ++pos)
+        {
+            const auto & col = header.getByPosition(pos);
+            auto it = input_positions.find(col.name);
+            if (it != input_positions.end() && !it->second.empty())
+            {
+                auto & list = it->second;
+                pos_to_remove.insert(pos);
+                node_to_column[inputs[list.front()]] = std::move(col);
+                list.pop_front();
+            }
+        }
+    }
+
+    ColumnsWithTypeAndName result_columns;
+    result_columns.reserve(index.size());
+
+    struct Frame
+    {
+        const Node * node;
+        size_t next_child = 0;
+    };
+
+    {
+        for (const auto * output : index)
+        {
+            if (node_to_column.count(output) == 0)
+            {
+                std::stack<Frame> stack;
+                stack.push({.node = output});
+
+                while (!stack.empty())
+                {
+                    auto & frame = stack.top();
+                    const auto * node = frame.node;
+
+                    while (frame.next_child < node->children.size())
+                    {
+                        const auto * child = node->children[frame.next_child];
+                        if (node_to_column.count(child) == 0)
+                        {
+                            stack.push({.node = child});
+                            break;
+                        }
+
+                        ++frame.next_child;
+                    }
+
+                    if (frame.next_child < node->children.size())
+                        continue;
+
+                    stack.pop();
+
+                    ColumnsWithTypeAndName arguments(node->children.size());
+                    for (size_t i = 0; i < arguments.size(); ++i)
+                    {
+                        arguments[i] = node_to_column[node->children[i]];
+                        if (!arguments[i].column)
+                            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                                            "Not found column {} in block", node->children[i]->result_name);
+                    }
+
+                    node_to_column[node] = executeActionForHeader(node, std::move(arguments));
+                }
+            }
+
+            auto & column = node_to_column[output];
+            if (column.column)
+                result_columns.push_back(node_to_column[output]);
+        }
+    }
+
+    if (isInputProjected())
+        header.clear();
+    else
+        header.erase(pos_to_remove);
+
+    Block res;
+
+    for (auto & col : result_columns)
+        res.insert(std::move(col));
+
+    for (const auto & item : header)
+        res.insert(std::move(item));
+
+    return res;
+}
+
+NameSet ActionsDAG::foldActionsByProjection(
+    const NameSet & required_columns, const Block & projection_block_for_keys, const String & predicate_column_name, bool add_missing_keys)
+{
+    std::unordered_set<const Node *> visited_nodes;
+    std::unordered_set<std::string_view> visited_index_names;
+    std::stack<Node *> stack;
+    std::vector<const ColumnWithTypeAndName *> missing_input_from_projection_keys;
+
+    for (const auto & node : index)
+    {
+        if (required_columns.find(node->result_name) != required_columns.end() || node->result_name == predicate_column_name)
+        {
+            visited_nodes.insert(node);
+            visited_index_names.insert(node->result_name);
+            stack.push(const_cast<Node *>(node));
+        }
+    }
+
+    if (add_missing_keys)
+    {
+        for (const auto & column : required_columns)
+        {
+            if (visited_index_names.find(column) == visited_index_names.end())
+            {
+                if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(column))
+                {
+                    const auto * node = &addInput(*column_with_type_name);
+                    visited_nodes.insert(node);
+                    index.push_back(node);
+                    visited_index_names.insert(column);
+                }
+                else
+                {
+                    // Missing column
+                    return {};
+                }
+            }
+        }
+    }
+
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(node->result_name))
+        {
+            if (node->type != ActionsDAG::ActionType::INPUT)
+            {
+                /// Projection folding.
+                node->type = ActionsDAG::ActionType::INPUT;
+                node->result_type = std::move(column_with_type_name->type);
+                node->result_name = std::move(column_with_type_name->name);
+                node->children.clear();
+                inputs.push_back(node);
+            }
+        }
+
+        for (const auto * child : node->children)
+        {
+            if (visited_nodes.count(child) == 0)
+            {
+                stack.push(const_cast<Node *>(child));
+                visited_nodes.insert(child);
+            }
+        }
+    }
+
+    std::erase_if(inputs, [&](const Node * node) { return visited_nodes.count(node) == 0; });
+    std::erase_if(index, [&](const Node * node) { return visited_index_names.count(node->result_name) == 0; });
+    nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
+
+    NameSet next_required_columns;
+    for (const auto & input : inputs)
+        next_required_columns.insert(input->result_name);
+
+    return next_required_columns;
+}
+
+void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
+{
+    std::sort(index.begin(), index.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
+    {
+        return key_names_pos_map.find(lhs->result_name)->second < key_names_pos_map.find(rhs->result_name)->second;
+    });
+}
+
+void ActionsDAG::addAggregatesViaProjection(const Block & aggregates)
+{
+    for (const auto & aggregate : aggregates)
+        index.push_back(&addInput(aggregate));
 }
 
 void ActionsDAG::addAliases(const NamesWithAliases & aliases)
@@ -681,8 +944,12 @@ std::string ActionsDAG::dumpDAG() const
         out << " " << (node.column ? node.column->getName() : "(no column)");
         out << " " << (node.result_type ? node.result_type->getName() : "(no type)");
         out << " " << (!node.result_name.empty() ? node.result_name : "(no name)");
+
         if (node.function_base)
             out << " [" << node.function_base->getName() << "]";
+
+        if (node.is_function_compiled)
+            out << " [compiled]";
 
         out << "\n";
     }
@@ -730,10 +997,8 @@ void ActionsDAG::addMaterializingOutputActions()
 
 const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
 {
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(
+                            std::make_shared<FunctionMaterialize>());
 
     const auto & name = node.result_name;
     const auto * func = &addFunction(func_builder_materialize, {&node}, {});
@@ -760,10 +1025,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     auto actions_dag = std::make_shared<ActionsDAG>(source);
     NodeRawConstPtrs projection(num_result_columns);
 
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     std::map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
@@ -790,11 +1052,19 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             {
                 auto & input = inputs[res_elem.name];
                 if (input.empty())
-                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
-                                    ErrorCodes::THERE_IS_NO_COLUMN);
-
-                src_node = dst_node = actions_dag->inputs[input.front()];
-                input.pop_front();
+                {
+                    const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get());
+                    if (ignore_constant_values && res_const)
+                        src_node = dst_node = &actions_dag->addColumn(res_elem);
+                    else
+                        throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
+                                        ErrorCodes::THERE_IS_NO_COLUMN);
+                }
+                else
+                {
+                    src_node = dst_node = actions_dag->inputs[input.front()];
+                    input.pop_front();
+                }
                 break;
             }
         }
@@ -829,9 +1099,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             const auto * left_arg = dst_node;
 
             FunctionCast::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
-            FunctionOverloadResolverPtr func_builder_cast =
-                    std::make_shared<FunctionOverloadResolverAdaptor>(
-                            CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic)));
+            FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {});
@@ -881,10 +1149,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 {
     auto adding_column_action = std::make_shared<ActionsDAG>();
-    FunctionOverloadResolverPtr func_builder_materialize =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionMaterialize>()));
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     auto column_name = column.name;
     const auto * column_node = &adding_column_action->addColumn(std::move(column));
@@ -1195,10 +1460,9 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
 {
-
     struct Frame
     {
-        const Node * node;
+        const Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 
@@ -1294,7 +1558,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         bool is_predicate = false;
         size_t next_child_to_visit = 0;
         size_t num_allowed_children = 0;
@@ -1400,17 +1664,14 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
 
     auto actions = std::make_shared<ActionsDAG>();
 
-    FunctionOverloadResolverPtr func_builder_and =
-            std::make_shared<FunctionOverloadResolverAdaptor>(
-                    std::make_unique<DefaultOverloadResolver>(
-                            std::make_shared<FunctionAnd>()));
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> nodes_mapping;
     std::unordered_map<std::string, std::list<const Node *>> required_inputs;
 
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 
@@ -1608,9 +1869,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 predicate->children = {left_arg, right_arg};
                 auto arguments = prepareFunctionArguments(predicate->children);
 
-                FunctionOverloadResolverPtr func_builder_cast =
-                        std::make_shared<FunctionOverloadResolverAdaptor>(
-                                CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
+                FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
 
                 predicate->function_builder = func_builder_cast;
                 predicate->function_base = predicate->function_builder->build(arguments);

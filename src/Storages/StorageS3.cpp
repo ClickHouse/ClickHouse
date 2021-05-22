@@ -36,6 +36,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -329,6 +330,7 @@ StorageS3::StorageS3(
     UInt64 max_connections_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_,
     const String & compression_method_,
     bool distributed_processing_)
@@ -346,6 +348,7 @@ StorageS3::StorageS3(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     updateClientAndAuthSettings(context_, client_auth);
 }
@@ -444,6 +447,7 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
     }
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
+        settings.region,
         ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
@@ -518,9 +522,9 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             max_connections,
             args.columns,
             args.constraints,
+            args.comment,
             args.getContext(),
-            compression_method
-        );
+            compression_method);
     },
     {
         .source_access_type = AccessType::S3,

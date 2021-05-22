@@ -419,31 +419,56 @@ TEST(Common, PODArrayBasicSwapMoveConstructor)
 
 TEST(Common, PODArrayInsert)
 {
-    std::string str = "test_string_abacaba";
-    PODArray<char> chars;
-    chars.insert(chars.end(), str.begin(), str.end());
-    EXPECT_EQ(str, std::string(chars.data(), chars.size()));
-
-    std::string insert_in_the_middle = "insert_in_the_middle";
-    auto pos = str.size() / 2;
-    str.insert(str.begin() + pos, insert_in_the_middle.begin(), insert_in_the_middle.end());
-    chars.insert(chars.begin() + pos, insert_in_the_middle.begin(), insert_in_the_middle.end());
-    EXPECT_EQ(str, std::string(chars.data(), chars.size()));
-
-    std::string insert_with_resize;
-    insert_with_resize.reserve(chars.capacity() * 2);
-    char cur_char = 'a';
-    while (insert_with_resize.size() < insert_with_resize.capacity())
     {
-        insert_with_resize += cur_char;
-        if (cur_char == 'z')
-            cur_char = 'a';
-        else
-            ++cur_char;
+        std::string str = "test_string_abacaba";
+        PODArray<char> chars;
+        chars.insert(chars.end(), str.begin(), str.end());
+        EXPECT_EQ(str, std::string(chars.data(), chars.size()));
+
+        std::string insert_in_the_middle = "insert_in_the_middle";
+        auto pos = str.size() / 2;
+        str.insert(str.begin() + pos, insert_in_the_middle.begin(), insert_in_the_middle.end());
+        chars.insert(chars.begin() + pos, insert_in_the_middle.begin(), insert_in_the_middle.end());
+        EXPECT_EQ(str, std::string(chars.data(), chars.size()));
+
+        std::string insert_with_resize;
+        insert_with_resize.reserve(chars.capacity() * 2);
+        char cur_char = 'a';
+        while (insert_with_resize.size() < insert_with_resize.capacity())
+        {
+            insert_with_resize += cur_char;
+            if (cur_char == 'z')
+                cur_char = 'a';
+            else
+                ++cur_char;
+        }
+        str.insert(str.begin(), insert_with_resize.begin(), insert_with_resize.end());
+        chars.insert(chars.begin(), insert_with_resize.begin(), insert_with_resize.end());
+        EXPECT_EQ(str, std::string(chars.data(), chars.size()));
     }
-    str.insert(str.begin(), insert_with_resize.begin(), insert_with_resize.end());
-    chars.insert(chars.begin(), insert_with_resize.begin(), insert_with_resize.end());
-    EXPECT_EQ(str, std::string(chars.data(), chars.size()));
+    {
+        PODArray<UInt64> values;
+        PODArray<UInt64> values_to_insert;
+
+        for (size_t i = 0; i < 120; ++i)
+            values.emplace_back(i);
+
+        values.insert(values.begin() + 1, values_to_insert.begin(), values_to_insert.end());
+        ASSERT_EQ(values.size(), 120);
+
+        values_to_insert.emplace_back(0);
+        values_to_insert.emplace_back(1);
+
+        values.insert(values.begin() + 1, values_to_insert.begin(), values_to_insert.end());
+        ASSERT_EQ(values.size(), 122);
+
+        values_to_insert.clear();
+        for (size_t i = 0; i < 240; ++i)
+            values_to_insert.emplace_back(i);
+
+        values.insert(values.begin() + 1, values_to_insert.begin(), values_to_insert.end());
+        ASSERT_EQ(values.size(), 362);
+    }
 }
 
 TEST(Common, PODArrayInsertFromItself)
@@ -457,18 +482,6 @@ TEST(Common, PODArrayInsertFromItself)
         PaddedPODArray<UInt64> expected {1,1,1,1,1,1,1,1};
         ASSERT_EQ(array,expected);
     }
-}
-
-TEST(Common, PODPushBackRawMany)
-{
-    PODArray<char> chars;
-    chars.push_back_raw_many(5, "first");
-    EXPECT_EQ(std::string("first"), std::string(chars.data(), chars.size()));
-    EXPECT_EQ(5, chars.size());
-    EXPECT_LE(chars.capacity() - chars.size(), 10);
-    chars.push_back_raw_many(10, "0123456789");
-    EXPECT_EQ(15, chars.size());
-    EXPECT_EQ(std::string("first0123456789"), std::string(chars.data(), chars.size()));
 }
 
 TEST(Common, PODNoOverallocation)

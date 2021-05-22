@@ -50,6 +50,10 @@ add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
 
+if (USE_YAML_CPP)
+    add_subdirectory (yaml-cpp-cmake)
+endif()
+
 if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz)
 endif()

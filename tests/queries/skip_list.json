@@ -167,7 +167,8 @@
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
         "00140_rename",
-        "01783_http_chunk_size"
+        "01783_http_chunk_size",
+        "01710_projection_fetch"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -348,6 +349,7 @@
         "01508_partition_pruning_long",
         "01509_check_parallel_quorum_inserts_long",
         "01509_parallel_quorum_and_merge_long",
+        "01509_dictionary_preallocate",
         "01515_mv_and_array_join_optimisation_bag",
         "01516_create_table_primary_key",
         "01517_drop_mv_with_inner_table",
@@ -392,10 +394,15 @@
         "01475_read_subcolumns_storages",
         "01674_clickhouse_client_query_param_cte",
         "01666_merge_tree_max_query_limit",
+        "01710_projections",
+        "01710_normal_projections",
+        "01710_aggregate_projections",
         "01786_explain_merge_tree",
         "01666_merge_tree_max_query_limit",
         "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
-        "01823_explain_json"
+        "01823_explain_json",
+        "01852_cast_operator",
+        "01852_cast_operator_bad_cases"
     ],
     "parallel":
     [
@@ -564,6 +571,8 @@
         "01150_ddl_guard_rwr",
         "01153_attach_mv_uuid",
         "01152_cross_replication",
+        "01154_move_partition_long",
+        "01155_rename_move_materialized_view",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
@@ -711,6 +720,9 @@
         "01785_dictionary_element_count",
         "01802_test_postgresql_protocol_with_row_policy", /// Creates database and users
         "01804_dictionary_decimal256_type",
-        "01850_dist_INSERT_preserve_error" // uses cluster with different static databases shard_0/shard_1
+        "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
+        "01821_table_comment",
+        "01710_projection_fetch",
+        "01870_buffer_flush" // creates database
     ]
 }

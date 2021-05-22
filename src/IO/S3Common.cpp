@@ -410,7 +410,7 @@ public:
             }
             else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.remote_host_filter, configuration.s3_max_redirects);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects);
 
                 /// See MakeDefaultHttpResourceClientConfiguration().
                 /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
@@ -590,10 +590,11 @@ namespace S3
     }
 
     PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
+        const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects)
     {
-        return PocoHTTPClientConfiguration(remote_host_filter, s3_max_redirects);
+        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects);
     }
 
     URI::URI(const Poco::URI & uri_)

@@ -19,14 +19,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wredundant-decls"
-// Just dont mess with it. If the redundant redeclaration is removed then ReaderHelpers.h should be included.
-// This leads to Arena.h inclusion which has a problem with ASAN stuff included properly and messing macro definition
-// which intefrers with... You dont want to know, really.
-UInt128 stringToUUID(const String & str);
-#pragma GCC diagnostic pop
-
 
 /** StaticVisitor (and its descendants) - class with overloaded operator() for all types of fields.
   * You could call visitor for field using function 'applyVisitor'.
@@ -71,8 +63,11 @@ public:
     String operator() (const Null & x) const;
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
+    String operator() (const UInt256 & x) const;
     String operator() (const Int64 & x) const;
     String operator() (const Int128 & x) const;
+    String operator() (const Int256 & x) const;
+    String operator() (const UUID & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -83,9 +78,6 @@ public:
     String operator() (const DecimalField<Decimal128> & x) const;
     String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
-
-    String operator() (const UInt256 & x) const;
-    String operator() (const Int256 & x) const;
 };
 
 
@@ -95,8 +87,11 @@ public:
     void operator() (const Null & x, WriteBuffer & buf) const;
     void operator() (const UInt64 & x, WriteBuffer & buf) const;
     void operator() (const UInt128 & x, WriteBuffer & buf) const;
+    void operator() (const UInt256 & x, WriteBuffer & buf) const;
     void operator() (const Int64 & x, WriteBuffer & buf) const;
     void operator() (const Int128 & x, WriteBuffer & buf) const;
+    void operator() (const Int256 & x, WriteBuffer & buf) const;
+    void operator() (const UUID & x, WriteBuffer & buf) const;
     void operator() (const Float64 & x, WriteBuffer & buf) const;
     void operator() (const String & x, WriteBuffer & buf) const;
     void operator() (const Array & x, WriteBuffer & buf) const;
@@ -107,9 +102,6 @@ public:
     void operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const;
     void operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const;
     void operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const;
-
-    void operator() (const UInt256 & x, WriteBuffer & buf) const;
-    void operator() (const Int256 & x, WriteBuffer & buf) const;
 };
 
 
@@ -120,8 +112,11 @@ public:
     String operator() (const Null & x) const;
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
+    String operator() (const UInt256 & x) const;
     String operator() (const Int64 & x) const;
     String operator() (const Int128 & x) const;
+    String operator() (const Int256 & x) const;
+    String operator() (const UUID & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -132,9 +127,6 @@ public:
     String operator() (const DecimalField<Decimal128> & x) const;
     String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
-
-    String operator() (const UInt256 & x) const;
-    String operator() (const Int256 & x) const;
 };
 
 
@@ -171,6 +163,7 @@ public:
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
     T operator() (const Int128 & x) const { return T(x); }
+    T operator() (const UUID & x) const { return T(x.toUnderType()); }
 
     T operator() (const Float64 & x) const
     {
@@ -259,8 +252,11 @@ public:
     void operator() (const Null & x) const;
     void operator() (const UInt64 & x) const;
     void operator() (const UInt128 & x) const;
+    void operator() (const UInt256 & x) const;
     void operator() (const Int64 & x) const;
     void operator() (const Int128 & x) const;
+    void operator() (const Int256 & x) const;
+    void operator() (const UUID & x) const;
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
@@ -271,9 +267,6 @@ public:
     void operator() (const DecimalField<Decimal128> & x) const;
     void operator() (const DecimalField<Decimal256> & x) const;
     void operator() (const AggregateFunctionStateData & x) const;
-
-    void operator() (const UInt256 & x) const;
-    void operator() (const Int256 & x) const;
 };
 
 
@@ -309,7 +302,7 @@ public:
     bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Map &) const { throw Exception("Cannot sum Maps", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (UUID &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     bool operator() (Int128 & x) const

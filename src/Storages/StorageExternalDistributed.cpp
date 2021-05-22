@@ -12,6 +12,7 @@
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
+#include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <common/logger_useful.h>
@@ -36,12 +37,14 @@ StorageExternalDistributed::StorageExternalDistributed(
     const String & password,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
@@ -74,8 +77,11 @@ StorageExternalDistributed::StorageExternalDistributed(
                     remote_table,
                     /* replace_query = */ false,
                     /* on_duplicate_clause = */ "",
-                    columns_, constraints_,
-                    context);
+                    columns_,
+                    constraints_,
+                    String{},
+                    context,
+                    MySQLSettings{});
                 break;
             }
 #endif
@@ -85,19 +91,14 @@ StorageExternalDistributed::StorageExternalDistributed(
             {
                 addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
 
-                postgres::PoolWithFailover pool(
+                auto pool = std::make_shared<postgres::PoolWithFailover>(
                     remote_database,
                     addresses,
                     username, password,
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = StoragePostgreSQL::create(
-                    table_id_,
-                    std::move(pool),
-                    remote_table,
-                    columns_, constraints_,
-                    context);
+                shard = StoragePostgreSQL::create(table_id_, std::move(pool), remote_table, columns_, constraints_, String{}, context);
                 break;
             }
 #endif
@@ -164,12 +165,7 @@ StorageExternalDistributed::StorageExternalDistributed(
         {
             Poco::URI uri(url_description);
             shard = std::make_shared<StorageURL>(
-                uri,
-                table_id,
-                format_name,
-                format_settings,
-                columns, constraints, context,
-                compression_method);
+                uri, table_id, format_name, format_settings, columns, constraints, String{}, context, compression_method);
 
             LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL: {}", url_description);
         }
@@ -271,6 +267,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 password,
                 args.columns,
                 args.constraints,
+                args.comment,
                 args.getContext());
         }
     },

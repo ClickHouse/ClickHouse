@@ -135,6 +135,39 @@ Default value: 604800 (1 week).
 
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
 
+## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
+
+HTTP connection timeout (in seconds) for part fetch requests. Inherited from default profile [http_connection_timeout](./settings.md#http_connection_timeout) if not set explicitly.
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Use value of `http_connection_timeout`.
+
+Default value: 0.
+
+## replicated_fetches_http_send_timeout {#replicated_fetches_http_send_timeout}
+
+HTTP send timeout (in seconds) for part fetch requests. Inherited from default profile [http_send_timeout](./settings.md#http_send_timeout) if not set explicitly.
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Use value of `http_send_timeout`.
+
+Default value: 0.
+
+## replicated_fetches_http_receive_timeout {#replicated_fetches_http_receive_timeout}
+
+HTTP receive timeout (in seconds) for fetch part requests. Inherited from default profile [http_receive_timeout](./settings.md#http_receive_timeout) if not set explicitly.
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Use value of `http_receive_timeout`.
+
+Default value: 0.
+
 ## old_parts_lifetime {#old-parts-lifetime}
 
 The time (in seconds) of storing inactive parts to protect against data loss during spontaneous server reboots.

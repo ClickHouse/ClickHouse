@@ -65,6 +65,16 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.index_name = command->index->as<ASTIdentifier &>().name();
         return res;
     }
+    else if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE_PROJECTION;
+        res.partition = command->partition;
+        res.predicate = nullptr;
+        res.projection_name = command->projection->as<ASTIdentifier &>().name();
+        return res;
+    }
     else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
     {
         MutationCommand res;
@@ -97,6 +107,18 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         if (command->partition)
             res.partition = command->partition;
         if (command->clear_index)
+            res.clear = true;
+        return res;
+    }
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MutationCommand::Type::DROP_PROJECTION;
+        res.column_name = command->projection->as<ASTIdentifier &>().name();
+        if (command->partition)
+            res.partition = command->partition;
+        if (command->clear_projection)
             res.clear = true;
         return res;
     }

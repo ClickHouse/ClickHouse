@@ -174,7 +174,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal)
             comment,
             joinLines(query));
 
-        if (client_info.client_trace_context.trace_id)
+        if (client_info.client_trace_context.trace_id != UUID())
         {
             LOG_TRACE(&Poco::Logger::get("executeQuery"),
                 "OpenTelemetry traceparent '{}'",
@@ -289,7 +289,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
             query_log->add(elem);
 
     if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-        context->query_trace_context.trace_id
+        context->query_trace_context.trace_id != UUID()
             && opentelemetry_span_log)
     {
         OpenTelemetrySpanLogElement span;
@@ -552,7 +552,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         StreamLocalLimits limits;
         if (!interpreter->ignoreLimits())
         {
-            limits.mode = LimitsMode::LIMITS_CURRENT;
+            limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
@@ -632,7 +632,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             QueryLogElement elem;
 
-            elem.type = QueryLogElementType::QUERY_START;
+            elem.type = QueryLogElementType::QUERY_START; //-V1048
 
             elem.event_time = time_in_seconds(current_time);
             elem.event_time_microseconds = time_in_microseconds(current_time);
@@ -656,6 +656,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_databases = info.databases;
                     elem.query_tables = info.tables;
                     elem.query_columns = info.columns;
+                    elem.query_projections = info.projections;
                 }
 
                 interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
@@ -792,7 +793,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto opentelemetry_span_log = context->getOpenTelemetrySpanLog();
-                    context->query_trace_context.trace_id
+                    context->query_trace_context.trace_id != UUID()
                         && opentelemetry_span_log)
                 {
                     OpenTelemetrySpanLogElement span;
