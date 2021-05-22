@@ -1,7 +1,7 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <ext/range.h>
@@ -172,7 +172,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 }
 
 
-QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
+QuotaCache::QuotaCache(const AccessControl & access_control_manager_)
     : access_control_manager(access_control_manager_)
 {
 }

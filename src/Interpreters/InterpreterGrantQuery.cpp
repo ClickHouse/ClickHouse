@@ -4,7 +4,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
@@ -73,7 +73,7 @@ namespace
             throw Exception(grantee.outputTypeAndName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
     }
 
-    void checkGranteesAreAllowed(const AccessControlManager & access_control, const ContextAccess & access, const std::vector<UUID> & grantee_ids)
+    void checkGranteesAreAllowed(const AccessControl & access_control, const ContextAccess & access, const std::vector<UUID> & grantee_ids)
     {
         auto current_user = access.getUser();
         if (!current_user || (current_user->grantees == RolesOrUsersSet::AllTag{}))
@@ -90,7 +90,7 @@ namespace
     }
 
     void checkGrantOption(
-        const AccessControlManager & access_control,
+        const AccessControl & access_control,
         const ContextAccess & access,
         const ASTGrantQuery & query,
         const std::vector<UUID> & grantees_from_query)
@@ -160,7 +160,7 @@ namespace
 
 
     std::vector<UUID> getRoleIDsAndCheckAdminOption(
-        const AccessControlManager & access_control,
+        const AccessControl & access_control,
         const ContextAccess & access,
         const ASTGrantQuery & query,
         const RolesOrUsersSet & roles_from_query,
@@ -233,7 +233,7 @@ BlockIO InterpreterGrantQuery::execute()
     if (!query.access_rights_elements.empty() && query.access_rights_elements[0].is_partial_revoke && !query.is_revoke)
         throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::LOGICAL_ERROR);
 
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     std::optional<RolesOrUsersSet> roles_set;
     if (query.roles)
         roles_set = RolesOrUsersSet{*query.roles, access_control};

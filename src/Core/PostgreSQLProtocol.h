@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <functional>
 #include <Interpreters/Context.h>
@@ -900,7 +900,7 @@ public:
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        auto user = context->getAccessControlManager().read<User>(user_name);
+        auto user = context->getAccessControl().read<User>(user_name);
         Authentication::Type user_auth_type = user->authentication.getType();
 
         if (type_to_method.find(user_auth_type) != type_to_method.end())

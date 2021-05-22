@@ -13,7 +13,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
@@ -40,7 +40,7 @@ namespace
 {
     ASTPtr getCreateQueryImpl(
         const User & user,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const AccessControl * manager /* not used if attach_mode == true */,
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateUserQuery>();
@@ -86,7 +86,7 @@ namespace
     }
 
 
-    ASTPtr getCreateQueryImpl(const Role & role, const AccessControlManager * manager, bool attach_mode)
+    ASTPtr getCreateQueryImpl(const Role & role, const AccessControl * manager, bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateRoleQuery>();
         query->names.emplace_back(role.getName());
@@ -104,7 +104,7 @@ namespace
     }
 
 
-    ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControlManager * manager, bool attach_mode)
+    ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControl * manager, bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
         query->names.emplace_back(profile.getName());
@@ -134,7 +134,7 @@ namespace
 
     ASTPtr getCreateQueryImpl(
         const Quota & quota,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const AccessControl * manager /* not used if attach_mode == true */,
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateQuotaQuery>();
@@ -170,7 +170,7 @@ namespace
 
     ASTPtr getCreateQueryImpl(
         const RowPolicy & policy,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const AccessControl * manager /* not used if attach_mode == true */,
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateRowPolicyQuery>();
@@ -205,7 +205,7 @@ namespace
 
     ASTPtr getCreateQueryImpl(
         const IAccessEntity & entity,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const AccessControl * manager /* not used if attach_mode == true */,
         bool attach_mode)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
@@ -270,7 +270,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities() const
 {
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
     show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
     std::vector<AccessEntityPtr> entities;
@@ -341,7 +341,7 @@ ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
     auto entities = getEntities();
 
     ASTs list;
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = getContext()->getAccessControl();
     for (const auto & entity : entities)
         list.push_back(getCreateQuery(*entity, access_control));
 
@@ -349,7 +349,7 @@ ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
 }
 
 
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const IAccessEntity & entity, const AccessControlManager & access_control)
+ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control)
 {
     return getCreateQueryImpl(entity, &access_control, false);
 }

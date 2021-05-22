@@ -1,6 +1,6 @@
 #include <Access/RowPolicyCache.h>
 #include <Access/EnabledRowPolicies.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -92,7 +92,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
 }
 
 
-RowPolicyCache::RowPolicyCache(const AccessControlManager & access_control_manager_)
+RowPolicyCache::RowPolicyCache(const AccessControl & access_control_manager_)
     : access_control_manager(access_control_manager_)
 {
 }

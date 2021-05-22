@@ -3,7 +3,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/AccessFlags.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/find_if.hpp>
@@ -73,7 +73,7 @@ namespace
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
     auto & query = query_ptr->as<ASTCreateQuotaQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
 
     if (!query.cluster.empty())

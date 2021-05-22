@@ -1,4 +1,4 @@
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
@@ -54,10 +54,10 @@ namespace
 }
 
 
-class AccessControlManager::ContextAccessCache
+class AccessControl::ContextAccessCache
 {
 public:
-    explicit ContextAccessCache(const AccessControlManager & manager_) : manager(manager_) {}
+    explicit ContextAccessCache(const AccessControl & manager_) : manager(manager_) {}
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params)
     {
@@ -71,13 +71,13 @@ public:
     }
 
 private:
-    const AccessControlManager & manager;
+    const AccessControl & manager;
     Poco::ExpireCache<ContextAccess::Params, std::shared_ptr<const ContextAccess>> cache;
     std::mutex mutex;
 };
 
 
-class AccessControlManager::CustomSettingsPrefixes
+class AccessControl::CustomSettingsPrefixes
 {
 public:
     void registerPrefixes(const Strings & prefixes_)
@@ -124,7 +124,7 @@ private:
 };
 
 
-AccessControlManager::AccessControlManager()
+AccessControl::AccessControl()
     : MultipleAccessStorage("user directories"),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
       role_cache(std::make_unique<RoleCache>(*this)),
@@ -137,9 +137,9 @@ AccessControlManager::AccessControlManager()
 }
 
 
-AccessControlManager::~AccessControlManager() = default;
+AccessControl::~AccessControl() = default;
 
-void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_)
+void AccessControl::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_)
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -153,12 +153,12 @@ void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguratio
     addUsersConfigStorage(users_config_);
 }
 
-void AccessControlManager::addUsersConfigStorage(const Poco::Util::AbstractConfiguration & users_config_)
+void AccessControl::addUsersConfigStorage(const Poco::Util::AbstractConfiguration & users_config_)
 {
     addUsersConfigStorage(UsersConfigAccessStorage::STORAGE_TYPE, users_config_);
 }
 
-void AccessControlManager::addUsersConfigStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & users_config_)
+void AccessControl::addUsersConfigStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & users_config_)
 {
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
@@ -167,7 +167,7 @@ void AccessControlManager::addUsersConfigStorage(const String & storage_name_, c
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
-void AccessControlManager::addUsersConfigStorage(
+void AccessControl::addUsersConfigStorage(
     const String & users_config_path_,
     const String & include_from_path_,
     const String & preprocessed_dir_,
@@ -177,7 +177,7 @@ void AccessControlManager::addUsersConfigStorage(
         UsersConfigAccessStorage::STORAGE_TYPE, users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
 }
 
-void AccessControlManager::addUsersConfigStorage(
+void AccessControl::addUsersConfigStorage(
     const String & storage_name_,
     const String & users_config_path_,
     const String & include_from_path_,
@@ -201,7 +201,7 @@ void AccessControlManager::addUsersConfigStorage(
         String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
-void AccessControlManager::reloadUsersConfigs()
+void AccessControl::reloadUsersConfigs()
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -211,7 +211,7 @@ void AccessControlManager::reloadUsersConfigs()
     }
 }
 
-void AccessControlManager::startPeriodicReloadingUsersConfigs()
+void AccessControl::startPeriodicReloadingUsersConfigs()
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -222,12 +222,12 @@ void AccessControlManager::startPeriodicReloadingUsersConfigs()
 }
 
 
-void AccessControlManager::addDiskStorage(const String & directory_, bool readonly_)
+void AccessControl::addDiskStorage(const String & directory_, bool readonly_)
 {
     addDiskStorage(DiskAccessStorage::STORAGE_TYPE, directory_, readonly_);
 }
 
-void AccessControlManager::addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_)
+void AccessControl::addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_)
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -248,7 +248,7 @@ void AccessControlManager::addDiskStorage(const String & storage_name_, const St
 }
 
 
-void AccessControlManager::addMemoryStorage(const String & storage_name_)
+void AccessControl::addMemoryStorage(const String & storage_name_)
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -262,7 +262,7 @@ void AccessControlManager::addMemoryStorage(const String & storage_name_)
 }
 
 
-void AccessControlManager::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
+void AccessControl::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
 {
     auto new_storage = std::make_shared<LDAPAccessStorage>(storage_name_, this, config_, prefix_);
     addStorage(new_storage);
@@ -270,7 +270,7 @@ void AccessControlManager::addLDAPStorage(const String & storage_name_, const Po
 }
 
 
-void AccessControlManager::addStoragesFromUserDirectoriesConfig(
+void AccessControl::addStoragesFromUserDirectoriesConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & key,
     const String & config_dir,
@@ -324,7 +324,7 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
 }
 
 
-void AccessControlManager::addStoragesFromMainConfig(
+void AccessControl::addStoragesFromMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_path,
     const zkutil::GetZooKeeper & get_zookeeper_function)
@@ -362,47 +362,47 @@ void AccessControlManager::addStoragesFromMainConfig(
 }
 
 
-UUID AccessControlManager::login(const Credentials & credentials, const Poco::Net::IPAddress & address) const
+UUID AccessControl::login(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
     return MultipleAccessStorage::login(credentials, address, *external_authenticators);
 }
 
-void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
+void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     external_authenticators->setConfiguration(config, getLogger());
 }
 
 
-void AccessControlManager::setDefaultProfileName(const String & default_profile_name)
+void AccessControl::setDefaultProfileName(const String & default_profile_name)
 {
     settings_profiles_cache->setDefaultProfileName(default_profile_name);
 }
 
 
-void AccessControlManager::setCustomSettingsPrefixes(const Strings & prefixes)
+void AccessControl::setCustomSettingsPrefixes(const Strings & prefixes)
 {
     custom_settings_prefixes->registerPrefixes(prefixes);
 }
 
-void AccessControlManager::setCustomSettingsPrefixes(const String & comma_separated_prefixes)
+void AccessControl::setCustomSettingsPrefixes(const String & comma_separated_prefixes)
 {
     Strings prefixes;
     splitInto<','>(prefixes, comma_separated_prefixes);
     setCustomSettingsPrefixes(prefixes);
 }
 
-bool AccessControlManager::isSettingNameAllowed(const std::string_view & setting_name) const
+bool AccessControl::isSettingNameAllowed(const std::string_view & setting_name) const
 {
     return custom_settings_prefixes->isSettingNameAllowed(setting_name);
 }
 
-void AccessControlManager::checkSettingNameIsAllowed(const std::string_view & setting_name) const
+void AccessControl::checkSettingNameIsAllowed(const std::string_view & setting_name) const
 {
     custom_settings_prefixes->checkSettingNameIsAllowed(setting_name);
 }
 
 
-std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
+std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
     const UUID & user_id,
     const std::vector<UUID> & current_roles,
     bool use_default_roles,
@@ -438,13 +438,13 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
 }
 
 
-std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(const ContextAccessParams & params) const
+std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
 {
     return context_access_cache->getContextAccess(params);
 }
 
 
-std::shared_ptr<const EnabledRoles> AccessControlManager::getEnabledRoles(
+std::shared_ptr<const EnabledRoles> AccessControl::getEnabledRoles(
     const std::vector<UUID> & current_roles,
     const std::vector<UUID> & current_roles_with_admin_option) const
 {
@@ -452,13 +452,13 @@ std::shared_ptr<const EnabledRoles> AccessControlManager::getEnabledRoles(
 }
 
 
-std::shared_ptr<const EnabledRowPolicies> AccessControlManager::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
+std::shared_ptr<const EnabledRowPolicies> AccessControl::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
     return row_policy_cache->getEnabledRowPolicies(user_id, enabled_roles);
 }
 
 
-std::shared_ptr<const EnabledQuota> AccessControlManager::getEnabledQuota(
+std::shared_ptr<const EnabledQuota> AccessControl::getEnabledQuota(
     const UUID & user_id,
     const String & user_name,
     const boost::container::flat_set<UUID> & enabled_roles,
@@ -470,13 +470,13 @@ std::shared_ptr<const EnabledQuota> AccessControlManager::getEnabledQuota(
 }
 
 
-std::vector<QuotaUsage> AccessControlManager::getAllQuotasUsage() const
+std::vector<QuotaUsage> AccessControl::getAllQuotasUsage() const
 {
     return quota_cache->getAllQuotasUsage();
 }
 
 
-std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
+std::shared_ptr<const EnabledSettings> AccessControl::getEnabledSettings(
     const UUID & user_id,
     const SettingsProfileElements & settings_from_user,
     const boost::container::flat_set<UUID> & enabled_roles,
@@ -485,12 +485,12 @@ std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
 }
 
-std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
+std::shared_ptr<const SettingsChanges> AccessControl::getProfileSettings(const String & profile_name) const
 {
     return settings_profiles_cache->getProfileSettings(profile_name);
 }
 
-const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
+const ExternalAuthenticators & AccessControl::getExternalAuthenticators() const
 {
     return *external_authenticators;
 }

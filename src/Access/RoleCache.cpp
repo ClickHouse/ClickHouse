@@ -1,7 +1,7 @@
 #include <Access/RoleCache.h>
 #include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <boost/container/flat_set.hpp>
 
 
@@ -55,7 +55,7 @@ namespace
 }
 
 
-RoleCache::RoleCache(const AccessControlManager & manager_)
+RoleCache::RoleCache(const AccessControl & manager_)
     : manager(manager_), cache(600000 /* 10 minutes */) {}
 
 

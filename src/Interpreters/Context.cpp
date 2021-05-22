@@ -32,7 +32,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
@@ -346,7 +346,7 @@ struct ContextSharedPart
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
-    AccessControlManager access_control_manager;
+    AccessControl access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -709,12 +709,12 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 }
 
 
-AccessControlManager & Context::getAccessControlManager()
+AccessControl & Context::getAccessControl()
 {
     return shared->access_control_manager;
 }
 
-const AccessControlManager & Context::getAccessControlManager() const
+const AccessControl & Context::getAccessControl() const
 {
     return shared->access_control_manager;
 }
@@ -760,8 +760,8 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
 #endif
 
     /// Find a user with such name and check the credentials.
-    auto new_user_id = getAccessControlManager().login(credentials, address.host());
-    auto new_access = getAccessControlManager().getContextAccess(
+    auto new_user_id = getAccessControl().login(credentials, address.host());
+    auto new_access = getAccessControl().getContextAccess(
         new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
         settings, current_database, client_info);
 
@@ -846,7 +846,7 @@ void Context::calculateAccessRights()
 {
     auto lock = getLock();
     if (user_id)
-        access = getAccessControlManager().getContextAccess(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
+        access = getAccessControl().getContextAccess(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
 }
 
 
@@ -886,10 +886,10 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
-    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    auto initial_user_id = getAccessControl().find<User>(client_info.initial_user);
     initial_row_policy = nullptr;
     if (initial_user_id)
-        initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
+        initial_row_policy = getAccessControl().getEnabledRowPolicies(*initial_user_id, {});
 }
 
 
@@ -907,7 +907,7 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
 
 void Context::setProfile(const String & profile_name)
 {
-    SettingsChanges profile_settings_changes = *getAccessControlManager().getProfileSettings(profile_name);
+    SettingsChanges profile_settings_changes = *getAccessControl().getProfileSettings(profile_name);
     try
     {
         checkSettingsConstraints(profile_settings_changes);
@@ -2364,7 +2364,7 @@ void Context::setApplicationType(ApplicationType type)
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
 {
     shared->default_profile_name = config.getString("default_profile", "default");
-    getAccessControlManager().setDefaultProfileName(shared->default_profile_name);
+    getAccessControl().setDefaultProfileName(shared->default_profile_name);
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);

@@ -1,5 +1,5 @@
 #include <Access/RolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
@@ -53,17 +53,17 @@ RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const std::opti
     init(ast, nullptr, current_user_id);
 }
 
-RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & manager)
 {
     init(ast, &manager);
 }
 
-RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & manager, const std::optional<UUID> & current_user_id)
 {
     init(ast, &manager, current_user_id);
 }
 
-void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControlManager * manager, const std::optional<UUID> & current_user_id)
+void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl * manager, const std::optional<UUID> & current_user_id)
 {
     all = ast.all;
 
@@ -147,7 +147,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 }
 
 
-std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControlManager & manager) const
+std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & manager) const
 {
     auto ast = std::make_shared<ASTRolesOrUsersSet>();
     ast->all = all;
@@ -187,7 +187,7 @@ String RolesOrUsersSet::toString() const
 }
 
 
-String RolesOrUsersSet::toStringWithNames(const AccessControlManager & manager) const
+String RolesOrUsersSet::toStringWithNames(const AccessControl & manager) const
 {
     auto ast = toASTWithNames(manager);
     return serializeAST(*ast);
@@ -260,7 +260,7 @@ std::vector<UUID> RolesOrUsersSet::getMatchingIDs() const
 }
 
 
-std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControlManager & manager) const
+std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControl & manager) const
 {
     if (!all)
         return getMatchingIDs();

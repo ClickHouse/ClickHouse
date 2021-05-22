@@ -22,7 +22,7 @@ namespace Poco
 
 namespace DB
 {
-class AccessControlManager;
+class AccessControl;
 
 /// Implementation of IAccessStorage which allows attaching users from a remote LDAP server.
 /// Currently, any user name will be treated as a name of an existing remote user,
@@ -32,7 +32,7 @@ class LDAPAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "ldap";
 
-    explicit LDAPAccessStorage(const String & storage_name_, AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
+    explicit LDAPAccessStorage(const String & storage_name_, AccessControl * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     virtual ~LDAPAccessStorage() override = default;
 
     String getLDAPServerName() const;
@@ -59,7 +59,7 @@ private: // IAccessStorage implementations.
     virtual UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
 private:
-    void setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
+    void setConfiguration(AccessControl * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
@@ -71,7 +71,7 @@ private:
         const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & role_search_results) const;
 
     mutable std::recursive_mutex mutex;
-    AccessControlManager * access_control_manager = nullptr;
+    AccessControl * access_control_manager = nullptr;
     String ldap_server_name;
     LDAPClient::RoleSearchParamsList role_search_params;
     std::set<String> common_role_names;                         // role name that should be granted to all users at all times

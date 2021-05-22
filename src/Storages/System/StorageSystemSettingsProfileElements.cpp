@@ -6,7 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
@@ -40,7 +40,7 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
 void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
-    const auto & access_control = context->getAccessControlManager();
+    const auto & access_control = context->getAccessControl();
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
     boost::range::push_back(ids, access_control.findAll<SettingsProfile>());

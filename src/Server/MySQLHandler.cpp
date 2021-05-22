@@ -23,7 +23,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <regex>
 #include <Access/User.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Common/setThreadName.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -252,7 +252,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     try
     {
         // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-        auto user = connection_context->getAccessControlManager().read<User>(user_name);
+        auto user = connection_context->getAccessControl().read<User>(user_name);
         const DB::Authentication::Type user_auth_type = user->authentication.getType();
         if (user_auth_type == DB::Authentication::SHA256_PASSWORD)
         {

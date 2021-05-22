@@ -1,6 +1,6 @@
 #include <Access/SettingsProfileElement.h>
 #include <Access/SettingsConstraints.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Core/Settings.h>
@@ -16,12 +16,12 @@ SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement &
     init(ast, nullptr);
 }
 
-SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControlManager & manager)
+SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControl & manager)
 {
     init(ast, &manager);
 }
 
-void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const AccessControlManager * manager)
+void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const AccessControl * manager)
 {
     auto name_to_id = [id_mode{ast.id_mode}, manager](const String & name_) -> UUID
     {
@@ -75,7 +75,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 }
 
 
-std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControlManager & manager) const
+std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & manager) const
 {
     auto ast = std::make_shared<ASTSettingsProfileElement>();
 
@@ -102,7 +102,7 @@ SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElement
         emplace_back(*ast_element);
 }
 
-SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControlManager & manager)
+SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControl & manager)
 {
     for (const auto & ast_element : ast.elements)
         emplace_back(*ast_element, manager);
@@ -117,7 +117,7 @@ std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() con
     return res;
 }
 
-std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControlManager & manager) const
+std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & manager) const
 {
     auto res = std::make_shared<ASTSettingsProfileElements>();
     for (const auto & element : *this)
@@ -154,7 +154,7 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     return res;
 }
 
-SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessControlManager & manager) const
+SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessControl & manager) const
 {
     SettingsConstraints res{manager};
     for (const auto & elem : *this)

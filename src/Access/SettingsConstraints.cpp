@@ -1,5 +1,5 @@
 #include <Access/SettingsConstraints.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Core/Settings.h>
 #include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-SettingsConstraints::SettingsConstraints(const AccessControlManager & manager_) : manager(&manager_)
+SettingsConstraints::SettingsConstraints(const AccessControl & manager_) : manager(&manager_)
 {
 }
 

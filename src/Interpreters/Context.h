@@ -86,7 +86,7 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
-class AccessControlManager;
+class AccessControl;
 class Credentials;
 class GSSAcceptorContext;
 class SettingsConstraints;
@@ -323,8 +323,8 @@ public:
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
 
-    AccessControlManager & getAccessControlManager();
-    const AccessControlManager & getAccessControlManager() const;
+    AccessControl & getAccessControl();
+    const AccessControl & getAccessControl() const;
 
     /// Sets external authenticators config (LDAP, Kerberos).
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
