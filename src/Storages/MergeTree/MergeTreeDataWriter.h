@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Row.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>

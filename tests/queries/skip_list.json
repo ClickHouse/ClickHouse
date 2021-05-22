@@ -572,6 +572,7 @@
         "01153_attach_mv_uuid",
         "01152_cross_replication",
         "01154_move_partition_long",
+        "01155_rename_move_materialized_view",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
