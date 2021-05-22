@@ -226,6 +226,10 @@ bool KeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     request_info.session_id = session_id;
 
     std::lock_guard lock(push_request_mutex);
+
+    if (shutdown_called)
+        return false;
+
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
         requests_queue->push(std::move(request_info));
