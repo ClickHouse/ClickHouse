@@ -129,12 +129,8 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
             continue;
         }
 
-        auto * nullable_type_untyped = toNativeType(b, type);
-        llvm::StructType * nullable_type = static_cast<llvm::StructType *>(nullable_type_untyped);
-        llvm::Type * is_null_type = nullable_type->getElementType(1);
-
-        auto * is_null = b.CreateICmpNE(b.CreateLoad(is_null_type, column.null), b.getInt8(0));
-        auto * nullable_unitilized = llvm::Constant::getNullValue(nullable_type_untyped);
+        auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), column.null), b.getInt8(0));
+        auto * nullable_unitilized = llvm::Constant::getNullValue(toNativeType(b, type));
         auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitilized, value, {0}), is_null, {1});
         arguments.emplace_back(nullable_value);
     }
