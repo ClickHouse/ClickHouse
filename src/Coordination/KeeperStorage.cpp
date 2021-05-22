@@ -148,8 +148,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        Coordination::ZooKeeperCreateRequest & request = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*zk_request);
-        auto parent_path = parentPath(request.path);
+        auto parent_path = parentPath(zk_request->getPath());
 
         auto it = container.find(parent_path);
         if (it == container.end())
@@ -288,8 +287,7 @@ struct KeeperStorageGetRequest final : public KeeperStorageRequest
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
-        auto it = container.find(request.path);
+        auto it = container.find(zk_request->getPath());
         if (it == container.end())
             return true;
 
@@ -327,8 +325,7 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        Coordination::ZooKeeperRemoveRequest & request = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*zk_request);
-        auto it = container.find(request.path);
+        auto it = container.find(zk_request->getPath());
         if (it == container.end())
             return true;
 
@@ -413,8 +410,7 @@ struct KeeperStorageExistsRequest final : public KeeperStorageRequest
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        Coordination::ZooKeeperExistsRequest & request = dynamic_cast<Coordination::ZooKeeperExistsRequest &>(*zk_request);
-        auto it = container.find(request.path);
+        auto it = container.find(zk_request->getPath());
         if (it == container.end())
             return true;
 
@@ -452,8 +448,7 @@ struct KeeperStorageSetRequest final : public KeeperStorageRequest
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*zk_request);
-        auto it = container.find(request.path);
+        auto it = container.find(zk_request->getPath());
         if (it == container.end())
             return true;
 
@@ -527,8 +522,7 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*zk_request);
-        auto it = container.find(request.path);
+        auto it = container.find(zk_request->getPath());
         if (it == container.end())
             return true;
 
@@ -570,8 +564,7 @@ struct KeeperStorageCheckRequest final : public KeeperStorageRequest
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*zk_request);
-        auto it = container.find(request.path);
+        auto it = container.find(zk_request->getPath());
         if (it == container.end())
             return true;
 
