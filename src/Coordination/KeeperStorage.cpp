@@ -84,6 +84,34 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
     return false;
 }
 
+static bool fixupACL(
+    const std::vector<Coordination::ACL> & request_acls,
+    const std::vector<KeeperStorage::AuthID> & current_ids,
+    std::vector<Coordination::ACL> & result_acls)
+{
+    if (request_acls.empty())
+        return false;
+
+    for (const auto & request_acl : request_acls)
+    {
+        if (request_acl.scheme == "world" && request_acl.id == "anyone")
+        {
+            result_acls.push_back(request_acl);
+        }
+        else if (request_acl.scheme == "auth")
+        {
+            for (const auto & current_id : current_ids)
+            {
+                Coordination::ACL new_acl = request_acl;
+                new_acl.scheme = current_id.scheme;
+                new_acl.id = current_id.id;
+                result_acls.push_back(new_acl);
+            }
+        }
+    }
+    return !result_acls.empty();
+}
+
 static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
     KeeperStorage::ResponsesForSessions result;
@@ -118,34 +146,6 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
         list_watches.erase(it);
     }
     return result;
-}
-
-static bool fixupACL(
-    const std::vector<Coordination::ACL> & request_acls,
-    const std::vector<KeeperStorage::AuthID> & current_ids,
-    std::vector<Coordination::ACL> & result_acls)
-{
-    if (request_acls.empty())
-        return false;
-
-    for (const auto & request_acl : request_acls)
-    {
-        if (request_acl.scheme == "world" && request_acl.id == "anyone")
-        {
-            result_acls.push_back(request_acl);
-        }
-        else if (request_acl.scheme == "auth")
-        {
-            for (const auto & current_id : current_ids)
-            {
-                Coordination::ACL new_acl = request_acl;
-                new_acl.scheme = current_id.scheme;
-                new_acl.id = current_id.id;
-                result_acls.push_back(new_acl);
-            }
-        }
-    }
-    return !result_acls.empty();
 }
 
 KeeperStorage::KeeperStorage(int64_t tick_time_ms)
