@@ -2,6 +2,9 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/MemoryStatisticsOS.h>
+#include <Common/MemoryInfoOS.h>
+#include <Common/ProcessorStatisticsOS.h>
+#include <Common/DiskStatisticsOS.h>
 #include <Common/ThreadPool.h>
 
 #include <condition_variable>
@@ -9,7 +12,6 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
-
 
 namespace DB
 {
@@ -80,6 +82,9 @@ private:
 
 #if defined(OS_LINUX)
     MemoryStatisticsOS memory_stat;
+    MemoryInfoOS memory_info;
+    ProcessorStatisticsOS proc_stat;
+    DiskStatisticsOS disk_stat;
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
