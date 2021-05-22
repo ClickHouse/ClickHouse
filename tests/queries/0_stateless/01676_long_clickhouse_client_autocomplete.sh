@@ -4,6 +4,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# NOTE: database = $CLICKHOUSE_DATABASE is superfluous
+
 function test_completion_word()
 {
     local w=$1 && shift
