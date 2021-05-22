@@ -22,9 +22,9 @@ void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const 
     ASTPtr left = left_ast->clone();
     ASTPtr right = right_ast->clone();
 
-    if (table_no.first == 1 || table_no.second == 2)
+    if (table_no.first == 1 && table_no.second == 2)
         analyzed_join.addOnKeys(left, right);
-    else if (table_no.first == 2 || table_no.second == 1)
+    else if (table_no.first == 2 && table_no.second == 1)
         analyzed_join.addOnKeys(right, left);
     else
         throw Exception("Cannot detect left and right JOIN keys. JOIN ON section is ambiguous.",
