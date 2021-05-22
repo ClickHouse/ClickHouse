@@ -100,12 +100,11 @@ def test_identity():
     cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_with_password.xml')
     cluster_2 = ClickHouseCluster(__file__)
 
-    # TODO ACL not implemented in Keeper.
     node1 = cluster_1.add_instance('node1', main_configs=["configs/remote_servers.xml",
                                                           "configs/zookeeper_config_with_password.xml"],
-                                   with_zookeeper=True, zookeeper_use_tmpfs=False, use_keeper=False)
+                                   with_zookeeper=True, zookeeper_use_tmpfs=False)
     node2 = cluster_2.add_instance('node2', main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
-                                   zookeeper_use_tmpfs=False, use_keeper=False)
+                                   zookeeper_use_tmpfs=False)
 
     try:
         cluster_1.start()
