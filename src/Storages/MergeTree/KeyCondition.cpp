@@ -599,21 +599,29 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
-    auto adjusted_node = node->clone();
-    KeyDescription::moduloToModuloLegacyRecursive(adjusted_node);
+    const auto & sample_block = key_expr->getSampleBlock();
 
-    String adjusted_expr_name = adjusted_node->getColumnName();
     // Constant expr should use alias names if any
     String passed_expr_name = node->getColumnName();
     String expr_name;
 
-    const auto & sample_block = key_expr->getSampleBlock();
+    /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
+    /// For partition key it is always moduloLegacy.
     if (sample_block.has(passed_expr_name))
+    {
         expr_name = passed_expr_name;
-    else if (sample_block.has(adjusted_expr_name))
-        expr_name = adjusted_expr_name;
+    }
     else
-        return false;
+    {
+        auto adjusted_ast = node->clone();
+        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+        String adjusted_expr_name = adjusted_ast->getColumnName();
+
+        if (!sample_block.has(adjusted_expr_name))
+            return false;
+
+        expr_name = adjusted_expr_name;
+    }
 
     /// TODO Nullable index is not yet landed.
     if (out_value.isNull())
@@ -677,21 +685,29 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
-    auto adjusted_ast = ast->clone();
-    KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+    const auto & sample_block = key_expr->getSampleBlock();
 
-    String adjusted_expr_name = adjusted_ast->getColumnName();
     // Constant expr should use alias names if any
     String passed_expr_name = ast->getColumnName();
     String expr_name;
 
-    const auto & sample_block = key_expr->getSampleBlock();
+    /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
+    /// For partition key it is always moduloLegacy.
     if (sample_block.has(passed_expr_name))
+    {
         expr_name = passed_expr_name;
-    else if (sample_block.has(adjusted_expr_name))
-        expr_name = adjusted_expr_name;
+    }
     else
-        return false;
+    {
+        auto adjusted_ast = ast->clone();
+        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+        String adjusted_expr_name = adjusted_ast->getColumnName();
+
+        if (!sample_block.has(adjusted_expr_name))
+            return false;
+
+        expr_name = adjusted_expr_name;
+    }
 
     /// TODO Nullable index is not yet landed.
     if (out_value.isNull())
