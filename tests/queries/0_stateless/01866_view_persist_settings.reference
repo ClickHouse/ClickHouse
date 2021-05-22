@@ -2,17 +2,17 @@ SELECT
     a,
     b,
     c
-FROM 
+FROM
 (
     SELECT *
-    FROM 
+    FROM
     (
         SELECT
             number + 1 AS a,
             number + 11 AS b
         FROM numbers(2)
     ) AS t1
-    FULL OUTER JOIN 
+    FULL OUTER JOIN
     (
         SELECT
             number + 2 AS a,
