@@ -32,11 +32,11 @@ $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE table_for_rename_replicated;"
 $CLICKHOUSE_CLIENT --query "ALTER TABLE table_for_rename_replicated RENAME COLUMN value1 to renamed_value1" --replication_alter_partitions_sync=0
 
 
-while [[ -z $($CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns WHERE name = 'renamed_value1' and table = 'table_for_rename_replicated'" 2>/dev/null) ]]; do
+while [[ -z $($CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns WHERE name = 'renamed_value1' and table = 'table_for_rename_replicated' AND database = '$CLICKHOUSE_DATABASE'" 2>/dev/null) ]]; do
     sleep 0.5
 done
 
-$CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns WHERE name = 'renamed_value1' and table = 'table_for_rename_replicated'"
+$CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns WHERE name = 'renamed_value1' and table = 'table_for_rename_replicated' AND database = '$CLICKHOUSE_DATABASE'"
 
 # SHOW CREATE TABLE takes query from .sql file on disk.
 # previous select take metadata from memory. So, when previous select says, that return renamed_value1 already exists in table, it's still can have old version on disk.
