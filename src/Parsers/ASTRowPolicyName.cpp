@@ -1,5 +1,6 @@
 #include <Parsers/ASTRowPolicyName.h>
 #include <IO/Operators.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

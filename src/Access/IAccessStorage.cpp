@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB

@@ -24,6 +24,7 @@
 #    include <Common/escapeForFileName.h>
 #    include <Common/parseAddress.h>
 #    include <Common/setThreadName.h>
+#    include <Common/quoteString.h>
 
 #    include <Poco/DirectoryIterator.h>
 #    include <Poco/File.h>

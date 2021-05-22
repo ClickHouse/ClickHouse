@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
+#include <boost/algorithm/string.hpp>
 #include <amqpcpp.h>
 #include <uv.h>
 #include <chrono>

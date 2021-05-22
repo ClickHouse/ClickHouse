@@ -10,7 +10,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <ext/range.h>
-#include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB

@@ -7,6 +7,7 @@
 #include <Databases/IDatabase.h>
 
 #include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

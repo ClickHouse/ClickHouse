@@ -7,6 +7,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 

@@ -11,6 +11,9 @@
 #include <Access/Role.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
+#include <boost/range/algorithm_ext/erase.hpp>
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
