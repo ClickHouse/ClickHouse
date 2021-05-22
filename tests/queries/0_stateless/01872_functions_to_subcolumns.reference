@@ -33,7 +33,7 @@ SELECT
     `n.null`,
     isNull(right.n)
 FROM t_func_to_subcolumns AS left
-ALL FULL OUTER JOIN 
+ALL FULL OUTER JOIN
 (
     SELECT
         1 AS id,
