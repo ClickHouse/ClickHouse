@@ -1,5 +1,5 @@
 #include <Access/LDAPAccessStorage.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -27,7 +27,7 @@ namespace ErrorCodes
 }
 
 
-LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
+LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
     : IAccessStorage(storage_name_)
 {
     setConfiguration(access_control_manager_, config, prefix);
@@ -40,7 +40,7 @@ String LDAPAccessStorage::getLDAPServerName() const
 }
 
 
-void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
+void LDAPAccessStorage::setConfiguration(AccessControl * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     std::scoped_lock lock(mutex);
 

@@ -43,11 +43,11 @@ struct Settings;
 
 
 /// Manages access control entities.
-class AccessControlManager : public MultipleAccessStorage
+class AccessControl : public MultipleAccessStorage
 {
 public:
-    AccessControlManager();
-    ~AccessControlManager() override;
+    AccessControl();
+    ~AccessControl() override;
 
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.

@@ -2,7 +2,7 @@
 #include <Parsers/ASTCreateRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Role.h>
 
 
@@ -34,7 +34,7 @@ namespace
 BlockIO InterpreterCreateRoleQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateRoleQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     if (query.alter)
         getContext()->checkAccess(AccessType::ALTER_ROLE);
     else

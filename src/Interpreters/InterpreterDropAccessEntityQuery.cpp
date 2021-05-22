@@ -3,7 +3,7 @@
 #include <Parsers/ASTRowPolicyName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/AccessFlags.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -25,7 +25,7 @@ using EntityType = IAccessEntity::Type;
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
     auto & query = query_ptr->as<ASTDropAccessEntityQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())

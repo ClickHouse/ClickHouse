@@ -1,5 +1,5 @@
 #include <Access/SettingsProfilesCache.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Core/Settings.h>
 #include <Common/SettingsChanges.h>
@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 
-SettingsProfilesCache::SettingsProfilesCache(const AccessControlManager & manager_)
+SettingsProfilesCache::SettingsProfilesCache(const AccessControl & manager_)
     : manager(manager_) {}
 
 SettingsProfilesCache::~SettingsProfilesCache() = default;

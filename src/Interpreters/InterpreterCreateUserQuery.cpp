@@ -5,7 +5,7 @@
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTUserNameWithHost.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/ContextAccess.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -75,7 +75,7 @@ namespace
 BlockIO InterpreterCreateUserQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
 

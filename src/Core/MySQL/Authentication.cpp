@@ -3,7 +3,7 @@
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/User.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 
 #include <common/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
@@ -96,7 +96,7 @@ void Native41::authenticate(
                 + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
             ErrorCodes::UNKNOWN_EXCEPTION);
 
-    auto user = context->getAccessControlManager().read<User>(user_name);
+    auto user = context->getAccessControl().read<User>(user_name);
 
     Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
     assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);

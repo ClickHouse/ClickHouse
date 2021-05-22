@@ -9,13 +9,13 @@
 
 namespace DB
 {
-class AccessControlManager;
+class AccessControl;
 
 /// Stores read and parsed row policies.
 class RowPolicyCache
 {
 public:
-    RowPolicyCache(const AccessControlManager & access_control_manager_);
+    RowPolicyCache(const AccessControl & access_control_manager_);
     ~RowPolicyCache();
 
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles);
@@ -38,7 +38,7 @@ private:
     void mixConditions();
     void mixConditionsFor(EnabledRowPolicies & enabled);
 
-    const AccessControlManager & access_control_manager;
+    const AccessControl & access_control_manager;
     std::unordered_map<UUID, PolicyInfo> all_policies;
     bool all_policies_read = false;
     ext::scope_guard subscription;

@@ -10,7 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessFlags.h>
 

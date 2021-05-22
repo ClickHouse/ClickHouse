@@ -1,5 +1,5 @@
 #include <Access/ContextAccess.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/EnabledRoles.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/EnabledQuota.h>
@@ -139,7 +139,7 @@ namespace
 }
 
 
-ContextAccess::ContextAccess(const AccessControlManager & manager_, const Params & params_)
+ContextAccess::ContextAccess(const AccessControl & manager_, const Params & params_)
     : manager(&manager_)
     , params(params_)
 {
