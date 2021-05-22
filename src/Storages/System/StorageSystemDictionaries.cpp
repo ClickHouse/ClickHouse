@@ -37,6 +37,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         {"bytes_allocated", std::make_shared<DataTypeUInt64>()},
         {"query_count", std::make_shared<DataTypeUInt64>()},
         {"hit_rate", std::make_shared<DataTypeFloat64>()},
+        {"found_rate", std::make_shared<DataTypeFloat64>()},
         {"element_count", std::make_shared<DataTypeUInt64>()},
         {"load_factor", std::make_shared<DataTypeFloat64>()},
         {"source", std::make_shared<DataTypeString>()},
@@ -113,6 +114,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
             res_columns[i++]->insert(dict_ptr->getBytesAllocated());
             res_columns[i++]->insert(dict_ptr->getQueryCount());
             res_columns[i++]->insert(dict_ptr->getHitRate());
+            res_columns[i++]->insert(dict_ptr->getFoundRate());
             res_columns[i++]->insert(dict_ptr->getElementCount());
             res_columns[i++]->insert(dict_ptr->getLoadFactor());
             res_columns[i++]->insert(dict_ptr->getSource()->toString());
@@ -125,7 +127,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         }
         else
         {
-            for (size_t j = 0; j != 8; ++j) // Number of empty fields if dict_ptr is null
+            for (size_t j = 0; j != 9; ++j) // Number of empty fields if dict_ptr is null
                 res_columns[i++]->insertDefault();
         }
 

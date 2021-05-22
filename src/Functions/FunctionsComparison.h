@@ -1105,8 +1105,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(
-                FunctionComparison<Op, Name>::create(context)));
+            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(context));
 
             bool has_nullable = false;
             bool has_null = false;
@@ -1116,7 +1115,7 @@ public:
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                auto element_type = adaptor.build(args)->getResultType();
+                auto element_type = func.build(args)->getResultType();
                 has_nullable = has_nullable || element_type->isNullable();
                 has_null = has_null || element_type->onlyNull();
             }
@@ -1148,17 +1147,24 @@ public:
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
         if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
+            ColumnPtr result_column;
+
             /// Always true: =, <=, >=
             if constexpr (IsOperation<Op>::equals
                 || IsOperation<Op>::less_or_equals
                 || IsOperation<Op>::greater_or_equals)
             {
-                return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
+                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
             }
             else
             {
-                return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
             }
+
+            if (!isColumnConst(*col_left_untyped))
+                result_column = result_column->convertToFullColumnIfConst();
+
+            return result_column;
         }
 
         WhichDataType which_left{left_type};
@@ -1240,23 +1246,27 @@ public:
         if (2 != types.size())
             return false;
 
-        auto isBigInteger = &typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeUUID>;
-        auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
-        if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1]))
-            || (isBigInteger(*types[1]) && isFloatingPoint(*types[0]))
-            || (WhichDataType(types[0]).isDate() && WhichDataType(types[1]).isDateTime())
-            || (WhichDataType(types[1]).isDate() && WhichDataType(types[0]).isDateTime()))
+        WhichDataType data_type_lhs(types[0]);
+        WhichDataType data_type_rhs(types[1]);
+
+        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64(); };
+
+        if ((is_big_integer(data_type_lhs) && data_type_rhs.isFloat())
+            || (is_big_integer(data_type_rhs) && data_type_lhs.isFloat())
+            || (data_type_lhs.isDate() && data_type_rhs.isDateTime())
+            || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
+
         return isCompilableType(types[0]) && isCompilableType(types[1]);
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         assert(2 == types.size() && 2 == values.size());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto * x = values[0]();
-        auto * y = values[1]();
+        auto * x = values[0];
+        auto * y = values[1];
         if (!types[0]->equals(*types[1]))
         {
             llvm::Type * common;

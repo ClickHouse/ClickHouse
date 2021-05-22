@@ -112,7 +112,7 @@ public:
     ///     If also project_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
     ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
-    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true);
+    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
     /// Does not execute subqueries.
@@ -209,6 +209,7 @@ struct ExpressionAnalysisResult
     bool has_order_by   = false;
     bool has_window = false;
 
+    String where_column_name;
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
@@ -230,6 +231,9 @@ struct ExpressionAnalysisResult
     /// Columns from the SELECT list, before renaming them to aliases. Used to
     /// perform SELECT DISTINCT.
     Names selected_columns;
+
+    /// Columns to read from storage if any.
+    Names required_columns;
 
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;

@@ -3,7 +3,8 @@
 #include <common/types.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunctionImpl.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <type_traits>
 
@@ -159,16 +160,16 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         assert(!types.empty() && !values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (!Impl::isSaturable())
         {
-            auto * result = nativeBoolCast(b, types[0], values[0]());
+            auto * result = nativeBoolCast(b, types[0], values[0]);
             for (size_t i = 1; i < types.size(); i++)
-                result = Impl::apply(b, result, nativeBoolCast(b, types[i], values[i]()));
+                result = Impl::apply(b, result, nativeBoolCast(b, types[i], values[i]));
             return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
         constexpr bool breakOnTrue = Impl::isSaturatedValue(true);
@@ -179,7 +180,7 @@ public:
         for (size_t i = 0; i < types.size(); i++)
         {
             b.SetInsertPoint(next);
-            auto * value = values[i]();
+            auto * value = values[i];
             auto * truth = nativeBoolCast(b, types[i], value);
             if (!types[i]->equals(DataTypeUInt8{}))
                 value = b.CreateSelect(truth, b.getInt8(1), b.getInt8(0));
@@ -222,10 +223,10 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return true; }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        return b.CreateSelect(Impl<UInt8>::apply(b, nativeBoolCast(b, types[0], values[0]())), b.getInt8(1), b.getInt8(0));
+        return b.CreateSelect(Impl<UInt8>::apply(b, nativeBoolCast(b, types[0], values[0])), b.getInt8(1), b.getInt8(0));
     }
 #endif
 };

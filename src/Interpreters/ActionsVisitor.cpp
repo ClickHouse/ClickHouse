@@ -1,6 +1,5 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Core/Row.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -205,7 +204,9 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                 tuple = &literal->value.get<Tuple>();
             }
 
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
+            assert(tuple || func);
+
+            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size(); //-V1004
             if (tuple_size != num_columns)
                 throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
                     ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -1013,7 +1014,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
                         lambda_dag,
-                        ExpressionActionsSettings::fromContext(data.getContext()));
+                        ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
@@ -1027,10 +1028,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
                     String lambda_name = data.getUniqueName("__lambda");
 
-                    auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
+                    auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
                             lambda_actions, captured, lambda_arguments, result_type, result_name);
-                    auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
-                    data.addFunction(function_capture_adapter, captured, lambda_name);
+                    data.addFunction(function_capture, captured, lambda_name);
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                     argument_names[i] = lambda_name;

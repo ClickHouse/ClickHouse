@@ -64,17 +64,17 @@ def check_args_and_update_paths(args):
         args.src_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, SRC_DIR_IN_REPO))
         logging.info("src dir is not set. Will use {}".format(args.src_dir))
 
-    logging.info("base_configs_dir: {},  binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
+    logging.info("base_configs_dir: {}, binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
 
     for path in [args.binary, args.odbc_bridge_binary, args.library_bridge_binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exist".format(path))
 
-    if not os.path.exists(os.path.join(args.base_configs_dir, "config.xml")):
-        raise Exception("No configs.xml in {}".format(args.base_configs_dir))
+    if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))):
+        raise Exception("No configs.xml or configs.yaml in {}".format(args.base_configs_dir))
 
-    if not os.path.exists(os.path.join(args.base_configs_dir, "users.xml")):
-        raise Exception("No users.xml in {}".format(args.base_configs_dir))
+    if (not os.path.exists(os.path.join(args.base_configs_dir, "users.xml"))) and (not os.path.exists(os.path.join(args.base_configs_dir, "users.yaml"))):
+        raise Exception("No users.xml or users.yaml in {}".format(args.base_configs_dir))
 
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call('docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(name=CONTAINER_NAME), shell=True)

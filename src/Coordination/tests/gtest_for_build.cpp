@@ -64,7 +64,7 @@ TEST(CoordinationTest, BufferSerde)
 {
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Get);
     request->xid = 3;
-    dynamic_cast<Coordination::ZooKeeperGetRequest *>(request.get())->path = "/path/value";
+    dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request).path = "/path/value";
 
     DB::WriteBufferFromNuraftBuffer wbuf;
     request->write(wbuf);
@@ -90,7 +90,7 @@ TEST(CoordinationTest, BufferSerde)
 
     EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
     EXPECT_EQ(request_read->xid, 3);
-    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest *>(request_read.get())->path, "/path/value");
+    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
 }
 
 template <typename StateMachine>

@@ -30,6 +30,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
             auto endpoint = config.getString(config_elem + "." + key + ".endpoint");
             auto access_key_id = config.getString(config_elem + "." + key + ".access_key_id", "");
             auto secret_access_key = config.getString(config_elem + "." + key + ".secret_access_key", "");
+            auto region = config.getString(config_elem + "." + key + ".region", "");
             auto server_side_encryption_customer_key_base64 = config.getString(config_elem + "." + key + ".server_side_encryption_customer_key_base64", "");
             std::optional<bool> use_environment_credentials;
             if (config.has(config_elem + "." + key + ".use_environment_credentials"))
@@ -57,7 +58,14 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
                 }
             }
 
-            settings.emplace(endpoint, S3AuthSettings{std::move(access_key_id), std::move(secret_access_key), std::move(server_side_encryption_customer_key_base64), std::move(headers), use_environment_credentials, use_insecure_imds_request});
+            settings.emplace(endpoint, S3AuthSettings{
+                    std::move(access_key_id), std::move(secret_access_key),
+                    std::move(region),
+                    std::move(server_side_encryption_customer_key_base64),
+                    std::move(headers),
+                    use_environment_credentials,
+                    use_insecure_imds_request
+                });
         }
     }
 }
