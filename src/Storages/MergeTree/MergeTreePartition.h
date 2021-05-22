@@ -47,7 +47,7 @@ public:
     static Block executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context);
 
     /// Make a modified partition key with substitution from modulo to moduloLegacy. Used in paritionPruner.
-    static KeyDescription adjustPartitionKey(const StorageMetadataPtr & partition_key, ContextPtr context);
+    static KeyDescription adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 };
 
 }
