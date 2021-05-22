@@ -19,7 +19,8 @@
 namespace DB
 {
 
-/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
+/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API).
+/// Used for both S3 and HDFS.
 class RemoteFSPathKeeper : public std::list<Aws::Vector<Aws::S3::Model::ObjectIdentifier>>
 {
 public:
@@ -134,9 +135,9 @@ protected:
     const String metadata_path;
 
 private:
-    void removeMeta(const String & path, RemoteFSPathKeeper & keys);
+    void removeMeta(const String & path, RemoteFSPathKeeper & fs_paths_keeper);
 
-    void removeMetaRecursive(const String & path, RemoteFSPathKeeper & keys);
+    void removeMetaRecursive(const String & path, RemoteFSPathKeeper & fs_paths_keeper);
 
     bool tryReserve(UInt64 bytes);
 
