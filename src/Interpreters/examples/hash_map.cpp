@@ -12,7 +12,6 @@
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 */
 #include <common/types.h>
-#include <Core/Row.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
@@ -27,19 +26,6 @@
   * This is important, because if you run all the tests one by one, the results will be incorrect.
   * (Due to the peculiarities of the work of the allocator, the first test takes advantage.)
   *
-  * Depending on USE_AUTO_ARRAY, one of the structures is selected as the value.
-  * USE_AUTO_ARRAY = 0 - uses std::vector (hard-copy structure, sizeof = 24 bytes).
-  * USE_AUTO_ARRAY = 1 - uses AutoArray (a structure specially designed for such cases, sizeof = 8 bytes).
-  *
-  * That is, the test also allows you to compare AutoArray and std::vector.
-  *
-  * If USE_AUTO_ARRAY = 0, then HashMap confidently overtakes all.
-  * If USE_AUTO_ARRAY = 1, then HashMap is slightly less serious (20%) ahead of google::dense_hash_map.
-  *
-  * When using HashMap, AutoArray has a rather serious (40%) advantage over std::vector.
-  * And when using other hash tables, AutoArray even more seriously overtakes std::vector
-  *  (up to three and a half times in the case of std::unordered_map and google::sparse_hash_map).
-  *
   * HashMap, unlike google::dense_hash_map, much more depends on the quality of the hash function.
   *
   * PS. Measure everything yourself, otherwise I'm almost confused.
@@ -48,9 +34,6 @@
   * States of aggregate functions were separated from the interface to manipulate them, and put in the pool.
   * But in this test, there was something similar to the old scenario of using hash tables in the aggregation.
   */
-
-#define USE_AUTO_ARRAY    0
-
 
 struct AlternativeHash
 {
@@ -85,12 +68,7 @@ int main(int argc, char ** argv)
     using namespace DB;
 
     using Key = UInt64;
-
-#if USE_AUTO_ARRAY
-    using Value = AutoArray<IAggregateFunction*>;
-#else
     using Value = std::vector<IAggregateFunction*>;
-#endif
 
     size_t n = argc < 2 ? 10000000 : std::stol(argv[1]);
     //size_t m = std::stol(argv[2]);
@@ -119,13 +97,8 @@ int main(int argc, char ** argv)
 
     INIT
 
-#ifndef USE_AUTO_ARRAY
     #undef INIT
     #define INIT
-#endif
-
-    Row row(1);
-    row[0] = UInt64(0);
 
     std::cerr << "sizeof(Key) = " << sizeof(Key) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 

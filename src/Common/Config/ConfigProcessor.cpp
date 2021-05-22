@@ -1,4 +1,8 @@
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
 #include "ConfigProcessor.h"
+#include "YAMLParser.h"
 
 #include <sys/utsname.h>
 #include <cerrno>
@@ -434,7 +438,9 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             std::string base_name = path.stem();
 
             // Skip non-config and temporary files
-            if (fs::is_regular_file(path) && (extension == ".xml" || extension == ".conf") && !startsWith(base_name, "."))
+            if (fs::is_regular_file(path)
+                    && (extension == ".xml" || extension == ".conf" || extension == ".yaml" || extension == ".yml")
+                    && !startsWith(base_name, "."))
                 files.push_back(it->path());
         }
     }
@@ -449,12 +455,21 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    XMLDocumentPtr config;
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
+
+    XMLDocumentPtr config;
 
     if (fs::exists(path))
     {
-        config = dom_parser.parse(path);
+        fs::path p(path);
+        if (p.extension() == ".xml")
+        {
+            config = dom_parser.parse(path);
+        }
+        else if (p.extension() == ".yaml" || p.extension() == ".yml")
+        {
+            config = YAMLParser::parse(path);
+        }
     }
     else
     {
@@ -489,8 +504,20 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
-            XMLDocumentPtr with = dom_parser.parse(merge_file);
+            XMLDocumentPtr with;
+
+            fs::path p(merge_file);
+            if (p.extension() == ".yaml" || p.extension() == ".yml")
+            {
+                with = YAMLParser::parse(merge_file);
+            }
+            else
+            {
+                with = dom_parser.parse(merge_file);
+            }
+
             merge(config, with);
+
             contributing_files.push_back(merge_file);
         }
         catch (Exception & e)
