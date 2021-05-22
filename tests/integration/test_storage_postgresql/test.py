@@ -184,6 +184,11 @@ def test_non_default_scema(started_cluster):
     result = node1.query('SELECT * FROM test_pg_table_schema_with_dots')
     assert(result == expected)
 
+    cursor.execute('INSERT INTO "test_schema"."test_table" SELECT i FROM generate_series(100, 199) as t(i)')
+    result = node1.query('SELECT * FROM {}'.format(table_function))
+    expected = node1.query('SELECT number FROM numbers(200)')
+    assert(result == expected)
+
 
 def test_concurrent_queries(started_cluster):
     conn = get_postgres_conn(True)

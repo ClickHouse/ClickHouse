@@ -100,33 +100,28 @@ public:
     explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
         postgres::ConnectionHolderPtr connection_holder_,
-        const std::string & remote_table_name_)
+        const String & remote_table_name_,
+        const String & remote_table_schema_)
         : metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
+        , remote_table_schema(remote_table_schema_)
     {
     }
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-
-    void writePrefix() override
-    {
-        work = std::make_unique<pqxx::work>(connection_holder->get());
-    }
-
-
     void write(const Block & block) override
     {
-        if (!work)
-            return;
+        if (!inserter)
+            inserter = std::make_unique<StreamTo>(connection_holder->get(),
+                                                  remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
+                                                                              : pqxx::table_path({remote_table_schema, remote_table_name}),
+                                                  block.getNames());
 
         const auto columns = block.getColumns();
         const size_t num_rows = block.rows(), num_cols = block.columns();
         const auto data_types = block.getDataTypes();
-
-        if (!stream_inserter)
-            stream_inserter = std::make_unique<pqxx::stream_to>(*work, remote_table_name, block.getNames());
 
         /// std::optional lets libpqxx to know if value is NULL
         std::vector<std::optional<std::string>> row(num_cols);
@@ -156,20 +151,15 @@ public:
                 }
             }
 
-            stream_inserter->write_values(row);
+            inserter->stream.write_values(row);
         }
     }
-
 
     void writeSuffix() override
     {
-        if (stream_inserter)
-        {
-            stream_inserter->complete();
-            work->commit();
-        }
+        if (inserter)
+            inserter->complete();
     }
-
 
     /// Cannot just use serializeAsText for array data type even though it converts perfectly
     /// any dimension number array into text format, because it incloses in '[]' and for postgres it must be '{}'.
@@ -207,7 +197,6 @@ public:
         writeChar('}', ostr);
     }
 
-
     /// Conversion is done via column casting because with writeText(Array..) got incorrect conversion
     /// of Date and DateTime data types and it added extra quotes for values inside array.
     static std::string clickhouseToPostgresArray(const Array & array_field, const DataTypePtr & data_type)
@@ -222,7 +211,6 @@ public:
         assert(ostr.str().size() >= 2);
         return '{' + std::string(ostr.str().begin() + 1, ostr.str().end() - 1) + '}';
     }
-
 
     static MutableColumnPtr createNested(DataTypePtr nested)
     {
@@ -275,21 +263,34 @@ public:
         return nested_column;
     }
 
-
 private:
+    struct StreamTo
+    {
+        pqxx::work tx;
+        pqxx::stream_to stream;
+
+        StreamTo(pqxx::connection & connection, pqxx::table_path table_path, Names columns)
+            : tx(connection)
+            , stream(pqxx::stream_to::raw_table(tx, connection.quote_table(table_path), connection.quote_columns(columns))) {}
+
+        void complete()
+        {
+            stream.complete();
+            tx.commit();
+        }
+    };
+
     StorageMetadataPtr metadata_snapshot;
     postgres::ConnectionHolderPtr connection_holder;
-    std::string remote_table_name;
-
-    std::unique_ptr<pqxx::work> work;
-    std::unique_ptr<pqxx::stream_to> stream_inserter;
+    const String remote_table_name, remote_table_schema;
+    std::unique_ptr<StreamTo> inserter;
 };
 
 
 BlockOutputStreamPtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
-    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name);
+    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema);
 }
 
 
