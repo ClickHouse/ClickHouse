@@ -47,6 +47,5 @@ target_link_libraries(clickhouse_storages_system PRIVATE
     common
     string_utils
     clickhouse_common_zookeeper
-    clickhouse_parsers
     Poco::JSON
 )

@@ -8,9 +8,9 @@ set (CLICKHOUSE_LOCAL_LINK
         clickhouse_common_io
         clickhouse_dictionaries
         clickhouse_functions
-        clickhouse_parsers
         clickhouse_storages_system
         clickhouse_table_functions
+        dbms
 )
 
 clickhouse_program_add(local)

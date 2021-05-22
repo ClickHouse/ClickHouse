@@ -11,7 +11,7 @@ cd $CLICKHOUSE_TMP || exit
 # Protection for network errors
 for _ in {1..10}; do
     rm -rf ./clickhouse-odbc
-    git clone --quiet https://github.com/ClickHouse/clickhouse-odbc.git && pushd clickhouse-odbc > /dev/null && git checkout --quiet 5d84ec591c53cbb272593f024230a052690fdf69 && break
+    timeout 20 git clone --quiet https://github.com/ClickHouse/clickhouse-odbc.git && pushd clickhouse-odbc > /dev/null && git checkout --quiet 5d84ec591c53cbb272593f024230a052690fdf69 && break
     sleep 1
 done
 

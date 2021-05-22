@@ -7,13 +7,12 @@ set (CLICKHOUSE_COPIER_LINK
         PRIVATE
                 clickhouse_common_zookeeper
                 clickhouse_common_config
-                clickhouse_parsers
                 clickhouse_functions
                 clickhouse_table_functions
                 clickhouse_aggregate_functions
                 clickhouse_dictionaries
+                dbms
                 string_utils
-
         PUBLIC
                 daemon
 )

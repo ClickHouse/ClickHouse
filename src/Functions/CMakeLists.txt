@@ -18,7 +18,6 @@ target_link_libraries(clickhouse_functions
         ${FASTOPS_LIBRARY}
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
-        clickhouse_parsers
         consistent-hashing
         dbms
         metrohash

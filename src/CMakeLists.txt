@@ -171,6 +171,9 @@ macro(add_object_library name common_path)
     endif ()
 endmacro()
 
+add_object_library(clickhouse_access Access)
+add_object_library(clickhouse_parsers Parsers)
+add_object_library(clickhouse_parsers_mysql Parsers/MySQL)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
@@ -324,7 +327,21 @@ if (USE_NURAFT)
 endif()
 
 if(RE2_INCLUDE_DIR)
-    target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
+endif()
+
+if (USE_LDAP)
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIRS})
+    dbms_target_link_libraries(PRIVATE ${OPENLDAP_LIBRARIES})
+endif ()
+
+if (USE_CYRUS_SASL)
+    dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
+endif()
+
+if (USE_KRB5)
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${KRB5_INCLUDE_DIR})
+    dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
 dbms_target_link_libraries (
@@ -334,8 +351,6 @@ dbms_target_link_libraries (
         clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
-        clickhouse_parsers
-        clickhouse_access
         lz4
         Poco::JSON
         Poco::MongoDB
@@ -488,8 +503,6 @@ if (ENABLE_TESTS AND USE_GTEST)
         ${GTEST_BOTH_LIBRARIES}
         clickhouse_functions
         clickhouse_aggregate_functions
-        clickhouse_parsers
-        clickhouse_access
         clickhouse_storages_system
         dbms
         clickhouse_common_zookeeper

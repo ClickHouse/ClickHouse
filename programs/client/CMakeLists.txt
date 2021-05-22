@@ -12,7 +12,7 @@ set (CLICKHOUSE_CLIENT_LINK
         clickhouse_common_config
         clickhouse_common_io
         clickhouse_functions
-        clickhouse_parsers
+        dbms
         string_utils
 )
 
