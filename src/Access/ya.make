@@ -9,7 +9,7 @@ PEERDIR(
 
 
 SRCS(
-    AccessControlManager.cpp
+    AccessControl.cpp
     AccessRights.cpp
     AccessRightsElement.cpp
     AllowedClientHosts.cpp
