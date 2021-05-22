@@ -5,9 +5,9 @@ toc_title: Configuration Files
 
 # Configuration Files {#configuration_files}
 
-ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml` or `/etc/clickhouse-server/config.yaml`. Other files must be in the `/etc/clickhouse-server/config.d` directory. Note, that any configuration file can be written either in XML or YAML, but mixing formats in one file is not supported.
+ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml` or `/etc/clickhouse-server/config.yaml`. Other files must be in the `/etc/clickhouse-server/config.d` directory. Note, that any configuration file can be written either in XML or YAML, but mixing formats in one file is not supported. For example, you can have main configs as `config.xml` and `users.xml` and write additional files in `config.d` and `users.d` directories in `.yaml`.
 
-All the configuration files should be in XML or YAML formats. All XML files should have the same root element, usually `<yandex>`. As for YAML, writing `yandex:` is not needed, parser will insert it automatically.
+All the configuration files should be in XML or YAML formats. All XML files should have the same root element, usually `<yandex>`. As for YAML, `yandex:` should not be present, the parser will insert it automatically.
 
 ## Override {#override}
 
