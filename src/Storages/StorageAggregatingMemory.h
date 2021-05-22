@@ -67,6 +67,7 @@ private:
     ContextPtr constructor_context;
     ConstraintsDescription constructor_constraints;
 
+    StoragePtr source_storage;
     Block src_block_header;
     StorageMetadataPtr src_metadata_snapshot;
 

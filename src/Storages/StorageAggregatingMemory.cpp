@@ -207,54 +207,30 @@ public:
     {
         storage.src_metadata_snapshot->check(block, true);
 
-        Block block_for_aggregation(block);
-        expression_actions->execute(block_for_aggregation);
+        StoragePtr source_storage = storage.source_storage;
+        auto query = metadata_snapshot->getSelectQuery();
+        auto select_query = query.inner_query->as<ASTSelectQuery &>();
 
-        bool no_more_keys = false;
-        storage.aggregator_transform->aggregator.executeOnBlock(
-            block_for_aggregation, variants, key_columns, aggregate_columns, no_more_keys);
-    }
+        StoragePtr block_storage
+            = StorageValues::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), block, source_storage->getVirtuals());
 
-    // Used to run aggregation the usual way (via InterpreterSelectQuery),
-    // and only purpose is to aid development.
-    // TODO remove this.
-    void writeForDebug(const Block & block)
-    {
+        ContextPtr local_context = context;
+        local_context->addViewSource(block_storage);
+
+        InterpreterSelectQuery select(query.inner_query, local_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
+        auto select_result = select.execute();
+
         BlockInputStreamPtr in;
-
-        std::optional<InterpreterSelectQuery> select;
-
-        if (metadata_snapshot->hasSelectQuery())
-        {
-            auto query = metadata_snapshot->getSelectQuery();
-
-            auto block_storage
-                = StorageValues::create(storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
-
-            ContextPtr local_context = context;
-            local_context->addViewSource(block_storage);
-
-            auto select_query = query.inner_query->as<ASTSelectQuery &>();
-
-            LOG_DEBUG(&Poco::Logger::get("Arthur"), "executing debug select query");
-            select.emplace(query.inner_query, local_context, SelectQueryOptions());
-            auto select_result = select->execute();
-
-            in = std::make_shared<MaterializingBlockInputStream>(select_result.getInputStream());
-
-            in = std::make_shared<SquashingBlockInputStream>(
-                in, context->getSettingsRef().min_insert_block_size_rows, context->getSettingsRef().min_insert_block_size_bytes);
-            in = std::make_shared<ConvertingBlockInputStream>(
-                in, metadata_snapshot->getSampleBlock(), ConvertingBlockInputStream::MatchColumnsMode::Name);
-        }
-        else
-            in = std::make_shared<OneBlockInputStream>(block);
+        in = std::make_shared<MaterializingBlockInputStream>(select_result.getInputStream());
+        in = std::make_shared<SquashingBlockInputStream>(
+            in, context->getSettingsRef().min_insert_block_size_rows, context->getSettingsRef().min_insert_block_size_bytes);
 
         in->readPrefix();
 
+        bool no_more_keys = false;
         while (Block result_block = in->read())
         {
-            Nested::validateArraySizes(result_block);
+            storage.aggregator_transform->aggregator.mergeBlock(result_block, variants, no_more_keys);
         }
 
         in->readSuffix();
@@ -309,7 +285,7 @@ void StorageAggregatingMemory::lazy_initialize()
 
     /// Get info about source table.
     JoinedTables joined_tables(constructor_context, select_ptr->as<ASTSelectQuery &>());
-    StoragePtr source_storage = joined_tables.getLeftTableStorage();
+    source_storage = joined_tables.getLeftTableStorage();
     NamesAndTypesList source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
 
     ColumnsDescription columns_before_aggr;
