@@ -19,6 +19,11 @@
             <disk_memory>
                 <type>memory</type>
             </disk_memory>
+            <disk_encrypted>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <key>1234567812345678</key>
+            </disk_encrypted>
         </disks>
     </storage_configuration>
 
