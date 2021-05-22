@@ -14,32 +14,33 @@
 namespace DB 
 {
 
+namespace 
+{
+    template<typename T>
+    void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf)
+    {
+        readIntText(x, buf);
+        skipWhitespaceIfAny(buf);
+    }
+
+    void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
+    {
+        readStringUntilWhitespace(s, buf);
+        skipWhitespaceIfAny(buf);
+    }
+}
+
 static constexpr auto meminfo_filename = "/proc/meminfo";
 
 static constexpr size_t READ_BUFFER_BUF_SIZE = (64 << 10);
 
-void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
-{
-    readStringUntilWhitespace(s, buf);
-    skipWhitespaceIfAny(buf);
-}
-
-template<typename T>
-void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf) 
-{
-    readIntText(x, buf);
-    skipWhitespaceIfAny(buf);
-}
-
-MemoryInfoOS::MemoryInfoOS() 
-    : meminfo_in(meminfo_filename, READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC)
-{}
+MemoryInfoOS::MemoryInfoOS() {}
 
 MemoryInfoOS::~MemoryInfoOS() {}
 
 MemoryInfoOS::Data MemoryInfoOS::get() 
 {
-    meminfo_in.seek(0, SEEK_SET);
+    ReadBufferFromFile meminfo_in(meminfo_filename, READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC);
     
     MemoryInfoOS::Data data;
     String field_name;
@@ -47,7 +48,7 @@ MemoryInfoOS::Data MemoryInfoOS::get()
     std::unordered_map<String, uint64_t> meminfo;
 
     while (!meminfo_in.eof())
-        meminfo.insert(readField());
+        meminfo.insert(readField(meminfo_in));
     
     data.total       = meminfo["MemTotal"];
     data.free        = meminfo["MemFree"];
@@ -62,7 +63,7 @@ MemoryInfoOS::Data MemoryInfoOS::get()
     return data;
 }
 
-std::pair<String, uint64_t> MemoryInfoOS::readField()
+std::pair<String, uint64_t> MemoryInfoOS::readField(ReadBuffer& meminfo_in)
 {
     String key;
     uint64_t val;

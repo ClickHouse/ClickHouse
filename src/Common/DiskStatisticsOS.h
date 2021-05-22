@@ -9,7 +9,7 @@
 namespace DB 
 {
 
-/** Opens file /proc/mounts. Keeps it open, reads all mounted filesytems and 
+/** Opens file /proc/mounts, reads all mounted filesytems and 
   * calculates disk usage.
   */ 
 class DiskStatisticsOS 
@@ -27,10 +27,7 @@ public:
     Data get();
 
 private:
-    String readNextFilesystem();
-
-private:
-    ReadBufferFromFile mounts_in;
+    String readNextFilesystem(ReadBuffer& mounts_in);
 };
 
 }
