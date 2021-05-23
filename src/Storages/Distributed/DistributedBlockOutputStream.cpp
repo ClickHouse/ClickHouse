@@ -633,7 +633,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         compression_level = settings.network_zstd_compression_level;
 
     CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs);
-    CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
+    CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level, {});
 
     /// tmp directory is used to ensure atomicity of transactions
     /// and keep monitor thread out from reading incomplete data

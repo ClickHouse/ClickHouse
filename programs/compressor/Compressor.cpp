@@ -144,7 +144,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             codec = CompressionCodecFactory::instance().get(ast, nullptr);
         }
         else
-            codec = CompressionCodecFactory::instance().get(method_family, level);
+            codec = CompressionCodecFactory::instance().get(method_family, level, {});
 
 
         std::unique_ptr<ReadBufferFromFileBase> rb;
