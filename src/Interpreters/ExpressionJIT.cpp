@@ -43,7 +43,7 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
-class LLVMExecutableFunction : public IExecutableFunctionImpl
+class LLVMExecutableFunction : public IExecutableFunction
 {
 public:
 
@@ -59,7 +59,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (!canBeNativeType(*result_type))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "LLVMExecutableFunction unexpected result type in: {}", result_type->getName());
@@ -114,7 +114,7 @@ private:
     JITCompiledFunction function = nullptr;
 };
 
-class LLVMFunction : public IFunctionBaseImpl
+class LLVMFunction : public IFunctionBase
 {
 public:
 
@@ -155,7 +155,7 @@ public:
 
     const DataTypePtr & getResultType() const override { return dag.back().result_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         void * function = getJITInstance().findCompiledFunction(module_info, name);
 
@@ -280,10 +280,9 @@ static FunctionBasePtr compile(
             auto llvm_function = std::make_unique<LLVMFunction>(dag);
             size_t compiled_size = llvm_function->getCompiledSize();
 
-            FunctionBasePtr llvm_function_wrapper = std::make_shared<FunctionBaseAdaptor>(std::move(llvm_function));
             CompiledFunction function
             {
-                .function = llvm_function_wrapper,
+                .function = std::move(llvm_function),
                 .compiled_size = compiled_size
             };
 
@@ -303,7 +302,7 @@ static FunctionBasePtr compile(
     }
     else
     {
-        fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(dag));
+        fn = std::make_unique<LLVMFunction>(dag);
     }
 
     LOG_TRACE(getLogger(), "Use compiled expression {}", fn->getName());
@@ -314,28 +313,6 @@ static FunctionBasePtr compile(
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
-}
-
-static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Node & node, const IFunctionBase & impl)
-{
-    static std::unordered_set<std::string_view> comparison_functions
-    {
-        NameEquals::name,
-        NameNotEquals::name,
-        NameLess::name,
-        NameGreater::name,
-        NameLessOrEquals::name,
-        NameGreaterOrEquals::name
-    };
-
-    auto it = comparison_functions.find(impl.getName());
-    if (it == comparison_functions.end())
-        return false;
-
-    const auto * lhs_node = node.children[0];
-    const auto * rhs_node = node.children[1];
-
-    return lhs_node == rhs_node && !isTuple(lhs_node->result_type);
 }
 
 static bool isCompilableFunction(const ActionsDAG::Node & node)
@@ -353,9 +330,6 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
         if (!canBeNativeType(*type))
             return false;
     }
-
-    if (checkIfFunctionIsComparisonEdgeCase(node, *node.function_base))
-        return false;
 
     return function.isCompilable();
 }

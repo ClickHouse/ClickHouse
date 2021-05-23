@@ -740,7 +740,8 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        LOCAL           /// clickhouse-local
+        LOCAL,          /// clickhouse-local
+        KEEPER,         /// clickhouse-keeper (also daemon)
     };
 
     ApplicationType getApplicationType() const;

@@ -1,0 +1,29 @@
+<test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <substitutions>
+        <substitution>
+           <name>key</name>
+           <values>
+               <value>SearchEngineID</value>
+               <value>RegionID</value>
+               <value>SearchPhrase</value>
+               <value>ClientIP</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>func</name>
+           <values>
+               <value>quantile</value>
+               <value>quantileExact</value>
+               <value>quantileTDigest</value>
+               <value>quantileTiming</value>
+               <value>quantileBFloat16</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT {key} AS k, {func}(ResolutionWidth) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+</test>
