@@ -4,6 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 verify_sql="SELECT
     (SELECT sumIf(value, metric = 'PartsCommitted'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics)
     = (SELECT sum(active), sum(NOT active) FROM system.parts)"
