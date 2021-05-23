@@ -93,7 +93,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         std::optional<size_t> generic_compression_codec_pos;
 
         bool can_substitute_codec_arguments = true;
-        for (size_t i = 0; i < func->arguments->children.size(); ++i)
+        for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
         {
             const auto & inner_codec_ast = func->arguments->children[i];
             String codec_family_name;
@@ -110,21 +110,6 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             }
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
-
-            if (!allow_experimental_codecs)
-            {
-                if (codec_family_name == "Lizard" ||
-                    codec_family_name == "Density" ||
-                    codec_family_name == "LZSSE2" ||
-                    codec_family_name == "LZSSE4" ||
-                    codec_family_name == "LZSSE8")
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} is experimental and not meant to be used in production."
-                        " You can enable it with the 'allow_experimental_codecs' setting.",
-                        codec_family_name);
-                }
-            }
 
             /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
@@ -168,6 +153,12 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 {
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
+
+                if (!allow_experimental_codecs && result_codec->isExperimental())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is experimental and not meant to be used in production."
+                        " You can enable it with the 'allow_experimental_codecs' setting.",
+                        codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
