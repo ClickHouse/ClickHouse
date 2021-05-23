@@ -134,7 +134,6 @@ TEST(FileEncryption, Decryption)
         ASSERT_EQ(expected.substr(0, i), result.substr(0, i));
     }
 
-    
     size_t offset = 25;
     String offset_input = "\x6c\x67\xe4\xf5\x8f\x86\xb0\x19\xe5\xcd\x53\x59\xe0\xc6\x01\x5e\xc1\xfd\x60\x9d";
     for (size_t i = 0; i <= expected.size(); ++i)
