@@ -4,7 +4,8 @@
 #include <Common/UTF8Helpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-
+#include "/home/sergey/ClickHouse/contrib/cld2/public/compact_lang_det.h"
+//#include <cld2/compact_lang_det.h>
 #include <cstring>
 #include <cmath>
 #include <unordered_map>
@@ -116,7 +117,7 @@ struct CharsetClassificationImpl
         return len;
     }
 
-    
+
     static void constant(String data, String & res)
     {
         static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
@@ -142,7 +143,7 @@ struct CharsetClassificationImpl
          * If we need to find language of data, we return <Language>
          * If we need to find charset of data, we return <Charset>.
          */ 
-        
+
         size_t sep = poss_ans.find('_');
         if (detect_language)
         {
@@ -190,10 +191,10 @@ struct CharsetClassificationImpl
                     poss_ans = item.first;
                 }
             }
-            
+
             size_t sep = poss_ans.find('_');
             String ans_str;
-            
+
             if (detect_language)
             {
                 ans_str = poss_ans.erase(0, sep + 1);

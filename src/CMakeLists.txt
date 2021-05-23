@@ -314,7 +314,6 @@ target_link_libraries(clickhouse_common_io
 )
 
 
-
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -348,6 +347,7 @@ dbms_target_link_libraries (
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         lz4
+        cld2
         Poco::JSON
         Poco::MongoDB
         string_utils
@@ -516,3 +516,4 @@ if (ENABLE_TESTS AND USE_GTEST)
 
     add_check(unit_tests_dbms)
 endif ()
+

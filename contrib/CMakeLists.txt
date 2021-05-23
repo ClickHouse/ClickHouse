@@ -48,6 +48,7 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
+add_subdirectory (cld2-cmake)
 
 if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz)

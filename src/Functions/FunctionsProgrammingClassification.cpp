@@ -33,7 +33,7 @@ struct ProgrammingClassificationImpl
     }
 
 
-    
+
     static void constant(String data, String & res)
     {
         static std::unordered_map<String, std::unordered_map<String, Float64>> programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
@@ -66,7 +66,7 @@ struct ProgrammingClassificationImpl
                     prev_command = command;
                 }
                 command = "";
-            } 
+            }
             else
             {
                 ++i;
@@ -82,7 +82,7 @@ struct ProgrammingClassificationImpl
             if (result > max_result)
             {
                 max_result = result;
-                most_liked = item.first; 
+                most_liked = item.first;
             }
         }
         /// If all weights are zero, then we assume that the language is undefined
@@ -141,7 +141,7 @@ struct ProgrammingClassificationImpl
                         prev_command = command;
                     }
                     command = "";
-                } 
+                }
                 else
                 {
                     ++ind;
@@ -157,7 +157,7 @@ struct ProgrammingClassificationImpl
                 if (result > max_result)
                 {
                     max_result = result;
-                    most_liked = item.first; 
+                    most_liked = item.first;
                 }
             }
             /// If all weights are zero, then we assume that the language is undefined

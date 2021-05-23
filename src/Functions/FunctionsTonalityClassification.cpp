@@ -26,8 +26,8 @@ struct TonalityClassificationImpl
         if (tonality_level < 0.25) { return "NEG"; }
         if (tonality_level > 0.5) { return "POS"; }
         return "NEUT";
-    } 
-    
+    }
+
     static void constant(String data, String & res)
     {
         static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
@@ -58,7 +58,7 @@ struct TonalityClassificationImpl
                     weight += emotional_dict[word];
                 }
                 word = "";
-            } 
+            }
             else
             {
                 ++i;
