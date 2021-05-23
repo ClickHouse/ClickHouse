@@ -30,7 +30,7 @@ RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string
 void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
 {
     std::string basename = fs::path(path).stem();
-    fs::path dir_path = fs::absolute(path).parent_path();
+    fs::path dir_path = fs::canonical(path).parent_path();
 
     fs::directory_iterator dir_end;
     for (fs::directory_iterator dir_it(dir_path); dir_it != dir_end; ++dir_it)

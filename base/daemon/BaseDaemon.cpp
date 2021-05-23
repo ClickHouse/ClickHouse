@@ -57,6 +57,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
+#include <Poco/File.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
@@ -530,11 +531,12 @@ void BaseDaemon::closeFDs()
 #endif
     if (fs::is_directory(proc_path)) /// Hooray, proc exists
     {
+        std::vector<std::string> fds;
         /// in /proc/self/fd directory filenames are numeric file descriptors
-        fs::directory_iterator dir_end;
-        for (fs::directory_iterator dir_it(proc_path); dir_it != dir_end; ++dir_it)
+        Poco::File(proc_path.string()).list(fds);
+        for (const auto & fd_str : fds)
         {
-            int fd = DB::parse<int>(dir_it->path().filename());
+            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }

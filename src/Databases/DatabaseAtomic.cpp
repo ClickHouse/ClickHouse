@@ -443,9 +443,9 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     try
     {
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::path data = fs::absolute(getContext()->getPath()).string() + actual_data_path;
+        fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
         if (!if_data_path_exist || fs::exists(data))
-            fs::create_symlink(data, link);
+            fs::create_directory_symlink(data, link);
     }
     catch (...)
     {
@@ -481,7 +481,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     {
         try
         {
-            fs::create_symlink(metadata_path, path_to_metadata_symlink);
+            fs::create_directory_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)
         {
