@@ -78,7 +78,8 @@ void CompressionCodecFactory::validateCodec(const String & family_name, std::opt
     }
 }
 
-ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const IDataType * column_type, bool sanity_check, bool allow_experimental_codecs) const
+ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
+    const ASTPtr & ast, const IDataType * column_type, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -107,16 +108,21 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-            if (sanity_check && !allow_experimental_codecs) {
-                if (codec_family_name == "Lizard" || 
+            if (!allow_experimental_codecs)
+            {
+                if (codec_family_name == "Lizard" ||
                     codec_family_name == "Density" ||
                     codec_family_name == "LZSSE2" ||
                     codec_family_name == "LZSSE4" ||
-                    codec_family_name == "LZSSE8") {
+                    codec_family_name == "LZSSE8")
+                {
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Experimental codecs Lizard, Density and LZSSE* are not allowed, please enable allow_experimental_codecs flag.");
+                        "Codec {} is experimental and not meant to be used in production."
+                        " You can enable it with the 'allow_experimental_codecs' setting.",
+                        codec_family_name);
                 }
             }
+
             /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
             CompressionCodecPtr result_codec;
