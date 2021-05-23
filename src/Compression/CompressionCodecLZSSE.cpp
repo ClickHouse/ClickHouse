@@ -115,7 +115,27 @@ UInt32 CompressionCodecLZSSE::doCompressData(const char * source, UInt32 source_
 
 void CompressionCodecLZSSE::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    UInt32 res = LZSSE2_Decompress(source, source_size, dest, uncompressed_size);
+    UInt32 res = 0;
+    switch (type)
+    {
+        case 2:
+        {
+            res = LZSSE2_Decompress(source, source_size, dest, uncompressed_size);
+            break;
+        }
+        case 4:
+        {
+            res = LZSSE4_Decompress(source, source_size, dest, uncompressed_size);
+            break;
+        }
+        case 8:
+        {
+            res = LZSSE8_Decompress(source, source_size, dest, uncompressed_size);
+            break;
+        }
+        default:
+            break;
+    }
     if (res < uncompressed_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress block with LZSSE{}", type);
 }
