@@ -15,6 +15,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
+void registerFileSegmentationEngineJSONReadFiltered(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -34,6 +35,7 @@ void registerOutputFormatProcessorCSV(FormatFactory & factory);
 void registerInputFormatProcessorTSKV(FormatFactory & factory);
 void registerOutputFormatProcessorTSKV(FormatFactory & factory);
 void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerInputFormatProcessorJSONReadFiltered(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
@@ -105,6 +107,7 @@ void registerFormats()
     registerOutputFormatProcessorCSV(factory);
     registerInputFormatProcessorTSKV(factory);
     registerOutputFormatProcessorTSKV(factory);
+    registerInputFormatProcessorJSONReadFiltered(factory);
     registerInputFormatProcessorJSONEachRow(factory);
     registerOutputFormatProcessorJSONEachRow(factory);
     registerInputFormatProcessorJSONCompactEachRow(factory);
