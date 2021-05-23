@@ -98,7 +98,7 @@ public:
     const String superdigest;
 
 public:
-    KeeperStorage(int64_t tick_time_ms);
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_);
 
     int64_t getSessionID(int64_t session_timeout_ms)
     {

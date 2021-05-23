@@ -148,8 +148,9 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
     return result;
 }
 
-KeeperStorage::KeeperStorage(int64_t tick_time_ms)
+KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_)
     : session_expiry_queue(tick_time_ms)
+    , superdigest(superdigest_)
 {
     container.insert("/", Node());
 }

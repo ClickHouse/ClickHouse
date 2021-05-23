@@ -241,9 +241,10 @@ KeeperStorageSnapshot::~KeeperStorageSnapshot()
     storage->disableSnapshotMode();
 }
 
-KeeperSnapshotManager::KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_)
+KeeperSnapshotManager::KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, const std::string & superdigest_, size_t storage_tick_time_)
     : snapshots_path(snapshots_path_)
     , snapshots_to_keep(snapshots_to_keep_)
+    , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
 {
     namespace fs = std::filesystem;
@@ -330,7 +331,7 @@ SnapshotMetaAndStorage KeeperSnapshotManager::deserializeSnapshotFromBuffer(nura
 {
     ReadBufferFromNuraftBuffer reader(buffer);
     CompressedReadBuffer compressed_reader(reader);
-    auto storage = std::make_unique<KeeperStorage>(storage_tick_time);
+    auto storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest);
     auto snapshot_metadata = KeeperStorageSnapshot::deserialize(*storage, compressed_reader);
     return std::make_pair(snapshot_metadata, std::move(storage));
 }
