@@ -54,7 +54,7 @@ public:
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
     }
 
-    ColumnPtr getConstantResultForArguments(const ColumnsWithTypeAndName & arguments) const override
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
 

@@ -209,14 +209,14 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     {
         ColumnPtr column;
 
-        if (all_const && node.function_base->isSuitableForConstantFolding())
+        if (all_const)
         {
             size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
             column = node.function->execute(arguments, node.result_type, num_rows, true);
         }
         else
         {
-            column = node.function_base->getConstantResultForArguments(arguments);
+            column = node.function_base->getConstantResultForNonConstArguments(arguments);
         }
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.

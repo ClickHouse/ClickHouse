@@ -51,10 +51,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return getConstantResultForArguments(arguments)->cloneResized(input_rows_count);
+        return getConstantResultForNonConstArguments(arguments)->cloneResized(input_rows_count);
     }
 
-    ColumnPtr getConstantResultForArguments(const ColumnsWithTypeAndName & arguments) const override
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments) const override
     {
         if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(arguments[0].type.get()))
             return DataTypeUInt8().createColumnConst(1, type8->getValues().size());

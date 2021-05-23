@@ -521,6 +521,70 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
 }
 
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments) const
+{
+    /** Try to perform optimization for saturable functions (AndFunction, OrFunction) in case some arguments are
+          * constants.
+          * If function is not saturable (XorFunction) we cannot perform such optimization.
+          * If function is AndFunction and in arguments there is constant false, result is false.
+          * If function is OrFunction and in arguments there is constant true, result is true.
+          */
+
+    if constexpr (!Impl::isSaturable())
+        return nullptr;
+
+    bool has_true_constant = false;
+    bool has_false_constant = false;
+
+    for (const auto & argument : arguments)
+    {
+        ColumnPtr column = argument.column;
+
+        if (!column || !isColumnConst(*column))
+            continue;
+
+        DataTypePtr non_nullable_type = removeNullable(argument.type);
+        TypeIndex data_type_index = non_nullable_type->getTypeId();
+
+        if (!isNativeNumber(data_type_index))
+            continue;
+
+        const ColumnConst * const_column = static_cast<const ColumnConst *>(column.get());
+
+        callOnBasicType<void, true, true, false, false>(data_type_index, [&](const auto & types)
+        {
+            using Types = std::decay_t<decltype(types)>;
+            using FieldType = typename Types::RightType;
+
+            Field contant_field_value = const_column->getField();
+            if (contant_field_value.isNull())
+                return false;
+
+            FieldType constant_value = const_column->getValue<FieldType>();
+            bool constant_value_bool = static_cast<bool>(constant_value);
+
+            has_true_constant = has_true_constant || constant_value_bool;
+            has_false_constant = has_false_constant || !constant_value_bool;
+            return true;
+        });
+    }
+
+    ColumnPtr result_column;
+
+    if constexpr (std::is_same_v<Impl, AndImpl>)
+    {
+        if (has_false_constant)
+            result_column = ColumnUInt8::create(1, false);
+    }
+    else if constexpr (std::is_same_v<Impl, OrImpl>)
+    {
+        if (has_true_constant)
+            result_column = ColumnUInt8::create(1, true);
+    }
+
+    return result_column;
+}
 
 template <typename A, typename Op>
 struct UnaryOperationImpl
