@@ -15,6 +15,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b Int16, c Float32, d 
 
 function thread1()
 {
+    # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
     while true; do $CLICKHOUSE_CLIENT --query "SELECT * FROM system.parts FORMAT Null"; done
 }
 
