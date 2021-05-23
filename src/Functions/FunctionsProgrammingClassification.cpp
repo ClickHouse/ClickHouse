@@ -186,7 +186,7 @@ struct ProgrammingClassificationImpl
 
 struct NameGetProgramming
 {
-    static constexpr auto name = "getProgrammingLanguage";
+    static constexpr auto name = "detectProgrammingLanguage";
 };
 
 
