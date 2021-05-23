@@ -5,8 +5,6 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
-#include <Common/checkStackSize.h>
-#include <Common/quoteString.h>
 #include <common/logger_useful.h>
 
 

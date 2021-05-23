@@ -12,7 +12,6 @@
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekAvoidingReadBuffer.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
@@ -231,22 +230,21 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
 
 void DiskS3::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
 {
-    if (!fs_paths_keeper.empty())
+    if (fs_paths_keeper.empty())
+        return;
+
+    auto settings = current_settings.get();
+    for (const auto & chunk : fs_paths_keeper)
     {
-        auto settings = current_settings.get();
+        Aws::S3::Model::Delete delkeys;
+        delkeys.SetObjects(chunk);
 
-        for (const auto & chunk : fs_paths_keeper)
-        {
-            Aws::S3::Model::Delete delkeys;
-            delkeys.SetObjects(chunk);
-
-            /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
-            Aws::S3::Model::DeleteObjectsRequest request;
-            request.SetBucket(bucket);
-            request.SetDelete(delkeys);
-            auto outcome = settings->client->DeleteObjects(request);
-            throwIfError(outcome);
-        }
+        /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
+        Aws::S3::Model::DeleteObjectsRequest request;
+        request.SetBucket(bucket);
+        request.SetDelete(delkeys);
+        auto outcome = settings->client->DeleteObjects(request);
+        throwIfError(outcome);
     }
 }
 

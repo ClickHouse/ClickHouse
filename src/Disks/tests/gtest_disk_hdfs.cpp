@@ -3,17 +3,16 @@
 #include <IO/WriteHelpers.h>
 #include "gtest_disk.h"
 
-/// To enable tests set to 1. It is set to 0, because there is not HDFS instance in CI.
-#define RUN_HDFS_TEST 0
 
+#define RUN_HDFS_TEST 0
 #if RUN_HDFS_TEST
 
 #include <Disks/HDFS/DiskHDFS.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 const String hdfs_uri = "hdfs://172.20.0.2:9000/disk_test/";
-const String metadata_path = "/home/kssenii/metadata/";
-const String config_path = "/home/kssenii/ClickHouse/programs/server/config.xml";
+const String metadata_path = "/path/to/metadata/";
+const String config_path = "/path/to/config.xml";
 const String file_name = "test.txt";
 
 
