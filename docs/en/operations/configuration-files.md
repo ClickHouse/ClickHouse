@@ -57,7 +57,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 ## YAML examples {#example}
 
-Here you can see default config written in YAML: [config-example.yaml](../../../programs/server/config-example.yaml).
+Here you can see default config written in YAML: [config-example.yaml](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config-example.yaml).
 
 There are some differences between YAML and XML formats in terms of ClickHouse configurations. Here are some tips for writing a configuration in YAML format.
 
