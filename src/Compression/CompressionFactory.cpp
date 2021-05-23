@@ -116,7 +116,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     codec_family_name == "LZSSE4" ||
                     codec_family_name == "LZSSE8")
                 {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is experimental and not meant to be used in production."
                         " You can enable it with the 'allow_experimental_codecs' setting.",
                         codec_family_name);
