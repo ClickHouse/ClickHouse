@@ -23,10 +23,11 @@
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.cpp>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -170,21 +171,6 @@ static std::optional<AggregationKeyVisitor::Data> getFilterKeys(const Aggregator
     return data;
 }
 
-static void executeExpression(Pipe & pipe, const ActionsDAGPtr & expression)
-{
-    if (!expression)
-    {
-        return;
-    }
-
-    auto expression_actions = std::make_shared<ExpressionActions>(expression);
-
-    pipe.addSimpleTransform([expression_actions](const Block & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression_actions);
-    });
-}
-
 /// AggregatingOutputStream is used to feed data into Aggregator.
 class AggregatingOutputStream : public IBlockOutputStream
 {
@@ -209,7 +195,6 @@ public:
 
         StoragePtr source_storage = storage.source_storage;
         auto query = metadata_snapshot->getSelectQuery();
-        auto select_query = query.inner_query->as<ASTSelectQuery &>();
 
         StoragePtr block_storage
             = StorageValues::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), block, source_storage->getVirtuals());
@@ -248,6 +233,46 @@ private:
     ExpressionActionsPtr expression_actions;
 };
 
+class StorageSource final : public ext::shared_ptr_helper<StorageSource>, public IStorage
+{
+    friend struct ext::shared_ptr_helper<StorageSource>;
+public:
+    String getName() const override { return "Source"; }
+
+    Pipe read(
+        const Names & /*column_names*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/) override
+    {
+        return Pipe(source);
+    }
+
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*to_stage*/,
+        const StorageMetadataPtr &,
+        SelectQueryInfo & /*info*/) const override
+    {
+        return QueryProcessingStage::WithMergeableState;
+    }
+
+private:
+    ProcessorPtr source;
+
+protected:
+    StorageSource(const StorageID & table_id, const ColumnsDescription & columns_, ProcessorPtr source_)
+        : IStorage(table_id),
+          source(source_)
+    {
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_);
+        setInMemoryMetadata(storage_metadata);
+    }
+};
 
 StorageAggregatingMemory::StorageAggregatingMemory(
     const StorageID & table_id_,
@@ -363,7 +388,7 @@ void StorageAggregatingMemory::lazy_initialize()
                               settings.min_free_disk_space_for_temporary_data,
                               true);
 
-    aggregator_transform = std::make_shared<AggregatingTransformParams>(params, true);
+    aggregator_transform = std::make_shared<AggregatingTransformParams>(params, false);
     many_data = std::make_shared<ManyAggregatedData>(1);
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
@@ -394,15 +419,13 @@ Pipe StorageAggregatingMemory::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr /*context*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
     lazy_initialize();
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
-
-    // TODO allow parallel read (num_streams)
     // TODO implement O(1) read by aggregation key
 
     auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
@@ -411,30 +434,17 @@ Pipe StorageAggregatingMemory::read(
     ProcessorPtr source;
 
     auto filter_key = getFilterKeys(aggregator_transform->params, query_info);
-    if (filter_key.has_value())
-    {
-        ColumnRawPtrs key_columns(filter_key->raw_key_columns.size());
-        for (size_t i = 0; i < key_columns.size(); ++i)
-            key_columns[i] = filter_key->raw_key_columns[i].get();
+    source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
 
-        Block block = aggregator_transform->aggregator.readBlockByFilterKeys(prepared_data_ptr, key_columns);
+    StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source);
 
-        Chunk chunk(block.getColumns(), block.rows());
-        source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));
-    }
-    else
-    {
-        source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
-    }
+    ContextPtr local_context = context;
+    local_context->addViewSource(mergable_storage);
+    
+    InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, local_context, SelectQueryOptions());
+    BlockIO select_result = select.execute();
 
-    Pipe pipe(source);
-    executeExpression(pipe, analysis_result.before_window);
-    // TODO add support for window expressions
-    executeExpression(pipe, analysis_result.before_order_by);
-    executeExpression(pipe, analysis_result.final_projection);
-    // TODO implement ORDER BY? (quite hard)
-
-    return pipe;
+    return QueryPipeline::getPipe(std::move(select_result.pipeline));
 }
 
 BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)

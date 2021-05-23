@@ -1164,7 +1164,8 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_columns[i]->push_back(mapped + offsets_of_aggregate_states[i]);
 
-        mapped = nullptr;
+        if (!params.keep_state_after_read)
+            mapped = nullptr;
     });
 }
 
@@ -1198,6 +1199,9 @@ Block Aggregator::prepareBlockAndFill(
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
+
+            if (params.keep_state_after_read)
+                column_aggregate_func.disableStateDestruction();
 
             for (auto & pool : data_variants.aggregates_pools)
                 column_aggregate_func.addArena(pool);
@@ -1333,7 +1337,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
     if (is_overflows)
         block.info.is_overflows = true;
 
-    if (final && !params.keep_state_after_read)
+    if (!params.keep_state_after_read)
         destroyWithoutKey(data_variants);
 
     return block;
@@ -1615,7 +1619,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
             blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
     }
 
-    if (!final)
+    if (!final && !params.keep_state_after_read)
     {
         /// data_variants will not destroy the states of aggregate functions in the destructor.
         /// Now ColumnAggregateFunction owns the states.
@@ -2307,7 +2311,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         block = prepareBlockAndFillSingleLevel(result, final);
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
-    if (!final)
+    if (!final && !params.keep_state_after_read)
     {
         /// Pass ownership of aggregate function states from result to ColumnAggregateFunction objects in the resulting block.
         result.aggregator = nullptr;

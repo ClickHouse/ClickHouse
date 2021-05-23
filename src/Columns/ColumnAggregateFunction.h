@@ -82,6 +82,9 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
+    /// Do not call destroy in destructor.
+    bool not_destroy_states;
+
     ColumnAggregateFunction() = default;
 
     /// Create a new column that has another column as a source.
@@ -224,5 +227,7 @@ public:
     bool structureEquals(const IColumn &) const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
+
+    void disableStateDestruction();
 };
 }
