@@ -165,21 +165,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
             catch (Exception & e)
             {
-                if (e.code() == ErrorCodes::UNKNOWN_TABLE)
-                {
-                    try
-                    {
-                        /// If nested table does not exist, try load it once again.
-                        loadFromSnapshot(snapshot_name, table_name, storage->as <StorageMaterializePostgreSQL>());
-                        nested_storages[table_name] = materialized_storage->prepare();
-                        continue;
-                    }
-                    catch (...)
-                    {
-                        e.addMessage("Table load failed for the second time");
-                    }
-                }
-
                 e.addMessage("while loading table {}.{}", remote_database_name, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -308,6 +293,9 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx, bo
                 tables_list += storage_data.first;
             }
         }
+
+        if (tables_list.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
 
         /// 'ONLY' means just a table, without descendants.
         std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", publication_name, tables_list);

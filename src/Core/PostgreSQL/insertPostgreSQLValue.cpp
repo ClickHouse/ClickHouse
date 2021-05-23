@@ -114,7 +114,7 @@ void insertPostgreSQLValue(
 
             size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info[idx].num_dimensions;
             const auto parse_value = array_info[idx].pqxx_parser;
-            std::vector<std::vector<Field>> dimensions(expected_dimensions + 1);
+            std::vector<Row> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
