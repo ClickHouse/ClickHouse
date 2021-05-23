@@ -32,6 +32,12 @@ struct Settings;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
+enum class JoinTableSide
+{
+    Left,
+    Right
+};
+
 class TableJoin
 {
 
@@ -66,9 +72,12 @@ private:
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
+    Names on_filter_names_left;
+    Names on_filter_names_right;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
+
     ASTTableJoin table_join;
 
     ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
@@ -148,6 +157,9 @@ public:
     void resetCollected();
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
+
+    void addJoinCondition(const ASTPtr & ast, bool is_left);
+    const Names & joinConditionColumnNames(JoinTableSide side) const;
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }

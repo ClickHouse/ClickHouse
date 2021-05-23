@@ -18,6 +18,16 @@ namespace ASOF
     enum class Inequality;
 }
 
+enum class JoinIdentifierPos
+{
+    Unknown,
+    Left,
+    Right
+};
+
+using JoinIdentifierPosPair = std::pair<JoinIdentifierPos, JoinIdentifierPos>;
+
+
 class CollectJoinOnKeysMatcher
 {
 public:
@@ -32,10 +42,10 @@ public:
         const bool is_asof{false};
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
-        bool has_some{false};
+        bool has_join_keys{false};
 
-        void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no);
-        void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no,
+        void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos);
+        void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,
                              const ASOF::Inequality & asof_inequality);
         void asofToJoinKeys();
     };
@@ -57,9 +67,9 @@ private:
     static void visit(const ASTFunction & func, const ASTPtr & ast, Data & data);
 
     static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
-    static std::pair<size_t, size_t> getTableNumbers(const ASTPtr & expr, const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
+    static JoinIdentifierPosPair getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
-    static size_t getTableForIdentifiers(std::vector<const ASTIdentifier *> & identifiers, const Data & data);
+    static JoinIdentifierPos getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data);
 };
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.

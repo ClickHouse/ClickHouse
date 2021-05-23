@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/queryToString.h>
 
 #include <Core/Settings.h>
 #include <Core/Block.h>
@@ -19,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
 }
 
@@ -472,6 +474,34 @@ String TableJoin::renamedRightColumnName(const String & name) const
     if (const auto it = renames.find(name); it != renames.end())
         return it->second;
     return name;
+}
+
+void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
+{
+    if (!forceHashJoin())
+    {
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                            "Expression {} in JOIN ON can be handled only with 'hash' join algorithm",
+                            queryToString(ast));
+    }
+
+    if (is_left)
+    {
+        on_filter_names_left.push_back(ast->getColumnName());
+        key_asts_left.push_back(ast);
+    }
+    else
+    {
+        on_filter_names_right.push_back(ast->getAliasOrColumnName());
+        key_asts_right.push_back(ast);
+    }
+}
+
+const Names & TableJoin::joinConditionColumnNames(JoinTableSide side) const
+{
+    if (side == JoinTableSide::Left)
+        return on_filter_names_left;
+    return on_filter_names_right;
 }
 
 }

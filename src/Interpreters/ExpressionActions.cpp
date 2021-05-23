@@ -810,6 +810,8 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     NameSet required_names = required_output_;
     for (const auto & name : analyzed_join->keyNamesLeft())
         required_names.emplace(name);
+    for (const auto & name : analyzed_join->joinConditionColumnNames(JoinTableSide::Left))
+        required_names.emplace(name);
 
     for (const auto & column : required_columns)
     {

@@ -47,6 +47,8 @@ namespace ErrorCodes
 namespace
 {
 
+using UInt8ColumnDataPtrs = std::vector<const ColumnUInt8::Container *>;
+
 struct NotProcessedCrossJoin : public ExtraBlock
 {
     size_t left_position;
@@ -506,7 +508,7 @@ namespace
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     size_t NO_INLINE insertFromBlockImplTypeCase(
         HashJoin & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtrs join_masks, Arena & pool)
     {
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Map::mapped_type, RowRef>;
         constexpr bool is_asof_join = STRICTNESS == ASTTableJoin::Strictness::Asof;
@@ -520,6 +522,11 @@ namespace
         for (size_t i = 0; i < rows; ++i)
         {
             if (has_null_map && (*null_map)[i])
+                continue;
+
+            /// Check all conditions for right table from ON section
+            bool join_on = std::all_of(join_masks.begin(), join_masks.end(), [i](auto mask) { return (*mask)[i]; });
+            if (!join_on)
                 continue;
 
             if constexpr (is_asof_join)
@@ -536,19 +543,21 @@ namespace
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
     size_t insertFromBlockImplType(
         HashJoin & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtrs join_masks, Arena & pool)
     {
         if (null_map)
-            return insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, true>(join, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
+            return insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, true>(
+                join, map, rows, key_columns, key_sizes, stored_block, null_map, join_masks, pool);
         else
-            return insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, false>(join, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
+            return insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, false>(
+                join, map, rows, key_columns, key_sizes, stored_block, null_map, join_masks, pool);
     }
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
     size_t insertFromBlockImpl(
         HashJoin & join, HashJoin::Type type, Maps & maps, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtrs join_masks, Arena & pool)
     {
         switch (type)
         {
@@ -559,7 +568,7 @@ namespace
         #define M(TYPE) \
             case HashJoin::Type::TYPE: \
                 return insertFromBlockImplType<STRICTNESS, typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>(\
-                    join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, pool); \
+                    join, *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, join_masks, pool); \
                     break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -626,12 +635,43 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
+
+    UInt8ColumnDataPtrs join_masks;
+    for (const auto & col : JoinCommon::materializeColumns(block, table_join->joinConditionColumnNames(JoinTableSide::Right)))
+        join_masks.push_back(&assert_cast<const ColumnUInt8 &>(*col).getData());
+
+
     /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
     UInt8 save_nullmap = 0;
     if (isRightOrFull(kind) && null_map)
     {
+        /// Save rows with NULL keys
         for (size_t i = 0; !save_nullmap && i < null_map->size(); ++i)
             save_nullmap |= (*null_map)[i];
+
+    }
+
+    /// Save blocks that do not hold conditions in ON section
+    ColumnUInt8::MutablePtr not_joined_map = nullptr;
+    if (isRightOrFull(kind) && !join_masks.empty())
+    {
+        /// Save rows that do not hold conditions
+        not_joined_map = ColumnUInt8::create(block.rows(), 0);
+        for (const auto & mask : join_masks)
+        {
+            for (size_t i = 0, sz = mask->size(); i < sz; ++i)
+            {
+                /// Condition hold, do not save row
+                if ((*mask)[i])
+                    continue;
+
+                /// NULL key will saved anyway because, do not save twice
+                if (save_nullmap && (*null_map)[i])
+                    continue;
+
+                not_joined_map->getData()[i] = 1;
+            }
+        }
     }
 
     Block structured_block = structureRightBlock(block);
@@ -653,7 +693,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         {
             joinDispatch(kind, strictness, data->maps, [&](auto kind_, auto strictness_, auto & map)
             {
-                size_t size = insertFromBlockImpl<strictness_>(*this, data->type, map, rows, key_columns, key_sizes, stored_block, null_map, data->pool);
+                size_t size = insertFromBlockImpl<strictness_>(
+                                 *this, data->type, map, rows, key_columns, key_sizes, stored_block, null_map, join_masks, data->pool);
                 /// Number of buckets + 1 value from zero storage
                 used_flags.reinit<kind_, strictness_>(size + 1);
             });
@@ -661,6 +702,9 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
         if (save_nullmap)
             data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+
+        if (not_joined_map)
+            data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
 
         if (!check_limits)
             return true;
@@ -700,10 +744,12 @@ public:
                  const HashJoin & join,
                  const ColumnRawPtrs & key_columns_,
                  const Sizes & key_sizes_,
+                 const UInt8ColumnDataPtrs & join_cond_columns_,
                  bool is_asof_join)
         : key_columns(key_columns_)
         , key_sizes(key_sizes_)
         , rows_to_add(block.rows())
+        , join_cond_columns(join_cond_columns_)
         , asof_type(join.getAsofType())
         , asof_inequality(join.getAsofInequality())
     {
@@ -777,6 +823,7 @@ public:
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
+    UInt8ColumnDataPtrs join_cond_columns;
 
 private:
     std::vector<TypeAndName> type_name;
@@ -879,9 +926,11 @@ NO_INLINE IColumn::Filter joinRightColumns(
             }
         }
 
+        bool joined_on = std::all_of(added_columns.join_cond_columns.begin(), added_columns.join_cond_columns.end(),
+                                     [i](auto mask) { return (*mask)[i]; });
         auto find_result = key_getter.findKey(map, i, pool);
 
-        if (find_result.isFound())
+        if (joined_on && find_result.isFound())
         {
             auto & mapped = find_result.getMapped();
 
@@ -1041,6 +1090,10 @@ void HashJoin::joinBlockImpl(
     Columns materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
     ColumnRawPtrs left_key_columns = JoinCommon::getRawPointers(materialized_keys);
 
+    UInt8ColumnDataPtrs join_cond_columns;
+    for (const auto & col : JoinCommon::materializeColumns(block, table_join->joinConditionColumnNames(JoinTableSide::Left)))
+        join_cond_columns.push_back(&assert_cast<const ColumnUInt8 &>(*col).getData());
+
     /// Keys with NULL value in any column won't join to anything.
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(left_key_columns, null_map);
@@ -1065,7 +1118,16 @@ void HashJoin::joinBlockImpl(
       * For ASOF, the last column is used as the ASOF column
       */
 
-    AddedColumns added_columns(block_with_columns_to_add, block, savedBlockSample(), *this, left_key_columns, key_sizes, is_asof_join);
+    AddedColumns added_columns(
+        block_with_columns_to_add,
+        block,
+        savedBlockSample(),
+        *this,
+        left_key_columns,
+        key_sizes,
+        std::move(join_cond_columns),
+        is_asof_join);
+
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = need_filter || has_required_right_keys;
 
