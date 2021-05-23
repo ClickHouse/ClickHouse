@@ -1,15 +1,14 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/Impl/Path.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
+#include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/Impl/Path.h>
 #include <Common/HashTable/HashMap.h>
 
 
 namespace DB
 {
-
 class ReadBuffer;
 
 
@@ -21,12 +20,7 @@ class ReadBuffer;
 class JSONReadFiltered : public IRowInputFormat
 {
 public:
-    JSONReadFiltered(
-        ReadBuffer & in_,
-        const Block & header_,
-        Params params_,
-        const FormatSettings & format_settings_,
-        bool yield_strings_);
+    JSONReadFiltered(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_, bool yield_strings_);
 
     String getName() const override { return "JSONReadFiltered"; }
 

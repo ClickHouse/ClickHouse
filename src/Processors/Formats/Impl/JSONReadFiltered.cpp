@@ -1,11 +1,11 @@
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <Processors/Formats/Impl/JSONReadFiltered.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Formats/JSONEachRowUtils.h>
-#include <Formats/FormatFactory.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/JSONEachRowUtils.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/JSONReadFiltered.h>
 
 
 namespace DB
@@ -18,25 +18,24 @@ namespace ErrorCodes
 }
 namespace
 {
-enum
-{
-    UNKNOWN_FIELD = size_t(-1),
-    NESTED_FIELD = size_t(-2)
-};
+    enum
+    {
+        UNKNOWN_FIELD = size_t(-1),
+        NESTED_FIELD = size_t(-2)
+    };
 }
 JSONReadFiltered::JSONReadFiltered(
-    ReadBuffer & in_,
-    const Block & header_,
-    Params params_,
-    const FormatSettings & format_settings_,
-    bool yield_strings_)
-    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns()), yield_strings(yield_strings_)
+    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_, bool yield_strings_)
+    : IRowInputFormat(header_, in_, std::move(params_))
+    , format_settings(format_settings_)
+    , name_map(header_.columns())
+    , yield_strings(yield_strings_)
 {
     size_t num_columns = getPort().getHeader().columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
         const String & column_name = columnName(i);
-        name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
+        name_map[column_name] = i; /// NOTE You could place names more cache-locally.
         if (format_settings_.import_nested_json)
         {
             const auto split = Nested::splitName(column_name);
@@ -57,9 +56,7 @@ inline size_t JSONReadFiltered::columnIndex(const StringRef & name, size_t key_i
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
-    if (prev_positions.size() > key_index
-        && prev_positions[key_index]
-        && name == prev_positions[key_index]->getKey())
+    if (prev_positions.size() > key_index && prev_positions[key_index] && name == prev_positions[key_index]->getKey())
     {
         return prev_positions[key_index]->getMapped();
     }
@@ -202,7 +199,8 @@ void JSONReadFiltered::readJSONObject(MutableColumns & columns)
                 readField(column_index, columns);
             }
         }
-        else {
+        else
+        {
             skipJSONField(in, name_ref);
         }
     }
@@ -299,14 +297,10 @@ void JSONReadFiltered::readSuffix()
 }
 void registerInputFormatProcessorJSONReadFiltered(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("JSONReadFiltered", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
-    {
-        return std::make_shared<JSONReadFiltered>(buf, sample, std::move(params), settings, false);
-    });
+    factory.registerInputFormatProcessor(
+        "JSONReadFiltered", [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings) {
+            return std::make_shared<JSONReadFiltered>(buf, sample, std::move(params), settings, false);
+        });
 }
 void registerFileSegmentationEngineJSONReadFiltered(FormatFactory & factory)
 {
