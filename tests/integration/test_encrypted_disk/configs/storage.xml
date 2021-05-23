@@ -51,6 +51,9 @@
                     <main>
                         <disk>disk_s3</disk>
                     </main>
+                    <external>
+                        <disk>disk_s3_encrypted</disk>
+                    </external>
                 </volumes>
             </s3_policy>
          </policies>
