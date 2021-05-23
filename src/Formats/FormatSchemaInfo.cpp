@@ -67,7 +67,7 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
 
     auto default_schema_directory = [&format_schema_path]()
     {
-        static const String str = fs::absolute(format_schema_path) / "";
+        static const String str = fs::canonical(format_schema_path) / "";
         return str;
     };
 
