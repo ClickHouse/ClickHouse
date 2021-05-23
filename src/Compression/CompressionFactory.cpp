@@ -13,6 +13,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -49,14 +50,16 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     if (level && param)
     {
         auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        auto param_literal = std::make_shared<ASTLiteral>(static_cast<std::string>(*param));
+        auto param_literal = std::make_shared<ASTLiteral>(*param);
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal, param_literal)), {});
     }
     else if (param)
     {
-        auto param_literal = std::make_shared<ASTLiteral>(static_cast<std::string>(*param));
+        auto param_literal = std::make_shared<ASTLiteral>(*param);
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), param_literal)), {});
-    } else {
+    }
+    else
+    {
         return get(family_name, level);
     }
 }
