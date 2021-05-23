@@ -235,7 +235,7 @@ private:
         if (disk_path.back() != '/')
             throw Exception("Disk path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
 
-        delegate->createDirectory(disk_path);
+        delegate->createDirectories(disk_path);
     }
 
     String name;
