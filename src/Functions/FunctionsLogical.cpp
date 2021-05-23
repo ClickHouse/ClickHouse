@@ -586,21 +586,6 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
     return result_column;
 }
 
-template <typename A, typename Op>
-struct UnaryOperationImpl
-{
-    using ResultType = typename Op::ResultType;
-    using ArrayA = typename ColumnVector<A>::Container;
-    using ArrayC = typename ColumnVector<ResultType>::Container;
-
-    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
-    {
-        std::transform(
-                a.cbegin(), a.cend(), c.begin(),
-                [](const auto x) { return Op::apply(x); });
-    }
-};
-
 template <template <typename> class Impl, typename Name>
 DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
 {
@@ -613,21 +598,29 @@ DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes 
     return std::make_shared<DataTypeUInt8>();
 }
 
-template <template <typename> class Impl, typename T>
-ColumnPtr functionUnaryExecuteType(const ColumnsWithTypeAndName & arguments)
+namespace
 {
-    if (auto col = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get()))
+    template <template <typename> class Impl, typename T>
+    ColumnPtr functionUnaryExecuteType(const ColumnsWithTypeAndName & arguments)
     {
-        auto col_res = ColumnUInt8::create();
+        auto * column = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get());
 
-        typename ColumnUInt8::Container & vec_res = col_res->getData();
-        vec_res.resize(col->getData().size());
-        UnaryOperationImpl<T, Impl<T>>::vector(col->getData(), vec_res);
+        if (!column)
+            return nullptr;
 
-        return col_res;
+        const auto & input_column_data = column->getData();
+        size_t input_column_size = input_column_data.size();
+
+        auto result_column = ColumnUInt8::create();
+
+        auto & result_column_data = result_column->getData();
+        result_column_data.resize_fill(input_column_size);
+
+        for (size_t i = 0; i < input_column_size; ++i)
+            result_column_data[i] = Impl<T>::apply(input_column_data[i]);
+
+        return result_column;
     }
-
-    return nullptr;
 }
 
 template <template <typename> class Impl, typename Name>

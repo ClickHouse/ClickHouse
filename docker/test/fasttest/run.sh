@@ -379,6 +379,7 @@ function run_tests
         01852_jit_if
         01865_jit_comparison_constant_result
         01871_merge_tree_compile_expressions
+        01875_jit_logical_functions
 
         # needs psql
         01889_postgresql_protocol_null_fields

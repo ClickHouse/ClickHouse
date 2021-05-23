@@ -85,6 +85,18 @@ struct AndImpl
 
     /// Will use three-valued logic for NULLs (see above) or default implementation (any operation with NULL returns NULL).
     static inline constexpr bool specialImplementationForNulls() { return true; }
+
+#if USE_EMBEDDED_COMPILER
+    static inline llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    {
+        return builder.CreateAnd(a, b);
+    }
+
+    static inline llvm::Value * neutralElement(llvm::IRBuilder<> & builder)
+    {
+        return builder.getInt1(true);
+    }
+#endif
 };
 
 struct OrImpl
@@ -96,6 +108,18 @@ struct OrImpl
     static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
     static inline constexpr bool specialImplementationForNulls() { return true; }
+
+#if USE_EMBEDDED_COMPILER
+    static inline llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    {
+        return builder.CreateOr(a, b);
+    }
+
+    static inline llvm::Value * neutralElement(llvm::IRBuilder<> & builder)
+    {
+        return builder.getInt1(false);
+    }
+#endif
 };
 
 struct XorImpl
@@ -112,6 +136,11 @@ struct XorImpl
     static inline llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
     {
         return builder.CreateXor(a, b);
+    }
+
+    static inline llvm::Value * neutralElement(llvm::IRBuilder<> & builder)
+    {
+        return builder.getInt1(false);
     }
 #endif
 };
@@ -160,42 +189,76 @@ public:
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
+    bool isCompilableImpl(const DataTypes &) const override { return true; }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         assert(!types.empty() && !values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+
         if constexpr (!Impl::isSaturable())
         {
             auto * result = nativeBoolCast(b, types[0], values[0]);
             for (size_t i = 1; i < types.size(); i++)
                 result = Impl::apply(b, result, nativeBoolCast(b, types[i], values[i]));
+
             return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
-        constexpr bool breakOnTrue = Impl::isSaturatedValue(true);
-        auto * next = b.GetInsertBlock();
-        auto * stop = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
-        b.SetInsertPoint(stop);
-        auto * phi = b.CreatePHI(b.getInt8Ty(), values.size());
-        for (size_t i = 0; i < types.size(); i++)
+        else
         {
-            b.SetInsertPoint(next);
-            auto * value = values[i];
-            auto * truth = nativeBoolCast(b, types[i], value);
-            if (!types[i]->equals(DataTypeUInt8{}))
-                value = b.CreateSelect(truth, b.getInt8(1), b.getInt8(0));
-            phi->addIncoming(value, b.GetInsertBlock());
-            if (i + 1 < types.size())
+            bool has_nullable_values = false;
+            llvm::Value * is_true = Impl::neutralElement(b);
+            llvm::Value * is_null_in_values = b.getInt1(false);
+
+            for (size_t i = 0; i < types.size(); i++)
             {
-                next = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
-                b.CreateCondBr(truth, breakOnTrue ? stop : next, breakOnTrue ? next : stop);
+                const auto & type = types[i];
+
+                auto * value = values[i];
+
+                if (type->isNullable())
+                {
+                    has_nullable_values = true;
+                    auto * is_value_null = b.CreateExtractValue(value, {1});
+                    is_null_in_values = b.CreateOr(is_null_in_values, is_value_null);
+
+                    auto * unwrapped_null_value = nativeBoolCast(b, removeNullable(type), b.CreateExtractValue(value, {0}));
+                    auto * nullable_value = b.CreateSelect(is_value_null, Impl::neutralElement(b), unwrapped_null_value);
+                    is_true = Impl::apply(b, is_true, nullable_value);
+                }
+                else
+                {
+                    auto * is_value_true = nativeBoolCast(b, types[i], value);
+                    is_true = Impl::apply(b, is_true, is_value_true);
+                }
+            }
+
+            auto * is_true_result = b.CreateSelect(is_true, b.getInt8(1), b.getInt8(0));
+
+            if (has_nullable_values)
+            {
+                auto * nullable_native_type = toNativeType(b, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+                auto * nullable_value = llvm::Constant::getNullValue(nullable_native_type);
+                auto * nullable_value_with_result_value = b.CreateInsertValue(nullable_value, is_true_result, {0});
+
+                llvm::Value * null_should_be_propagated = nullptr;
+
+                if constexpr (std::is_same_v<Impl, AndImpl>)
+                    null_should_be_propagated = is_true;
+                else if constexpr (std::is_same_v<Impl, OrImpl>)
+                    null_should_be_propagated = b.CreateNot(is_true);
+
+                auto * is_null_value = b.CreateSelect(null_should_be_propagated, is_null_in_values, b.getInt1(false));
+                auto * nullable_value_with_is_null = b.CreateInsertValue(nullable_value_with_result_value, is_null_value, {1});
+
+                return nullable_value_with_is_null;
+            }
+            else
+            {
+                return is_true_result;
             }
         }
-        b.CreateBr(stop);
-        b.SetInsertPoint(stop);
-        return phi;
     }
 #endif
 };
