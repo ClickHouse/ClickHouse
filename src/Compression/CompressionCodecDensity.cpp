@@ -2,7 +2,6 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionCodecDensity.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/ErrorCodes.h>
 
 
 namespace DB
