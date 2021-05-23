@@ -63,9 +63,8 @@ void registerCodecDensity(CompressionCodecFactory & factory)
             if (arguments && !arguments->children.empty())
             {
                 if (arguments->children.size() != 1)
-                    throw Exception(
-                        "Density codec must have only one parameter, given " + std::to_string(arguments->children.size()),
-                        ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                    throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
+                        "Density codec must have only one parameter, given {}", arguments->children.size());
 
                 const auto children = arguments->children;
 
