@@ -147,7 +147,7 @@ struct TonalityClassificationImpl
 
 struct NameGetTonality
 {
-    static constexpr auto name = "getTonality";
+    static constexpr auto name = "detectTonality";
 };
 
 

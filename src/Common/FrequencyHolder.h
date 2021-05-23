@@ -34,21 +34,21 @@ public:
     {
         path_to_enc_freq = pt;
         loadEncodingsFrequency(pt);
-        //loadEncodingsFrequency("/home/sergey/ClickHouse/programs/server/charset_freq.txt");
+        ///loadEncodingsFrequency("/home/sergey/ClickHouse/programs/server/charset_freq.txt");
     }
 
     void parseEmotionalDict(const String & pt)
     {
         path_to_emo_dict = pt;
         loadEmotionalDict(pt);
-        //loadEmotionalDict("/home/sergey/ClickHouse/programs/server/emotional_dictionary_rus.txt");
+        ///loadEmotionalDict("/home/sergey/ClickHouse/programs/server/emotional_dictionary_rus.txt");
     }
 
     void parseProgrammingFrequency(const String & pt)
     {
         path_to_prog_freq = pt;
         loadProgrammingFrequency(pt);
-        //loadProgrammingFrequency("/home/sergey/ClickHouse/programs/server/prog_freq.txt");
+        ///loadProgrammingFrequency("/home/sergey/ClickHouse/programs/server/prog_freq.txt");
     }
 
 
