@@ -540,7 +540,7 @@ Block ActionsDAG::updateHeader(Block header) const
 
     struct Frame
     {
-        const Node * node;
+        const Node * node = nullptr;
         size_t next_child = 0;
     };
 
@@ -587,8 +587,7 @@ Block ActionsDAG::updateHeader(Block header) const
                 }
             }
 
-            auto & column = node_to_column[output];
-            if (column.column)
+            if (node_to_column[output].column)
                 result_columns.push_back(node_to_column[output]);
         }
     }
