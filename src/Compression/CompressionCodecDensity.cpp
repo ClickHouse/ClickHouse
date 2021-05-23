@@ -39,7 +39,7 @@ UInt32 CompressionCodecDensity::doCompressData(const char * source, UInt32 sourc
 {
     density_processing_result res = density_compress(reinterpret_cast<const uint8_t *>(source), source_size, reinterpret_cast<uint8_t *>(dest), density_compress_safe_size(source_size), algo);
     if (res.state != DENSITY_STATE_OK)
-        throw Exception("Cannot compress block with Density; ", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception("Cannot compress block with Density", ErrorCodes::CANNOT_COMPRESS);
     return res.bytesWritten;
 }
 
@@ -47,7 +47,7 @@ void CompressionCodecDensity::doDecompressData(const char * source, UInt32 sourc
 {
     density_processing_result res = density_decompress(reinterpret_cast<const uint8_t *>(source), source_size, reinterpret_cast<uint8_t *>(dest), density_decompress_safe_size(uncompressed_size));
     if (res.state != DENSITY_STATE_OK)
-        throw Exception("Cannot decompress block with Density; ", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception("Cannot decompress block with Density", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 void registerCodecDensity(CompressionCodecFactory & factory)
