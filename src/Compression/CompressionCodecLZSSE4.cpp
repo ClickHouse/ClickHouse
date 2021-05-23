@@ -40,12 +40,12 @@ UInt32 CompressionCodecLZSSE4::getMaxCompressedDataSize(UInt32 uncompressed_size
 UInt32 CompressionCodecLZSSE4::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     UInt32 res;
-    LZSSE4_OptimalParseState* state = LZSSE4_MakeOptimalParseState(source_size);
+    LZSSE4_OptimalParseState * state = LZSSE4_MakeOptimalParseState(source_size);
     res = LZSSE4_CompressOptimalParse(state, source, source_size, dest, source_size, level);
     LZSSE4_FreeOptimalParseState(state);
 
     if (res == 0)
-        throw Exception("Cannot compress block with LZSSE4; ", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception("Cannot compress block with LZSSE4", ErrorCodes::CANNOT_COMPRESS);
 
     return res;
 }
@@ -54,9 +54,9 @@ void CompressionCodecLZSSE4::doDecompressData(const char * source, UInt32 source
 {
     UInt32 res;
     res = LZSSE4_Decompress(source, source_size, dest, uncompressed_size);
-    
+
     if (res < uncompressed_size)
-        throw Exception("Cannot decompress block with LZSSE4; ", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception("Cannot decompress block with LZSSE4", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 void registerCodecLZSSE4(CompressionCodecFactory & factory)

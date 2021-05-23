@@ -42,7 +42,7 @@ UInt32 CompressionCodecLizard::doCompressData(const char * source, UInt32 source
     int res = Lizard_compress(source, dest, source_size, Lizard_compressBound(source_size), level);
 
     if (res == 0)
-        throw Exception("Cannot compress block with Lizard; ", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception("Cannot compress block with Lizard", ErrorCodes::CANNOT_COMPRESS);
     return res;
 }
 
@@ -51,7 +51,7 @@ void CompressionCodecLizard::doDecompressData(const char * source, UInt32 source
     int res = Lizard_decompress_safe(source, dest, source_size, uncompressed_size);
 
     if (res < 0)
-        throw Exception("Cannot compress block with Lizard; ", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception("Cannot compress block with Lizard", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 void registerCodecLizard(CompressionCodecFactory & factory)
