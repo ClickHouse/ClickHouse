@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#   include "config_core.h"
+#endif
+
+#if USE_LIZARD
+
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
@@ -111,3 +117,5 @@ void registerCodecLizard(CompressionCodecFactory & factory)
 }
 
 }
+
+#endif

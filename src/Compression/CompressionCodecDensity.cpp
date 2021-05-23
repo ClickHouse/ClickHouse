@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#   include "config_core.h"
+#endif
+
+#if USE_DENSITY
+
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
@@ -118,3 +124,5 @@ void registerCodecDensity(CompressionCodecFactory & factory)
 }
 
 }
+
+#endif

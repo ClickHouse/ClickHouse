@@ -15,3 +15,6 @@
 #cmakedefine01 USE_LIBPQXX
 #cmakedefine01 USE_NURAFT
 #cmakedefine01 USE_KRB5
+#cmakedefine01 USE_LIZARD
+#cmakedefine01 USE_DENSITY
+#cmakedefine01 USE_LZSSE

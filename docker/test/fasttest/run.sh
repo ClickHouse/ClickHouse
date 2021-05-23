@@ -185,9 +185,6 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
-            contrib/lizard
-            contrib/density
-            contrib/lzsse
         )
 
         git submodule sync
