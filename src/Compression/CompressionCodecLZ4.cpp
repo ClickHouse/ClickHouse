@@ -13,9 +13,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#include <Compression/LZ4_decompress_faster.h>
-
-
 #pragma GCC diagnostic ignored "-Wold-style-cast"
 
 
