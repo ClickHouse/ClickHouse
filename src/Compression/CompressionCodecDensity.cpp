@@ -59,44 +59,30 @@ void registerCodecDensity(CompressionCodecFactory & factory)
         [&](const ASTPtr & arguments) -> CompressionCodecPtr
         {
             DENSITY_ALGORITHM algo = CompressionCodecDensity::DENSITY_DEFAULT_ALGO;
-            //std::cerr << arguments << std::endl;
+
             if (arguments && !arguments->children.empty())
             {
                 if (arguments->children.size() != 1)
                     throw Exception(
-                        "Deisnty codec must have 1 parameter, given " + std::to_string(arguments->children.size()),
+                        "Density codec must have only one parameter, given " + std::to_string(arguments->children.size()),
                         ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
                 const auto children = arguments->children;
 
                 const auto * algo_literal = children[0]->as<ASTLiteral>();
-                if (!algo_literal)
-                    throw Exception("Density codec argument must be string (algorithm)", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                if (!algo_literal || algo_literal->value.getType() != Field::Types::String)
+                    throw Exception("Density codec argument must be string (algorithm), one of: 'lion', 'chameleon', 'cheetah'",
+                        ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 
-
-                if (algo_literal->value.getType() == Field::Types::Which::UInt64) {
-                    const auto algorithm = algo_literal->value.safeGet<UInt64>();
-                    if (algorithm == 3) {
-                        algo = DENSITY_ALGORITHM_LION;
-                    } else if (algorithm == 2) {
-                        algo = DENSITY_ALGORITHM_CHEETAH;
-                    } else if (algorithm == 1) {
-                        algo = DENSITY_ALGORITHM_CHAMELEON;
-                    } else {
-                        throw Exception("Density codec argument may be LION, CHAMELEON, CHEETAH", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
-                    }
-                } else {
-                    const auto algorithm = algo_literal->value.safeGet<std::string>();
-                    if (algorithm == "LION") {
-                        algo = DENSITY_ALGORITHM_LION;
-                    } else if (algorithm == "CHAMELEON") {
-                        algo = DENSITY_ALGORITHM_CHAMELEON;
-                    } else if (algorithm == "CHEETAH") {
-                        algo = DENSITY_ALGORITHM_CHEETAH;
-                    } else {
-                        throw Exception("Density codec argument may be LION, CHAMELEON, CHEETAH", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
-                    }
-                }
+                const auto algorithm = algo_literal->value.safeGet<std::string>();
+                if (algorithm == "lion")
+                    algo = DENSITY_ALGORITHM_LION;
+                else if (algorithm == "chameleon")
+                    algo = DENSITY_ALGORITHM_CHAMELEON;
+                else if (algorithm == "cheetah")
+                    algo = DENSITY_ALGORITHM_CHEETAH;
+                else
+                    throw Exception("Density codec argument may be one of: 'lion', 'chameleon', 'cheetah'", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
             }
 
             return std::make_shared<CompressionCodecDensity>(algo);
