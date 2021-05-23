@@ -1804,6 +1804,17 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
     merges_version = queue_.pullLogsToQueue(zookeeper);
 
+    {
+        /// We avoid returning here a version to be used in a lightweight transaction.
+        ///
+        /// When pinned parts set is changed a log entry is added to the queue in the same transaction.
+        /// The log entry serves as a synchronization point, and it also increments `merges_version`.
+        ///
+        /// If pinned parts are fetched after logs are pulled then we can safely say that it contains all locks up to `merges_version`.
+        String s = zookeeper->get(queue.zookeeper_path + "/pinned_part_uuids");
+        pinned_part_uuids.fromString(s);
+    }
+
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (quorum_status_response.error == Coordination::Error::ZOK)
     {
@@ -1872,6 +1883,13 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
+        if (pinned_part_uuids.part_uuids.contains(part->uuid))
+        {
+            if (out_reason)
+                *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
+            return false;
+        }
+
         if (part->name == inprogress_quorum_part)
         {
             if (out_reason)
@@ -1967,6 +1985,13 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
+    if (pinned_part_uuids.part_uuids.contains(part->uuid))
+    {
+        if (out_reason)
+            *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
+        return false;
+    }
+
     if (part->name == inprogress_quorum_part)
     {
         if (out_reason)
