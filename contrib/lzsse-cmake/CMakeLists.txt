@@ -18,4 +18,4 @@ SET (Headers
 
 ADD_LIBRARY(lzsse ${Sources} ${Headers})
 
-target_include_directories (lzsse PUBLIC ${LIBRARY_DIR})
+target_include_directories (lzsse SYSTEM PUBLIC ${LIBRARY_DIR})
