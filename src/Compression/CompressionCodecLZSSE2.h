@@ -5,10 +5,10 @@
 
 namespace DB
 {
+
 class CompressionCodecLZSSE2 : public ICompressionCodec
 {
 public:
-
     CompressionCodecLZSSE2(int level_);
 
     uint8_t getMethodByte() const override;
