@@ -4,7 +4,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <lib/lizard_compress.h>
 #include <lib/lizard_decompress.h>
-#include <Common/ErrorCodes.h>
 
 
 namespace DB

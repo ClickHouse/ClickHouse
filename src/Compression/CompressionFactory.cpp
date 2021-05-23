@@ -61,7 +61,8 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     }
 }
 
-void CompressionCodecFactory::validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
+void CompressionCodecFactory::validateCodec(
+    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (family_name.empty())
         throw Exception("Compression codec name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -69,12 +70,14 @@ void CompressionCodecFactory::validateCodec(const String & family_name, std::opt
     if (level)
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, sanity_check, allow_experimental_codecs);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
+            {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
         auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, sanity_check, allow_experimental_codecs);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
+            {}, sanity_check, allow_experimental_codecs);
     }
 }
 
@@ -140,7 +143,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
-                    IDataType::StreamCallbackWithType callback = [&](const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+                    IDataType::StreamCallbackWithType callback = [&](
+                        const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
                     {
                         if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
@@ -229,7 +233,9 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default, bool only_generic) const
+
+CompressionCodecPtr CompressionCodecFactory::get(
+    const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default, bool only_generic) const
 {
     if (current_default == nullptr)
         current_default = default_codec;
@@ -279,6 +285,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, const IData
 
     throw Exception("Unexpected AST structure for compression codec: " + queryToString(ast), ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
+
 
 CompressionCodecPtr CompressionCodecFactory::get(const uint8_t byte_code) const
 {
@@ -337,7 +344,7 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
     registerCompressionCodec(family_name, byte_code, [family_name, creator](const ASTPtr & ast)
     {
         if (ast)
-            throw Exception("Compression codec " + family_name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Compression codec {} cannot have arguments", family_name);
         return creator();
     });
 }
@@ -354,9 +361,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
 void registerCodecLizard(CompressionCodecFactory & factory);
 void registerCodecDensity(CompressionCodecFactory & factory);
-void registerCodecLZSSE2(CompressionCodecFactory & factory);
-void registerCodecLZSSE4(CompressionCodecFactory & factory);
-void registerCodecLZSSE8(CompressionCodecFactory & factory);
+void registerCodecsLZSSE(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -371,9 +376,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecMultiple(*this);
     registerCodecLizard(*this);
     registerCodecDensity(*this);
-    registerCodecLZSSE2(*this);
-    registerCodecLZSSE4(*this);
-    registerCodecLZSSE8(*this);
+    registerCodecsLZSSE(*this);
 
     default_codec = get("LZ4", {});
 }
