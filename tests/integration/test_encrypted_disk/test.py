@@ -18,6 +18,7 @@ def cluster():
     finally:
         cluster.shutdown()
 
+
 @pytest.mark.parametrize("policy", ["encrypted_policy", "local_policy", "s3_policy"])
 def test_encrypted_disk(cluster, policy):
     node = cluster.instances["node"]
