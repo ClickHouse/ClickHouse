@@ -92,16 +92,16 @@ UInt32 CompressionCodecLZSSE::doCompressData(const char * source, UInt32 source_
         }
         case 4:
         {
-            LZSSE2_OptimalParseState * state = LZSSE2_MakeOptimalParseState(source_size);
-            res = LZSSE2_CompressOptimalParse(state, source, source_size, dest, source_size, level);
-            LZSSE2_FreeOptimalParseState(state);
+            LZSSE4_OptimalParseState * state = LZSSE4_MakeOptimalParseState(source_size);
+            res = LZSSE4_CompressOptimalParse(state, source, source_size, dest, source_size, level);
+            LZSSE4_FreeOptimalParseState(state);
             break;
         }
         case 8:
         {
-            LZSSE2_OptimalParseState * state = LZSSE2_MakeOptimalParseState(source_size);
-            res = LZSSE2_CompressOptimalParse(state, source, source_size, dest, source_size, level);
-            LZSSE2_FreeOptimalParseState(state);
+            LZSSE8_OptimalParseState * state = LZSSE8_MakeOptimalParseState(source_size);
+            res = LZSSE8_CompressOptimalParse(state, source, source_size, dest, source_size, level);
+            LZSSE8_FreeOptimalParseState(state);
             break;
         }
         default:
