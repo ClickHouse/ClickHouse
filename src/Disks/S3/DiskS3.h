@@ -55,7 +55,6 @@ public:
     using SettingsPtr = std::unique_ptr<DiskS3Settings>;
     using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextConstPtr)>;
 
-    friend class DiskS3Reservation;
     struct RestoreInformation;
 
     DiskS3(

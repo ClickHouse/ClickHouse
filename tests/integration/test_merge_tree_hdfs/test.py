@@ -10,10 +10,6 @@ from helpers.cluster import ClickHouseCluster
 
 from pyhdfs import HdfsClient
 
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
-
-
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node/configs/config.d/storage_conf.xml')
 
@@ -319,50 +315,3 @@ def test_move_replace_partition_to_another_table(cluster):
     hdfs_objects = fs.listdir('/clickhouse')
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
 
-    node.query("DROP TABLE hdfs_test NO DELAY")
-    # Backup data should remain in hdfs.
-    print(2)
-    # TODO: it gets deleted, but shouldn't
-    #wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE * 4)
-
-
-#@pytest.mark.parametrize("merge_vertical", [False, True])
-#def test_insert_same_partition_and_merge(cluster, merge_vertical):
-#    settings = None
-#    if merge_vertical:
-#        settings = """
-#            vertical_merge_algorithm_min_rows_to_activate=0,
-#            vertical_merge_algorithm_min_columns_to_activate=0
-#        """
-#    create_table(cluster, "hdfs_test", additional_settings=settings)
-#
-#    node = cluster.instances["node"]
-#    fs = HdfsClient(hosts='localhost')
-#
-#    node.query("SYSTEM STOP MERGES hdfs_test")
-#    node.query("INSERT INTO hdfs_test VALUES {}".format(generate_values('2020-01-03', 1024)))
-#    node.query("INSERT INTO hdfs_test VALUES {}".format(generate_values('2020-01-03', 2048)))
-#    node.query("INSERT INTO hdfs_test VALUES {}".format(generate_values('2020-01-03', 4096)))
-#    node.query("INSERT INTO hdfs_test VALUES {}".format(generate_values('2020-01-03', 1024, -1)))
-#    node.query("INSERT INTO hdfs_test VALUES {}".format(generate_values('2020-01-03', 2048, -1)))
-#    node.query("INSERT INTO hdfs_test VALUES {}".format(generate_values('2020-01-03', 4096, -1)))
-#    assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
-#    assert node.query("SELECT count(distinct(id)) FROM hdfs_test FORMAT Values") == "(8192)"
-#
-#    hdfs_objects = fs.listdir('/clickhouse')
-#    assert len(hdfs_objects) == FILES_OVERHEAD_PER_PART_WIDE * 6 + FILES_OVERHEAD
-#
-#    node.query("SYSTEM START MERGES hdfs_test")
-#
-#    # Wait for merges and old parts deletion
-#    for attempt in range(0, 10):
-#        parts_count = node.query("SELECT COUNT(*) FROM system.parts WHERE table = 'hdfs_test' FORMAT Values")
-#        if parts_count == "(1)":
-#            break
-#        if attempt == 9:
-#            assert parts_count == "(1)"
-#        time.sleep(1)
-#
-#    assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
-#    assert node.query("SELECT count(distinct(id)) FROM hdfs_test FORMAT Values") == "(8192)"
-#    wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD)
