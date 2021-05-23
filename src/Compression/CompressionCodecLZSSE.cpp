@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#   include "config_core.h"
+#endif
+
+#if USE_LZSSE
+
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
@@ -150,3 +156,5 @@ void registerCodecsLZSSE(CompressionCodecFactory & factory)
 }
 
 }
+
+#endif

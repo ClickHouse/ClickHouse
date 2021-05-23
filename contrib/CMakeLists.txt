@@ -58,13 +58,20 @@ if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz)
 endif()
 
-add_subdirectory (lizard-cmake)
-add_subdirectory (density-cmake)
-add_subdirectory (lzsse-cmake)
+if (USE_LIZARD)
+    add_subdirectory (lizard-cmake)
+endif ()
+
+if (USE_DENSITY)
+    add_subdirectory (density-cmake)
+endif ()
+
+if (USE_LZSSE)
+    add_subdirectory (lzsse-cmake)
+endif ()
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
-
 
 # TODO: refactor the contrib libraries below this comment.
 

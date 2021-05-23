@@ -1,3 +1,7 @@
+#if !defined(ARCADIA_BUILD)
+#   include "config_core.h"
+#endif
+
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -345,9 +349,18 @@ void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
+
+#if USE_LIZARD
 void registerCodecLizard(CompressionCodecFactory & factory);
+#endif
+
+#if USE_DENSITY
 void registerCodecDensity(CompressionCodecFactory & factory);
+#endif
+
+#if USE_LZSSE
 void registerCodecsLZSSE(CompressionCodecFactory & factory);
+#endif
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -360,9 +373,15 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
     registerCodecMultiple(*this);
+#if USE_LIZARD
     registerCodecLizard(*this);
+#endif
+#if USE_DENSITY
     registerCodecDensity(*this);
+#endif
+#if USE_LZSSE
     registerCodecsLZSSE(*this);
+#endif
 
     default_codec = get("LZ4", {}, {});
 }
