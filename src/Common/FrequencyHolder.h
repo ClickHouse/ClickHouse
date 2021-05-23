@@ -44,7 +44,7 @@ public:
         //loadEmotionalDict("/home/sergey/ClickHouse/programs/server/emotional_dictionary_rus.txt");
     }
 
-    void parseProgrammingFrequency(const String & pt) 
+    void parseProgrammingFrequency(const String & pt)
     {
         path_to_prog_freq = pt;
         loadProgrammingFrequency(pt);
@@ -154,15 +154,14 @@ public:
             {
                 ReadBufferFromMemory bufline(in.position() + 3, newline - in.position());
                 readString(programming_language, bufline);
-                LOG_TRACE(log, "Loading {}", programming_language);
-            } else
+            }
+            else
             {
                 ReadBufferFromMemory buf_line(in.position(), newline - in.position());
                 readStringUntilWhitespace(bigram, buf_line);
                 buf_line.ignore();
                 readFloatText(frequency, buf_line);
                 programming_freq[programming_language][bigram] = frequency;
-                LOG_TRACE(log, "Word {}", bigram);
             }
             in.position() = newline + 1;
         }

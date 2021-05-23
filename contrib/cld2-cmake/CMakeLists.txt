@@ -1,6 +1,5 @@
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/cld2")
 
-
 set (SRCS
     ${LIBRARY_DIR}/internal/cldutil.cc
     ${LIBRARY_DIR}/internal/cldutil_shared.cc
@@ -27,10 +26,7 @@ set (SRCS
     ${LIBRARY_DIR}/internal/cld2_generated_distinctoctachrome.cc
     ${LIBRARY_DIR}/internal/cld_generated_score_quad_octa_2.cc
 )
-
-add_library(cld2 SHARED ${SRCS})
-target_compile_options (cld2 PRIVATE -Wl -Wno-narrowing)
-
-
-target_link_libraries (cld2 PRIVATE ${LIBRARY_DIR}/internal/libcld2.so)
+add_library(cld2 ${SRCS})
+set_property(TARGET cld2 PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_compile_options (cld2 PRIVATE -Wno-reserved-id-macro -Wno-c++11-narrowing)
 target_include_directories(cld2 PUBLIC "${LIBRARY_DIR}/public")
