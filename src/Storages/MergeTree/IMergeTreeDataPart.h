@@ -2,7 +2,6 @@
 
 #include <DataStreams/IBlockInputStream.h>
 
-#include <Core/Row.h>
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
@@ -44,11 +43,6 @@ class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
-
-
-namespace ErrorCodes
-{
-}
 
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
