@@ -30,9 +30,7 @@
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
-#if USE_NURAFT
-#   include <Server/KeeperTCPHandlerFactory.h>
-#endif
+#include <Server/KeeperTCPHandlerFactory.h>
 
 #if defined(OS_LINUX)
 #    include <unistd.h>
@@ -357,7 +355,6 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
-#if USE_NURAFT
     /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
     global_context->initializeKeeperStorageDispatcher();
     for (const auto & listen_host : listen_hosts)
@@ -398,9 +395,6 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 #endif
         });
     }
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse keeper built without NuRaft library. Cannot use coordination.");
-#endif
 
     for (auto & server : *servers)
         server.start();
