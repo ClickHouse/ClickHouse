@@ -18,7 +18,6 @@ namespace ErrorCodes
 
 CompressionCodecLZSSE4::CompressionCodecLZSSE4(int level_) : level(level_)
 {
-
     setCodecDescription("LZSSE4", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
