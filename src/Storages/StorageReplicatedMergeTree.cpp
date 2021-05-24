@@ -4902,8 +4902,9 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
         auto zookeeper = getZooKeeper();
         delimiting_block_lock = allocateBlockNumber(partition_id, zookeeper);
         right = delimiting_block_lock->getNumber();
-        // Make sure we cover all parts in partition. In rare cases there might be parts with
-        // mutation version greater than current block number.
+        /// Make sure we cover all parts in drop range.
+        /// There might be parts with mutation version greater than current block number
+        /// if some part mutation has been asigned after block number allocation, but before creation of DROP_RANGE entry.
         mutation_version = MergeTreePartInfo::MAX_BLOCK_NUMBER;
     }
 
