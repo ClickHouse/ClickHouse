@@ -262,8 +262,10 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
     char ch = 0;  // silence "uninitialized" warning from gcc-*
 
     /// If we don't append CRLF, it means that we may have to prepend CRLF from previous content line, which wasn't the boundary.
-    if (in.read(ch)) line += ch;
-    if (in.read(ch)) line += ch;
+    if (in.read(ch))
+        line += ch;
+    if (in.read(ch))
+        line += ch;
     if (append_crlf && line == "\r\n")
         return line;
 
