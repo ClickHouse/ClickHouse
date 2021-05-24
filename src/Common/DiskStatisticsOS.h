@@ -1,3 +1,4 @@
+#pragma once
 #if defined (OS_LINUX)
 
 #include <cstdint>
@@ -6,17 +7,18 @@
 
 #include <IO/ReadBufferFromFile.h>
 
-namespace DB 
+namespace DB
 {
 
-/** Opens file /proc/mounts, reads all mounted filesytems and 
+/** Opens file /proc/mounts, reads all mounted filesystems and
   * calculates disk usage.
-  */ 
-class DiskStatisticsOS 
+  */
+class DiskStatisticsOS
 {
 public:
     // In bytes
-    struct Data {
+    struct Data
+    {
         uint64_t total;
         uint64_t used;
     };
