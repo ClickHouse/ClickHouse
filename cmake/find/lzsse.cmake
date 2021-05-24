@@ -1,4 +1,9 @@
-option(USE_LZSSE "Enable LZSSE experimental compression library" ${ENABLE_LIBRARIES})
+set (DEFAULT_USE_LZSSE 0)
+if (ENABLE_LIBRARIES AND ARCH_AMD64)
+    set (DEFAULT_USE_LZSSE 1)
+endif()
+
+option(USE_LZSSE "Enable LZSSE experimental compression library" ${DEFAULT_USE_LZSSE})
 
 if (NOT USE_LZSSE)
     return()
