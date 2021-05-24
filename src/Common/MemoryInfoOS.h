@@ -9,18 +9,19 @@
 
 #include <IO/ReadBufferFromFile.h>
 
-namespace DB 
+namespace DB
 {
 
 /** Opens file /proc/meminfo and reads statistics about memory usage.
   * This is Linux specific.
   * See: man procfs
   */
-class MemoryInfoOS 
+class MemoryInfoOS
 {
 public:
     // In kB
-    struct Data {
+    struct Data
+    {
         uint64_t total;
         uint64_t free;
         uint64_t buffers;

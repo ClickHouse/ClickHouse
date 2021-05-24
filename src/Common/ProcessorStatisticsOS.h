@@ -8,23 +8,26 @@
 
 #include <IO/ReadBufferFromFile.h>
 
-namespace DB 
+namespace DB
 {
 
 /** Opens files: /proc/loadavg, /proc/stat, /proc/cpuinfo and reads processor statistics in get() method.
   * This is Linux specific.
   * See: man procfs
   */
-class ProcessorStatisticsOS 
+class ProcessorStatisticsOS
 {
 public:
-    struct ProcLoadavg { 
+
+    struct ProcLoadavg
+    {
         float avg1;
         float avg5;
         float avg15;
     };
 
-    struct ProcStLoad {
+    struct ProcStLoad
+    {
         float user_time;
         float nice_time;
         float system_time;
@@ -39,7 +42,8 @@ public:
         uint32_t procs_blocked;
     };
 
-    struct ProcFreq { 
+    struct ProcFreq
+    {
         float max;
         float min;
         float avg;
@@ -54,11 +58,12 @@ public:
 
     ProcessorStatisticsOS();
     ~ProcessorStatisticsOS();
-    
+
     Data get();
 
 private:
-    struct ProcTime { 
+    struct ProcTime
+    {
         // The amount of time, measured in seconds
         uint64_t user;
         uint64_t nice;
@@ -73,7 +78,7 @@ private:
     void readLoadavg(ProcLoadavg & loadavg);
     void calcStLoad(ProcStLoad   & stload);
     void readFreq(ProcFreq       & freq);
-    
+
     void readProcTimeAndProcesses(ProcTime & proc_time, ProcStLoad& stload);
 
 private:
