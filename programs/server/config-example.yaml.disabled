@@ -1,0 +1,86 @@
+# We can use 3 main node types in YAML: Scalar, Map and Sequence.
+
+
+
+# A Scalar is a simple key-value pair:
+
+scalar: 123
+
+# Here we have a key "scalar" and value "123"
+# If we rewrite this in XML, we will get <scalar>123</scalar>
+
+# We can also represent an empty value with '':
+
+key: ''
+
+
+
+# A Map is a node, which contains other nodes:
+
+map:
+  key1: value1
+  key2: value2
+  small_map:
+    key3: value3
+    
+# This map can be converted into:
+# <map>
+#     <key1>value1</key1>
+#     <key2>value2</key2>
+#     <small_map>
+#         <key3>value3</key3>
+#     </small_map>
+# </map>
+
+
+
+# A Sequence is a node, which contains also other nodes.
+# The main difference from Map is that Sequence can also contain simple values.
+
+sequence:
+  - val1
+  - val2
+  - key: 123
+  - map:
+      mkey1: foo
+      mkey2: bar
+      
+# We can represent it in XML this way:
+# <sequence>val1</sequence>
+# <sequence>val2</sequence>
+# <sequence>
+#     <key>123</key>
+# </sequence>
+# <sequence>
+#     <map>
+#         <mkey1>foo</mkey1>
+#         <mkey2>bar</mkey2>
+#     </map>
+# </sequence>
+
+
+
+# YAML does not have direct support for structures like XML attributes.
+# We represent them as nodes with @ prefix in key. Note, that @ is reserved by YAML standard,
+# so you will need to write double quotes around the key. Both Map and Sequence can have
+# attributes as children nodes
+
+map:
+  "@attr1": value1
+  "@attr2": value2
+  key: 123
+  
+# This gives us:
+# <map attr1="value1" attr2="value2">
+#     <key>123</key>
+# </map>
+
+sequence:
+  - "@attr1": value1
+  - "@attr2": value2
+  - 123
+  - abc
+  
+# And this gives us:
+# <map attr1="value1" attr2="value2">123</map>
+# <map attr1="value1" attr2="value2">abc</map>
