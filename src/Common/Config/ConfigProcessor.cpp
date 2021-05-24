@@ -318,7 +318,12 @@ void ConfigProcessor::doIncludesRecursive(
             else if (throw_on_bad_incl)
                 throw Poco::Exception(error_msg + name);
             else
+            {
+                if (node->nodeName() == "include")
+                    node->parentNode()->removeChild(node);
+
                 LOG_WARNING(log, "{}{}", error_msg, name);
+            }
         }
         else
         {
