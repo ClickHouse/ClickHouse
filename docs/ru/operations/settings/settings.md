@@ -2846,6 +2846,7 @@ INSERT INTO test SELECT number FROM numbers(500);
 SET limit = 5;
 SET offset = 7;
 SELECT * FROM test LIMIT 10 OFFSET 100;
+```
 
 Результат:
 
