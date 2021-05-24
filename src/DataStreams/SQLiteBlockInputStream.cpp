@@ -44,10 +44,17 @@ Block SQLiteBlockInputStream::readImpl()
     {
         int status = sqlite3_step(compiled_statement.get());
 
+        Poco::Logger * log = &(Poco::Logger::get("SQLiteBlockInputStream"));
+
+        LOG_INFO(log, "Trying to do something here, num = {}, status = {}", num_rows, status);
+
         if (status == SQLITE_BUSY)
             continue;
         else if (status == SQLITE_DONE)
+        {
+            compiled_statement.reset();
             break;
+        }
         else if (status != SQLITE_ROW)
             throw Exception(status, sqlite3_errstr(status), sqlite3_errmsg(connection.get()));
 
@@ -58,8 +65,6 @@ Block SQLiteBlockInputStream::readImpl()
             const auto & sample = description.sample_block.getByPosition(idx);
 
             int column_type = sqlite3_column_type(compiled_statement.get(), idx);
-
-            Poco::Logger * log = &(Poco::Logger::get("SQLiteBlockInputStream"));
 
             switch (column_type)
             {
@@ -84,9 +89,9 @@ Block SQLiteBlockInputStream::readImpl()
                         sample.type->getName(),
                         len,
                         (data ? data : "NO"));
-                    //                    if (!data) {
-                    //                        (*columns[idx]).insertFrom(*sample.column, 0); break;
-                    //                    }
+                    if (!data) {
+                        (*columns[idx]).insertFrom(*sample.column, 0); break;
+                    }
                     assert_cast<ColumnString &>(*columns[idx]).insertData(data, len);
                     break;
                 }
