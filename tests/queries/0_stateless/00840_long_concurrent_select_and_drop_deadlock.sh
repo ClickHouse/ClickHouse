@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# NOTE: database = $CLICKHOUSE_DATABASE is unwanted
+
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

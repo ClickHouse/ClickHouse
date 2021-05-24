@@ -136,6 +136,8 @@ private:
     BackgroundSchedulePool::TaskHolder looping_task;
     BackgroundSchedulePool::TaskHolder connection_task;
 
+    uint64_t milliseconds_to_wait;
+
     std::atomic<bool> stream_cancelled{false};
     size_t read_attempts = 0;
     mutable bool drop_table = false;
