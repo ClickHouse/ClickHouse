@@ -148,6 +148,11 @@ if __name__ == "__main__":
         help="Don't use net host in parent docker container")
 
     parser.add_argument(
+        "--network",
+        default='host',
+        help="Set network driver for runnner container")
+
+    parser.add_argument(
         "--docker-image-version",
         default="latest",
         help="Version of docker image which runner will use to run tests")
@@ -196,7 +201,9 @@ if __name__ == "__main__":
         parallel_args += " -n {}".format(args.parallel)
 
     net = ""
-    if not args.disable_net_host:
+    if args.network:
+        net = "--net={}".format(args.network)
+    elif not args.disable_net_host:
         net = "--net=host"
 
     env_tags = ""
