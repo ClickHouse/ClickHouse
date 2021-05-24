@@ -153,22 +153,22 @@ def insert_large_data(node, table):
 
 
 @pytest.mark.parametrize(
-    ("storage_policy", "large_data"),
+    ("storage_policy", "large_data", "iterations"),
     [
-        ("tiered", False),
-        ("tiered_copy", False),
-        ("tiered", True),
-        ("tiered_copy", True),
+        ("tiered", False, 10),
+        ("tiered_copy", False, 10),
+        ("tiered", True, 3),
+        ("tiered_copy", True, 3),
     ]
 )
-def test_s3_zero_copy_with_ttl_move(cluster, storage_policy, large_data):
+def test_s3_zero_copy_with_ttl_move(cluster, storage_policy, large_data, iterations):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
     node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
     node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
 
-    for i in range(5):
+    for i in range(iterations):
         node1.query(
             """
             CREATE TABLE ttl_move_test ON CLUSTER test_cluster (d UInt64, d1 DateTime)
@@ -203,20 +203,20 @@ def test_s3_zero_copy_with_ttl_move(cluster, storage_policy, large_data):
 
 
 @pytest.mark.parametrize(
-    ("large_data"),
+    ("large_data", "iterations"),
     [
-        (False),
-        (True),
+        (False, 10),
+        (True, 3),
     ]
 )
-def test_s3_zero_copy_with_ttl_delete(cluster, large_data):
+def test_s3_zero_copy_with_ttl_delete(cluster, large_data, iterations):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
     node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
     node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
 
-    for i in range(10):
+    for i in range(iterations):
         node1.query(
             """
             CREATE TABLE ttl_delete_test ON CLUSTER test_cluster (d UInt64, d1 DateTime)
