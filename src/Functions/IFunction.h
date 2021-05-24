@@ -155,12 +155,13 @@ public:
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
 
-    /** Some functions like ignore(...) or toTypeName(...) always return constant result which doesn't depend on arguments.
-      * In this case we can calculate result and assume that it's constant in stream header.
-      * There is no need to implement function if it has zero arguments.
-      * Must return ColumnConst with single row or nullptr.
+    /** If function isSuitableForConstantFolding than, this method will be called during query analyzis
+      * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
+      * return they result based on some constant arguments.
+      * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForConstants,
+      * useDefaultImplementationForLowCardinality are not applied.
       */
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/) const { return nullptr; }
+    virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
@@ -377,7 +378,7 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
