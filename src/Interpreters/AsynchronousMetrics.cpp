@@ -236,7 +236,7 @@ void AsynchronousMetrics::update()
     }
 #endif
 
-    /// Process memory information according to OS 
+    /// Process memory information according to OS
 #if defined(OS_LINUX)
     {
         MemoryInfoOS::Data data = memory_info.get();
@@ -252,7 +252,7 @@ void AsynchronousMetrics::update()
     }
 #endif
 
-    /// Process processor usage according to OS 
+    /// Process processor usage according to OS
 #if defined(OS_LINUX)
     {
         ProcessorStatisticsOS::Data data = proc_stat.get();
@@ -280,7 +280,7 @@ void AsynchronousMetrics::update()
     }
 #endif
 
-    /// Process disk usage according to OS 
+    /// Process disk usage according to OS
 #if defined(OS_LINUX)
     {
         DiskStatisticsOS::Data data = disk_stat.get();
