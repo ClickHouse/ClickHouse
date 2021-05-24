@@ -143,7 +143,7 @@ def test_experimental_codecs(start_cluster):
     node6.query("""
     CREATE TABLE compression_experimental_codecs (
         somedate Date CODEC(Lizard(12)),
-        id UInt64 CODEC(Density('lion')),
+        id UInt64 CODEC(Density(3)),
         data String CODEC(LZSSE4(3))
     ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
     """)

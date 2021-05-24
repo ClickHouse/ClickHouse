@@ -691,7 +691,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     /// In memory parts doesn't have any compression
     if (!isStoredOnDisk())
     {
-        default_codec = CompressionCodecFactory::instance().get("NONE", {}, {});
+        default_codec = CompressionCodecFactory::instance().get("NONE", {});
         return;
     }
 
@@ -733,7 +733,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
 {
     /// In memory parts doesn't have any compression
     if (!isStoredOnDisk())
-        return CompressionCodecFactory::instance().get("NONE", {}, {});
+        return CompressionCodecFactory::instance().get("NONE", {});
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 

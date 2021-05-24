@@ -70,7 +70,7 @@ public:
     CompressionCodecPtr get(const uint8_t byte_code) const;
 
     /// For backward compatibility with config settings
-    CompressionCodecPtr get(const String & family_name, std::optional<int> level, std::optional<std::string> param) const;
+    CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);

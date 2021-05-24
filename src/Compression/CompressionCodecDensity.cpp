@@ -18,8 +18,6 @@ namespace DB
 class CompressionCodecDensity : public ICompressionCodec
 {
 public:
-    static constexpr auto DENSITY_DEFAULT_ALGO = DENSITY_ALGORITHM_CHAMELEON; // by default aim on speed
-
     explicit CompressionCodecDensity(DENSITY_ALGORITHM algo_);
 
     uint8_t getMethodByte() const override;
@@ -93,7 +91,7 @@ void registerCodecDensity(CompressionCodecFactory & factory)
         method_code,
         [&](const ASTPtr & arguments) -> CompressionCodecPtr
         {
-            DENSITY_ALGORITHM algo = CompressionCodecDensity::DENSITY_DEFAULT_ALGO;
+            DENSITY_ALGORITHM algorithm = DENSITY_ALGORITHM_CHAMELEON;
 
             if (arguments && !arguments->children.empty())
             {
@@ -104,22 +102,18 @@ void registerCodecDensity(CompressionCodecFactory & factory)
                 const auto children = arguments->children;
 
                 const auto * algo_literal = children[0]->as<ASTLiteral>();
-                if (!algo_literal || algo_literal->value.getType() != Field::Types::String)
-                    throw Exception("Density codec argument must be string (algorithm), one of: 'lion', 'chameleon', 'cheetah'",
+                if (!algo_literal || algo_literal->value.getType() != Field::Types::UInt64)
+                    throw Exception("Density codec argument must be integer",
                         ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 
-                const auto algorithm = algo_literal->value.safeGet<std::string>();
-                if (algorithm == "lion")
-                    algo = DENSITY_ALGORITHM_LION;
-                else if (algorithm == "chameleon")
-                    algo = DENSITY_ALGORITHM_CHAMELEON;
-                else if (algorithm == "cheetah")
-                    algo = DENSITY_ALGORITHM_CHEETAH;
-                else
-                    throw Exception("Density codec argument may be one of: 'lion', 'chameleon', 'cheetah'", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                const UInt64 algorithm_num = algo_literal->value.safeGet<UInt64>();
+                if (algorithm_num < 1 || algorithm_num > 3)
+                    throw Exception("Density codec level can be 1, 2 or 3.", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+
+                algorithm = static_cast<DENSITY_ALGORITHM>(algorithm_num);
             }
 
-            return std::make_shared<CompressionCodecDensity>(algo);
+            return std::make_shared<CompressionCodecDensity>(algorithm);
         });
 }
 
