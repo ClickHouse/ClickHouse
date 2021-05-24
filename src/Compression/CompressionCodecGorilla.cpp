@@ -104,7 +104,7 @@ namespace DB
 class CompressionCodecGorilla : public ICompressionCodec
 {
 public:
-    CompressionCodecGorilla(UInt8 data_bytes_size_);
+    explicit CompressionCodecGorilla(UInt8 data_bytes_size_);
 
     uint8_t getMethodByte() const override;
 

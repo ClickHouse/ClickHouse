@@ -14,7 +14,7 @@ namespace DB
 class CompressionCodecDelta : public ICompressionCodec
 {
 public:
-    CompressionCodecDelta(UInt8 delta_bytes_size_);
+    explicit CompressionCodecDelta(UInt8 delta_bytes_size_);
 
     uint8_t getMethodByte() const override;
 
