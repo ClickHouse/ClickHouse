@@ -2015,6 +2015,16 @@ Possible values:
 
 Default value: 16.
 
+## background_fetches_pool_size {#background_fetches_pool_size}
+
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recomended to use default value.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
 ## always_fetch_merged_part {#always_fetch_merged_part}
 
 Prohibits data parts merging in [Replicated\*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
