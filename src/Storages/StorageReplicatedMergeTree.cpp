@@ -2658,31 +2658,32 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     /// Remove local parts if source replica does not have them, because such parts will never be fetched by other replicas.
     Strings local_parts_in_zk = zookeeper->getChildren(replica_path + "/parts");
     Strings parts_to_remove_from_zk;
+
     for (const auto & part : local_parts_in_zk)
-    {
         if (active_parts_set.getContainingPart(part).empty())
         {
             queue.remove(zookeeper, part);
             parts_to_remove_from_zk.emplace_back(part);
             LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
         }
-    }
+
     tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
 
     auto local_active_parts = getDataParts();
+
     DataPartsVector parts_to_remove_from_working_set;
+
     for (const auto & part : local_active_parts)
-    {
         if (active_parts_set.getContainingPart(part->name).empty())
         {
             parts_to_remove_from_working_set.emplace_back(part);
             LOG_WARNING(log, "Source replica does not have part {}. Removing it from working set.", part->name);
         }
-    }
 
     if (getSettings()->detach_old_local_parts_when_cloning_replica)
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
+
         for (const auto & part : parts_to_remove_from_working_set)
         {
             LOG_INFO(log, "Detaching {}", part->relative_path);
@@ -2695,7 +2696,16 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     for (const String & name : active_parts)
     {
         LogEntry log_entry;
-        log_entry.type = LogEntry::GET_PART;
+        log_entry.type = are_restoring_replica ? LogEntry::ATTACH_PART : LogEntry::GET_PART;
+
+        if (!are_restoring_replica)
+            log_entry.type = LogEntry::GET_PART;
+        else
+        {
+            log_entry.type = LogEntry::ATTACH_PART;
+            log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+        }
+
         log_entry.source_replica = "";
         log_entry.new_part_name = name;
         log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
@@ -4966,7 +4976,11 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
         for (const auto& part : parts)
             attachPartition(std::make_shared<ASTLiteral>(part->name), metadata_snapshot, true, getContext());
 
+    are_restoring_replica = true;
+
     startup();
+
+    are_restoring_replica = false;
 }
 
 void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr query_context, bool throw_if_noop)

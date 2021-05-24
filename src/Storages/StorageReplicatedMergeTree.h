@@ -55,6 +55,7 @@ namespace DB
   * Log - a sequence of entries (LogEntry) about what to do.
   * Each entry is one of:
   * - normal data insertion (GET),
+  * - data insertion with a possible attach from local data (ATTACH),
   * - merge (MERGE),
   * - delete the partition (DROP).
   *
@@ -240,6 +241,8 @@ public:
     void restoreMetadataOnReadonlyTable();
 
 private:
+    bool are_restoring_replica {false};
+
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 

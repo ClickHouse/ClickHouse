@@ -74,7 +74,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
-    extern const int SYSTEM_ERROR;
     extern const int NO_ZOOKEEPER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_TABLE;

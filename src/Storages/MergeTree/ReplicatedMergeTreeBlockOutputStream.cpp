@@ -262,8 +262,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             {
                 log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
 
-                /// We don't need to involve ZooKeeper to obtain the checksums as by the time we get
-                /// the MutableDataPartPtr here, we already have the data thus being able to
+                /// We don't need to involve ZooKeeper to obtain checksums as by the time we get
+                /// MutableDataPartPtr here, we already have the data thus being able to
                 /// calculate the checksums.
                 log_entry.part_checksum = part->checksums.getTotalChecksumHex();
             }
