@@ -2,11 +2,16 @@
 
 #include <DataStreams/SQLiteBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/Context.h>
+#include <Formats/FormatFactory.h>
+#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <ext/range.h>
 
 namespace DB
 {
@@ -25,6 +30,7 @@ StorageSQLite::StorageSQLite(
     ContextPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
+    , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , global_context(context_)
@@ -39,7 +45,7 @@ Pipe StorageSQLite::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    ContextPtr context_,
     QueryProcessingStage::Enum,
     size_t max_block_size,
     unsigned int)
@@ -54,7 +60,7 @@ Pipe StorageSQLite::read(
         IdentifierQuotingStyle::DoubleQuotes,
         remote_table_schema,
         remote_table_name,
-        context);
+        context_);
 
     Block sample_block;
     for (const String & column_name : column_names)
@@ -65,6 +71,79 @@ Pipe StorageSQLite::read(
 
     return Pipe(
         std::make_shared<SourceFromInputStream>(std::make_shared<SQLiteBlockInputStream>(db_ptr, query, sample_block, max_block_size)));
+}
+
+class SQLiteBlockOutputStream : public IBlockOutputStream
+{
+public:
+    explicit SQLiteBlockOutputStream(
+        const StorageSQLite & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        std::shared_ptr<sqlite3> connection_,
+        const std::string & remote_database_name_,
+        const std::string & remote_table_name_)
+        : storage{storage_}
+        , metadata_snapshot(metadata_snapshot_)
+        , connection(connection_)
+        , remote_database_name{remote_database_name_}
+        , remote_table_name(remote_table_name_)
+    {
+    }
+
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+
+
+    void writePrefix() override { }
+
+    void write(const Block & block) override
+    {
+        WriteBufferFromOwnString sqlbuf;
+        sqlbuf << "INSERT INTO ";
+        if (!remote_database_name.empty())
+            sqlbuf << "\"" << remote_database_name << "\".";
+        sqlbuf << "\"" << remote_table_name << "\"";
+        sqlbuf << " (";
+
+        for (auto it = block.begin(); it != block.end(); ++it)
+        {
+            if (it != block.begin())
+                sqlbuf << ", ";
+            sqlbuf << "'" << it->name << "'";
+        }
+
+        sqlbuf << ") VALUES ";
+
+        auto writer
+            = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        writer->write(block);
+
+        sqlbuf << ";";
+
+        char * err_message = nullptr;
+
+        int status = sqlite3_exec(connection.get(), sqlbuf.str().c_str(), nullptr, nullptr, &err_message);
+
+        if (status != SQLITE_OK)
+        {
+            String err_msg(err_message);
+            sqlite3_free(err_message);
+            throw Exception(status, "SQLITE_ERR {}: {}", status, err_msg);
+        }
+    }
+
+    void writeSuffix() override { }
+
+private:
+    const StorageSQLite & storage;
+    StorageMetadataPtr metadata_snapshot;
+    std::shared_ptr<sqlite3> connection;
+    std::string remote_database_name;
+    std::string remote_table_name;
+};
+
+BlockOutputStreamPtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
+{
+    return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, db_ptr, "", remote_table_name);
 }
 
 void registerStorageSQLite(StorageFactory & factory)
