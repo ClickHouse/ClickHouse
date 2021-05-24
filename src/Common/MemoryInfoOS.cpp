@@ -16,18 +16,18 @@ namespace DB
 
 namespace
 {
-template<typename T>
-void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf)
-{
-    readIntText(x, buf);
-    skipWhitespaceIfAny(buf);
-}
+    template<typename T>
+    void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf)
+    {
+        readIntText(x, buf);
+        skipWhitespaceIfAny(buf);
+    }
 
-void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
-{
-    readStringUntilWhitespace(s, buf);
-    skipWhitespaceIfAny(buf);
-}
+    void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
+    {
+        readStringUntilWhitespace(s, buf);
+        skipWhitespaceIfAny(buf);
+    }
 }
 
 static constexpr auto meminfo_filename = "/proc/meminfo";

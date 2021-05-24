@@ -18,7 +18,6 @@ namespace DB
 class ProcessorStatisticsOS
 {
 public:
-
     struct ProcLoadavg
     {
         float avg1;
