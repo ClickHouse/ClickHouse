@@ -585,7 +585,8 @@ BlockIO InterpreterSelectQuery::execute()
 
     auto & query = getSelectQuery();
 
-    auto cache_ttl = query.getCacheTtl();
+    // auto cache_ttl = query.getCacheTtl();
+    UInt64 cache_ttl = 2;
 
     auto query_cache = context->getQueryCache();
     if (cache_ttl && query_cache) 

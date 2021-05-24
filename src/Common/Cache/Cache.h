@@ -1,29 +1,29 @@
 #pragma once
 
-#include <unordered_map>
+#include <atomic>
+#include <chrono>
 #include <list>
 #include <memory>
-#include <chrono>
 #include <mutex>
-#include <atomic>
+#include <unordered_map>
 
-#include <common/logger_useful.h>
 #include <Common/TypePromotion.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
-
 template <typename T>
 struct ITrivialWeightFunction
 {
-    size_t operator()(const T &) const
-    {
-        return 1;
-    }
+    size_t operator()(const T &) const { return 1; }
 };
 
 
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = ITrivialWeightFunction<TMapped>>
+template <
+    typename TKey,
+    typename TMapped,
+    typename HashFunction = std::hash<TKey>,
+    typename WeightFunction = ITrivialWeightFunction<TMapped>>
 class Cache
 {
 public:
@@ -31,8 +31,7 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    explicit Cache(size_t max_size_)
-        : max_size(std::max(static_cast<size_t>(1), max_size_)) {}
+    explicit Cache(size_t max_size_ = 4096) : max_size(std::max(static_cast<size_t>(1), max_size_)) { }
 
     MappedPtr get(const Key & key)
     {
@@ -47,11 +46,11 @@ public:
         return res;
     }
 
-    void set(const Key & key, const MappedPtr & mapped)
+    void set(const Key & key, const MappedPtr & mapped, [[maybe_unused]] UInt64 ttl = 2)
     {
         std::lock_guard lock(mutex);
 
-        setImpl(key, mapped, lock);
+        setImpl(key, mapped, lock, ttl);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -63,7 +62,7 @@ public:
     ///
     /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
     template <typename LoadFunc>
-    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
+    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func, UInt64 cache_ttl = 2)
     {
         InsertTokenHolder token_holder;
         {
@@ -100,9 +99,12 @@ public:
         token->value = load_func();
 
         /// Handling the case when nothing is loaded and no need to insert
-        if (!token->value)
+        /// and the other streams have to abandon the same job
+        if (token->totally_invalid || !token->value)
+        {
+            token->totally_invalid = true;
             return std::make_pair(MappedPtr(), false);
-
+        }
         std::lock_guard cache_lock(mutex);
 
         /// Insert the new value only if the token is still in present in insert_tokens.
@@ -111,7 +113,7 @@ public:
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            setImpl(key, token->value, cache_lock);
+            setImpl(key, token->value, cache_lock, cache_ttl);
             result = true;
         }
 
@@ -149,7 +151,6 @@ public:
     virtual ~Cache() = default;
 
 protected:
-
     mutable std::mutex mutex;
 
     struct Cell : public std::enable_shared_from_this<Cell>
@@ -166,11 +167,10 @@ protected:
     Cells cells;
 
 private:
-
     /// Represents pending insertion attempt.
     struct InsertToken
     {
-        explicit InsertToken(Cache & cache_) : cache(cache_) {}
+        explicit InsertToken(Cache & cache_) : cache(cache_) { }
 
         std::mutex mutex;
         bool cleaned_up = false; /// Protected by the token mutex
@@ -178,6 +178,7 @@ private:
 
         Cache & cache;
         size_t refcount = 0; /// Protected by the cache mutex
+        bool totally_invalid = false;
     };
 
     using InsertTokenById = std::unordered_map<Key, std::shared_ptr<InsertToken>, HashFunction>;
@@ -193,7 +194,8 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        void
+        acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             key = key_;
             token = token_;
@@ -232,11 +234,11 @@ private:
 
     InsertTokenById insert_tokens;
 
-    std::atomic<size_t> hits {0};
-    std::atomic<size_t> misses {0};
+    std::atomic<size_t> hits{0};
+    std::atomic<size_t> misses{0};
 
 protected:
-/// Total weight of values.
+    /// Total weight of values.
     size_t current_size = 0;
     const size_t max_size;
     WeightFunction weight_function;
@@ -250,12 +252,75 @@ protected:
         misses = 0;
     }
 
-    virtual MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+    MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+    {
+        removeInvalid();
+        auto it = cells.find(key);
+        if (it == cells.end())
+        {
+            return MappedPtr();
+        }
 
-    virtual void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+        auto cell = it->second;
+        updateStructuresGetOrSet(key, cell);
 
-    virtual void deleteImpl(const Key & key) = 0;
+        return cell->value;
+    }
+
+    void setImpl(
+        const Key & key,
+        const MappedPtr & mapped,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock,
+        [[maybe_unused]] UInt64 ttl = 2)
+    {
+        removeInvalid();
+        auto [it, inserted] = cells.emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple());
+
+        auto cell = it->second;
+        try
+        {
+            updateStructuresGetOrSet(key, cell, inserted);
+        }
+        catch (...)
+        {
+            cells.erase(it);
+            throw;
+        }
+
+        cell->value = mapped;
+        cell->size = cell->value ? weight_function(*cell->value) : 0;
+        if (inserted)
+            current_size += cell->size;
+
+        removeOverflow();
+    }
+
+    void deleteImpl(const Key & key)
+    {
+        auto it = cells.find(key);
+        if (it == cells.end())
+        {
+            LOG_ERROR(&Poco::Logger::get("LFUCache"), "LFUCache became inconsistent. There must be a bug in it.");
+            abort();
+        }
+        auto cell = it->second;
+
+        current_size -= cell->size;
+
+        updateStructuresDelete(key, cell);
+
+        cells.erase(it);
+    }
+
+    virtual void removeInvalid() = 0;
+    virtual void removeOverflow() = 0;
+    virtual void updateStructuresGetOrSet(
+        [[maybe_unused]] const Key & key,
+        [[maybe_unused]] std::shared_ptr<Cell> & cell_ptr,
+        [[maybe_unused]] bool new_element = false,
+        [[maybe_unused]] UInt64 ttl = 2)
+        = 0;
+    virtual void updateStructuresDelete([[maybe_unused]] const Key & key, [[maybe_unused]] std::shared_ptr<Cell> & cell_ptr) = 0;
 };
-
 
 }

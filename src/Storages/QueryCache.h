@@ -5,7 +5,7 @@
 #include <memory>
 
 #include <Core/Block.h>
-#include <Common/Cache/LRUCache.h>
+#include <Common/Cache/CompleteCache.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -71,14 +71,14 @@ struct QueryCacheWeightFunction
 };
 
 
-using QueryCacheBase = ILRUCache<UInt128, QueryCacheValue, std::hash<UInt128>, QueryCacheWeightFunction>;
+using QueryCacheBase = TTLLFUCache<UInt128, QueryCacheValue, std::hash<UInt128>, QueryCacheWeightFunction>;
 
 // template <Class TCache>
-class QueryCache : public QueryCacheBase
+class QueryCache : virtual public QueryCacheBase
 {
 public:
 
-    QueryCache(size_t max_size_in_bytes)
+    explicit QueryCache(size_t max_size_in_bytes = 1)
         : QueryCacheBase(max_size_in_bytes) {}
 
     // using Key = typename QueryCacheBase::Key;
@@ -113,9 +113,8 @@ public:
     }
 
 
-    BlockInputStreamPtr getOrSet(const Key & key, BlockInputStreamPtr stream, UInt64 cache_ttl)
+    BlockInputStreamPtr getOrSet(const Key & key, BlockInputStreamPtr stream, UInt64 cache_ttl = 2)
     {
-        cache_ttl = 0;
         auto load_func = [this, &stream]() { 
             auto cache_value = this->streamHandler(stream);
             if (!cache_value)
@@ -125,7 +124,7 @@ public:
         MappedPtr cache_value;
         try
         {
-            auto result = QueryCacheBase::getOrSet(key, load_func);
+            auto result = QueryCacheBase::getOrSet(key, load_func, cache_ttl);
             if (result.second)
                 ProfileEvents::increment(ProfileEvents::QueryCacheHits);
             else
@@ -160,15 +159,15 @@ public:
     {
         BlockInputStreamPtr result;
         MappedPtr mapped;
-        cache_ttl = 0;
         mapped = streamHandler(stream);
         if (mapped)
-            QueryCacheBase::set(key, mapped);
+            QueryCacheBase::set(key, mapped, cache_ttl);
         else
             ProfileEvents::increment(ProfileEvents::QueryCacheInsertFails);
         return stream;
 
     }
+    virtual ~QueryCache() = default;
 
 private: 
     MappedPtr streamHandler(BlockInputStreamPtr & stream, size_t max_size_=(1u << 20))
@@ -198,6 +197,8 @@ private:
         }
         return cache_value;
     }
+
+    
 };
 
 using QueryCachePtr = std::shared_ptr<QueryCache>;
