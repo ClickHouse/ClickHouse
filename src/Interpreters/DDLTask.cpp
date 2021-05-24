@@ -52,11 +52,11 @@ void DDLLogEntry::assertVersion() const
                                                             "Maximum supported version is {}", version, max_version);
 }
 
-void DDLLogEntry::setSettingsIfRequired(const Context & context)
+void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
-    version = context.getSettingsRef().distributed_ddl_entry_format_version;
+    version = context->getSettingsRef().distributed_ddl_entry_format_version;
     if (version == 2)
-        settings.emplace(context.getSettingsRef().changes());
+        settings.emplace(context->getSettingsRef().changes());
 }
 
 String DDLLogEntry::toString() const
@@ -135,19 +135,19 @@ void DDLLogEntry::parse(const String & data)
 }
 
 
-void DDLTaskBase::parseQueryFromEntry(const Context & context)
+void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 {
     const char * begin = entry.query.data();
     const char * end = begin + entry.query.size();
 
     ParserQuery parser_query(end);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, context.getSettingsRef().max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, context->getSettingsRef().max_parser_depth);
 }
 
-std::unique_ptr<Context> DDLTaskBase::makeQueryContext(Context & from_context, const ZooKeeperPtr & /*zookeeper*/)
+ContextPtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
 {
-    auto query_context = std::make_unique<Context>(from_context);
+    auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -157,17 +157,17 @@ std::unique_ptr<Context> DDLTaskBase::makeQueryContext(Context & from_context, c
 }
 
 
-bool DDLTask::findCurrentHostID(const Context & global_context, Poco::Logger * log)
+bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
 {
     bool host_in_hostlist = false;
 
     for (const HostID & host : entry.hosts)
     {
-        auto maybe_secure_port = global_context.getTCPPortSecure();
+        auto maybe_secure_port = global_context->getTCPPortSecure();
 
         /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
         bool is_local_port = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port))
-                             || host.isLocalAddress(global_context.getTCPPort());
+                             || host.isLocalAddress(global_context->getTCPPort());
 
         if (!is_local_port)
             continue;
@@ -189,14 +189,14 @@ bool DDLTask::findCurrentHostID(const Context & global_context, Poco::Logger * l
     return host_in_hostlist;
 }
 
-void DDLTask::setClusterInfo(const Context & context, Poco::Logger * log)
+void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
         throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
     cluster_name = query_on_cluster->cluster;
-    cluster = context.tryGetCluster(cluster_name);
+    cluster = context->tryGetCluster(cluster_name);
 
     if (!cluster)
         throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
@@ -277,7 +277,7 @@ bool DDLTask::tryFindHostInCluster()
     return found_exact_match;
 }
 
-bool DDLTask::tryFindHostInClusterViaResolving(const Context & context)
+bool DDLTask::tryFindHostInClusterViaResolving(ContextPtr context)
 {
     const auto & shards = cluster->getShardsAddresses();
     bool found_via_resolving = false;
@@ -288,9 +288,9 @@ bool DDLTask::tryFindHostInClusterViaResolving(const Context & context)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (auto resolved = address.getResolvedAddress();
-                resolved && (isLocalAddress(*resolved, context.getTCPPort())
-                             || (context.getTCPPortSecure() && isLocalAddress(*resolved, *context.getTCPPortSecure()))))
+            if (auto resolved = address.getResolvedAddress(); resolved
+                && (isLocalAddress(*resolved, context->getTCPPort())
+                    || (context->getTCPPortSecure() && isLocalAddress(*resolved, *context->getTCPPortSecure()))))
             {
                 if (found_via_resolving)
                 {
@@ -344,7 +344,7 @@ String DatabaseReplicatedTask::getShardID() const
     return database->shard_name;
 }
 
-void DatabaseReplicatedTask::parseQueryFromEntry(const Context & context)
+void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 {
     DDLTaskBase::parseQueryFromEntry(context);
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
@@ -355,7 +355,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(const Context & context)
     }
 }
 
-std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper)
+ContextPtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;

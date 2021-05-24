@@ -67,6 +67,10 @@ public:
     /// Returns number of running and scheduled jobs.
     size_t active() const;
 
+    /// Returns true if the pool already terminated
+    /// (and any further scheduling will produce CANNOT_SCHEDULE_TASK exception)
+    bool finished() const;
+
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);

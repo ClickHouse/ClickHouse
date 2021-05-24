@@ -52,6 +52,9 @@ template <typename Value, bool float_return> using FuncQuantilesTDigest = Aggreg
 template <typename Value, bool float_return> using FuncQuantileTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantileTDigestWeighted, true, std::conditional_t<float_return, Float32, void>, false>;
 template <typename Value, bool float_return> using FuncQuantilesTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantilesTDigestWeighted, true, std::conditional_t<float_return, Float32, void>, true>;
 
+template <typename Value, bool float_return> using FuncQuantileBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantileBFloat16, false, std::conditional_t<float_return, Float64, void>, false>;
+template <typename Value, bool float_return> using FuncQuantilesBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantilesBFloat16, false, std::conditional_t<float_return, Float64, void>, true>;
+
 
 template <template <typename, bool> class Function>
 static constexpr bool supportDecimal()
@@ -100,13 +103,14 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
         if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32, false>>(argument_types, params);
         if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, false>>(argument_types, params);
         if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, false>>(argument_types, params);
+        if (which.idx == TypeIndex::Decimal256) return std::make_shared<Function<Decimal256, false>>(argument_types, params);
         if (which.idx == TypeIndex::DateTime64) return std::make_shared<Function<DateTime64, false>>(argument_types, params);
-        //if (which.idx == TypeIndex::Decimal256) return std::make_shared<Function<Decimal256, false>>(argument_types, params);
     }
 
     if constexpr (supportBigInt<Function>())
     {
         if (which.idx == TypeIndex::Int128) return std::make_shared<Function<Int128, true>>(argument_types, params);
+        if (which.idx == TypeIndex::UInt128) return std::make_shared<Function<Int128, true>>(argument_types, params);
         if (which.idx == TypeIndex::Int256) return std::make_shared<Function<Int256, true>>(argument_types, params);
         if (which.idx == TypeIndex::UInt256) return std::make_shared<Function<UInt256, true>>(argument_types, params);
     }
@@ -155,6 +159,9 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerFunction(NameQuantileTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantileTDigestWeighted>);
     factory.registerFunction(NameQuantilesTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantilesTDigestWeighted>);
 
+    factory.registerFunction(NameQuantileBFloat16::name, createAggregateFunctionQuantile<FuncQuantileBFloat16>);
+    factory.registerFunction(NameQuantilesBFloat16::name, createAggregateFunctionQuantile<FuncQuantilesBFloat16>);
+
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("median", NameQuantile::name);
     factory.registerAlias("medianDeterministic", NameQuantileDeterministic::name);
@@ -166,6 +173,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerAlias("medianTimingWeighted", NameQuantileTimingWeighted::name);
     factory.registerAlias("medianTDigest", NameQuantileTDigest::name);
     factory.registerAlias("medianTDigestWeighted", NameQuantileTDigestWeighted::name);
+    factory.registerAlias("medianBFloat16", NameQuantileBFloat16::name);
 }
 
 }

@@ -1,4 +1,3 @@
-# Third-party libraries may have substandard code.
 
 # Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
@@ -11,8 +10,10 @@ else ()
 endif ()
 unset (_current_dir_name)
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+# Third-party libraries may have substandard code.
+# Also remove a possible source of nondeterminism.
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
 
 if (WITH_COVERAGE)
   set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
@@ -47,7 +48,15 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
-add_subdirectory (xz)
+add_subdirectory (nanodbc-cmake)
+
+if (USE_YAML_CPP)
+    add_subdirectory (yaml-cpp-cmake)
+endif()
+
+if (USE_INTERNAL_XZ_LIBRARY)
+    add_subdirectory (xz)
+endif()
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
@@ -93,14 +102,8 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
-    if (TARGET zlibstatic)
-        target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
-    endif ()
     if (ARCH_AMD64 OR ARCH_AARCH64)
         target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
-        if (TARGET zlibstatic)
-            target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
-        endif ()
     endif ()
 endif ()
 
@@ -206,11 +209,12 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
+if (USE_EMBEDDED_COMPILER)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
+
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
@@ -225,8 +229,6 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
 
     set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
     unset (CMAKE_CXX_STANDARD_bak)
-
-    target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)

@@ -3,6 +3,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -27,6 +28,14 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class CompiledExpressionCache;
+
+namespace JSONBuilder
+{
+    class JSONMap;
+
+    class IItem;
+    using ItemPtr = std::unique_ptr<IItem>;
+}
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -54,6 +63,8 @@ public:
         FUNCTION,
     };
 
+    static const char * typeToString(ActionType type);
+
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
@@ -62,7 +73,7 @@ public:
     {
         NodeRawConstPtrs children;
 
-        ActionType type;
+        ActionType type{};
 
         std::string result_name;
         DataTypePtr result_type;
@@ -80,6 +91,8 @@ public:
         /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
         /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
         bool allow_constant_folding = true;
+
+        void toTree(JSONBuilder::JSONMap & map) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -108,6 +121,7 @@ public:
     const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
+    Names getRequiredColumnsNames() const;
     ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
 
@@ -155,6 +169,14 @@ public:
     void removeUnusedActions(const Names & required_names);
     void removeUnusedActions(const NameSet & required_names);
 
+    NameSet foldActionsByProjection(
+        const NameSet & required_columns,
+        const Block & projection_block_for_keys,
+        const String & predicate_column_name = {},
+        bool add_missing_keys = true);
+    void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
+    void addAggregatesViaProjection(const Block & aggregates);
+
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
@@ -164,6 +186,14 @@ public:
 #endif
 
     ActionsDAGPtr clone() const;
+
+    /// Execute actions for header. Input block must have empty columns.
+    /// Result should be equal to the execution of ExpressionActions build form this DAG.
+    /// Actions are not changed, no expressions are compiled.
+    ///
+    /// In addition, check that result constants are constants according to DAG.
+    /// In case if function return constant, but arguments are not constant, materialize it.
+    Block updateHeader(Block header) const;
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
@@ -220,7 +250,7 @@ public:
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.
-    /// Returned actions add single column which may be used for filter.
+    /// Returned actions add single column which may be used for filter. Added column will be the first one.
     /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
     ///
     /// @param all_inputs should contain inputs from previous step, which will be used for result actions.
@@ -231,9 +261,9 @@ public:
     /// Pushed condition: z > 0
     /// GROUP BY step will transform columns `x, y, z` -> `sum(x), y, z`
     /// If we just add filter step with actions `z -> z > 0` before GROUP BY,
-    /// columns will be transformed like `x, y, z` -> `z, z > 0, x, y` -(remove filter)-> `z, x, y`.
+    /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
-    /// so actions `x, y, z -> x, y, z, z > 0` -(remove filter)-> `x, y, z` will not change columns order.
+    /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
     ActionsDAGPtr cloneActionsForFilterPushDown(
         const std::string & filter_name,
         bool can_remove_filter,

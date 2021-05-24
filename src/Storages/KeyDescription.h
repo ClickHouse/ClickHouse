@@ -40,28 +40,28 @@ struct KeyDescription
     static KeyDescription getKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
-        const Context & context);
+        ContextPtr context);
 
     /// Sorting key can contain additional column defined by storage type (like
     /// Version column in VersionedCollapsingMergeTree).
     static KeyDescription getSortingKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
-        const Context & context,
+        ContextPtr context,
         const std::optional<String> & additional_column);
 
     /// Recalculate all expressions and fields for key with new columns without
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewColumns(
         const ColumnsDescription & new_columns,
-        const Context & context);
+        ContextPtr context);
 
     /// Recalculate all expressions and fields for key with new ast without
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewAST(
         const ASTPtr & new_ast,
         const ColumnsDescription & columns,
-        const Context & context);
+        ContextPtr context);
 
     KeyDescription() = default;
 

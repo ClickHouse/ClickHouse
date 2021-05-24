@@ -30,9 +30,36 @@ Performed over the tables with another table engines causes an exception.
 
 Engines from the `*Log` family don’t provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
-For `MergeTree` family engines, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server.
+## Checking the MergeTree Family Tables {#checking-mergetree-tables}
 
-**If the data is corrupted**
+For `MergeTree` family engines, if [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server. 
+
+```sql
+SET check_query_single_value_result = 0;
+CHECK TABLE test_table;
+```
+
+```text
+┌─part_path─┬─is_passed─┬─message─┐
+│ all_1_4_1 │         1 │         │
+│ all_1_4_2 │         1 │         │
+└───────────┴───────────┴─────────┘
+```
+
+If `check_query_single_value_result` = 0, the `CHECK TABLE` query shows the general table check status.
+
+```sql
+SET check_query_single_value_result = 1;
+CHECK TABLE test_table;
+```
+
+```text
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+## If the Data Is Corrupted {#if-data-is-corrupted}
 
 If the table is corrupted, you can copy the non-corrupted data to another table. To do this:
 

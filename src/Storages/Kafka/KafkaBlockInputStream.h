@@ -39,7 +39,7 @@ public:
 private:
     StorageKafka & storage;
     StorageMetadataPtr metadata_snapshot;
-    const std::shared_ptr<Context> context;
+    ContextPtr context;
     Names column_names;
     Poco::Logger * log;
     UInt64 max_block_size;
@@ -51,6 +51,7 @@ private:
 
     const Block non_virtual_header;
     const Block virtual_header;
+    const HandleKafkaErrorMode handle_error_mode;
 };
 
 }

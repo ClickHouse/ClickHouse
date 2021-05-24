@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/CombinedCardinalityEstimator.h>
-#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -141,6 +140,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if constexpr (!std::is_same_v<T, String>)
@@ -210,6 +211,8 @@ public:
     {
         return std::make_shared<DataTypeUInt64>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

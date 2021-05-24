@@ -1,10 +1,12 @@
 #pragma once
-#include <memory>
-#include <list>
-#include <vector>
-#include <set>
 
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
+
+#include <list>
+#include <memory>
+#include <set>
+#include <vector>
 
 namespace DB
 {
@@ -17,7 +19,6 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
-class Context;
 class WriteBuffer;
 
 class QueryPlan;
@@ -27,6 +28,12 @@ class Pipe;
 
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
+
+namespace JSONBuilder
+{
+    class IItem;
+    using ItemPtr = std::unique_ptr<IItem>;
+}
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -65,6 +72,8 @@ public:
         bool description = true;
         /// Add detailed information about step actions.
         bool actions = false;
+        /// Add information about indexes actions.
+        bool indexes = false;
     };
 
     struct ExplainPipelineOptions
@@ -73,6 +82,7 @@ public:
         bool header = false;
     };
 
+    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
 

@@ -36,15 +36,15 @@
  * int func() {
  * #if USE_MULTITARGET_CODE
  *     if (isArchSupported(TargetArch::AVX2))
- *         return TargetSpecifc::AVX2::funcImpl();
+ *         return TargetSpecific::AVX2::funcImpl();
  * #endif
- *     return TargetSpecifc::Default::funcImpl();
+ *     return TargetSpecific::Default::funcImpl();
  * }
  *
  * Sometimes code may benefit from compiling with different options.
  * For these purposes use DECLARE_MULTITARGET_CODE macros. It will create a copy
  * of the code for every supported target and compile it with different options.
- * These copies are available via TargetSpecifc namespaces described above.
+ * These copies are available via TargetSpecific namespaces described above.
  *
  * Inside every TargetSpecific namespace there is a constexpr variable BuildArch,
  * which indicates the target platform for current code.
@@ -106,7 +106,7 @@ String toString(TargetArch arch);
 /* Clang shows warning when there aren't any objects to apply pragma.
  * To prevent this warning we define this function inside every macros with pragmas.
  */
-#   define DUMMY_FUNCTION_DEFINITION void __dummy_function_definition();
+#   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void __dummy_function_definition();
 #else
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \

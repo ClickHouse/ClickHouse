@@ -52,7 +52,7 @@ Chunk MergingAggregatedTransform::generate()
     if (!generate_started)
     {
         generate_started = true;
-        LOG_TRACE(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
+        LOG_DEBUG(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
 
         /// Exception safety. Make iterator valid in case any method below throws.
         next_block = blocks.begin();

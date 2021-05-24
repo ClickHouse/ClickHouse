@@ -59,13 +59,16 @@ public:
 
     StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override
     {
-        return { arena.allocContinue(0, begin), 0 };
+        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
+        char * res = arena.allocContinue(1, begin);
+        *res = 0;
+        return { res, 1 };
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
         ++s;
-        return pos;
+        return pos + 1;
     }
 
     const char * skipSerializedInArena(const char * pos) const override

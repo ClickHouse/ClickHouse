@@ -22,7 +22,7 @@ public:
         const SortDescription & required_sort_description,
         const TreeRewriterResultPtr & syntax_result);
 
-    InputOrderInfoPtr getInputOrder(const StorageMetadataPtr & metadata_snapshot, const Context & context) const;
+    InputOrderInfoPtr getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
 
 private:
     /// Actions for every element of order expression to analyze functions for monotonicity

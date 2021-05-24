@@ -13,7 +13,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
         Block & sample_block,
-        const Context &,
+        ContextPtr,
         const std::string & /* default_database */,
         bool /* check_config */)
     {
@@ -50,7 +50,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitors.h>
 #include <ext/enumerate.h>
 #include <DataStreams/MongoDBBlockInputStream.h>
 
@@ -59,6 +58,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
 }
@@ -126,7 +126,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 #if POCO_VERSION >= 0x01070800
             Poco::MongoDB::Database poco_db(db);
             if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
-                throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+                throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
 #else
             authenticate(*connection, db, user, password);
 #endif
@@ -151,7 +151,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
-        throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
 
     auto cursor = createCursor(db, collection, sample_block);
 
@@ -172,7 +172,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
-        throw Exception{"'key' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
 
     auto cursor = createCursor(db, collection, sample_block);
 
@@ -186,27 +186,26 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
         {
             switch (attr.second.underlying_type)
             {
-                case AttributeUnderlyingType::utUInt8:
-                case AttributeUnderlyingType::utUInt16:
-                case AttributeUnderlyingType::utUInt32:
-                case AttributeUnderlyingType::utUInt64:
-                case AttributeUnderlyingType::utUInt128:
-                case AttributeUnderlyingType::utInt8:
-                case AttributeUnderlyingType::utInt16:
-                case AttributeUnderlyingType::utInt32:
-                case AttributeUnderlyingType::utInt64:
-                case AttributeUnderlyingType::utDecimal32:
-                case AttributeUnderlyingType::utDecimal64:
-                case AttributeUnderlyingType::utDecimal128:
+                case AttributeUnderlyingType::UInt8:
+                case AttributeUnderlyingType::UInt16:
+                case AttributeUnderlyingType::UInt32:
+                case AttributeUnderlyingType::UInt64:
+                case AttributeUnderlyingType::Int8:
+                case AttributeUnderlyingType::Int16:
+                case AttributeUnderlyingType::Int32:
+                case AttributeUnderlyingType::Int64:
+                {
                     key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
                     break;
-
-                case AttributeUnderlyingType::utFloat32:
-                case AttributeUnderlyingType::utFloat64:
+                }
+                case AttributeUnderlyingType::Float32:
+                case AttributeUnderlyingType::Float64:
+                {
                     key.add(attr.second.name, key_columns[attr.first]->getFloat64(row_idx));
                     break;
-
-                case AttributeUnderlyingType::utString:
+                }
+                case AttributeUnderlyingType::String:
+                {
                     String loaded_str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
                     if (attr.second.is_object_id)
@@ -219,6 +218,9 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
                         key.add(attr.second.name, loaded_str);
                     }
                     break;
+                }
+                default:
+                    throw Exception("Unsupported dictionary attribute type for MongoDB dictionary source", ErrorCodes::NOT_IMPLEMENTED);
             }
         }
     }

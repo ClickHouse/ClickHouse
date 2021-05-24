@@ -95,8 +95,8 @@ public:
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
 
-        global_context.makeGlobalContext();
-        global_context.setSettings(settings);
+        global_context->makeGlobalContext();
+        global_context->setSettings(settings);
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -159,7 +159,7 @@ private:
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
-    Context global_context;
+    ContextPtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception

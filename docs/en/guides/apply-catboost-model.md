@@ -159,6 +159,9 @@ The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dl
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
+!!! note "Note"
+    You can change path to the CatBoost model configuration later without restarting server.
+
 ## 4. Run the Model Inference from SQL {#run-model-inference}
 
 For test model run the ClickHouse client `$ clickhouse client`.

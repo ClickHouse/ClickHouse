@@ -13,30 +13,17 @@
 #include "Loggers.h"
 
 
-OwnPatternFormatter::OwnPatternFormatter(const Loggers * loggers_, OwnPatternFormatter::Options options_, bool color_)
-    : Poco::PatternFormatter(""), loggers(loggers_), options(options_), color(color_)
+OwnPatternFormatter::OwnPatternFormatter(bool color_)
+    : Poco::PatternFormatter(""), color(color_)
 {
 }
 
 
-void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text)
+void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const
 {
     DB::WriteBufferFromString wb(text);
 
     const Poco::Message & msg = msg_ext.base;
-
-    /// For syslog: tag must be before message and first whitespace.
-    /// This code is only used in Yandex.Metrika and unneeded in ClickHouse.
-    if ((options & ADD_LAYER_TAG) && loggers)
-    {
-        auto layer = loggers->getLayer();
-        if (layer)
-        {
-            writeCString("layer[", wb);
-            DB::writeIntText(*layer, wb);
-            writeCString("]: ", wb);
-        }
-    }
 
     /// Change delimiters in date for compatibility with old logs.
     DB::writeDateTimeText<'.', ':'>(msg_ext.time_seconds, wb);

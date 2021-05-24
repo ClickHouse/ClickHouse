@@ -20,7 +20,7 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionUUIDNumToString>();
     factory.registerFunction<FunctionUUIDStringToNum>();
     factory.registerFunction<FunctionHex>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionUnhex>();
+    factory.registerFunction<FunctionUnhex>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionChar>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionBitmaskToArray>();
     factory.registerFunction<FunctionToIPv4>();

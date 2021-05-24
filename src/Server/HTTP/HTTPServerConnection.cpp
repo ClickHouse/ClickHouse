@@ -6,11 +6,11 @@ namespace DB
 {
 
 HTTPServerConnection::HTTPServerConnection(
-    const Context & context_,
+    ContextPtr context_,
     const Poco::Net::StreamSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params_,
     HTTPRequestHandlerFactoryPtr factory_)
-    : TCPServerConnection(socket), context(context_), params(params_), factory(factory_), stopped(false)
+    : TCPServerConnection(socket), context(Context::createCopy(context_)), params(params_), factory(factory_), stopped(false)
 {
     poco_check_ptr(factory);
 }
