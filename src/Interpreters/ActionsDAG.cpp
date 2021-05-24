@@ -1521,7 +1521,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
 
     auto res = split(split_nodes);
     /// Do not remove array joined columns if they are not used.
-    res.first->project_input = false;
+    /// res.first->project_input = false;
     return res;
 }
 
@@ -1534,7 +1534,9 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         column_name, dumpDAG());
 
     std::unordered_set<const Node *> split_nodes = {node};
-    return split(split_nodes);
+    auto res = split(split_nodes);
+    res.second->project_input = project_input;
+    return res;
 }
 
 namespace
