@@ -13,7 +13,7 @@ class RewriteFunctionToSubcolumnData
 {
 public:
     using TypeToVisit = ASTFunction;
-    void visit(ASTFunction & function, ASTPtr & ast);
+    void visit(ASTFunction & function, ASTPtr & ast) const;
 
     StorageMetadataPtr metadata_snapshot;
 };

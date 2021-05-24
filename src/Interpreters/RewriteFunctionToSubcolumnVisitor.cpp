@@ -52,7 +52,7 @@ const std::unordered_map<String, std::tuple<TypeIndex, String, decltype(&transfo
 
 }
 
-void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
+void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast) const
 {
     const auto & arguments = function.arguments->children;
     if (arguments.size() != 1)
