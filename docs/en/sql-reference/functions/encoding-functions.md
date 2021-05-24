@@ -153,8 +153,43 @@ Result:
 
 ## unhex(str) {#unhexstr}
 
-Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown).
-If you want to convert the result to a number, you can use the ‘reverse’ and ‘reinterpretAsType’ functions.
+Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to a character.
+
+If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md##type-conversion-functions) functions.
+
+Синоним: `UNHEX`.
+
+**Syntax**
+
+``` sql
+unhex(arg)
+```
+
+**Arguments**
+
+-   `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md).
+
+Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown).
+
+**Returned value**
+
+-   A binary string.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+``` sql
+SELECT unhex('303132'), UNHEX('4D7953514C');
+```
+
+Result:
+``` text
+┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+│ 012             │ MySQL               │
+└─────────────────┴─────────────────────┘
+```
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}
 
