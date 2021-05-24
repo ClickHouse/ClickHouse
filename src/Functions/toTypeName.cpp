@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
@@ -12,7 +12,7 @@ namespace
 /** toTypeName(x) - get the type name
   * Returns name of IDataType instance (name of data type).
   */
-class ExecutableFunctionToTypeName : public IExecutableFunctionImpl
+class ExecutableFunctionToTypeName : public IExecutableFunction
 {
 public:
     static constexpr auto name = "toTypeName";
@@ -22,14 +22,14 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Execute the function on the columns.
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeString().createColumnConst(input_rows_count, arguments[0].type->getName());
     }
 };
 
 
-class BaseFunctionToTypeName : public IFunctionBaseImpl
+class BaseFunctionToTypeName : public IFunctionBase
 {
 public:
     BaseFunctionToTypeName(DataTypes argument_types_, DataTypePtr return_type_)
@@ -44,7 +44,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionToTypeName>();
     }
@@ -60,18 +60,18 @@ private:
 };
 
 
-class FunctionToTypeNameBuilder : public IFunctionOverloadResolverImpl
+class FunctionToTypeNameBuilder : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "toTypeName";
     String getName() const override { return name; }
-    static FunctionOverloadResolverImplPtr create(ContextPtr) { return std::make_unique<FunctionToTypeNameBuilder>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<FunctionToTypeNameBuilder>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes types;
         types.reserve(arguments.size());
