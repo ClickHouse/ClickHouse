@@ -20,6 +20,7 @@
 #    include <Parsers/parseQuery.h>
 #    include <Parsers/queryToString.h>
 #    include <Storages/StorageMySQL.h>
+#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Common/escapeForFileName.h>
 #    include <Common/parseAddress.h>
 #    include <Common/setThreadName.h>
@@ -253,12 +254,13 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
                 std::move(mysql_pool),
                 database_name_in_mysql,
                 table_name,
-                false,
-                "",
+                /* replace_query_ */ false,
+                /* on_duplicate_clause = */ "",
                 ColumnsDescription{columns_name_and_type},
                 ConstraintsDescription{},
                 String{},
-                getContext()));
+                getContext(),
+                MySQLSettings{}));
     }
 }
 
