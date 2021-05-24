@@ -302,6 +302,14 @@ void ConfigProcessor::doIncludesRecursive(
     if (substs_count > 1) /// only one substitution is allowed
         throw Poco::Exception("several substitutions attributes set for element <" + node->nodeName() + ">");
 
+    if (node->nodeName() == "include")
+    {
+        if (node->hasChildNodes())
+            throw Poco::Exception("<include> element must have no children");
+        if (substs_count == 0)
+            throw Poco::Exception("no substitution attributes set for element <include>, must have one");
+    }
+
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
 
