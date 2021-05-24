@@ -152,6 +152,7 @@ MergeTreeData::MergeTreeData(
     , log_name(table_id_.getNameForLogs())
     , log(&Poco::Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
+    , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
@@ -2997,6 +2998,11 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
+void MergeTreeData::movePartitionToShard(const ASTPtr & /*partition*/, bool /*move_part*/, const String & /*to*/, ContextPtr /*query_context*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MOVE PARTITION TO SHARD is not supported by storage {}", getName());
+}
+
 void MergeTreeData::fetchPartition(
     const ASTPtr & /*partition*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
@@ -3046,11 +3052,23 @@ Pipe MergeTreeData::alterPartition(
                         break;
 
                     case PartitionCommand::MoveDestinationType::TABLE:
+                    {
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = query_context->resolveDatabase(command.to_database);
                         auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
-                        break;
+                    }
+                    break;
+
+                    case PartitionCommand::MoveDestinationType::SHARD:
+                    {
+                        if (!getSettings()->part_moves_between_shards_enable)
+                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                            "Moving parts between shards is experimental and work in progress"
+                                            ", see part_moves_between_shards_enable setting");
+                        movePartitionToShard(command.partition, command.part, command.move_destination_name, query_context);
+                    }
+                    break;
                 }
             }
             break;
@@ -4579,6 +4597,12 @@ try
 catch (...)
 {
     tryLogCurrentException(log, __PRETTY_FUNCTION__);
+}
+
+StorageMergeTree::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
+{
+    std::lock_guard lock(pinned_part_uuids_mutex);
+    return pinned_part_uuids;
 }
 
 MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeMovingParts && moving_parts_, MergeTreeData & data_)
