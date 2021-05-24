@@ -113,12 +113,20 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         if (shutdown)
             return on_error();
 
-        jobs.emplace(std::move(job), priority);
-        ++scheduled_jobs;
 
-        if (threads.size() < std::min(max_threads, scheduled_jobs))
+        /// Check if there are enough threads to process job.
+        if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
-            threads.emplace_front();
+            try
+            {
+                threads.emplace_front();
+            }
+            catch (...)
+            {
+                /// Most likely this is a std::bad_alloc exception
+                return on_error();
+            }
+
             try
             {
                 threads.front() = Thread([this, it = threads.begin()] { worker(it); });
@@ -126,19 +134,15 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             catch (...)
             {
                 threads.pop_front();
-
-                /// Remove the job and return error to caller.
-                /// Note that if we have allocated at least one thread, we may continue
-                /// (one thread is enough to process all jobs).
-                /// But this condition indicate an error nevertheless and better to refuse.
-
-                jobs.pop();
-                --scheduled_jobs;
                 return on_error();
             }
         }
+
+        jobs.emplace(std::move(job), priority);
+        ++scheduled_jobs;
+        new_job_or_shutdown.notify_one();
     }
-    new_job_or_shutdown.notify_one();
+
     return ReturnType(true);
 }
 
