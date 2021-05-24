@@ -6,7 +6,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/PODArray_fwd.h>
 #include <common/types.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -21,7 +20,7 @@
 
 #include <Common/ArenaAllocator.h>
 
-#include <iostream>
+
 namespace DB
 {
 
@@ -174,6 +173,8 @@ public:
         return "mannWhitneyUTest";
     }
 
+    bool allocatesMemoryInArena() const override { return true; }
+
     DataTypePtr getReturnType() const override
     {
         DataTypes types
@@ -208,7 +209,7 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = this->data(place);
-        auto & b = this->data(rhs);
+        const auto & b = this->data(rhs);
 
         a.merge(b, arena);
     }

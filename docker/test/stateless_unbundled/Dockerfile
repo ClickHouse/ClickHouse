@@ -14,9 +14,7 @@ RUN apt-get --allow-unauthenticated update -y \
             expect \
             gdb  \
             gperf \
-            gperf \
             heimdal-multidev \
-            intel-opencl-icd \
             libboost-filesystem-dev \
             libboost-iostreams-dev \
             libboost-program-options-dev \
@@ -50,9 +48,7 @@ RUN apt-get --allow-unauthenticated update -y \
             moreutils \
             ncdu \
             netcat-openbsd \
-            ocl-icd-libopencl1 \
             odbcinst \
-            opencl-headers \
             openssl \
             perl \
             pigz \

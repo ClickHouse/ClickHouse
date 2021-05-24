@@ -32,7 +32,7 @@ class FunctionH3ToParent : public IFunction
 public:
     static constexpr auto name = "h3ToParent";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3ToParent>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToParent>(); }
 
     std::string getName() const override { return name; }
 

@@ -11,17 +11,28 @@ tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolc
 mkdir -p build/cmake/toolchain/freebsd-x86_64
 tar xJf freebsd-11.3-toolchain.tar.xz -C build/cmake/toolchain/freebsd-x86_64 --strip-components=1
 
+# Uncomment to debug ccache. Don't put ccache log in /output right away, or it
+# will be confusingly packed into the "performance" package.
+# export CCACHE_LOGFILE=/build/ccache.log
+# export CCACHE_DEBUG=1
+
 mkdir -p build/build_docker
 cd build/build_docker
-ccache --show-stats ||:
-ccache --zero-stats ||:
-ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
 rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+
+ccache --show-config ||:
+ccache --show-stats ||:
+ccache --zero-stats ||:
+
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
 ninja $NINJA_FLAGS clickhouse-bundle
+
+ccache --show-config ||:
+ccache --show-stats ||:
+
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
@@ -65,8 +76,21 @@ then
     cp ../programs/server/config.xml /output/config
     cp ../programs/server/users.xml /output/config
     cp -r --dereference ../programs/server/config.d /output/config
-    tar -czvf "$COMBINED_OUTPUT.tgz" /output
+    tar -cv -I pigz -f "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
-ccache --show-stats ||:
+
+if [ "${CCACHE_DEBUG:-}" == "1" ]
+then
+    find . -name '*.ccache-*' -print0 \
+        | tar -c -I pixz -f /output/ccache-debug.txz --null -T -
+fi
+
+if [ -n "$CCACHE_LOGFILE" ]
+then
+    # Compress the log as well, or else the CI will try to compress all log
+    # files in place, and will fail because this directory is not writable.
+    tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
+fi
+

@@ -50,14 +50,31 @@ Creates a table with the same result as that of the [table function](../../../sq
 ### From SELECT query {#from-select-query}
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
-Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from SELECT.
+Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from `SELECT`. Also you can explicitly specify columns description.
 
-In all cases, if `IF NOT EXISTS` is specified, the query won’t return an error if the table already exists. In this case, the query won’t do anything.
+If the table already exists and `IF NOT EXISTS` is specified, the query won’t do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+Result:
+
+```text
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
 
 ## NULL Or NOT NULL Modifiers {#null-modifiers}
 
@@ -287,7 +304,9 @@ REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
 
 ### Syntax
 
-{CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
+``` sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
 
 All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
 

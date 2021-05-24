@@ -34,7 +34,7 @@ public:
 
     explicit FunctionPolygonArea() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionPolygonArea>();
     }

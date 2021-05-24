@@ -29,7 +29,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
-    const Context & context,
+    ContextPtr context,
     const ASTPtr & table_func_ptr)
 {
     String query;
@@ -59,7 +59,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ColumnsDescription res;
 
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context.getSettingsRef());
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
@@ -71,7 +71,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     };
 
     /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, *new_context);
+    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
         input->setMainTable(table_id);
@@ -104,7 +104,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
                 column.default_desc.kind = columnDefaultKindFromString(kind_name);
                 String expr_str = (*default_expr)[i].get<const String &>();
                 column.default_desc.expression = parseQuery(
-                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0, context.getSettingsRef().max_parser_depth);
+                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0, context->getSettingsRef().max_parser_depth);
             }
 
             res.add(column);
@@ -117,7 +117,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
-    const Context & context,
+    ContextPtr context,
     const ASTPtr & table_func_ptr)
 {
     const auto & shards_info = cluster.getShardsInfo();

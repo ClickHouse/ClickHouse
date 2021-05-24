@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <common/arithmeticOverflow.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ExpressionActions.h>
@@ -67,15 +68,9 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
 
     bool is_overflow;
     if (offset_is_preceding)
-    {
-        is_overflow = __builtin_sub_overflow(reference_value, offset,
-            &reference_value);
-    }
+        is_overflow = common::subOverflow(reference_value, offset, reference_value);
     else
-    {
-        is_overflow = __builtin_add_overflow(reference_value, offset,
-            &reference_value);
-    }
+        is_overflow = common::addOverflow(reference_value, offset, reference_value);
 
 //    fmt::print(stderr,
 //        "compared [{}] = {}, old ref {}, shifted ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
@@ -257,10 +252,9 @@ WindowTransform::WindowTransform(const Block & input_header_,
         const IColumn * column = entry.column.get();
         APPLY_FOR_TYPES(compareValuesWithOffset)
 
-        // Check that the offset type matches the window type.
         // Convert the offsets to the ORDER BY column type. We can't just check
-        // that it matches, because e.g. the int literals are always (U)Int64,
-        // but the column might be Int8 and so on.
+        // that the type matches, because e.g. the int literals are always
+        // (U)Int64, but the column might be Int8 and so on.
         if (window_description.frame.begin_type
             == WindowFrame::BoundaryType::Offset)
         {
@@ -435,6 +429,9 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
             assertValid(x);
             assert(offset <= 0);
 
+            // abs(offset) is less than INT_MAX, as checked in the parser, so
+            // this negation should always work.
+            assert(offset >= -INT_MAX);
             if (x.row >= static_cast<uint64_t>(-offset))
             {
                 x.row -= -offset;
@@ -973,7 +970,14 @@ void WindowTransform::appendChunk(Chunk & chunk)
     // have it if it's end of data, though.
     if (!input_is_finished)
     {
-        assert(chunk.hasRows());
+        if (!chunk.hasRows())
+        {
+            // Joins may generate empty input chunks when it's not yet end of
+            // input. Just ignore them. They probably shouldn't be sending empty
+            // chunks up the pipeline, but oh well.
+            return;
+        }
+
         blocks.push_back({});
         auto & block = blocks.back();
         // Use the number of rows from the Chunk, because it is correct even in
@@ -1375,6 +1379,8 @@ struct WindowFunctionRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1395,6 +1401,8 @@ struct WindowFunctionDenseRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1414,6 +1422,8 @@ struct WindowFunctionRowNumber final : public WindowFunction
 
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
@@ -1450,7 +1460,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (!isInt64FieldType(argument_types[1]->getDefault().getType()))
+        if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Offset must be an integer, '{}' given",
@@ -1481,6 +1491,8 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return argument_types[0]; }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1488,7 +1500,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        int offset = 1;
+        int64_t offset = 1;
         if (argument_types.size() > 1)
         {
             offset = (*current_block.input_columns[
@@ -1499,6 +1511,12 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The offset for function {} must be nonnegative, {} given",
                     getName(), offset);
+            }
+            if (offset > INT_MAX)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The offset for function {} must be less than {}, {} given",
+                    getName(), INT_MAX, offset);
             }
         }
 

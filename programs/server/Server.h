@@ -40,9 +40,9 @@ public:
         return BaseDaemon::logger();
     }
 
-    Context & context() const override
+    ContextPtr context() const override
     {
-        return *global_context_ptr;
+        return global_context;
     }
 
     bool isCancelled() const override
@@ -64,8 +64,7 @@ protected:
     std::string getDefaultCorePath() const override;
 
 private:
-    Context * global_context_ptr = nullptr;
-
+    ContextPtr global_context;
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 
     using CreateServerFunc = std::function<void(UInt16)>;

@@ -19,7 +19,7 @@ public:
 protected:
     friend struct ext::shared_ptr_helper<StorageSystemPrivileges>;
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
-    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const override;
 };
 
 }

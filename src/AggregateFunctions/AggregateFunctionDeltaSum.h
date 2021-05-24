@@ -22,8 +22,7 @@ struct AggregationFunctionDeltaSumData
     T sum = 0;
     T last = 0;
     T first = 0;
-    bool seen_last = false;
-    bool seen_first = false;
+    bool seen = false;
 };
 
 template <typename T>
@@ -43,22 +42,23 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
 
-        if ((this->data(place).last < value) && this->data(place).seen_last)
+        if ((this->data(place).last < value) && this->data(place).seen)
         {
             this->data(place).sum += (value - this->data(place).last);
         }
 
         this->data(place).last = value;
-        this->data(place).seen_last = true;
 
-        if (!this->data(place).seen_first)
+        if (!this->data(place).seen)
         {
             this->data(place).first = value;
-            this->data(place).seen_first = true;
+            this->data(place).seen = true;
         }
     }
 
@@ -67,7 +67,7 @@ public:
         auto place_data = &this->data(place);
         auto rhs_data = &this->data(rhs);
 
-        if ((place_data->last < rhs_data->first) && place_data->seen_last && rhs_data->seen_first)
+        if ((place_data->last < rhs_data->first) && place_data->seen && rhs_data->seen)
         {
             // If the lhs last number seen is less than the first number the rhs saw, the lhs is before
             // the rhs, for example [0, 2] [4, 7]. So we want to add the deltasums, but also add the
@@ -77,7 +77,7 @@ public:
             place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
             place_data->last = rhs_data->last;
         }
-        else if ((rhs_data->last < place_data->first && rhs_data->seen_last && place_data->seen_first))
+        else if ((rhs_data->first < place_data->last && rhs_data->seen && place_data->seen))
         {
             // In the opposite scenario, the lhs comes after the rhs, e.g. [4, 6] [1, 2]. Since we
             // assume the input interval states are sorted by time, we assume this is a counter
@@ -85,18 +85,17 @@ public:
             // rhs last value.
 
             place_data->sum += rhs_data->sum;
-            place_data->first = rhs_data->first;
+            place_data->last = rhs_data->last;
         }
-        else if (rhs_data->seen_first)
+        else if (rhs_data->seen && !place_data->seen)
         {
             // If we're here then the lhs is an empty state and the rhs does have some state, so
             // we'll just take that state.
 
             place_data->first = rhs_data->first;
-            place_data->seen_first = rhs_data->seen_first;
             place_data->last = rhs_data->last;
-            place_data->seen_last = rhs_data->seen_last;
             place_data->sum = rhs_data->sum;
+            place_data->seen = rhs_data->seen;
         }
 
         // Otherwise lhs either has data or is uninitialized, so we don't need to modify its values.
@@ -107,8 +106,7 @@ public:
         writeIntBinary(this->data(place).sum, buf);
         writeIntBinary(this->data(place).first, buf);
         writeIntBinary(this->data(place).last, buf);
-        writePODBinary<bool>(this->data(place).seen_first, buf);
-        writePODBinary<bool>(this->data(place).seen_last, buf);
+        writePODBinary<bool>(this->data(place).seen, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
@@ -116,8 +114,7 @@ public:
         readIntBinary(this->data(place).sum, buf);
         readIntBinary(this->data(place).first, buf);
         readIntBinary(this->data(place).last, buf);
-        readPODBinary<bool>(this->data(place).seen_first, buf);
-        readPODBinary<bool>(this->data(place).seen_last, buf);
+        readPODBinary<bool>(this->data(place).seen, buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

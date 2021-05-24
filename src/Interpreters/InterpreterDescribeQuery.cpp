@@ -69,20 +69,20 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     if (table_expression.subquery)
     {
         auto names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(
-            table_expression.subquery->children.at(0), context).getNamesAndTypesList();
+            table_expression.subquery->children.at(0), getContext()).getNamesAndTypesList();
         columns = ColumnsDescription(std::move(names_and_types));
     }
     else if (table_expression.table_function)
     {
-        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, context);
-        columns = table_function_ptr->getActualTableStructure(context);
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, getContext());
+        columns = table_function_ptr->getActualTableStructure(getContext());
     }
     else
     {
-        auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
-        context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
-        auto table = DatabaseCatalog::instance().getTable(table_id, context);
-        auto table_lock = table->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        auto table_id = getContext()->resolveStorageID(table_expression.database_and_table_name);
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+        auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
         auto metadata_snapshot = table->getInMemoryMetadataPtr();
         columns = metadata_snapshot->getColumns();
     }

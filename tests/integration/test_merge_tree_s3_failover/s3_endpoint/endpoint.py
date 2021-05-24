@@ -34,7 +34,8 @@ def server(_bucket, _path):
             cache['request_number'] = request_number
         else:
             response.status = 500
-            return 'Expected Error'
+            response.content_type = 'text/xml'
+            return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>ExpectedError</Code><Message>Expected Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'
 
     response.set_header("Location", "http://minio1:9001/" + _bucket + '/' + _path)
     response.status = 307

@@ -16,3 +16,5 @@
 (def coordination-logs-dir (str coordination-data-dir "/logs"))
 
 (def stderr-file (str logs-dir "/stderr.log"))
+
+(def binaries-cache-dir (str common-prefix "/binaries"))

@@ -5,12 +5,13 @@ toc_title: Build on Mac OS X
 
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on x86_64 (Intel) based macOS 10.15 (Catalina) and higher with recent Xcode's native AppleClang, or Homebrew's vanilla Clang or GCC compilers.
+Build should work on x86_64 (Intel) and arm64 (Apple Silicon) based macOS 10.15 (Catalina) and higher with recent Xcode's native AppleClang, or Homebrew's vanilla Clang or GCC compilers.
 
 ## Install Homebrew {#install-homebrew}
 
 ``` bash
-$ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# ...and follow the printed instructions on any additional steps required to complete the installation.
 ```
 
 ## Install Xcode and Command Line Tools {#install-xcode-and-command-line-tools}
@@ -22,8 +23,8 @@ Open it at least once to accept the end-user license agreement and automatically
 Then, make sure that the latest Comman Line Tools are installed and selected in the system:
 
 ``` bash
-$ sudo rm -rf /Library/Developer/CommandLineTools
-$ sudo xcode-select --install
+sudo rm -rf /Library/Developer/CommandLineTools
+sudo xcode-select --install
 ```
 
 Reboot.
@@ -31,14 +32,15 @@ Reboot.
 ## Install Required Compilers, Tools, and Libraries {#install-required-compilers-tools-and-libraries}
 
 ``` bash
-$ brew update
-$ brew install cmake ninja libtool gettext llvm gcc
+brew update
+brew install cmake ninja libtool gettext llvm gcc
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
 ``` bash
-$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git # or https://github.com/ClickHouse/ClickHouse.git
+git clone --recursive git@github.com:ClickHouse/ClickHouse.git
+# ...alternatively, you can use https://github.com/ClickHouse/ClickHouse.git as the repo URL.
 ```
 
 ## Build ClickHouse {#build-clickhouse}
@@ -46,37 +48,37 @@ $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git # or https://gi
 To build using Xcode's native AppleClang compiler:
 
 ``` bash
-$ cd ClickHouse
-$ rm -rf build
-$ mkdir build
-$ cd build
-$ cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
-$ cmake --build . --config RelWithDebInfo
-$ cd ..
+cd ClickHouse
+rm -rf build
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake --build . --config RelWithDebInfo
+cd ..
 ```
 
 To build using Homebrew's vanilla Clang compiler:
 
 ``` bash
-$ cd ClickHouse
-$ rm -rf build
-$ mkdir build
-$ cd build
-$ cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER==$(brew --prefix llvm)/bin/clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
-$ cmake --build . --config RelWithDebInfo
-$ cd ..
+cd ClickHouse
+rm -rf build
+mkdir build
+cd build
+cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake --build . --config RelWithDebInfo
+cd ..
 ```
 
 To build using Homebrew's vanilla GCC compiler:
 
 ``` bash
-$ cd ClickHouse
-$ rm -rf build
-$ mkdir build
-$ cd build
-$ cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-10 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-10 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
-$ cmake --build . --config RelWithDebInfo
-$ cd ..
+cd ClickHouse
+rm -rf build
+mkdir build
+cd build
+cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-10 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-10 -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake --build . --config RelWithDebInfo
+cd ..
 ```
 
 ## Caveats {#caveats}
@@ -115,11 +117,18 @@ To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the
 Execute the following command:
 
 ``` bash
-$ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
 Reboot.
 
 To check if it’s working, you can use `ulimit -n` command.
+
+## Run ClickHouse server:
+
+```
+cd ClickHouse
+./build/programs/clickhouse-server --config-file ./programs/server/config.xml
+```
 
 [Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

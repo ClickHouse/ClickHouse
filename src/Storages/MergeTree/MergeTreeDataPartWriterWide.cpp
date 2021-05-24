@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/escapeForFileName.h>
 
 namespace DB
 {
@@ -337,7 +338,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
         serializations[name]->serializeBinaryBulkStatePrefix(serialize_settings, it->second);
     }
 
-    const auto & global_settings = storage.global_context.getSettingsRef();
+    const auto & global_settings = storage.getContext()->getSettingsRef();
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
@@ -393,8 +394,9 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type.getName());
 
     auto disk = data_part->volume->getDisk();
-    String mrk_path = fullPath(disk, part_path + name + marks_file_extension);
-    String bin_path = fullPath(disk, part_path + name + DATA_FILE_EXTENSION);
+    String escaped_name = escapeForFileName(name);
+    String mrk_path = fullPath(disk, part_path + escaped_name + marks_file_extension);
+    String bin_path = fullPath(disk, part_path + escaped_name + DATA_FILE_EXTENSION);
     DB::ReadBufferFromFile mrk_in(mrk_path);
     DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0, nullptr);
     bool must_be_last = false;
@@ -501,7 +503,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
 void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    const auto & global_settings = storage.global_context.getSettingsRef();
+    const auto & global_settings = storage.getContext()->getSettingsRef();
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
@@ -557,7 +559,10 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
 
 void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    finishDataSerialization(checksums, sync);
+    // If we don't have anything to write, skip finalization.
+    if (!columns_list.empty())
+        finishDataSerialization(checksums, sync);
+
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(checksums, sync);
 

@@ -329,8 +329,9 @@ SELECT
 FROM numbers(2)
 ;
 
--- optimize_read_in_order conflicts with sorting for window functions, must
--- be disabled.
+-- optimize_read_in_order conflicts with sorting for window functions, check that
+-- it is disabled.
+drop table if exists window_mt;
 create table window_mt engine MergeTree order by number
     as select number, mod(number, 3) p from numbers(100);
 
@@ -339,6 +340,8 @@ select number, count(*) over (partition by p)
 
 select number, count(*) over (partition by p)
     from window_mt order by number limit 10 settings optimize_read_in_order = 1;
+
+drop table window_mt;
 
 -- some true window functions -- rank and friends
 select number, p, o,
@@ -402,10 +405,20 @@ select count() over (order by toInt64(number) range between -1 following and unb
 select count() over (order by toInt64(number) range between unbounded preceding and -1 preceding) from numbers(1); -- { serverError 36 }
 select count() over (order by toInt64(number) range between unbounded preceding and -1 following) from numbers(1); -- { serverError 36 }
 
----- a test with aggregate function that allocates memory in arena
+-- a test with aggregate function that allocates memory in arena
 select sum(a[length(a)])
 from (
     select groupArray(number) over (partition by modulo(number, 11)
             order by modulo(number, 1111), number) a
     from numbers_mt(10000)
 ) settings max_block_size = 7;
+
+-- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
+-- under UBSan. Should be limited to at most INT_MAX.
+select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
+
+-- Somehow in this case WindowTransform gets empty input chunks not marked as
+-- input end, and then two (!) empty input chunks marked as input end. Whatever.
+select count() over () from (select 1 a) l inner join (select 2 a) r using a;
+-- This case works as expected, one empty input chunk marked as input end.
+select count() over () where null;
