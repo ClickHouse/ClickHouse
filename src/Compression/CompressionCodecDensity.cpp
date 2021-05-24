@@ -20,7 +20,7 @@ class CompressionCodecDensity : public ICompressionCodec
 public:
     static constexpr auto DENSITY_DEFAULT_ALGO = DENSITY_ALGORITHM_CHAMELEON; // by default aim on speed
 
-    CompressionCodecDensity(DENSITY_ALGORITHM algo_);
+    explicit CompressionCodecDensity(DENSITY_ALGORITHM algo_);
 
     uint8_t getMethodByte() const override;
 

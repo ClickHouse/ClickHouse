@@ -19,6 +19,11 @@
 namespace DB
 {
 
+/** NOTE DoubleDelta is surprisingly bad name. The only excuse is that it comes from an academic paper.
+  * Most people will think that "double delta" is just applying delta transform twice.
+  * But in fact it is something more than applying delta transform twice.
+  */
+
 /** DoubleDelta column codec implementation.
  *
  * Based on Gorilla paper: http://www.vldb.org/pvldb/vol8/p1816-teller.pdf, which was extended
@@ -108,7 +113,7 @@ namespace DB
 class CompressionCodecDoubleDelta : public ICompressionCodec
 {
 public:
-    CompressionCodecDoubleDelta(UInt8 data_bytes_size_);
+    explicit CompressionCodecDoubleDelta(UInt8 data_bytes_size_);
 
     uint8_t getMethodByte() const override;
 

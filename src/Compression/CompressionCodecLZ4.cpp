@@ -22,7 +22,7 @@ namespace DB
 class CompressionCodecLZ4 : public ICompressionCodec
 {
 public:
-    CompressionCodecLZ4();
+    explicit CompressionCodecLZ4();
 
     uint8_t getMethodByte() const override;
 
@@ -49,7 +49,7 @@ private:
 class CompressionCodecLZ4HC : public CompressionCodecLZ4
 {
 public:
-    CompressionCodecLZ4HC(int level_);
+    explicit CompressionCodecLZ4HC(int level_);
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;

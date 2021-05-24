@@ -20,7 +20,7 @@ namespace DB
 class CompressionCodecLZSSE : public ICompressionCodec
 {
 public:
-    CompressionCodecLZSSE(UInt32 type_, UInt32 level_);
+    explicit CompressionCodecLZSSE(UInt32 type_, UInt32 level_);
 
     uint8_t getMethodByte() const override;
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;

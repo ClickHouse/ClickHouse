@@ -19,7 +19,7 @@ class CompressionCodecLizard : public ICompressionCodec
 public:
     static constexpr auto LIZARD_DEFAULT_LEVEL = 1;
 
-    CompressionCodecLizard(int level_);
+    explicit CompressionCodecLizard(int level_);
 
     uint8_t getMethodByte() const override;
 

@@ -20,8 +20,7 @@ public:
     static constexpr auto ZSTD_DEFAULT_LEVEL = 1;
     static constexpr auto ZSTD_DEFAULT_LOG_WINDOW = 24;
 
-    CompressionCodecZSTD(int level_);
-
+    explicit CompressionCodecZSTD(int level_);
     CompressionCodecZSTD(int level_, int window_log);
 
     uint8_t getMethodByte() const override;
