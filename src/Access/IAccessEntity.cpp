@@ -33,7 +33,7 @@ const IAccessEntity::TypeInfo & IAccessEntity::TypeInfo::get(Type type_)
             String & init_alias = init_aliases[i];
             boost::to_upper(init_name);
             boost::replace_all(init_name, "_", " ");
-            if (auto underscore_pos = init_name.find_first_of(" "); underscore_pos != String::npos)
+            if (auto underscore_pos = init_name.find_first_of(' '); underscore_pos != String::npos)
                 init_alias = init_name.substr(underscore_pos + 1);
         }
         String init_name_for_output_with_entity_name = init_names[0];
