@@ -22,7 +22,7 @@ CREATE DICTIONARY 01684_database_for_cache_dictionary.cache_dictionary_simple_ke
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_simple_attributes_source_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/0d'));
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH './user_files/0d'));
 
 SELECT 'Dictionary cache_dictionary_simple_key_simple_attributes';
 SELECT 'dictGet existing value';
@@ -66,7 +66,7 @@ CREATE DICTIONARY 01684_database_for_cache_dictionary.cache_dictionary_simple_ke
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_complex_attributes_source_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/1d'));
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH './user_files/1d'));
 
 SELECT 'Dictionary cache_dictionary_simple_key_complex_attributes';
 SELECT 'dictGet existing value';
@@ -108,7 +108,7 @@ CREATE DICTIONARY 01684_database_for_cache_dictionary.cache_dictionary_simple_ke
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_hierarchy_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/2d'));
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH './user_files/2d'));
 
 SELECT 'Dictionary cache_dictionary_simple_key_hierarchy';
 SELECT 'dictGet';
