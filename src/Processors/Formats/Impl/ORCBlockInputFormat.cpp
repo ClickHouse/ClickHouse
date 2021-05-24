@@ -84,17 +84,20 @@ void ORCBlockInputFormat::prepareReader()
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
 
-    int index = 0;
+    /// In ReadStripe column indices should be started from 1,
+    /// because 0 indicates to select all columns.
+    int index = 1;
     for (int i = 0; i < schema->num_fields(); ++i)
     {
+        /// LIST type require 2 indices, so we should recursively
+        /// count the number of indices we need for this type.
+        int indexes_count = countIndicesForType(schema->field(i)->type());
         if (getPort().getHeader().has(schema->field(i)->name()))
         {
-            /// LIST type require 2 indices, so we should recursively
-            /// count the number of indices we need for this type.
-            int indexes_count = countIndicesForType(schema->field(i)->type());
             for (int j = 0; j != indexes_count; ++j)
-                include_indices.push_back(index++);
+                include_indices.push_back(index + j);
         }
+        index += indexes_count;
     }
 }
 

@@ -97,12 +97,16 @@ void ParquetBlockInputFormat::prepareReader()
     int index = 0;
     for (int i = 0; i < schema->num_fields(); ++i)
     {
+        /// STRUCT type require the number of indexes equal to the number of
+        /// nested elements, so we should recursively
+        /// count the number of indices we need for this type.
+        int indexes_count = countIndicesForType(schema->field(i)->type());
         if (getPort().getHeader().has(schema->field(i)->name()))
         {
-            int indexes_count = countIndicesForType(schema->field(i)->type());
             for (int j = 0; j != indexes_count; ++j)
-                column_indices.push_back(index++);
+                column_indices.push_back(index + j);
         }
+        index += indexes_count;
     }
 }
 
