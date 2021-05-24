@@ -365,7 +365,7 @@ throws an exception.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
-Enables or disables insertion of default values if input data contain `NULL`, but the data type of the corresponding column in not `Nullable(T)` (for text input formats). This setting is applied to `INSERT ... VALUES` queries.
+For text input formats initialize `NULL` fields with default values if data type of this field is not nullable.
 
 ## insert_null_as_default {#insert_null_as_default}
 
