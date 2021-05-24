@@ -109,7 +109,7 @@ restart()
 
 forcestop()
 {
-    ${CLICKHOUSE_GENERIC_PROGRAM} stop --force --pid-path "${CLICKHOUSE_PIDDIR}"
+    ${CLICKHOUSE_GENERIC_PROGRAM} stop --force true --pid-path "${CLICKHOUSE_PIDDIR}"
 }
 
 
