@@ -274,7 +274,7 @@ void AsynchronousMetrics::update()
         new_values["TimeLoadGuest"] = data.stload.guest_time;
         new_values["TimeLoadGuestNice"] = data.stload.guest_nice_time;
 
-        new_values["Processess"] = data.stload.processes;
+        new_values["Processes"] = data.stload.processes;
         new_values["ProcessesRunning"] = data.stload.procs_running;
         new_values["ProcessesBlocked"] = data.stload.procs_blocked;
     }
