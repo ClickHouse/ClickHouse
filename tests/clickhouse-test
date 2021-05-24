@@ -37,6 +37,7 @@ MESSAGES_TO_RETRY = [
     "Coordination::Exception: Connection loss",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
+    "DB::Exception: New table appeared in database being dropped or detached. Try again"
 ]
 
 class Terminated(KeyboardInterrupt):
