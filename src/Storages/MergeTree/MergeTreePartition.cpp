@@ -165,31 +165,31 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    auto partition_key_sample_block = executePartitionByExpression(metadata_snapshot, block, context);
-    size_t partition_columns_num = partition_key_sample_block.columns();
-    value.resize(partition_columns_num);
-    const String modulo_legacy_function_name = "moduloLegacy";
+    auto partition_key_names_and_types = executePartitionByExpression(metadata_snapshot, block, context);
+    value.resize(partition_key_names_and_types.size());
 
-    for (size_t i = 0; i < partition_columns_num; ++i)
+    /// Executing partition_by expression adds new columns to passed block according to partition functions.
+    /// The block is passed by reference and is used afterwards. `moduloLegacy` needs to be substituted back
+    /// with just `modulo`, because it was a temporary substitution.
+    static constexpr auto modulo_legacy_function_name = "moduloLegacy";
+
+    size_t i = 0;
+    for (const auto & element : partition_key_names_and_types)
     {
-        const auto & column_name = partition_key_sample_block.getByPosition(i).name;
-        auto & partition_column = block.getByName(column_name);
+        auto & partition_column = block.getByName(element.name);
 
-        /// Executing partition_by expression adds new columns to passed block according to partition functions.
-        /// The block is passed by reference and is used afterwards. `moduloLegacy` needs to be substituted back
-        /// with just `modulo`, because it was a temporary substitution.
-        if (column_name.starts_with(modulo_legacy_function_name))
-            partition_column.name = "modulo" + partition_column.name.substr(modulo_legacy_function_name.size());
+        if (element.name.starts_with(modulo_legacy_function_name))
+            partition_column.name = "modulo" + partition_column.name.substr(std::strlen(modulo_legacy_function_name));
 
-        partition_column.column->get(row, value[i]);
+        partition_column.column->get(row, value[i++]);
     }
 }
 
-Block MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
+NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
     adjusted_partition_key.expression->execute(block);
-    return adjusted_partition_key.sample_block;
+    return adjusted_partition_key.sample_block.getNamesAndTypesList();
 }
 
 KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
