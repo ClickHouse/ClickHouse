@@ -4904,7 +4904,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
         right = delimiting_block_lock->getNumber();
         /// Make sure we cover all parts in drop range.
         /// There might be parts with mutation version greater than current block number
-        /// if some part mutation has been asigned after block number allocation, but before creation of DROP_RANGE entry.
+        /// if some part mutation has been assigned after block number allocation, but before creation of DROP_RANGE entry.
         mutation_version = MergeTreePartInfo::MAX_BLOCK_NUMBER;
     }
 
