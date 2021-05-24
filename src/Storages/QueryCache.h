@@ -167,7 +167,6 @@ public:
         return stream;
 
     }
-    virtual ~QueryCache() = default;
 
 private: 
     MappedPtr streamHandler(BlockInputStreamPtr & stream, size_t max_size_=(1u << 20))
