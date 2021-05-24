@@ -69,15 +69,15 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
         if (session_auth.scheme == "super")
             return true;
 
-    for (size_t i = 0; i < node_acls.size(); ++i)
+    for (const auto & node_acl : node_acls)
     {
-        if (node_acls[i].permissions & permission)
+        if (node_acl.permissions & permission)
         {
-            if (node_acls[i].scheme == "world" && node_acls[i].id == "anyone")
+            if (node_acl.scheme == "world" && node_acl.id == "anyone")
                 return true;
 
-            for (size_t j = 0; j < session_auths.size(); ++j)
-                if (node_acls[i].scheme == session_auths[j].scheme && node_acls[i].id == session_auths[j].id)
+            for (const auto & session_auth : session_auths)
+                if (node_acl.scheme == session_auth.scheme && node_acl.id == session_auth.id)
                     return true;
         }
     }
