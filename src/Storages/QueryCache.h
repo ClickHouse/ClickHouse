@@ -28,6 +28,41 @@ namespace ProfileEvents
 namespace DB
 {
 
+class SequentialBlockInputStream : public IBlockInputStream
+{
+    public:
+    /// Acquires the ownership of the block list.
+    SequentialBlockInputStream(BlockInputStreams && streams_)
+        : streams(std::move(streams_)), it(streams.begin()), end(streams.end()) {}
+
+    String getName() const override { return "BlockInputStreams"; }
+
+protected:
+
+    Block getHeader() const override 
+    { 
+        return streams.empty() ? Block() : (*streams.begin())->getHeader(); 
+    }
+
+
+    Block readImpl() override
+    {
+        Block res;
+        while (it != end)
+        {
+            if ((res = (*it)->read()))
+                return res;
+            ++it;
+        }
+        return Block();
+    }
+
+private:
+    BlockInputStreams streams;
+    BlockInputStreams::iterator it;
+    const BlockInputStreams::iterator end;
+};
+
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_DATASET;
@@ -45,7 +80,7 @@ public:
     
     const BlocksList& getBlocks() const { return blocks; }
 
-    BlockInputStreamPtr getInputStream() 
+    BlockInputStreamPtr getInputStream()
     { 
         return std::make_shared<BlocksListBlockInputStream>(blocks.begin(), blocks.end()); 
     }
@@ -112,13 +147,14 @@ public:
         return key;
     }
 
-
-    BlockInputStreamPtr getOrSet(const Key & key, BlockInputStreamPtr stream, UInt64 cache_ttl = 2)
+    template <typename Load>
+    BlockInputStreamPtr getOrSet(const Key & key, Load && load_func_, UInt64 cache_ttl = 2)
     {
-        auto load_func = [this, &stream]() { 
-            auto cache_value = this->streamHandler(stream);
-            if (!cache_value)
-                throw Exception("Too large dataset", ErrorCodes::TOO_LARGE_DATASET);
+        auto load_func = [this, &load_func_]() { 
+            BlockInputStreamPtr stream = load_func_();
+            MappedPtr cache_value = this->streamHandler(stream);
+            // if (!cache_value)
+            //     throw Exception("Too large dataset", ErrorCodes::TOO_LARGE_DATASET);
             return cache_value; 
         };
         MappedPtr cache_value;
@@ -192,7 +228,7 @@ private:
             BlockInputStreamPtr stored_blocks = std::make_shared<BlocksListBlockInputStream>(std::move(blocks));
             BlockInputStreamPtr remaining_blocks = stream;
             BlockInputStreams streams{stored_blocks, remaining_blocks};
-            stream = std::make_shared<UnionBlockInputStream>(streams, BlockInputStreamPtr(), 1);
+            stream = std::make_shared<SequentialBlockInputStream>(std::move(streams));
         }
         return cache_value;
     }
@@ -201,4 +237,5 @@ private:
 };
 
 using QueryCachePtr = std::shared_ptr<QueryCache>;
+
 }

@@ -588,34 +588,22 @@ BlockIO InterpreterSelectQuery::execute()
     // auto cache_ttl = query.getCacheTtl();
     UInt64 cache_ttl = 2;
 
+    auto load_stream = [this]() 
+    {
+        return this->execute_base().getInputStream();
+    };
+
     auto query_cache = context->getQueryCache();
     if (cache_ttl && query_cache) 
     {
         key = query_cache->hash_tree(query.ptr());
-        stream = query_cache->get(key);
+        res.in = query_cache->getOrSet(key, load_stream, cache_ttl);
     }
-    if (!stream)
-    {
-        QueryPlan query_plan;
 
-        buildQueryPlan(query_plan);
-
-        pipeline = std::make_unique<QueryPipeline>(std::move(*query_plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(context),
-            BuildQueryPipelineSettings::fromContext(context))));
-    }
-    if (cache_ttl && query_cache)
-    {
-        stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
-        stream = query_cache->trySet(key, stream, cache_ttl);
-        res.in = stream;
-    } 
-    else 
-        res.pipeline = std::move(*pipeline);
     return res;
 }
 
-BlockIO InterpreterSelectQuery::execute_new()
+BlockIO InterpreterSelectQuery::execute_base()
 {
     BlockIO res;
     QueryPlan query_plan;

@@ -244,7 +244,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             storage_from_base_parts_of_projection,
             nullptr,
             SelectQueryOptions{processed_stage}.ignoreAggregation().ignoreProjections());
-        ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
+        ordinary_pipe = QueryPipeline::getPipe(interpreter.execute_base().pipeline);
     }
 
     if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
