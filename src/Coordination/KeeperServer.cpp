@@ -88,7 +88,7 @@ std::string checkAndGetSuperdigest(const Poco::Util::AbstractConfiguration & con
     if (scheme_and_id.size() != 2 || scheme_and_id[0] != "super")
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Incorrect superdigest in keeper_server config. Must be 'super:base64string'");
 
-    return scheme_and_id[1];
+    return user_and_digest;
 }
 
 }
