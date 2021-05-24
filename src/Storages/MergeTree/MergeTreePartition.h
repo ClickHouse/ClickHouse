@@ -44,7 +44,7 @@ public:
     void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context);
 
     /// Adjust partition key and execute its expression on block. Return sample block according to used expression.
-    static Block executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context);
+    static NamesAndTypesList executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context);
 
     /// Make a modified partition key with substitution from modulo to moduloLegacy. Used in paritionPruner.
     static KeyDescription adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context);

@@ -157,11 +157,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     Block block_copy = block;
     /// After expression execution partition key columns will be added to block_copy with names regarding partition function.
-    auto partition_key_sample_block = MergeTreePartition::executePartitionByExpression(metadata_snapshot, block_copy, context);
+    auto partition_key_names_and_types = MergeTreePartition::executePartitionByExpression(metadata_snapshot, block_copy, context);
 
     ColumnRawPtrs partition_columns;
-    partition_columns.reserve(partition_key_sample_block.columns());
-    for (const ColumnWithTypeAndName & element : partition_key_sample_block)
+    partition_columns.reserve(partition_key_names_and_types.size());
+    for (const auto & element : partition_key_names_and_types)
         partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;

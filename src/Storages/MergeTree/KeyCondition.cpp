@@ -592,24 +592,15 @@ void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & 
     rpn.emplace_back(std::move(element));
 }
 
-bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
-    const ASTPtr & node,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    Field & out_value,
-    DataTypePtr & out_type)
+bool KeyCondition::canConstantBeWrapped(const ASTPtr & node, const String & expr_name, String & result_expr_name)
 {
     const auto & sample_block = key_expr->getSampleBlock();
 
-    // Constant expr should use alias names if any
-    String passed_expr_name = node->getColumnName();
-    String expr_name;
-
     /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
     /// For partition key it is always moduloLegacy.
-    if (sample_block.has(passed_expr_name))
+    if (sample_block.has(expr_name))
     {
-        expr_name = passed_expr_name;
+        result_expr_name = expr_name;
     }
     else
     {
@@ -620,8 +611,26 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         if (!sample_block.has(adjusted_expr_name))
             return false;
 
-        expr_name = adjusted_expr_name;
+        result_expr_name = adjusted_expr_name;
     }
+
+    return true;
+}
+
+bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
+    const ASTPtr & node,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    Field & out_value,
+    DataTypePtr & out_type)
+{
+    // Constant expr should use alias names if any
+    String passed_expr_name = node->getColumnName();
+    String expr_name;
+    if (!canConstantBeWrapped(node, passed_expr_name, expr_name))
+        return false;
+
+    const auto & sample_block = key_expr->getSampleBlock();
 
     /// TODO Nullable index is not yet landed.
     if (out_value.isNull())
@@ -685,29 +694,13 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
-    const auto & sample_block = key_expr->getSampleBlock();
-
     // Constant expr should use alias names if any
     String passed_expr_name = ast->getColumnName();
     String expr_name;
+    if (!canConstantBeWrapped(ast, passed_expr_name, expr_name))
+        return false;
 
-    /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
-    /// For partition key it is always moduloLegacy.
-    if (sample_block.has(passed_expr_name))
-    {
-        expr_name = passed_expr_name;
-    }
-    else
-    {
-        auto adjusted_ast = ast->clone();
-        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
-        String adjusted_expr_name = adjusted_ast->getColumnName();
-
-        if (!sample_block.has(adjusted_expr_name))
-            return false;
-
-        expr_name = adjusted_expr_name;
-    }
+    const auto & sample_block = key_expr->getSampleBlock();
 
     /// TODO Nullable index is not yet landed.
     if (out_value.isNull())
