@@ -1,18 +1,18 @@
 #include "LibraryDictionarySource.h"
 
-#include <DataStreams/OneBlockInputStream.h>
-#include <Interpreters/Context.h>
 #include <Poco/File.h>
+
 #include <common/logger_useful.h>
-#include <ext/bit_cast.h>
-#include <ext/range.h>
-#include <ext/scope_guard.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Interpreters/Context.h>
+
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 
 
 namespace DB
@@ -32,7 +32,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     const std::string & config_prefix_,
     Block & sample_block_,
     ContextPtr context_,
-    bool check_config)
+    bool created_from_ddl)
     : log(&Poco::Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
     , config_prefix{config_prefix_}
@@ -41,13 +41,8 @@ LibraryDictionarySource::LibraryDictionarySource(
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
 {
-
-    if (check_config)
-    {
-        const String dictionaries_lib_path = context->getDictionariesLibPath();
-        if (!startsWith(path, dictionaries_lib_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "LibraryDictionarySource: Library path {} is not inside {}", path, dictionaries_lib_path);
-    }
+    if (created_from_ddl && !pathStartsWith(path, context->getUserFilesPath()))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getUserFilesPath());
 
     if (!Poco::File(path).exists())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", Poco::File(path).path());
@@ -179,9 +174,9 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr context,
                                  const std::string & /* default_database */,
-                                 bool check_config) -> DictionarySourcePtr
+                                 bool created_from_ddl) -> DictionarySourcePtr
     {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, check_config);
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, created_from_ddl);
     };
 
     factory.registerSource("library", create_table_source);
