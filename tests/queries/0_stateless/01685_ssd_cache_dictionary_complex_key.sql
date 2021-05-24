@@ -24,7 +24,7 @@ CREATE DICTIONARY 01685_database_for_cache_dictionary.cache_dictionary_complex_k
 PRIMARY KEY id, id_key
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'complex_key_simple_attributes_source_table' DB '01685_database_for_cache_dictionary'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(COMPLEX_KEY_SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/0d'));
+LAYOUT(COMPLEX_KEY_SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH './user_files/0d'));
 
 SELECT 'Dictionary cache_dictionary_complex_key_simple_attributes';
 SELECT 'dictGet existing value';
@@ -71,7 +71,7 @@ CREATE DICTIONARY 01685_database_for_cache_dictionary.cache_dictionary_complex_k
 PRIMARY KEY id, id_key
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'complex_key_complex_attributes_source_table' DB '01685_database_for_cache_dictionary'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(COMPLEX_KEY_SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/1d'));
+LAYOUT(COMPLEX_KEY_SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH './user_files/1d'));
 
 SELECT 'Dictionary cache_dictionary_complex_key_complex_attributes';
 SELECT 'dictGet existing value';
