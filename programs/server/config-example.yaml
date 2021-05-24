@@ -391,7 +391,6 @@ user_directories:
     local_directory:
         # Path to folder where users created by SQL commands are stored.
         path: /var/lib/clickhouse/access/
-
     # To add an LDAP server as a remote user directory of users that are not defined locally, define a single 'ldap' section
     # with the following parameters:
     # server - one of LDAP server names defined in 'ldap_servers' config section above.
@@ -574,11 +573,11 @@ remote_servers:
     test_unavailable_shard:
         shard:
             - replica:
-                host: localhost
-                port: 9000
+                  host: localhost
+                  port: 9000
             - replica:
-                host: localhost
-                port: 1
+                  host: localhost
+                  port: 1
 
 # The list of hosts allowed to use in URL-related storage engines and table functions.
 # If this section is not present in configuration, all hosts are allowed.
@@ -815,14 +814,13 @@ dictionaries_config: '*_dictionary.xml'
 # Don't do that if you just started using ClickHouse.
 
 # compression:
-    # Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used.
-    # case:
-        # Conditions. All must be satisfied. Some conditions may be omitted.
-        # min_part_size: 10000000000    # Min part size in bytes.
-        # min_part_size_ratio: 0.01     # Min size of part relative to whole table size.
-
-        # What compression method to use.
-        # method: zstd
+#     # Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used.
+#     case:
+#         Conditions. All must be satisfied. Some conditions may be omitted.
+#         # min_part_size: 10000000000    # Min part size in bytes.
+#         # min_part_size_ratio: 0.01     # Min size of part relative to whole table size.
+#         # What compression method to use.
+#         method: zstd
 
 # Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
 # Works only if ZooKeeper is enabled. Comment it if such functionality isn't required.
