@@ -20,9 +20,14 @@ namespace ASOF
 
 enum class JoinIdentifierPos
 {
+    /// Position can't be established, identifier not resolved
     Unknown,
+    /// Left side of JOIN
     Left,
-    Right
+    /// Right side of JOIN
+    Right,
+    /// Expression not valid, e.g. doesn't contain identifiers
+    NotApplicable,
 };
 
 using JoinIdentifierPosPair = std::pair<JoinIdentifierPos, JoinIdentifierPos>;

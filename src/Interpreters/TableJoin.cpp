@@ -478,6 +478,7 @@ String TableJoin::renamedRightColumnName(const String & name) const
 
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
+    LOG_TRACE(&Poco::Logger::get("TableJoin"), "Add join condition for {} table: {}", (is_left ? "left" : "right"), queryToString(ast));
     if (!forceHashJoin())
     {
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
