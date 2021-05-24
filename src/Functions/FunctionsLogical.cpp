@@ -522,7 +522,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
 }
 
 template <typename Impl, typename Name>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments) const
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
 {
     /** Try to perform optimization for saturable functions (AndFunction, OrFunction) in case some arguments are
       * constants.
@@ -530,9 +530,6 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
       * If function is AndFunction and in arguments there is constant false, result is false.
       * If function is OrFunction and in arguments there is constant true, result is true.
       */
-
-    auto return_type = IFunction::getReturnTypeImpl(arguments);
-
     if constexpr (!Impl::isSaturable())
         return nullptr;
 
@@ -578,12 +575,12 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
     if constexpr (std::is_same_v<Impl, AndImpl>)
     {
         if (has_false_constant)
-            return_type->createColumnConst(0, static_cast<UInt8>(false));
+            result_type->createColumnConst(0, static_cast<UInt8>(false));
     }
     else if constexpr (std::is_same_v<Impl, OrImpl>)
     {
         if (has_true_constant)
-            return_type->createColumnConst(0, static_cast<UInt8>(true));
+            result_type->createColumnConst(0, static_cast<UInt8>(true));
     }
 
     return result_column;
