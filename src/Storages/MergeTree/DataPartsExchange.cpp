@@ -822,7 +822,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     readBinary(files, in);
 
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
 
     for (size_t i = 0; i < files; ++i)
     {
@@ -832,7 +831,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        String data_path = new_data_part->getFullRelativePath() + file_name;
+        String data_path = part_download_path + file_name;
         String metadata_file = fullPath(disk, data_path);
 
         {
@@ -864,6 +863,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
 
     assertEOF(in);
 
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
