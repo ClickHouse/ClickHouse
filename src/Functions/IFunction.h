@@ -158,6 +158,8 @@ public:
     /** If function isSuitableForConstantFolding than, this method will be called during query analyzis
       * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
       * return they result based on some constant arguments.
+      * Arguments are passed without modifications,  useDefaultImplementationForNulls, useDefaultImplementationForConstants,
+      * useDefaultImplementationForLowCardinality are not applied.
       */
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /* arguments */) const { return nullptr; }
 
