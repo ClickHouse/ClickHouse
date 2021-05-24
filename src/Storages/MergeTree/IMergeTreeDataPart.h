@@ -2,7 +2,6 @@
 
 #include <DataStreams/IBlockInputStream.h>
 
-#include <Core/Row.h>
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
