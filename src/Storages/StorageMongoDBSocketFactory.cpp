@@ -4,6 +4,9 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/SecureStreamSocket.h>
 
+#if USE_SSL
+#   include <Poco/Net/SecureStreamSocket.h>
+#endif
 
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -14,7 +17,11 @@ namespace DB
 
 Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSocket(const std::string & host, int port, Poco::Timespan connectTimeout, bool secure)
 {
+#if USE_SSL
     return secure ? createSecureSocket(host, port) : createPlainSocket(host, port);
+#else
+    return createPlainSocket(host, port);
+#endif
 }
 
 Poco::Net::StreamSocket StorageMongoDBSocketFactory::createPlainSocket(const std::string & host, int port)
@@ -25,6 +32,7 @@ Poco::Net::StreamSocket StorageMongoDBSocketFactory::createPlainSocket(const std
     return socket;
 }
 
+#if USE_SSL
 Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const std::string & host, int port)
 {
     Poco::Net::SocketAddress address(host, port);
@@ -32,5 +40,6 @@ Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const st
 
     return socket;
 }
+#endif
 
 }
