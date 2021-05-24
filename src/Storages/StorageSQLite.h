@@ -9,7 +9,7 @@
 
 namespace DB
 {
-class StorageSQLite final : public ext::shared_ptr_helper<StorageSQLite>, public IStorage
+class StorageSQLite final : public ext::shared_ptr_helper<StorageSQLite>, public IStorage, public WithContext
 {
     friend struct ext::shared_ptr_helper<StorageSQLite>;
 
@@ -33,6 +33,8 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
     String remote_table_name;
