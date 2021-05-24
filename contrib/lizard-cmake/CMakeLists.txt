@@ -14,3 +14,6 @@ SET (Headers
 ADD_LIBRARY(lizard ${Sources} ${Headers})
 
 target_include_directories (lizard PUBLIC ${LIBRARY_DIR})
+
+# It is using some symbols (HUF_* and FSE_*) from zstd.
+target_link_libraries (lizard PRIVATE zstd)
