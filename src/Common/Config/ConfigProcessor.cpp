@@ -296,10 +296,10 @@ void ConfigProcessor::doIncludesRecursive(
     {
         const auto * subst = attributes->getNamedItem(attr_name);
         attr_nodes[attr_name] = subst;
-        substs_count += static_cast<size_t>(subst == nullptr);
+        substs_count += static_cast<size_t>(subst != nullptr);
     }
 
-    if (substs_count < SUBSTITUTION_ATTRS.size() - 1) /// only one substitution is allowed
+    if (substs_count > 1) /// only one substitution is allowed
         throw Poco::Exception("several substitutions attributes set for element <" + node->nodeName() + ">");
 
     /// Replace the original contents, not add to it.
