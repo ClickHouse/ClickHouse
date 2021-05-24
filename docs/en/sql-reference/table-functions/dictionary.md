@@ -36,8 +36,7 @@ Create a dictionary:
 
 ``` sql
 CREATE DICTIONARY table_function_dictionary_test_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_function_dictionary_source_table'))
-LAYOUT(DIRECT());
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_function_dictionary_source_table')) LAYOUT(DIRECT());
 ```
 
 Query:
