@@ -1042,7 +1042,7 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 for instance in ['zoo1', 'zoo2', 'zoo3']:
-                    conn = self.get_kazoo_client(instance, self.zookeeper_secure_port, use_ssl=True)
+                    conn = self.get_kazoo_client(instance)
                     conn.get_children('/')
                 logging.debug("All instances of ZooKeeper Secure started")
                 return
@@ -1058,7 +1058,7 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 for instance in ['zoo1', 'zoo2', 'zoo3']:
-                    conn = self.get_kazoo_client(instance, self.zookeeper_port)
+                    conn = self.get_kazoo_client(instance)
                     conn.get_children('/')
                 logging.debug("All instances of ZooKeeper started")
                 return
@@ -1248,7 +1248,7 @@ class ClickHouseCluster:
 
                 self.wait_zookeeper_secure_to_start()
                 for command in self.pre_zookeeper_commands:
-                    self.run_kazoo_commands_with_retries(command, repeats=5, secure=True)
+                    self.run_kazoo_commands_with_retries(command, repeats=5)
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper')
@@ -1490,7 +1490,16 @@ class ClickHouseCluster:
     def open_bash_shell(self, instance_name):
         os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
 
-    def get_kazoo_client(self, zoo_instance_name, port, use_ssl=False):
+    def get_kazoo_client(self, zoo_instance_name):
+        use_ssl = False
+        if self.with_zookeeper_secure:
+            port = self.zookeeper_secure_port
+            use_ssl = True
+        elif self.with_zookeeper:
+            port = self.zookeeper_port
+        else:
+            raise Exception("Cluster has no ZooKeeper")
+
         ip = self.get_instance_ip(zoo_instance_name)
         logging.debug(f"get_kazoo_client: {zoo_instance_name}, ip:{ip}, port:{port}, use_ssl:{use_ssl}")
         zk = KazooClient(hosts=f"{ip}:{port}", use_ssl=use_ssl, verify_certs=False, certfile=self.zookeeper_certfile,
@@ -1498,16 +1507,16 @@ class ClickHouseCluster:
         zk.start()
         return zk
 
-    def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name='zoo1', repeats=1, sleep_for=1, secure=False):
-        logging.debug(f"run_kazoo_commands_with_retries: {zoo_instance_name}, {secure}, {kazoo_callback}")
+    def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name='zoo1', repeats=1, sleep_for=1):
+        logging.debug(f"run_kazoo_commands_with_retries: {zoo_instance_name}, {kazoo_callback}")
         for i in range(repeats - 1):
             try:
-                kazoo_callback(self.get_kazoo_client(zoo_instance_name, self.zookeeper_secure_port if secure else self.zookeeper_port))
+                kazoo_callback(self.get_kazoo_client(zoo_instance_name))
                 return
             except KazooException as e:
                 logging.debug(repr(e))
                 time.sleep(sleep_for)
-        kazoo_callback(self.get_kazoo_client(zoo_instance_name, self.zookeeper_secure_port if secure else self.zookeeper_port))
+        kazoo_callback(self.get_kazoo_client(zoo_instance_name))
 
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
