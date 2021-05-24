@@ -67,9 +67,9 @@ public:
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments_) const override
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments_, const DataTypePtr & result_type_) const override
     {
-        return function->getConstantResultForNonConstArguments(arguments_);
+        return function->getConstantResultForNonConstArguments(arguments_, result_type_);
     }
 
     bool isStateful() const override { return function->isStateful(); }

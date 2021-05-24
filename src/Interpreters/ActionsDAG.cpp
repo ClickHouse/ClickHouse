@@ -216,7 +216,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         }
         else
         {
-            column = node.function_base->getConstantResultForNonConstArguments(arguments);
+            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
         }
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.
