@@ -23,36 +23,36 @@ namespace DB
 
 namespace
 {
-template<typename T>
-void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf)
-{
-    readIntText(x, buf);
-    skipWhitespaceIfAny(buf);
-}
+    template<typename T>
+    void readIntTextAndSkipWhitespaceIfAny(T & x, ReadBuffer & buf)
+    {
+        readIntText(x, buf);
+        skipWhitespaceIfAny(buf);
+    }
 
-void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
-{
-    readString(s, buf);
-    skipWhitespaceIfAny(buf);
-}
+    void readStringAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
+    {
+        readString(s, buf);
+        skipWhitespaceIfAny(buf);
+    }
 
-void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
-{
-    readStringUntilWhitespace(s, buf);
-    skipWhitespaceIfAny(buf);
-}
+    void readStringUntilWhitespaceAndSkipWhitespaceIfAny(String & s, ReadBuffer & buf)
+    {
+        readStringUntilWhitespace(s, buf);
+        skipWhitespaceIfAny(buf);
+    }
 
-void readCharAndSkipWhitespaceIfAny(char & c, ReadBuffer & buf)
-{
-    readChar(c, buf);
-    skipWhitespaceIfAny(buf);
-}
+    void readCharAndSkipWhitespaceIfAny(char & c, ReadBuffer & buf)
+    {
+        readChar(c, buf);
+        skipWhitespaceIfAny(buf);
+    }
 
-void readFloatAndSkipWhitespaceIfAny(float & f, ReadBuffer & buf)
-{
-    readFloatText(f, buf);
-    skipWhitespaceIfAny(buf);
-}
+    void readFloatAndSkipWhitespaceIfAny(float & f, ReadBuffer & buf)
+    {
+        readFloatText(f, buf);
+        skipWhitespaceIfAny(buf);
+    }
 }
 
 static constexpr auto loadavg_filename = "/proc/loadavg";
@@ -140,7 +140,8 @@ void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcS
     proc_time.guest /= USER_HZ;
     proc_time.guest_nice /= USER_HZ;
 
-    do {
+    do
+    {
         readStringUntilWhitespaceAndSkipWhitespaceIfAny(field_name, procst_in);
         readStringAndSkipWhitespaceIfAny(field_val, procst_in);
     } while (field_name != String("processes"));
@@ -163,8 +164,10 @@ void ProcessorStatisticsOS::readFreq(ProcFreq & freq)
     int cpu_count = 0;
     freq.max = freq.min = freq.avg = 0;
 
-    do {
-        do {
+    do
+    {
+        do
+        {
             readStringAndSkipWhitespaceIfAny(field_name, cpuinfo_in);
         } while (!cpuinfo_in.eof() && field_name != String("cpu MHz"));
 
