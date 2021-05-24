@@ -129,13 +129,13 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
 
 Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context)
 {
-    fs::path user_files_absolute_path = fs::absolute(user_files_path);
+    fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_table_path(table_path);
     if (fs_table_path.is_relative())
         fs_table_path = user_files_absolute_path / fs_table_path;
 
     Strings paths;
-    const String path = fs::absolute(fs_table_path);
+    const String path = fs::weakly_canonical(fs_table_path);
     if (path.find_first_of("*?{") == std::string::npos)
         paths.push_back(path);
     else

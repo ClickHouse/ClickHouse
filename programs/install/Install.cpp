@@ -288,7 +288,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 bool is_symlink = fs::is_symlink(symlink_path);
                 fs::path points_to;
                 if (is_symlink)
-                    points_to = fs::absolute(fs::read_symlink(symlink_path));
+                    points_to = fs::weakly_canonical(fs::read_symlink(symlink_path));
 
                 if (is_symlink && points_to == main_bin_path)
                 {
