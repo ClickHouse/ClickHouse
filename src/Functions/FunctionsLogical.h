@@ -85,8 +85,6 @@ struct AndImpl
 
     /// Will use three-valued logic for NULLs (see above) or default implementation (any operation with NULL returns NULL).
     static inline constexpr bool specialImplementationForNulls() { return true; }
-
-    static inline constexpr UInt8 neutralElement() { return true; }
 };
 
 struct OrImpl
@@ -98,7 +96,6 @@ struct OrImpl
     static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
     static inline constexpr bool specialImplementationForNulls() { return true; }
-    static inline constexpr UInt8 neutralElement() { return false; }
 };
 
 struct XorImpl
@@ -110,7 +107,6 @@ struct XorImpl
     static inline constexpr bool isSaturatedValueTernary(UInt8) { return false; }
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a != b; }
     static inline constexpr bool specialImplementationForNulls() { return false; }
-    static inline constexpr UInt8 neutralElement() { return false; }
 
 #if USE_EMBEDDED_COMPILER
     static inline llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
