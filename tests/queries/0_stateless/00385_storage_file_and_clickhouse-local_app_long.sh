@@ -57,7 +57,8 @@ ${CLICKHOUSE_LOCAL} -q "CREATE TABLE sophisticated_default
     a UInt8 DEFAULT 3,
     b UInt8 ALIAS a + 5,
     c UInt8
-) ENGINE = Memory; SELECT count() FROM system.tables WHERE name='sophisticated_default';"
+) ENGINE = Memory;
+SELECT count() FROM system.tables WHERE name='sophisticated_default' AND database = currentDatabase();"
 
 # Help is not skipped
 [[ $(${CLICKHOUSE_LOCAL} --help | wc -l) -gt 100 ]]

@@ -49,6 +49,12 @@ option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories"
 
 
 option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_CLICKHOUSE_ALL})
+if (NOT USE_NURAFT)
+    # RECONFIGURE_MESSAGE_LEVEL should not be used here,
+    # since USE_NURAFT is set to OFF for FreeBSD and Darwin.
+    message (STATUS "clickhouse-keeper will not be built (lack of NuRaft)")
+    set(ENABLE_CLICKHOUSE_KEEPER OFF)
+endif()
 
 if (CLICKHOUSE_SPLIT_BINARY)
     option(ENABLE_CLICKHOUSE_INSTALL "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)" OFF)
@@ -259,7 +265,10 @@ add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
 add_subdirectory (bash-completion)
-add_subdirectory (keeper)
+
+if (ENABLE_CLICKHOUSE_KEEPER)
+    add_subdirectory (keeper)
+endif()
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
@@ -278,7 +287,18 @@ if (CLICKHOUSE_ONE_SHARED)
 endif()
 
 if (CLICKHOUSE_SPLIT_BINARY)
-    set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-obfuscator clickhouse-git-import clickhouse-copier clickhouse-keeper)
+    set (CLICKHOUSE_ALL_TARGETS
+        clickhouse-server
+        clickhouse-client
+        clickhouse-local
+        clickhouse-benchmark
+        clickhouse-extract-from-config
+        clickhouse-compressor
+        clickhouse-format
+        clickhouse-obfuscator
+        clickhouse-git-import
+        clickhouse-copier
+    )
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
@@ -286,6 +306,10 @@ if (CLICKHOUSE_SPLIT_BINARY)
 
     if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-library-bridge)
+    endif ()
+
+    if (ENABLE_CLICKHOUSE_KEEPER)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-keeper)
     endif ()
 
     set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
