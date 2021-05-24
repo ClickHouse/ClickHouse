@@ -35,20 +35,9 @@ CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 }
 
 
-CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level, std::optional<std::string> param) const
+CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level) const
 {
-    if (level && param)
-    {
-        auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        auto param_literal = std::make_shared<ASTLiteral>(*param);
-        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal, param_literal)), {});
-    }
-    else if (param)
-    {
-        auto param_literal = std::make_shared<ASTLiteral>(*param);
-        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), param_literal)), {});
-    }
-    else if (level)
+    if (level)
     {
         auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
@@ -383,7 +372,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecsLZSSE(*this);
 #endif
 
-    default_codec = get("LZ4", {}, {});
+    default_codec = get("LZ4", {});
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()
