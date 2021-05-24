@@ -41,7 +41,7 @@
                 <file_size>16777216</file_size>
                 <read_buffer_size>131072</read_buffer_size>
                 <write_buffer_size>1048576</write_buffer_size>
-		        <path>/etc/clickhouse-server/dictionaries/radars</path>
+		        <path>/etc/clickhouse-server/radars</path>
             </complex_key_ssd_cache>
         </layout>
         <lifetime>1</lifetime>

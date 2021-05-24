@@ -56,7 +56,7 @@ def check_data(nodes, detached_parts):
 
         for other in nodes:
             if other != node:
-                print("> Checking data consistency,", other.name, "vs", node.name)
+                logging.debug(f"> Checking data consistency, {other.name} vs {node.name}")
                 assert_eq_with_retry(other, "SELECT * FROM test ORDER BY n", res)
 
 
