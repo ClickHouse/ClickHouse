@@ -652,8 +652,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         /// File must be inside "absolute_part_path" directory.
         /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
-        String absolute_file_path = fs::absolute(fs::path(part_download_path) / file_name);
-        if (!startsWith(absolute_file_path, fs::absolute(part_download_path).string()))
+        String absolute_file_path = fs::weakly_canonical(fs::path(part_download_path) / file_name);
+        if (!startsWith(absolute_file_path, fs::weakly_canonical(part_download_path).string()))
             throw Exception("File path (" + absolute_file_path + ") doesn't appear to be inside part path (" + part_download_path + ")."
                 " This may happen if we are trying to download part from malicious replica or logical error.",
                 ErrorCodes::INSECURE_PATH);

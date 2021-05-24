@@ -61,8 +61,8 @@ private:
 class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
-    explicit DiskLocalDirectoryIterator(const fs::path & disk_path_, const String & dir_path_)
-        : dir_path(dir_path_), entry(disk_path_ / dir_path_)
+    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
+        : dir_path(dir_path_), entry(fs::path(disk_path_) / dir_path_)
     {
     }
 
@@ -196,7 +196,7 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
-    return std::make_unique<DiskLocalDirectoryIterator>(fs::path(disk_path), path);
+    return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
@@ -314,12 +314,9 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
     if (isSameDiskType(*this, *to_disk))
     {
         fs::path to = fs::path(to_disk->getPath()) / to_path;
-        fs::path from;
+        fs::path from = fs::path(disk_path) / from_path;
         if (from_path.ends_with('/'))
-            from = fs::path(disk_path) / from_path.substr(0, from_path.size() - 1);
-        else
-            from = fs::path(disk_path) / from_path;
-
+            from = from.parent_path();
         if (fs::is_directory(from))
             to /= from.filename();
 
