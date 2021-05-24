@@ -150,33 +150,25 @@ public:
     template <typename Load>
     BlockInputStreamPtr getOrSet(const Key & key, Load && load_func_, UInt64 cache_ttl = 2)
     {
-        auto load_func = [this, &load_func_]() { 
-            BlockInputStreamPtr stream = load_func_();
+        BlockInputStreamPtr stream;
+
+        auto load_func = [this, &load_func_, &stream]() { 
+            stream = load_func_();
             MappedPtr cache_value = this->streamHandler(stream);
-            // if (!cache_value)
-            //     throw Exception("Too large dataset", ErrorCodes::TOO_LARGE_DATASET);
             return cache_value; 
         };
         MappedPtr cache_value;
-        try
-        {
-            auto result = QueryCacheBase::getOrSet(key, load_func, cache_ttl);
-            if (result.second)
-                ProfileEvents::increment(ProfileEvents::QueryCacheHits);
-            else
-                ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
-            cache_value = result.first;
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::TOO_LARGE_DATASET)
-            {
-                ProfileEvents::increment(ProfileEvents::QueryCacheInsertFails);
-                return BlockInputStreamPtr();
-            }
-            throw e;
-        }
-        return cache_value->getInputStream();
+
+        auto result = QueryCacheBase::getOrSet(key, load_func, cache_ttl);
+        if (result.second)
+            ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+        else
+            ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
+
+        if (!result.first)
+            ProfileEvents::increment(ProfileEvents::QueryCacheInsertFails);
+
+        return stream;
     }
 
     BlockInputStreamPtr get(const Key & key) 
