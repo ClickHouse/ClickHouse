@@ -665,7 +665,9 @@ class ClickHouseCluster:
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True):
+                     zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True):
+
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -731,6 +733,9 @@ class ClickHouseCluster:
             ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary,
+            main_config_name=main_config_name,
+            users_config_name=users_config_name,
+            copy_common_configs=copy_common_configs,
             tmpfs=tmpfs or [])
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -1518,7 +1523,7 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
 
 
-CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-server/config.xml" \
+CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}" \
                            " --log-file=/var/log/clickhouse-server/clickhouse-server.log " \
                            " --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
 
@@ -1576,6 +1581,8 @@ class ClickHouseInstance:
             macros, with_zookeeper, zookeeper_config_path, with_mysql_client,  with_mysql, with_mysql8, with_mysql_cluster, with_kafka, with_kerberized_kafka,
             with_rabbitmq, with_kerberized_hdfs, with_mongo, with_redis, with_minio,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, with_postgres, with_postgres_cluster,
+            clickhouse_start_command=CLICKHOUSE_START_COMMAND,
+            main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
@@ -1615,6 +1622,12 @@ class ClickHouseInstance:
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_cassandra = with_cassandra
+
+        self.main_config_name = main_config_name
+        self.users_config_name = users_config_name
+        self.copy_common_configs = copy_common_configs
+
+        self.clickhouse_start_command = clickhouse_start_command.replace("{main_config_file}", self.main_config_name)
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker-compose.yml')
@@ -1765,7 +1778,7 @@ class ClickHouseInstance:
         if not self.stay_alive:
             raise Exception("clickhouse can be started again only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
         # wait start
         from helpers.test_tools import assert_eq_with_retry
         assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
@@ -1857,7 +1870,7 @@ class ClickHouseInstance:
         self.exec_in_container(["bash", "-c",
                                 "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"],
                                user='root')
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
         from helpers.test_tools import assert_eq_with_retry
 
         # wait start
@@ -2000,9 +2013,10 @@ class ClickHouseInstance:
         os.makedirs(instance_config_dir)
         os.chmod(instance_config_dir, stat.S_IRWXO)
 
-        logging.debug("Copy common default production configuration from {}".format(self.base_config_dir))
-        shutil.copyfile(p.join(self.base_config_dir, 'config.xml'), p.join(instance_config_dir, 'config.xml'))
-        shutil.copyfile(p.join(self.base_config_dir, 'users.xml'), p.join(instance_config_dir, 'users.xml'))
+        print(f"Copy common default production configuration from {self.base_config_dir}. Files: {self.main_config_name}, {self.users_config_name}")
+
+        shutil.copyfile(p.join(self.base_config_dir, self.main_config_name), p.join(instance_config_dir, self.main_config_name))
+        shutil.copyfile(p.join(self.base_config_dir, self.users_config_name), p.join(instance_config_dir, self.users_config_name))
 
         logging.debug("Create directory for configuration generated in this helper")
         # used by all utils with any config
@@ -2021,7 +2035,9 @@ class ClickHouseInstance:
 
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
-        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), self.config_d_dir)
+        if self.copy_common_configs:
+            shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), self.config_d_dir)
+
         shutil.copy(p.join(HELPERS_DIR, '0_common_instance_users.xml'), users_d_dir)
         if len(self.custom_dictionaries_paths):
             shutil.copy(p.join(HELPERS_DIR, '0_common_enable_dictionaries.xml'), self.config_d_dir)
@@ -2115,10 +2131,10 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = '- ' + self.odbc_ini_path
 
-        entrypoint_cmd = CLICKHOUSE_START_COMMAND
+        entrypoint_cmd = self.clickhouse_start_command
 
         if self.stay_alive:
-            entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND
+            entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND.replace("{main_config_file}", self.main_config_name)
 
         logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
 
