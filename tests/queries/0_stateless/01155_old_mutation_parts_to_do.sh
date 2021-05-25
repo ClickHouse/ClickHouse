@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} -q "drop table if exists rmt;"
 
-${CLICKHOUSE_CLIENT} -q "create table rmt (n int, m int, s String) engine=ReplicatedMergeTree('/test/01155/{database}', '1')
+${CLICKHOUSE_CLIENT} -q "create table rmt (n int, m int, s String) engine=ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', '1')
 order by n settings max_replicated_mutations_in_queue=0;"
 
 ${CLICKHOUSE_CLIENT} -q "insert into rmt values (1, 1, '2');"     # 0_0_0_0
