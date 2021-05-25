@@ -43,9 +43,17 @@ public:
 
 protected:
     StorageS3Cluster(
-        const String & filename_, const String & access_key_id_, const String & secret_access_key_, const StorageID & table_id_,
-        String cluster_name_, const String & format_name_, UInt64 max_connections_, const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_, ContextPtr context_, const String & compression_method_);
+        const String & filename_,
+        const String & access_key_id_,
+        const String & secret_access_key_,
+        const StorageID & table_id_,
+        String cluster_name_,
+        const String & format_name_,
+        UInt64 max_connections_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        ContextPtr context_,
+        const String & compression_method_);
 
 private:
     /// Connections from initiator to other nodes

@@ -571,6 +571,8 @@
         "01150_ddl_guard_rwr",
         "01153_attach_mv_uuid",
         "01152_cross_replication",
+        "01154_move_partition_long",
+        "01155_rename_move_materialized_view",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
@@ -719,6 +721,8 @@
         "01802_test_postgresql_protocol_with_row_policy", /// Creates database and users
         "01804_dictionary_decimal256_type",
         "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
-        "01710_projection_fetch"
+        "01821_table_comment",
+        "01710_projection_fetch",
+        "01870_buffer_flush" // creates database
     ]
 }

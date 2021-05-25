@@ -360,7 +360,9 @@ size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
 
 void MergeTreeDataPartWriterCompact::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    finishDataSerialization(checksums, sync);
+    // If we don't have anything to write, skip finalization.
+    if (!columns_list.empty())
+        finishDataSerialization(checksums, sync);
 
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(checksums, sync);
