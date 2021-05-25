@@ -88,7 +88,7 @@ class SimpleMergeSelector final : public IMergeSelector
 public:
     struct Settings
     {
-        /// Zero means unlimited.
+        /// Zero means unlimited. Can be overriden by the same merge tree setting.
         size_t max_parts_to_merge_at_once = 100;
 
         /** Minimum ratio of size of one part to all parts in set of parts to merge (for usual cases).
