@@ -15,7 +15,7 @@ class KeyCondition;
 
 struct MergeTreeDataSelectSamplingData
 {
-    bool use_sampling;
+    bool use_sampling = false;
     std::shared_ptr<ASTFunction> filter_function;
     ActionsDAGPtr filter_expression;
 };
