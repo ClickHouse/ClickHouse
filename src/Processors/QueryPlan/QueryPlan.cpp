@@ -436,7 +436,7 @@ void QueryPlan::explainEstimates(MutableColumns & columns)
 
     struct Frame
     {
-        Node * node;
+        Node * node = nullptr;
         bool is_description_printed = false;
         size_t next_child = 0;
     };
