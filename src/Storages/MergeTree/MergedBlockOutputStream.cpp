@@ -20,9 +20,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
-    const SerializationInfo & serialization_info,
+    const SerializationInfoPtr & input_serialization_info_,
     bool blocks_are_granules_size)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_, input_serialization_info_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
 {
@@ -36,7 +36,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     if (!part_path.empty())
         volume->getDisk()->createDirectories(part_path);
 
-    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, serialization_info, writer_settings);
+    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, input_serialization_info, writer_settings);
 }
 
 /// If data is pre-sorted.
@@ -73,13 +73,19 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     /// Finish columns serialization.
     writer->finish(checksums, sync);
 
+    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+        checksums.addFile(
+            projection_name + ".proj",
+            projection_part->checksums.getTotalSizeOnDisk(),
+            projection_part->checksums.getTotalChecksumUInt128());
+
     NamesAndTypesList part_columns;
     if (!total_columns_list)
         part_columns = columns_list;
     else
         part_columns = *total_columns_list;
 
-    new_part->serialization_info.update(new_serialization_info);
+    new_part->serialization_info = new_serialization_info->buildFrom(*input_serialization_info);
 
     if (new_part->isStoredOnDisk())
         finalizePartOnDisk(new_part, part_columns, checksums, sync);
@@ -103,38 +109,54 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
-    if (new_part->uuid != UUIDHelpers::Nil)
-    {
-        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
-        HashingWriteBuffer out_hashing(*out);
-        writeUUIDText(new_part->uuid, out_hashing);
-        checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-        checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-        out->finalize();
-        if (sync)
-            out->sync();
-    }
 
-    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    if (new_part->isProjectionPart())
     {
-        new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
-        if (new_part->minmax_idx.initialized)
-            new_part->minmax_idx.store(storage, volume->getDisk(), part_path, checksums);
-        else if (rows_count)
-            throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
-                + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
+        {
+            auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
+            HashingWriteBuffer count_out_hashing(*count_out);
+            writeIntText(rows_count, count_out_hashing);
+            count_out_hashing.next();
+            checksums.files["count.txt"].file_size = count_out_hashing.count();
+            checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+        }
     }
-
+    else
     {
-        auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
-        HashingWriteBuffer count_out_hashing(*count_out);
-        writeIntText(rows_count, count_out_hashing);
-        count_out_hashing.next();
-        checksums.files["count.txt"].file_size = count_out_hashing.count();
-        checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-        count_out->finalize();
-        if (sync)
-            count_out->sync();
+        if (new_part->uuid != UUIDHelpers::Nil)
+        {
+            auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
+            HashingWriteBuffer out_hashing(*out);
+            writeUUIDText(new_part->uuid, out_hashing);
+            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
+            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+            out->finalize();
+            if (sync)
+                out->sync();
+        }
+
+        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        {
+            new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
+            if (new_part->minmax_idx.initialized)
+                new_part->minmax_idx.store(storage, volume->getDisk(), part_path, checksums);
+            else if (rows_count)
+                throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
+                    + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        {
+            auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
+            HashingWriteBuffer count_out_hashing(*count_out);
+            writeIntText(rows_count, count_out_hashing);
+            count_out_hashing.next();
+            checksums.files["count.txt"].file_size = count_out_hashing.count();
+            checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+            count_out->finalize();
+            if (sync)
+                count_out->sync();
+        }
     }
 
     if (!new_part->ttl_infos.empty())
@@ -152,11 +174,11 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     removeEmptyColumnsFromPart(new_part, part_columns, checksums);
 
-    if (new_part->serialization_info.getNumberOfRows() > 0)
+    if (new_part->serialization_info->getNumberOfRows() > 0)
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096);
         HashingWriteBuffer out_hashing(*out);
-        new_part->serialization_info.write(out_hashing);
+        new_part->serialization_info->writeText(out_hashing);
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         out->finalize();
@@ -203,7 +225,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
-    new_serialization_info.add(block);
+    new_serialization_info->add(block);
 
     rows_count += rows;
 }

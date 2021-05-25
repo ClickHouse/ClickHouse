@@ -75,7 +75,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const SerializationInfo & serialization_info_,
+    const SerializationInfoPtr & serialization_info_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
@@ -85,7 +85,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
     {
-        serializations.emplace(it.name, it.type->getSerialization(it.name, serialization_info));
+        serializations.emplace(it.name, it.type->getSerialization(it.name, *serialization_info));
         addStreams(it, columns.getCodecDescOrDefault(it.name, default_codec));
     }
 }
@@ -403,7 +403,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 {
     const auto & serialization = serializations[name];
 
-    if (!type.isValueRepresentedByNumber() || type.haveSubtypes() || serialization->getKind() != ISerialization::Kind::SPARSE)
+    if (!type.isValueRepresentedByNumber() || type.haveSubtypes() || serialization->getKind() != ISerialization::Kind::DEFAULT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type.getName());
 
     auto disk = data_part->volume->getDisk();
@@ -575,7 +575,10 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
 
 void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    finishDataSerialization(checksums, sync);
+    // If we don't have anything to write, skip finalization.
+    if (!columns_list.empty())
+        finishDataSerialization(checksums, sync);
+
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(checksums, sync);
 

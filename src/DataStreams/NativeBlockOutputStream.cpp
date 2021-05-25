@@ -10,6 +10,7 @@
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Columns/ColumnSparse.h>
 
 namespace DB
@@ -52,7 +53,7 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
-    settings.low_cardinality_max_dictionary_size = 0;
+    settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(settings, state);
@@ -83,6 +84,14 @@ void NativeBlockOutputStream::write(const Block & block)
     {
         writeVarUInt(columns, *index_ostr);
         writeVarUInt(rows, *index_ostr);
+    }
+
+
+    /// Serialization
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+    {
+        auto serialization_kinds = SerializationInfo::getKinds(block);
+        SerializationInfo::writeKindsBinary(serialization_kinds, ostr);
     }
 
     for (size_t i = 0; i < columns; ++i)
@@ -120,11 +129,16 @@ void NativeBlockOutputStream::write(const Block & block)
 
         writeStringBinary(type_name, ostr);
 
-        column.column = recursiveRemoveSparse(column.column);
-
-        /// TODO: add revision
-        auto serialization = column.type->getSerialization(*column.column);
-        writeIntBinary(serialization->getKind(), ostr);
+        SerializationPtr serialization;
+        if (client_revision < DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        {
+            serialization = column.type->getDefaultSerialization();
+            column.column = recursiveRemoveSparse(column.column);
+        }
+        else
+        {
+            serialization = column.type->getSerialization(*column.column);
+        }
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.

@@ -12,6 +12,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
+    extern const int LOGICAL_ERROR;
+}
+
+ISerialization::Kind ISerialization::getKind(const IColumn & column)
+{
+    if (column.isSparse())
+        return Kind::SPARSE;
+
+    return Kind::DEFAULT;
 }
 
 String ISerialization::kindToString(Kind kind)
@@ -23,6 +32,18 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
+
+    __builtin_unreachable();
+}
+
+ISerialization::Kind ISerialization::stringToKind(const String & str)
+{
+    if (str == "Default")
+        return Kind::DEFAULT;
+    else if (str == "Sparse")
+        return Kind::SPARSE;
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 String ISerialization::Substream::toString() const

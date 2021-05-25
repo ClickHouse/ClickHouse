@@ -21,6 +21,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -166,7 +167,7 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
-    auto serialization = IDataType::getSerialization(name_and_type);
+    auto serialization = IDataType::getSerialization(name_and_type, {});
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
@@ -386,6 +387,7 @@ StorageTinyLog::StorageTinyLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -398,6 +400,7 @@ StorageTinyLog::StorageTinyLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -551,8 +554,14 @@ void registerStorageTinyLog(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return StorageTinyLog::create(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
-            args.attach, args.getContext()->getSettings().max_compress_block_size);
+            disk,
+            args.relative_data_path,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.attach,
+            args.getContext()->getSettings().max_compress_block_size);
     }, features);
 }
 

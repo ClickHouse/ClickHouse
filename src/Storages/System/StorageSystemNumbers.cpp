@@ -144,7 +144,7 @@ Pipe StorageSystemNumbers::read(
 
     Pipe pipe;
 
-    if (num_streams > 1 && !even_distribution && *limit)
+    if (num_streams > 1 && !even_distribution && limit)
     {
         auto state = std::make_shared<NumbersMultiThreadedState>(offset);
         UInt64 max_counter = offset + *limit;

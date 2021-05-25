@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Row.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -47,9 +46,30 @@ public:
       */
     MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert);
 
+    MergeTreeData::MutableDataPartPtr
+    writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+
+    MergeTreeData::MutableDataPartPtr writeProjectionPart(
+        Block block, const ProjectionDescription & projection, const IMergeTreeDataPart * parent_part);
+
+    static MergeTreeData::MutableDataPartPtr writeTempProjectionPart(
+        MergeTreeData & data,
+        Poco::Logger * log,
+        Block block,
+        const ProjectionDescription & projection,
+        const IMergeTreeDataPart * parent_part,
+        size_t block_num);
+
     Block mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation);
 
 private:
+    static MergeTreeData::MutableDataPartPtr writeProjectionPartImpl(
+        MergeTreeData & data,
+        Poco::Logger * log,
+        Block block,
+        const StorageMetadataPtr & metadata_snapshot,
+        MergeTreeData::MutableDataPartPtr && new_data_part);
+
     MergeTreeData & data;
 
     Poco::Logger * log;

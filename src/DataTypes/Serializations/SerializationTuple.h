@@ -13,7 +13,9 @@ public:
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
     SerializationTuple(const ElementSerializations & elems_, bool have_explicit_names_)
-        : elems(elems_), have_explicit_names(have_explicit_names_) {}
+        : elems(elems_), have_explicit_names(have_explicit_names_)
+    {
+    }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;

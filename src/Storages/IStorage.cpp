@@ -110,8 +110,9 @@ void IStorage::read(
     auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     if (pipe.empty())
     {
-        auto header = getSampleBlockForColumns(metadata_snapshot, column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        const auto & metadata_for_query = query_info.projection ? query_info.projection->desc->metadata : metadata_snapshot;
+        auto header = getSampleBlockForColumns(metadata_for_query, column_names);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
     }
     else
     {

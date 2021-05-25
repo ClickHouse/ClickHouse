@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -154,7 +155,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     else
     {
         /// A case for radix sort
-        if constexpr (is_arithmetic_v<T> && !std::is_same_v<T, UInt128>)
+        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
         {
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (s >= 256 && s <= std::numeric_limits<UInt32>::max())
@@ -292,28 +293,37 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
         if (size > count)
-            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(ValueType()), (size - count) * sizeof(ValueType));
+            memset(static_cast<void *>(&new_col.data[count]), 0, (size - count) * sizeof(ValueType));
     }
 
     return res;
 }
 
 template <typename T>
-UInt64 ColumnVector<T>::get64(size_t n) const
+UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
 {
-    return ext::bit_cast<UInt64>(data[n]);
+    if constexpr (is_arithmetic_v<T>)
+        return ext::bit_cast<UInt64>(data[n]);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>);
 }
 
 template <typename T>
-inline Float64 ColumnVector<T>::getFloat64(size_t n) const
+inline Float64 ColumnVector<T>::getFloat64(size_t n [[maybe_unused]]) const
 {
-    return static_cast<Float64>(data[n]);
+    if constexpr (is_arithmetic_v<T>)
+        return static_cast<Float64>(data[n]);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float64", TypeName<T>);
 }
 
 template <typename T>
-Float32 ColumnVector<T>::getFloat32(size_t n) const
+Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 {
-    return static_cast<Float32>(data[n]);
+    if constexpr (is_arithmetic_v<T>)
+        return static_cast<Float32>(data[n]);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>);
 }
 
 template <typename T>
@@ -482,8 +492,6 @@ void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
 template <typename T>
 void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 {
-    using FastRefT = std::conditional_t<is_big_int_v<T>, const T &, const T>;
-
     size_t size = data.size();
 
     if (size == 0)
@@ -504,7 +512,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     T cur_min = NaNOrZero<T>();
     T cur_max = NaNOrZero<T>();
 
-    for (FastRefT x : data)
+    for (const T & x : data)
     {
         if (isNaN(x))
             continue;
@@ -575,14 +583,18 @@ void ColumnVector<T>::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, s
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows) const
+ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const
 {
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
     auto res = this->create();
     auto & res_data = res->getData();
 
     res_data.resize_fill(total_rows, data[0]);
     for (size_t i = 0; i < offsets.size(); ++i)
-        res_data[offsets[i]] = data[i + 1];
+        res_data[offsets[i]] = data[i + shift];
 
     return res;
 }
@@ -602,5 +614,6 @@ template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+template class ColumnVector<UUID>;
 
 }

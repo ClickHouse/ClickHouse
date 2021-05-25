@@ -11,11 +11,13 @@ class Collator;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
+/** Column for spare representation.
+ *  It stores column with non-default values and column
+ *  with their sorted positions in original column. Column with
+ *  values contains also one default value at 0 position to make
+ *  implementation of execution of functions and sorting more convinient.
+ */
 class ColumnSparse final : public COWHelper<IColumn, ColumnSparse>
 {
 private:
@@ -26,9 +28,6 @@ private:
     ColumnSparse(const ColumnSparse &) = default;
 
 public:
-    /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
-      * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
-      */
     using Base = COWHelper<IColumn, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
     {
@@ -107,7 +106,6 @@ public:
     void updatePermutationWithCollation(
         const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
 
-    void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
@@ -143,6 +141,9 @@ public:
         return offsets->empty() ? _size : _size - getOffsetsData().back() - 1;
     }
 
+    /// Return position of element in 'values' columns,
+    /// that corresponds to n-th element of full column.
+    /// O(log(size)) complexity,
     size_t getValueIndex(size_t n) const;
 
     const IColumn & getValuesColumn() const { return *values; }
@@ -160,6 +161,7 @@ public:
     const IColumn & getOffsetsColumn() const { return *offsets; }
     IColumn & getOffsetsColumn() { return *offsets; }
 
+    /// This class helps to iterate over all values in ColumnSparse.
     class Iterator
     {
     public:
@@ -200,7 +202,11 @@ public:
     Iterator end() const { return Iterator(getOffsetsData(), _size, getOffsetsData().size(), _size); }
 
 private:
+    /// Contains default value at 0 position.
     WrappedPtr values;
+
+    /// Sorted offsets of non-default values in the full column.
+    /// 'offsets[i]' corresponds to 'values[i + 1]'.
     WrappedPtr offsets;
     size_t _size;
 };

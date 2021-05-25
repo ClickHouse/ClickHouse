@@ -370,6 +370,18 @@ void Block::setColumns(const Columns & columns)
 }
 
 
+void Block::setColumn(size_t position, ColumnWithTypeAndName && column)
+{
+    if (position >= data.size())
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
+                        position, toString(data.size()));
+
+    data[position].name = std::move(column.name);
+    data[position].type = std::move(column.type);
+    data[position].column = std::move(column.column);
+}
+
+
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
     Block res;
@@ -492,7 +504,7 @@ static String getNameOfBaseColumn(const IColumn & column)
 }
 
 template <typename ReturnType>
-static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_remove_constants)
 {
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
@@ -523,7 +535,17 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
         if (!actual.column || !expected.column)
             continue;
 
-        if (getNameOfBaseColumn(*actual.column) != getNameOfBaseColumn(*expected.column))
+
+        const IColumn * actual_column = actual.column.get();
+
+        /// If we allow to remove constants, and expected column is not const, then unwrap actual constant column.
+        if (allow_remove_constants && !isColumnConst(*expected.column))
+        {
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
+                actual_column = &column_const->getDataColumn();
+        }
+
+        if (getNameOfBaseColumn(*actual_column) != getNameOfBaseColumn(*expected.column))
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
@@ -545,13 +567,25 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
 
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {
-    return checkBlockStructure<bool>(lhs, rhs, {});
+    return checkBlockStructure<bool>(lhs, rhs, {}, false);
 }
 
 
 void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
 {
-    checkBlockStructure<void>(lhs, rhs, context_description);
+    checkBlockStructure<void>(lhs, rhs, context_description, false);
+}
+
+
+bool isCompatibleHeader(const Block & actual, const Block & desired)
+{
+    return checkBlockStructure<bool>(actual, desired, {}, true);
+}
+
+
+void assertCompatibleHeader(const Block & actual, const Block & desired, const std::string & context_description)
+{
+    checkBlockStructure<void>(actual, desired, context_description, true);
 }
 
 
@@ -641,6 +675,12 @@ void Block::updateHash(SipHash & hash) const
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
         for (const auto & col : data)
             col.column->updateHashWithValue(row_no, hash);
+}
+
+void convertToFullIfSparse(Block & block)
+{
+    for (auto & column : block)
+        column.column = recursiveRemoveSparse(column.column);
 }
 
 }

@@ -22,8 +22,9 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -33,8 +34,9 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY)
+        const std::optional<String> & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -59,7 +61,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & /* indices_to_recalc */,
     const CompressionCodecPtr & /* default_codec */,
-    const SerializationInfo & /* serialization_info */,
+    const SerializationInfoPtr & /* serialization_info */,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & /* computed_index_granularity */) const
 {
@@ -78,7 +80,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
 
     new_data_part->uuid = uuid;
     new_data_part->setColumns(columns);
-    new_data_part->partition.value.assign(partition.value);
+    new_data_part->partition.value = partition.value;
     new_data_part->minmax_idx = minmax_idx;
 
     if (disk->exists(destination_path))
@@ -126,7 +128,7 @@ IMergeTreeDataPart::Checksum MergeTreeDataPartInMemory::calculateBlockChecksum()
         column.column->updateHashFast(hash);
 
     checksum.uncompressed_size = block.bytes();
-    hash.get128(checksum.uncompressed_hash.first, checksum.uncompressed_hash.second);
+    hash.get128(checksum.uncompressed_hash);
     return checksum;
 }
 

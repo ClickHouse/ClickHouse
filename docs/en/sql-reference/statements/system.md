@@ -264,9 +264,7 @@ Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
-After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from
-the common replicated log into its own replication queue, and then the query waits till the replica processes all
-of the fetched commands.
+After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 

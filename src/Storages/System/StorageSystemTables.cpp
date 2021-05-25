@@ -34,8 +34,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription(
-    {
+    storage_metadata.setColumns(ColumnsDescription({
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"uuid", std::make_shared<DataTypeUUID>()},
@@ -57,6 +56,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"comment", std::make_shared<DataTypeString>()},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -244,6 +244,10 @@ protected:
                         // lifetime_bytes
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
+
+                        // comment
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
                     }
                 }
 
@@ -389,14 +393,13 @@ protected:
                     src_index += 2;
 
                 StorageMetadataPtr metadata_snapshot;
-                if (table != nullptr)
+                if (table)
                     metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -404,8 +407,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -413,8 +415,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -422,8 +423,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getSamplingKeyAST()))
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -431,18 +431,18 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
-                    auto policy = table->getStoragePolicy();
+                    auto policy = table ? table->getStoragePolicy() : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
+                auto settings = context->getSettingsRef();
+                settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
-                    auto total_rows = table->totalRows(context->getSettingsRef());
+                    auto total_rows = table ? table->totalRows(settings) : std::nullopt;
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -451,8 +451,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
-                    auto total_bytes = table->totalBytes(context->getSettingsRef());
+                    auto total_bytes = table ? table->totalBytes(settings) : std::nullopt;
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -461,8 +460,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
-                    auto lifetime_rows = table->lifetimeRows();
+                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -471,10 +469,17 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
-                    auto lifetime_bytes = table->lifetimeBytes();
+                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if (metadata_snapshot)
+                        res_columns[res_index++]->insert(metadata_snapshot->comment);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

@@ -2,6 +2,8 @@ import logging
 import random
 import string
 import time
+import threading
+import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -10,13 +12,47 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
 
+# By default the exceptions that was throwed in threads will be ignored
+# (they will not mark the test as failed, only printed to stderr).
+#
+# Wrap thrading.Thread and re-throw exception on join()
+class SafeThread(threading.Thread):
+    def __init__(self, target):
+        super().__init__()
+        self.target = target
+        self.exception = None
+    def run(self):
+        try:
+            self.target()
+        except Exception as e: # pylint: disable=broad-except
+            self.exception = e
+    def join(self, timeout=None):
+        super().join(timeout)
+        if self.exception:
+            raise self.exception
+
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node/configs/config.d/storage_conf.xml')
+
+
+def replace_config(old, new):
+    config = open(CONFIG_PATH, 'r')
+    config_lines = config.readlines()
+    config.close()
+    config_lines = [line.replace(old, new) for line in config_lines]
+    config = open(CONFIG_PATH, 'w')
+    config.writelines(config_lines)
+    config.close()
+
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml",
                                                    "configs/config.d/bg_processing_pool_conf.xml",
-                                                   "configs/config.d/log_conf.xml"], user_configs=[], with_minio=True)
+                                                   "configs/config.d/log_conf.xml"], with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -28,8 +64,8 @@ def cluster():
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
-FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
+FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1 + 1
+FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1 + 1
 
 
 def random_string(length):
@@ -365,3 +401,63 @@ def test_freeze_unfreeze(cluster):
     # Data should be removed from S3.
     assert len(
         list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
+
+
+def test_s3_disk_apply_new_settings(cluster):
+    create_table(cluster, "s3_test")
+    node = cluster.instances["node"]
+
+    def get_s3_requests():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(node.query("SELECT value FROM system.events WHERE event='S3WriteRequestsCount'"))
+
+    s3_requests_before = get_s3_requests()
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
+    s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
+
+    # Force multi-part upload mode.
+    replace_config("<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
+                   "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>")
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    s3_requests_before = get_s3_requests()
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-04', 4096, -1)))
+
+    # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
+    assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
+
+
+def test_s3_disk_restart_during_load(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
+
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-04', 1024 * 1024)))
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-05', 1024 * 1024, -1)))
+
+    def read():
+        for ii in range(0, 20):
+            logging.info("Executing %d query", ii)
+            assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
+            logging.info("Query %d executed", ii)
+            time.sleep(0.2)
+
+    def restart_disk():
+        for iii in range(0, 5):
+            logging.info("Restarting disk, attempt %d", iii)
+            node.query("SYSTEM RESTART DISK s3")
+            logging.info("Disk restarted, attempt %d", iii)
+            time.sleep(0.5)
+
+    threads = []
+    for i in range(0, 4):
+        threads.append(SafeThread(target=read))
+
+    threads.append(SafeThread(target=restart_disk))
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()

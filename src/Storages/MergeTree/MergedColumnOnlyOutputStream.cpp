@@ -14,12 +14,12 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
     CompressionCodecPtr default_codec,
-    const SerializationInfo & serialization_info,
+    const SerializationInfoPtr & input_serialization_info_,
     const MergeTreeIndices & indices_to_recalc,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_, input_serialization_info_)
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
@@ -36,7 +36,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,
-        serialization_info,
+        input_serialization_info,
         std::move(writer_settings),
         index_granularity);
 
@@ -53,7 +53,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr);
-    new_serialization_info.add(block);
+    new_serialization_info->add(block);
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()
@@ -71,6 +71,12 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
     MergeTreeData::DataPart::Checksums checksums;
     writer->finish(checksums, sync);
 
+    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+        checksums.addFile(
+            projection_name + ".proj",
+            projection_part->checksums.getTotalSizeOnDisk(),
+            projection_part->checksums.getTotalChecksumUInt128());
+
     auto columns = new_part->getColumns();
 
     auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);
@@ -79,7 +85,7 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
             all_checksums.files.erase(removed_file);
 
     new_part->setColumns(columns);
-    new_part->serialization_info.update(new_serialization_info);
+    new_part->serialization_info = new_serialization_info->buildFrom(*input_serialization_info);
     return checksums;
 }
 

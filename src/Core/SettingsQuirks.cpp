@@ -4,9 +4,7 @@
 
 #ifdef __linux__
 #include <linux/version.h>
-#endif
 
-#ifdef __linux__
 /// Detect does epoll_wait with nested epoll fds works correctly.
 /// Polling nested epoll fds from epoll_wait is required for async_socket_for_remote and use_hedged_requests.
 ///
@@ -16,21 +14,15 @@
 ///   [2]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=0c54a6a44bf3
 bool nestedEpollWorks(Poco::Logger * log)
 {
-    bool nested_epoll_works =
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 13))
         /// the check is correct since there will be no more 5.5.x releases.
-        false
-#else
-        true
-#endif
-    ;
-
-    if (!nested_epoll_works)
-    {
         if (log)
             LOG_WARNING(log, "Nested epoll_wait has some issues on kernels [5.5.0, 5.6.13). You should upgrade it to avoid possible issues.");
-    }
-    return nested_epoll_works;
+        return false;
+#else
+        (void)log;
+        return true;
+#endif
 }
 #else
 bool nestedEpollWorks(Poco::Logger *) { return true; }

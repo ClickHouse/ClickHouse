@@ -97,33 +97,30 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         {std::make_shared<DataTypeString>(), "Value"}
     };
 
-    const String & check_query = "SHOW VARIABLES WHERE "
-         "(Variable_name = 'log_bin' AND upper(Value) = 'ON') "
-         "OR (Variable_name = 'binlog_format' AND upper(Value) = 'ROW') "
-         "OR (Variable_name = 'binlog_row_image' AND upper(Value) = 'FULL') "
-         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD') "
-         "OR (Variable_name = 'log_bin_use_v1_row_events' AND upper(Value) = 'OFF');";
+    const String & check_query = "SHOW VARIABLES;";
 
     StreamSettings mysql_input_stream_settings(settings, false, true);
     MySQLBlockInputStream variables_input(connection, check_query, variables_header, mysql_input_stream_settings);
 
     std::unordered_map<String, String> variables_error_message{
-        {"log_bin", "log_bin = 'ON'"},
-        {"binlog_format", "binlog_format='ROW'"},
-        {"binlog_row_image", "binlog_row_image='FULL'"},
-        {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"},
-        {"log_bin_use_v1_row_events", "log_bin_use_v1_row_events='OFF'"}
+        {"log_bin", "ON"},
+        {"binlog_format", "ROW"},
+        {"binlog_row_image", "FULL"},
+        {"default_authentication_plugin", "mysql_native_password"},
+        {"log_bin_use_v1_row_events", "OFF"}
     };
 
     while (Block variables_block = variables_input.read())
     {
         ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
+        ColumnPtr variable_value_column = variables_block.getByName("Value").column;
 
         for (size_t index = 0; index < variables_block.rows(); ++index)
         {
             const auto & error_message_it = variables_error_message.find(variable_name_column->getDataAt(index).toString());
+            const String variable_val = variable_value_column->getDataAt(index).toString();
 
-            if (error_message_it != variables_error_message.end())
+            if (error_message_it != variables_error_message.end() && variable_val == error_message_it->second)
                 variables_error_message.erase(error_message_it);
         }
     }
@@ -133,9 +130,9 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         bool first = true;
         WriteBufferFromOwnString error_message;
         error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
-        for (const auto & [variable_name, variable_error_message] : variables_error_message)
+        for (const auto & [variable_name, variable_error_val] : variables_error_message)
         {
-            error_message << (first ? "" : ", ") << variable_error_message;
+            error_message << (first ? "" : ", ") << variable_name << "='" << variable_error_val << "'";
 
             if (first)
                 first = false;
@@ -480,7 +477,7 @@ static inline void fillSignAndVersionColumnsData(Block & data, Int8 sign_value, 
 
 template <bool assert_nullable = false>
 static void writeFieldsToColumn(
-    IColumn & column_to, const std::vector<Field> & rows_data, size_t column_index, const std::vector<bool> & mask, ColumnUInt8 * null_map_column = nullptr)
+    IColumn & column_to, const Row & rows_data, size_t column_index, const std::vector<bool> & mask, ColumnUInt8 * null_map_column = nullptr)
 {
     if (ColumnNullable * column_nullable = typeid_cast<ColumnNullable *>(&column_to))
         writeFieldsToColumn<true>(column_nullable->getNestedColumn(), rows_data, column_index, mask, &column_nullable->getNullMapColumn());
@@ -602,7 +599,7 @@ static void writeFieldsToColumn(
 }
 
 template <Int8 sign>
-static size_t onWriteOrDeleteData(const std::vector<Field> & rows_data, Block & buffer, size_t version)
+static size_t onWriteOrDeleteData(const Row & rows_data, Block & buffer, size_t version)
 {
     size_t prev_bytes = buffer.bytes();
     for (size_t column = 0; column < buffer.columns() - 2; ++column)
@@ -626,7 +623,7 @@ static inline bool differenceSortingKeys(const Tuple & row_old_data, const Tuple
     return false;
 }
 
-static inline size_t onUpdateData(const std::vector<Field> & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
+static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
 {
     if (rows_data.size() % 2 != 0)
         throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);

@@ -5,7 +5,7 @@
 #include <Core/ExternalResultDescription.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Interpreters/Context_fwd.h>
-#include <nanodbc/nanodbc.h>
+#include "ODBCConnectionFactory.h"
 
 
 namespace DB
@@ -16,7 +16,7 @@ class ODBCBlockOutputStream : public IBlockOutputStream
 
 public:
     ODBCBlockOutputStream(
-            nanodbc::connection & connection_,
+            nanodbc::ConnectionHolderPtr connection_,
             const std::string & remote_database_name_,
             const std::string & remote_table_name_,
             const Block & sample_block_,
@@ -29,7 +29,7 @@ public:
 private:
     Poco::Logger * log;
 
-    nanodbc::connection & connection;
+    nanodbc::ConnectionHolderPtr connection;
     std::string db_name;
     std::string table_name;
     Block sample_block;

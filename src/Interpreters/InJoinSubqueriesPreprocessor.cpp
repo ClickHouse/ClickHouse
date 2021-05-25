@@ -178,7 +178,7 @@ private:
             std::vector<ASTPtr> renamed;
             NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, &node, nullptr);
             NonGlobalTableVisitor(table_data).visit(subquery);
-            if (!renamed.empty())
+            if (!renamed.empty()) //-V547
                 data.renamed_tables.emplace_back(subquery, std::move(renamed));
         }
     }
@@ -196,7 +196,7 @@ private:
                 std::vector<ASTPtr> renamed;
                 NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, nullptr, table_join);
                 NonGlobalTableVisitor(table_data).visit(subquery);
-                if (!renamed.empty())
+                if (!renamed.empty()) //-V547
                     data.renamed_tables.emplace_back(subquery, std::move(renamed));
             }
         }

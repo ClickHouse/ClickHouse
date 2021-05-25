@@ -136,7 +136,7 @@ GrantedRoles::Elements GrantedRoles::getElements() const
     boost::range::set_difference(roles, roles_with_admin_option, std::back_inserter(element.ids));
     if (!element.empty())
     {
-        element.admin_option = false;
+        element.admin_option = false; //-V1048
         elements.emplace_back(std::move(element));
     }
 

@@ -170,14 +170,13 @@ void ColumnObject::optimizeTypesOfSubcolumns()
         }
         else
         {
-            /// TODO: wrong code.
             auto offsets = ColumnUInt64::create();
             auto & offsets_data = offsets->getData();
 
             subcolumn.data->getIndicesOfNonDefaultValues(offsets_data, 0, subcolumn_size);
             auto values = subcolumn.data->index(*offsets, subcolumn_size);
             values = castColumn({subcolumn.data, from_type, ""}, subcolumn.least_common_type);
-            subcolumn.data = values->createWithOffsets(offsets_data, subcolumn_size);
+            subcolumn.data = values->createWithOffsets(offsets_data, subcolumn_size, /*shift=*/ 0);
         }
     }
 

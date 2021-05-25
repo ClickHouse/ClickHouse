@@ -125,6 +125,7 @@ public:
 
     Columns getColumns() const;
     void setColumns(const Columns & columns);
+    void setColumn(size_t position, ColumnWithTypeAndName && column);
     Block cloneWithColumns(const Columns & columns) const;
     Block cloneWithoutColumns() const;
     Block cloneWithCutColumns(size_t start, size_t length) const;
@@ -184,7 +185,15 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 /// Throw exception when blocks are different.
 void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const std::string & context_description);
 
+/// Actual header is compatible to desired if block have equal structure except constants.
+/// It is allowed when column from actual header is constant, but in desired is not.
+/// If both columns are constant, it is checked that they have the same value.
+bool isCompatibleHeader(const Block & actual, const Block & desired);
+void assertCompatibleHeader(const Block & actual, const Block & desired, const std::string & context_description);
+
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
+
+void convertToFullIfSparse(Block & chunk);
 
 }
