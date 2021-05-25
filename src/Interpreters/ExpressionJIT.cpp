@@ -288,11 +288,10 @@ static FunctionBasePtr compile(
 
     LOG_TRACE(getLogger(), "Try to compile expression {}", dag.dump());
 
-    FunctionBasePtr fn;
+    auto llvm_function = std::make_shared<LLVMFunction>(dag);
 
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-        auto llvm_function = std::make_shared<LLVMFunction>(dag);
 
         auto [compiled_function_cache_entry, was_inserted] = compilation_cache->getOrSet(hash_key, [&] ()
         {
@@ -313,17 +312,18 @@ static FunctionBasePtr compile(
             LOG_TRACE(getLogger(), "Get compiled expression {} from cache", llvm_function->getName());
 
         llvm_function->setCompiledFunction(compiled_function_cache_entry->getCompiledFunction());
-
-        fn = llvm_function;
     }
     else
     {
-        fn = std::make_shared<LLVMFunction>(dag);
+        CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
+        auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
+        auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
+        llvm_function->setCompiledFunction(compiled_function);
     }
 
-    LOG_TRACE(getLogger(), "Use compiled expression {}", fn->getName());
+    LOG_TRACE(getLogger(), "Use compiled expression {}", llvm_function->getName());
 
-    return fn;
+    return llvm_function;
 }
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
