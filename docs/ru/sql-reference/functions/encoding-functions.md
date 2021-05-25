@@ -155,7 +155,7 @@ Result:
 
 Выполняет операцию, обратную [hex](#hex). Функция интерпретирует каждую пару шестнадцатеричных цифр аргумента как число и преобразует его в символ.
 
-Если вы хотите преобразовать результат в число, вы можете использовать функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md##type-conversion-functions).
+Если вы хотите преобразовать результат в число, вы можете использовать функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions).
 
 Синоним: `UNHEX`.
 
@@ -173,7 +173,7 @@ unhex(arg)
 
 **Возвращаемое значение**
 
--   Бинарная строка.
+-   Строка символов .
 
 Тип: [String](../../sql-reference/data-types/string.md).
 
