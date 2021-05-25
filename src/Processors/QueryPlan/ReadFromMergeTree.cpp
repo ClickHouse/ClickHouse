@@ -2,38 +2,54 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ReverseTransform.h>
+#include <Processors/Sources/NullSource.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <common/logger_useful.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INDEX_NOT_USED;
+}
+
 ReadFromMergeTree::ReadFromMergeTree(
+    SelectQueryInfo query_info_,
+    const MergeTreeDataSelectExecutor::PartitionIdToMaxBlock * max_block_numbers_to_read_,
+    ContextPtr context_,
+    const MergeTreeData & data_,
     const MergeTreeData & storage_,
     StorageMetadataPtr metadata_snapshot_,
     String query_id_,
-    Names required_columns_,
-    RangesInDataParts parts_,
-    IndexStatPtr index_stats_,
+    Names real_column_names_,
+    MergeTreeData::DataPartsVector parts_,
+    //IndexStatPtr index_stats_,
     PrewhereInfoPtr prewhere_info_,
     Names virt_column_names_,
     Settings settings_,
     size_t num_streams_,
     ReadType read_type_)
     : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
-        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
+        metadata_snapshot_->getSampleBlockForColumns(real_column_names_, storage_.getVirtuals(), storage_.getStorageID()),
         prewhere_info_,
         storage_.getPartitionValueType(),
         virt_column_names_)})
+    , query_info(std::move(query_info_))
+    , max_block_numbers_to_read(max_block_numbers_to_read_)
+    , context(std::move(context_))
+    , data(data_)
     , storage(storage_)
     , metadata_snapshot(std::move(metadata_snapshot_))
     , query_id(std::move(query_id_))
-    , required_columns(std::move(required_columns_))
+    , real_column_names(std::move(real_column_names_))
     , parts(std::move(parts_))
-    , index_stats(std::move(index_stats_))
+    //, index_stats(std::move(index_stats_))
     , prewhere_info(std::move(prewhere_info_))
     , virt_column_names(std::move(virt_column_names_))
     , settings(std::move(settings_))
@@ -140,8 +156,172 @@ Pipe ReadFromMergeTree::read()
     return pipe;
 }
 
+static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+    const MergeTreeData & data,
+    MergeTreeData::DataPartsVector & parts,
+    ASTPtr & query,
+    ContextPtr context)
+{
+    std::unordered_set<String> part_values;
+    ASTPtr expression_ast;
+    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
+
+    // Generate valid expressions for filtering
+    VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);
+
+    // If there is still something left, fill the virtual block and do the filtering.
+    if (expression_ast)
+    {
+        virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
+        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context, expression_ast);
+        return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+    }
+
+    return {};
+}
+
+static void filterPartsByPartition(
+    StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData & data,
+    SelectQueryInfo & query_info,
+    ContextPtr & context,
+    ContextPtr & query_context,
+    MergeTreeData::DataPartsVector & parts,
+    const std::optional<std::unordered_set<String>> & part_values,
+    const MergeTreeDataSelectExecutor::PartitionIdToMaxBlock * max_block_numbers_to_read,
+    Poco::Logger * log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    const Settings & settings = context->getSettingsRef();
+    std::optional<PartitionPruner> partition_pruner;
+    std::optional<KeyCondition> minmax_idx_condition;
+    DataTypes minmax_columns_types;
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
+        minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
+
+        minmax_idx_condition.emplace(
+            query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
+        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
+
+        if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
+        {
+            String msg = "Neither MinMax index by columns (";
+            bool first = true;
+            for (const String & col : minmax_columns_names)
+            {
+                if (first)
+                    first = false;
+                else
+                    msg += ", ";
+                msg += col;
+            }
+            msg += ") nor partition expr is used and setting 'force_index_by_date' is set";
+
+            throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
+        }
+    }
+
+    MergeTreeDataSelectExecutor::PartFilterCounters part_filter_counters;
+    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+        MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
+            parts,
+            part_values,
+            data.getPinnedPartUUIDs(),
+            minmax_idx_condition,
+            minmax_columns_types,
+            partition_pruner,
+            max_block_numbers_to_read,
+            query_context,
+            part_filter_counters,
+            log);
+    else
+        MergeTreeDataSelectExecutor::selectPartsToRead(
+            parts,
+            part_values,
+            minmax_idx_condition,
+            minmax_columns_types,
+            partition_pruner,
+            max_block_numbers_to_read,
+            part_filter_counters);
+
+    index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+        .type = ReadFromMergeTree::IndexType::None,
+        .num_parts_after = part_filter_counters.num_initial_selected_parts,
+        .num_granules_after = part_filter_counters.num_initial_selected_granules});
+
+    if (minmax_idx_condition)
+    {
+        auto description = minmax_idx_condition->getDescription();
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::MinMax,
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
+            .num_parts_after = part_filter_counters.num_parts_after_minmax,
+            .num_granules_after = part_filter_counters.num_granules_after_minmax});
+        LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
+    }
+
+    if (partition_pruner)
+    {
+        auto description = partition_pruner->getKeyCondition().getDescription();
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Partition,
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
+            .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
+            .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
+    }
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto part_values = filterPartsByVirtualColumns(data, parts, query_info.query, context);
+    if (part_values && part_values->empty())
+    {
+        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
+        return;
+    }
+
+    /// If there are only virtual columns in the query, you must request at least one non-virtual one.
+    if (real_column_names.empty())
+    {
+        NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
+        real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
+    }
+
+    metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
+
+    // Build and check if primary key is used when necessary
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    Names primary_key_columns = primary_key.column_names;
+    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
+
+    if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
+    {
+        throw Exception(
+            ErrorCodes::INDEX_NOT_USED,
+            "Primary key ({}) is not used and setting 'force_primary_key' is set.",
+            fmt::join(primary_key_columns, ", "));
+    }
+    LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
+
+    filterPartsByPartition(
+        metadata_snapshot_base, data, query_info, context, query_context, parts, part_values, max_block_numbers_to_read, log, index_stats);
+
+    bool sample_factor_column_queried = false;
+    for (const auto & col : virt_column_names)
+        if (col == "_sample_factor")
+            sample_factor_column_queried = true;
+
+    auto sampling = MergeTreeDataSelectExecutor::getSampling(
+        select, parts, metadata_snapshot, key_condition, settings, data, log, sample_factor_column_queried, metadata_snapshot->getColumns().getAllPhysical(), context)
+
     Pipe pipe = read();
 
     for (const auto & processor : pipe.getProcessors())

@@ -3,6 +3,7 @@
 #include <Processors/Pipe.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
 namespace DB
 {
@@ -36,7 +37,6 @@ public:
     };
 
     using IndexStats = std::vector<IndexStat>;
-    using IndexStatPtr = std::unique_ptr<IndexStats>;
 
     /// Part of settings which are needed for reading.
     struct Settings
@@ -46,6 +46,7 @@ public:
         size_t preferred_max_column_in_block_size_bytes;
         size_t min_marks_for_concurrent_read;
         bool use_uncompressed_cache;
+        bool force_primary_key;
 
         MergeTreeReaderSettings reader_settings;
         MergeTreeReadPool::BackoffSettings backoff_settings;
@@ -67,12 +68,16 @@ public:
     };
 
     ReadFromMergeTree(
+        SelectQueryInfo query_info_,
+        const MergeTreeDataSelectExecutor::PartitionIdToMaxBlock * max_block_numbers_to_read_,
+        ContextPtr context_,
+        const MergeTreeData & data_,
         const MergeTreeData & storage_,
         StorageMetadataPtr metadata_snapshot_,
         String query_id_,
-        Names required_columns_,
-        RangesInDataParts parts_,
-        IndexStatPtr index_stats_,
+        Names real_column_names_,
+        MergeTreeData::DataPartsVector parts_,
+        //IndexStatPtr index_stats_,
         PrewhereInfoPtr prewhere_info_,
         Names virt_column_names_,
         Settings settings_,
@@ -91,19 +96,25 @@ public:
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
 private:
+    SelectQueryInfo query_info;
+    const MergeTreeDataSelectExecutor::PartitionIdToMaxBlock * max_block_numbers_to_read;
+    ContextPtr context;
+    const MergeTreeData & data;
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
     String query_id;
 
-    Names required_columns;
-    RangesInDataParts parts;
-    IndexStatPtr index_stats;
+    Names real_column_names;
+    MergeTreeData::DataPartsVector parts;
+    IndexStat index_stats;
     PrewhereInfoPtr prewhere_info;
     Names virt_column_names;
     Settings settings;
 
     size_t num_streams;
     ReadType read_type;
+
+    Poco::Logger * log;
 
     Pipe read();
     Pipe readFromPool();

@@ -16,6 +16,7 @@ class KeyCondition;
 struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;
+    bool read_nothing = false;
     std::shared_ptr<ASTFunction> filter_function;
     ActionsDAGPtr filter_expression;
 };
@@ -117,11 +118,12 @@ private:
         const String & query_id) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
-    size_t getApproximateTotalRowsToRead(
+    static size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
-        const Settings & settings) const;
+        const Settings & settings,
+        Poco::Logger * log);
 
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
@@ -141,6 +143,7 @@ private:
         size_t & granules_dropped,
         Poco::Logger * log);
 
+public:
     struct PartFilterCounters
     {
         size_t num_initial_selected_parts = 0;
@@ -155,7 +158,7 @@ private:
     ///  as well as `max_block_number_to_read`.
     static void selectPartsToRead(
         MergeTreeData::DataPartsVector & parts,
-        const std::unordered_set<String> & part_values,
+        const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
@@ -163,16 +166,28 @@ private:
         PartFilterCounters & counters);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
-    void selectPartsToReadWithUUIDFilter(
+    static void selectPartsToReadWithUUIDFilter(
         MergeTreeData::DataPartsVector & parts,
-        const std::unordered_set<String> & part_values,
+        const std::optional<std::unordered_set<String>> & part_values,
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context,
-        PartFilterCounters & counters) const;
+        PartFilterCounters & counters,
+        Poco::Logger * log);
+
+    static MergeTreeDataSelectSamplingData getSampling(
+        const ASTSelectQuery & select,
+        MergeTreeData::DataPartsVector & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        KeyCondition & key_condition,
+        const MergeTreeData & data,
+        Poco::Logger * log,
+        bool sample_factor_column_queried,
+        NamesAndTypesList available_real_columns,
+        ContextPtr context);
 };
 
 }

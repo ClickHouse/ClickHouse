@@ -86,7 +86,8 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const MergeTreeData::DataPartsVector & parts,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
-    const Settings & settings) const
+    const Settings & settings,
+    Poco::Logger * log)
 {
     size_t rows_count = 0;
 
@@ -369,6 +370,269 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     return plan;
 }
 
+MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
+    const ASTSelectQuery & select,
+    MergeTreeData::DataPartsVector & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    KeyCondition & key_condition,
+    const MergeTreeData & data,
+    Poco::Logger * log,
+    bool sample_factor_column_queried,
+    NamesAndTypesList available_real_columns,
+    ContextPtr context)
+{
+    const Settings & settings = context->getSettingsRef();
+    Float64 used_sample_factor = 1;
+    /// Sampling.
+    MergeTreeDataSelectSamplingData sampling;
+
+    RelativeSize relative_sample_size = 0;
+    RelativeSize relative_sample_offset = 0;
+
+    auto select_sample_size = select.sampleSize();
+    auto select_sample_offset = select.sampleOffset();
+
+    if (select_sample_size)
+    {
+        relative_sample_size.assign(
+            select_sample_size->as<ASTSampleRatio &>().ratio.numerator,
+            select_sample_size->as<ASTSampleRatio &>().ratio.denominator);
+
+        if (relative_sample_size < 0)
+            throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+        relative_sample_offset = 0;
+        if (select_sample_offset)
+            relative_sample_offset.assign(
+                select_sample_offset->as<ASTSampleRatio &>().ratio.numerator,
+                select_sample_offset->as<ASTSampleRatio &>().ratio.denominator);
+
+        if (relative_sample_offset < 0)
+            throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+        /// Convert absolute value of the sampling (in form `SAMPLE 1000000` - how many rows to
+        /// read) into the relative `SAMPLE 0.1` (how much data to read).
+        size_t approx_total_rows = 0;
+        if (relative_sample_size > 1 || relative_sample_offset > 1)
+            approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, key_condition, settings, log);
+
+        if (relative_sample_size > 1)
+        {
+            relative_sample_size = convertAbsoluteSampleSizeToRelative(select_sample_size, approx_total_rows);
+            LOG_DEBUG(log, "Selected relative sample size: {}", toString(relative_sample_size));
+        }
+
+        /// SAMPLE 1 is the same as the absence of SAMPLE.
+        if (relative_sample_size == RelativeSize(1))
+            relative_sample_size = 0;
+
+        if (relative_sample_offset > 0 && RelativeSize(0) == relative_sample_size)
+            throw Exception("Sampling offset is incorrect because no sampling", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+        if (relative_sample_offset > 1)
+        {
+            relative_sample_offset = convertAbsoluteSampleSizeToRelative(select_sample_offset, approx_total_rows);
+            LOG_DEBUG(log, "Selected relative sample offset: {}", toString(relative_sample_offset));
+        }
+    }
+
+    /** Which range of sampling key values do I need to read?
+        * First, in the whole range ("universe") we select the interval
+        *  of relative `relative_sample_size` size, offset from the beginning by `relative_sample_offset`.
+        *
+        * Example: SAMPLE 0.4 OFFSET 0.3
+        *
+        * [------********------]
+        *        ^ - offset
+        *        <------> - size
+        *
+        * If the interval passes through the end of the universe, then cut its right side.
+        *
+        * Example: SAMPLE 0.4 OFFSET 0.8
+        *
+        * [----------------****]
+        *                  ^ - offset
+        *                  <------> - size
+        *
+        * Next, if the `parallel_replicas_count`, `parallel_replica_offset` settings are set,
+        *  then it is necessary to break the received interval into pieces of the number `parallel_replicas_count`,
+        *  and select a piece with the number `parallel_replica_offset` (from zero).
+        *
+        * Example: SAMPLE 0.4 OFFSET 0.3, parallel_replicas_count = 2, parallel_replica_offset = 1
+        *
+        * [----------****------]
+        *        ^ - offset
+        *        <------> - size
+        *        <--><--> - pieces for different `parallel_replica_offset`, select the second one.
+        *
+        * It is very important that the intervals for different `parallel_replica_offset` cover the entire range without gaps and overlaps.
+        * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
+        */
+
+    /// Parallel replicas has been requested but there is no way to sample data.
+    /// Select all data from first replica and no data from other replicas.
+    if (settings.parallel_replicas_count > 1 && !data.supportsSampling() && settings.parallel_replica_offset > 0)
+    {
+        LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
+            " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
+        sampling.read_nothing = true;
+        return sampling;
+    }
+
+    sampling.use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && data.supportsSampling());
+    bool no_data = false;   /// There is nothing left after sampling.
+
+    if (sampling.use_sampling)
+    {
+        if (sample_factor_column_queried && relative_sample_size != RelativeSize(0))
+            used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
+
+        RelativeSize size_of_universum = 0;
+        const auto & sampling_key = metadata_snapshot->getSamplingKey();
+        DataTypePtr sampling_column_type = sampling_key.data_types[0];
+
+        if (sampling_key.data_types.size() == 1)
+        {
+            if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
+                size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
+            else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
+                size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
+            else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
+                size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
+            else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
+                size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
+        }
+
+        if (size_of_universum == RelativeSize(0))
+            throw Exception(
+                "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
+                    + ". Must be one unsigned integer type",
+                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+
+        if (settings.parallel_replicas_count > 1)
+        {
+            if (relative_sample_size == RelativeSize(0))
+                relative_sample_size = 1;
+
+            relative_sample_size /= settings.parallel_replicas_count.value;
+            relative_sample_offset += relative_sample_size * RelativeSize(settings.parallel_replica_offset.value);
+        }
+
+        if (relative_sample_offset >= RelativeSize(1))
+            no_data = true;
+
+        /// Calculate the half-interval of `[lower, upper)` column values.
+        bool has_lower_limit = false;
+        bool has_upper_limit = false;
+
+        RelativeSize lower_limit_rational = relative_sample_offset * size_of_universum;
+        RelativeSize upper_limit_rational = (relative_sample_offset + relative_sample_size) * size_of_universum;
+
+        UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
+        UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
+
+        if (lower > 0)
+            has_lower_limit = true;
+
+        if (upper_limit_rational < size_of_universum)
+            has_upper_limit = true;
+
+        /*std::cerr << std::fixed << std::setprecision(100)
+            << "relative_sample_size: " << relative_sample_size << "\n"
+            << "relative_sample_offset: " << relative_sample_offset << "\n"
+            << "lower_limit_float: " << lower_limit_rational << "\n"
+            << "upper_limit_float: " << upper_limit_rational << "\n"
+            << "lower: " << lower << "\n"
+            << "upper: " << upper << "\n";*/
+
+        if ((has_upper_limit && upper == 0)
+            || (has_lower_limit && has_upper_limit && lower == upper))
+            no_data = true;
+
+        if (no_data || (!has_lower_limit && !has_upper_limit))
+        {
+            sampling.use_sampling = false;
+        }
+        else
+        {
+            /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
+
+            std::shared_ptr<ASTFunction> lower_function;
+            std::shared_ptr<ASTFunction> upper_function;
+
+            /// If sample and final are used together no need to calculate sampling expression twice.
+            /// The first time it was calculated for final, because sample key is a part of the PK.
+            /// So, assume that we already have calculated column.
+            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
+
+            if (select.final())
+            {
+                sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_key.column_names[0]);
+                /// We do spoil available_real_columns here, but it is not used later.
+                available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
+            }
+
+            if (has_lower_limit)
+            {
+                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true)))
+                    throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+
+                ASTPtr args = std::make_shared<ASTExpressionList>();
+                args->children.push_back(sampling_key_ast);
+                args->children.push_back(std::make_shared<ASTLiteral>(lower));
+
+                lower_function = std::make_shared<ASTFunction>();
+                lower_function->name = "greaterOrEquals";
+                lower_function->arguments = args;
+                lower_function->children.push_back(lower_function->arguments);
+
+                sampling.filter_function = lower_function;
+            }
+
+            if (has_upper_limit)
+            {
+                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false)))
+                    throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+
+                ASTPtr args = std::make_shared<ASTExpressionList>();
+                args->children.push_back(sampling_key_ast);
+                args->children.push_back(std::make_shared<ASTLiteral>(upper));
+
+                upper_function = std::make_shared<ASTFunction>();
+                upper_function->name = "less";
+                upper_function->arguments = args;
+                upper_function->children.push_back(upper_function->arguments);
+
+                sampling.filter_function = upper_function;
+            }
+
+            if (has_lower_limit && has_upper_limit)
+            {
+                ASTPtr args = std::make_shared<ASTExpressionList>();
+                args->children.push_back(lower_function);
+                args->children.push_back(upper_function);
+
+                sampling.filter_function = std::make_shared<ASTFunction>();
+                sampling.filter_function->name = "and";
+                sampling.filter_function->arguments = args;
+                sampling.filter_function->children.push_back(sampling.filter_function->arguments);
+            }
+
+            ASTPtr query = sampling.filter_function;
+            auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
+            sampling.filter_expression = ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false);
+        }
+    }
+
+    if (no_data)
+    {
+        LOG_DEBUG(log, "Sampling yields no data.");
+        sampling.read_nothing = true;
+    }
+
+    return sampling;
+}
+
 QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
@@ -534,7 +798,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 partition_pruner,
                 max_block_numbers_to_read,
                 query_context,
-                part_filter_counters);
+                part_filter_counters,
+                log);
         else
             selectPartsToRead(
                 parts,
@@ -2192,7 +2457,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
 void MergeTreeDataSelectExecutor::selectPartsToRead(
     MergeTreeData::DataPartsVector & parts,
-    const std::unordered_set<String> & part_values,
+    const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
@@ -2204,7 +2469,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     for (const auto & part_or_projection : prev_parts)
     {
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-        if (!part_values.empty() && part_values.find(part->name) == part_values.end())
+        if (part_values && part_values->find(part->name) == part_values->end())
             continue;
 
         if (part->isEmpty())
@@ -2246,14 +2511,15 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 
 void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     MergeTreeData::DataPartsVector & parts,
-    const std::unordered_set<String> & part_values,
+    const std::optional<std::unordered_set<String>> & part_values,
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context,
-    PartFilterCounters & counters) const
+    PartFilterCounters & counters,
+    Poco::Logger * log)
 {
     const Settings & settings = query_context->getSettings();
 
@@ -2269,7 +2535,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         for (const auto & part_or_projection : prev_parts)
         {
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            if (!part_values.empty() && part_values.find(part->name) == part_values.end())
+            if (part_values && part_values->find(part->name) == part_values->end())
                 continue;
 
             if (part->isEmpty())
