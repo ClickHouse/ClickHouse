@@ -1242,30 +1242,33 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
-    if (auto part = outdatePart(part_name, false))
-        dropPartsImpl({part}, false);
+    if (auto part = outdatePart(part_name, /*force=*/ false))
+        dropPartsImpl({part}, /*detach=*/ false);
 
     /// Else nothing to do, part was removed in some different way
 }
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr /*query_context*/)
 {
-    if (auto part = outdatePart(part_name, true))
+    if (auto part = outdatePart(part_name, /*force=*/ true))
         dropPartsImpl({part}, detach);
-
-    /// Else nothing to do, part was removed in some different way
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr local_context)
 {
-    /// Asks to complete merges and does not allow them to start.
-    /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = stopMergesAndWait();
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
-    auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector parts_to_remove;
+    /// New scope controls lifetime of merge_blocker.
+    {
+        /// Asks to complete merges and does not allow them to start.
+        /// This protects against "revival" of data for a removed partition after completion of merge.
+        auto merge_blocker = stopMergesAndWait();
+        String partition_id = getPartitionIDFromQuery(partition, local_context);
+        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-    /// TODO should we throw an exception if parts_to_remove is empty?
-    removePartsFromWorkingSet(parts_to_remove, true);
+        /// TODO should we throw an exception if parts_to_remove is empty?
+        removePartsFromWorkingSet(parts_to_remove, true);
+    }
+
     dropPartsImpl(std::move(parts_to_remove), detach);
 }
 
