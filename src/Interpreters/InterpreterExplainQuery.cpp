@@ -78,17 +78,35 @@ BlockIO InterpreterExplainQuery::execute()
 }
 
 
-Block InterpreterExplainQuery::getSampleBlock()
+Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind kind)
 {
-    Block block;
-
-    ColumnWithTypeAndName col;
-    col.name = "explain";
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    return block;
+    if (kind == ASTExplainQuery::ExplainKind::QueryEstimates)
+     {
+         auto cols = NamesAndTypes{
+             {"database", std::make_shared<DataTypeString>()},
+             {"table", std::make_shared<DataTypeString>()},
+             {"parts", std::make_shared<DataTypeUInt64>()},
+             {"rows", std::make_shared<DataTypeUInt64>()},
+             {"marks", std::make_shared<DataTypeUInt64>()}
+         };
+         return Block({
+             {cols[0].type->createColumn(), cols[0].type, cols[0].name},
+             {cols[1].type->createColumn(), cols[1].type, cols[1].name},
+             {cols[2].type->createColumn(), cols[2].type, cols[2].name},
+             {cols[3].type->createColumn(), cols[3].type, cols[3].name},
+             {cols[4].type->createColumn(), cols[4].type, cols[4].name},
+         });
+     }
+     else
+     {
+         Block res;
+         ColumnWithTypeAndName col;
+         col.name = "explain";
+         col.type = std::make_shared<DataTypeString>();
+         col.column = col.type->createColumn();
+         res.insert(col);
+         return res;
+     }
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
@@ -225,20 +243,21 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<ASTExplainQuery &>();
 
-    Block sample_block = getSampleBlock();
+    auto kind = ast.getKind();
+    Block sample_block = getSampleBlock(kind);
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
     bool single_line = false;
 
-    if (ast.getKind() == ASTExplainQuery::ParsedAST)
+    if (kind == ASTExplainQuery::ParsedAST)
     {
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN AST query.", ErrorCodes::UNKNOWN_SETTING);
 
         dumpAST(*ast.getExplainedQuery(), buf);
     }
-    else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
+    else if (kind == ASTExplainQuery::AnalyzedSyntax)
     {
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN SYNTAX query.", ErrorCodes::UNKNOWN_SETTING);
@@ -248,7 +267,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         ast.getExplainedQuery()->format(IAST::FormatSettings(buf, false));
     }
-    else if (ast.getKind() == ASTExplainQuery::QueryPlan)
+    else if (kind == ASTExplainQuery::QueryPlan)
     {
         if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
             throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
@@ -283,7 +302,22 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         else
             plan.explainPlan(buf, settings.query_plan_options);
     }
-    else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
+    else if (kind == ASTExplainQuery::QueryEstimates)
+    {
+        if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+            throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
+
+        auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
+        QueryPlan plan;
+
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        interpreter.buildQueryPlan(plan);
+
+        if (settings.optimize)
+            plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
+        plan.explainEstimates(res_columns);
+    }
+    else if (kind == ASTExplainQuery::QueryPipeline)
     {
         if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
             throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
@@ -314,10 +348,13 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         }
     }
 
-    if (single_line)
-        res_columns[0]->insertData(buf.str().data(), buf.str().size());
-    else
-        fillColumn(*res_columns[0], buf.str());
+    if (kind != ASTExplainQuery::QueryEstimates)
+    {
+        if (single_line)
+            res_columns[0]->insertData(buf.str().data(), buf.str().size());
+        else
+            fillColumn(*res_columns[0], buf.str());
+    }
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }

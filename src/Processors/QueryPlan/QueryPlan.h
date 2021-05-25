@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
+#include <Columns/IColumn.h>
 
 #include <list>
 #include <memory>
@@ -85,6 +86,7 @@ public:
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
+    void explainEstimates(MutableColumns & columns);
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
@@ -101,7 +103,17 @@ public:
     };
 
     using Nodes = std::list<Node>;
-
+    struct EstimateCounters
+    {
+        std::string database_name;
+        std::string table_name;
+        Int64 parts = 0;
+        Int64 rows = 0;
+        Int64 marks = 0;
+        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
+        {
+        }
+    };
 private:
     Nodes nodes;
     Node * root = nullptr;

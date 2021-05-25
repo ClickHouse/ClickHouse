@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -426,6 +427,65 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
         }
         else
             stack.pop();
+    }
+}
+
+void QueryPlan::explainEstimates(MutableColumns & columns)
+{
+    checkInitialized();
+
+    struct Frame
+    {
+        Node * node;
+        bool is_description_printed = false;
+        size_t next_child = 0;
+    };
+
+    using CountersPtr = std::shared_ptr<QueryPlan::EstimateCounters>;
+    std::unordered_map<std::string, CountersPtr> counters;
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (!frame.is_description_printed)
+        {
+            if (const auto * step = dynamic_cast<ReadFromMergeTree*>(frame.node->step.get()))
+            {
+                const auto & id = step->getStorageID();
+                auto key = id.database_name + "." + id.table_name;
+                auto it = counters.find(key);
+                if (it == counters.end())
+                {
+                    it = counters.insert({key, std::make_shared<EstimateCounters>(id.database_name, id.table_name)}).first;
+                }
+                it->second->parts += step->getSelectedParts();
+                it->second->rows += step->getSelectedRows();
+                it->second->marks += step->getSelectedMarks();
+            }
+            frame.is_description_printed = true;
+        }
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{frame.node->children[frame.next_child]});
+            ++frame.next_child;
+        }
+        else
+            stack.pop();
+    }
+    for (const auto & counter : counters)
+    {
+        size_t index = 0;
+        const auto & database_name = counter.second->database_name;
+        const auto & table_name = counter.second->table_name;
+        columns[index++]->insertData(database_name.c_str(), database_name.size());
+        columns[index++]->insertData(table_name.c_str(), table_name.size());
+        columns[index++]->insert(counter.second->parts);
+        columns[index++]->insert(counter.second->rows);
+        columns[index++]->insert(counter.second->marks);
     }
 }
 

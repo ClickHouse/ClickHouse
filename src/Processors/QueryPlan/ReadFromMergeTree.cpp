@@ -113,6 +113,12 @@ ReadFromMergeTree::ReadFromMergeTree(
         auto type = std::make_shared<DataTypeFloat64>();
         output_stream->header.insert({type->createColumn(), type, "_sample_factor"});
     }
+    selected_parts = parts.size();
+    for (const auto & part : parts)
+    {
+        selected_marks += part.getMarksCount();
+        selected_rows += part.getRowsCount();
+    }
 }
 
 Pipe ReadFromMergeTree::readFromPool(
@@ -123,6 +129,7 @@ Pipe ReadFromMergeTree::readFromPool(
     bool use_uncompressed_cache)
 {
     Pipes pipes;
+<<<<<<< HEAD
     size_t sum_marks = 0;
     size_t total_rows = 0;
 
@@ -141,6 +148,14 @@ Pipe ReadFromMergeTree::readFromPool(
         min_marks_for_concurrent_read,
         std::move(parts_with_range),
         data,
+=======
+    auto pool = std::make_shared<MergeTreeReadPool>(
+        num_streams,
+        selected_marks,
+        settings.min_marks_for_concurrent_read,
+        std::move(parts),
+        storage,
+>>>>>>> Show estimates for SELECT query
         metadata_snapshot,
         prewhere_info,
         true,
@@ -149,8 +164,13 @@ Pipe ReadFromMergeTree::readFromPool(
         settings.preferred_block_size_bytes,
         false);
 
+<<<<<<< HEAD
     auto * logger = &Poco::Logger::get(data.getLogName() + " (SelectExecutor)");
     LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", total_rows, max_streams);
+=======
+    auto * logger = &Poco::Logger::get(storage.getLogName() + " (SelectExecutor)");
+    LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", selected_rows, num_streams);
+>>>>>>> Show estimates for SELECT query
 
     for (size_t i = 0; i < max_streams; ++i)
     {
@@ -163,7 +183,7 @@ Pipe ReadFromMergeTree::readFromPool(
         if (i == 0)
         {
             /// Set the approximate number of rows for the first source only
-            source->addTotalRowsApprox(total_rows);
+            source->addTotalRowsApprox(selected_rows);
         }
 
         pipes.emplace_back(std::move(source));
