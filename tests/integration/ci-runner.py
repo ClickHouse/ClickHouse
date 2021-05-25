@@ -276,7 +276,7 @@ class ClickhouseIntegrationTestsRunner:
         return list(sorted(all_tests))
 
     def _get_parallel_tests_skip_list(self, repo_path):
-        skip_list_file_path = "{}/tests/integration/parallel.json".format(repo_path)
+        skip_list_file_path = "{}/tests/integration/parallel_skip.json".format(repo_path)
         if not os.path.isfile(skip_list_file_path) or os.path.getsize(skip_list_file_path) == 0:
             raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(skip_list_file_path))
 
