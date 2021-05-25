@@ -113,6 +113,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         if (shutdown)
             return on_error();
 
+        /// We must not to allocate any memory after we emplaced a job in a queue.
+        /// Bacause if an exception would be thrown, we won't notify a thread about job occurrence.
 
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
@@ -169,6 +171,10 @@ void ThreadPoolImpl<Thread>::wait()
 {
     {
         std::unique_lock lock(mutex);
+        /// Signal here just in case.
+        /// If threads are waiting on condition variables, but there are some jobs in the queue
+        /// then it will prevent us from deadlock.
+        new_job_or_shutdown.notify_all();
         job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
         if (first_exception)
