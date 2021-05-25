@@ -87,8 +87,6 @@ The function is using uppercase letters `A-F` and not using any prefixes (like `
 
 For integer arguments, it prints hex digits (“nibbles”) from the most significant to least significant (big endian or “human readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if leading digit is zero.
 
-Example:
-
 **Example**
 
 Query:
@@ -155,9 +153,9 @@ Result:
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to a character.
 
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAsType](../../sql-reference/functions/type-conversion-functions.md##type-conversion-functions) functions.
+If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAsType](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
-Синоним: `UNHEX`.
+Alias: `UNHEX`.
 
 **Syntax**
 
