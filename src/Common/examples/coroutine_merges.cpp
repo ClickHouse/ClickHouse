@@ -40,21 +40,21 @@ struct resumable /// NOLINT
   };
 
   using coro_handle = std::experimental::coroutine_handle<promise_type>;
-  resumable(coro_handle handle) : handle_(handle) { assert(handle); }
+  resumable(coro_handle handle_) : handle(handle_) { assert(handle); } /// NOLINT
   resumable(resumable &) = delete;
-  resumable(resumable &&rhs) : handle_(rhs.handle_) { rhs.handle_ = nullptr; }
+  resumable(resumable &&rhs) : handle(rhs.handle) { rhs.handle = nullptr; }
   bool resume() {
-    if (!handle_.done())
-      handle_.resume();
-    return !handle_.done();
+    if (!handle.done())
+      handle.resume();
+    return !handle.done();
   }
   ~resumable() {
-    if (handle_)
-      handle_.destroy();
+    if (handle)
+      handle.destroy();
   }
 
 private:
-  coro_handle handle_;
+  coro_handle handle;
 };
 
 
@@ -105,47 +105,10 @@ private:
 int main() {
   
     auto task = std::make_shared<MergeTask>();
-
-
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
-    // std::cout << "---" << std::endl;
-    // task->execute();
     
-    
-    try
-    {
-        task->execute();
-        task->execute();
-        task->execute();
-        task->execute();
-        task->execute();
-        task->execute();
-    } catch (...)
-    {
-        std::cout << "Anime" << std::endl;
-    }
-    
-
+    task->execute();
+    task->execute();
+    task->execute();
 
     std::thread t1{[&]() {
         task->execute();
