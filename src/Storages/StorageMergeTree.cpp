@@ -835,7 +835,8 @@ bool StorageMergeTree::mergeSelectedParts(
 
     try
     {
-        new_part = merger_mutator.mergePartsToTemporaryPart(
+        auto resumable = merger_mutator.mergePartsToTemporaryPart(
+            new_part,
             future_part,
             metadata_snapshot,
             *(merge_list_entry),
@@ -846,6 +847,11 @@ bool StorageMergeTree::mergeSelectedParts(
             deduplicate,
             deduplicate_by_columns,
             merging_params);
+        
+        while (resumable.resume())
+        {
+            /// No-op
+        }
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         write_part_log({});

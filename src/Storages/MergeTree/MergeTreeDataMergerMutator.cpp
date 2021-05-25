@@ -36,6 +36,7 @@
 #include <cmath>
 #include <ctime>
 #include <numeric>
+#include <experimental/coroutine>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -658,7 +659,8 @@ static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeS
 
 
 /// parts should be sorted.
-MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
+resumable MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
+    MergeTreeData::MutableDataPartPtr & new_data_part,
     const FutureMergedMutatedPart & future_part,
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry & merge_entry,
@@ -719,7 +721,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk, 0);
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
+    new_data_part = data.createPart(
         future_part.name,
         future_part.type,
         future_part.part_info,
@@ -972,6 +974,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             space_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
         }
+
+        /// Suspend here to allow execute merges by blocks.
+        co_await std::experimental::suspend_always();
     }
 
     merged_stream->readSuffix();
@@ -1061,6 +1066,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             {
                 column_elems_written += block.rows();
                 column_to.write(block);
+                
+                /// Suspend here to execute merges by blocks.
+                co_await std::experimental::suspend_always();
             }
 
             if (merges_blocker.isCancelled())
@@ -1136,8 +1144,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         if (projection.type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
+        MergeTreeData::MutableDataPartPtr merged_projection_part;
         // TODO Should we use a new merge_entry for projection?
-        auto merged_projection_part = mergePartsToTemporaryPart(
+        auto resumable = mergePartsToTemporaryPart(
+            merged_projection_part,
             projection_future_part,
             projection.metadata,
             merge_entry,
@@ -1149,6 +1159,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             deduplicate_by_columns,
             projection_merging_params,
             new_data_part.get());
+        
+        while (resumable.resume())
+        {
+            // No-op
+        }            // co_await std::experimental::suspend_always();
+
         new_data_part->addProjectionPart(projection.name, std::move(merged_projection_part));
     }
 
@@ -1156,8 +1172,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         to.writeSuffixAndFinalizePart(new_data_part, need_sync);
     else
         to.writeSuffixAndFinalizePart(new_data_part, need_sync, &storage_columns, &checksums_gathered_columns);
-
-    return new_data_part;
 }
 
 
@@ -2110,7 +2124,9 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                     projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
                 LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part.name);
-                next_level_parts.push_back(mergePartsToTemporaryPart(
+                MergeTreeData::MutableDataPartPtr new_projection_part;
+                auto resumable = mergePartsToTemporaryPart(
+                    new_projection_part,
                     projection_future_part,
                     projection.metadata,
                     merge_entry,
@@ -2122,8 +2138,14 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                     {},
                     projection_merging_params,
                     new_data_part.get(),
-                    "tmp_merge_"));
+                    "tmp_merge_");
 
+                /// Execute coroutine and suspend.
+                while (resumable.resume())
+                {
+                    /// No-op
+                }
+                next_level_parts.push_back(new_projection_part);
                 next_level_parts.back()->is_temp = true;
             }
         }

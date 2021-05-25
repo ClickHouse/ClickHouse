@@ -1701,7 +1701,9 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     try
     {
-        part = merger_mutator.mergePartsToTemporaryPart(
+        MergeTreeData::MutableDataPartPtr new_part;
+        auto resumable = merger_mutator.mergePartsToTemporaryPart(
+            new_part,
             future_merged_part,
             metadata_snapshot,
             *merge_entry,
@@ -1713,6 +1715,10 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             entry.deduplicate_by_columns,
             merging_params);
 
+        while (resumable.resume())
+        {
+            /// No-op
+        }
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 
         try

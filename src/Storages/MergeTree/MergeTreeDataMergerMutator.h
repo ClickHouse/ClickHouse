@@ -11,6 +11,8 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 
 
+#include <experimental/coroutine>
+
 namespace DB
 {
 
@@ -52,6 +54,54 @@ struct FutureMergedMutatedPart
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type);
 
     void updatePath(const MergeTreeData & storage, const ReservationPtr & reservation);
+};
+
+
+struct resumable /// NOLINT
+{
+  struct promise_type /// NOLINT
+  {
+    using coro_handle = std::experimental::coroutine_handle<promise_type>;
+
+    auto get_return_object() /// NOLINT
+    { 
+        return coro_handle::from_promise(*this); 
+    } 
+
+    auto initial_suspend() /// NOLINT
+    { 
+        return std::experimental::suspend_always();
+    }
+
+    auto final_suspend() noexcept /// NOLINT
+    {
+        return std::experimental::suspend_always();
+    }
+
+    void return_void() {} /// NOLINT
+
+    [[ noreturn ]] void unhandled_exception() /// NOLINT
+    {
+        std::rethrow_exception(std::current_exception());
+    }
+  };
+
+  using coro_handle = std::experimental::coroutine_handle<promise_type>;
+  resumable(coro_handle handle_) : handle(handle_) { assert(handle); } /// NOLINT
+  resumable(resumable &) = delete;
+  resumable(resumable &&rhs) : handle(rhs.handle) { rhs.handle = nullptr; }
+  bool resume() {
+    if (!handle.done())
+      handle.resume();
+    return !handle.done();
+  }
+  ~resumable() {
+    if (handle)
+      handle.destroy();
+  }
+
+private:
+  coro_handle handle;
 };
 
 
@@ -120,7 +170,8 @@ public:
       * time_of_merge - the time when the merge was assigned.
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
       */
-    MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
+    resumable mergePartsToTemporaryPart(
+        MergeTreeData::MutableDataPartPtr & new_data_part,
         const FutureMergedMutatedPart & future_part,
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry & merge_entry,
