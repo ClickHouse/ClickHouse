@@ -28,7 +28,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    CHColumnToArrowColumn::chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Arrow");
+    ch_column_to_arrow_column.chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
 
     if (!writer)
         prepareWriter(arrow_table->schema());

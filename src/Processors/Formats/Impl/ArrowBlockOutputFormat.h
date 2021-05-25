@@ -4,6 +4,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include "ArrowBufferedStreams.h"
 
 namespace arrow { class Schema; }
@@ -28,6 +29,7 @@ private:
     const FormatSettings format_settings;
     std::shared_ptr<ArrowBufferedOutputStream> arrow_ostream;
     std::shared_ptr<arrow::ipc::RecordBatchWriter> writer;
+    CHColumnToArrowColumn ch_column_to_arrow_column;
 
     void prepareWriter(const std::shared_ptr<arrow::Schema> & schema);
 };

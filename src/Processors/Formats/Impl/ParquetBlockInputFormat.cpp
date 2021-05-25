@@ -54,7 +54,7 @@ Chunk ParquetBlockInputFormat::generate()
 
     ++row_group_current;
 
-    ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, header, "Parquet");
+    arrow_column_to_ch_column.arrowTableToCHChunk(res, table, header, "Parquet");
     return res;
 }
 

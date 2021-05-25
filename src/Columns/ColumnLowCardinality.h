@@ -190,6 +190,7 @@ public:
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
+    IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }

@@ -54,7 +54,7 @@ Chunk ORCBlockInputFormat::generate()
 
     ++stripe_current;
 
-    ArrowColumnToCHColumn::arrowTableToCHChunk(res, *table_result, header, "ORC");
+    arrow_column_to_ch_column.arrowTableToCHChunk(res, *table_result, header, "ORC");
     return res;
 }
 
@@ -72,7 +72,15 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
     if (type->id() == arrow::Type::LIST)
         return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type()) + 1;
 
-    return 1;
+    int indices = 1;
+    if (type->id() == arrow::Type::STRUCT)
+    {
+        auto * struct_type = static_cast<arrow::StructType *>(type.get());
+        for (int i = 0; i != struct_type->num_fields(); ++i)
+            indices += countIndicesForType(struct_type->field(i)->type());
+    }
+
+    return indices;
 }
 
 void ORCBlockInputFormat::prepareReader()
@@ -89,8 +97,8 @@ void ORCBlockInputFormat::prepareReader()
     int index = 1;
     for (int i = 0; i < schema->num_fields(); ++i)
     {
-        /// LIST type require 2 indices, so we should recursively
-        /// count the number of indices we need for this type.
+        /// LIST type require 2 indices, STRUCT - the number of elements + 1,
+        /// so we should recursively count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
         if (getPort().getHeader().has(schema->field(i)->name()))
         {
