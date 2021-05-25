@@ -648,7 +648,7 @@ private:
         bool fetch_part,
         ContextPtr query_context) override;
 
-    bool dropPartImpl(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
+    void dropPartImpl(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
