@@ -114,7 +114,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             return on_error();
 
         /// We must not to allocate any memory after we emplaced a job in a queue.
-        /// Bacause if an exception would be thrown, we won't notify a thread about job occurrence.
+        /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
 
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
