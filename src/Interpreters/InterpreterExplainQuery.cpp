@@ -305,7 +305,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     else if (kind == ASTExplainQuery::QueryEstimates)
     {
         if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
-            throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("Only SELECT is supported for EXPLAIN ESTIMATES query", ErrorCodes::INCORRECT_QUERY);
 
         auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
         QueryPlan plan;
