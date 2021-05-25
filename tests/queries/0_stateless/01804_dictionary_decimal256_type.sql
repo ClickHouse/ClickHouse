@@ -55,22 +55,6 @@ SELECT dictGet('cache_dictionary', 'decimal_value', toUInt64(1));
 
 DROP DICTIONARY cache_dictionary;
 
-DROP DICTIONARY IF EXISTS ssd_cache_dictionary;
-CREATE DICTIONARY ssd_cache_dictionary
-(
-    id UInt64,
-    decimal_value Decimal256(5)
-)
-PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'dictionary_decimal_source_table'))
-LIFETIME(MIN 1 MAX 1000)
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH './user_files/0d'));
-
-SELECT 'SSDCache dictionary';
-SELECT dictGet('ssd_cache_dictionary', 'decimal_value', toUInt64(1));
-
-DROP DICTIONARY ssd_cache_dictionary;
-
 DROP DICTIONARY IF EXISTS direct_dictionary;
 CREATE DICTIONARY direct_dictionary
 (
