@@ -403,21 +403,15 @@ static CompileDAG getCompilableDAG(
         if (!all_children_visited)
             continue;
 
+        /// Here we process only functions that are not compiled constants
+
         CompileDAG::Node compile_node;
         compile_node.function = node->function_base;
         compile_node.result_type = node->result_type;
+        compile_node.type = CompileDAG::CompileType::FUNCTION;
 
-        // if (node->type == ActionsDAG::ActionType::FUNCTION)
-        // {
-            compile_node.type = CompileDAG::CompileType::FUNCTION;
-            for (const auto * child : node->children)
-                compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
-        // }
-        // else
-        // {
-        //     compile_node.type = CompileDAG::CompileType::INPUT;
-        //     children.emplace_back(node);
-        // }
+        for (const auto * child : node->children)
+            compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
 
         visited_node_to_compile_dag_position[node] = dag.getNodesCount();
 
@@ -457,8 +451,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     std::stack<Frame> stack;
     std::unordered_set<const Node *> visited_nodes;
 
-    /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable status.
-      * Node is compilable if all its children are compilable and node is also compilable.
+    /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable_children_size.
       * After this procedure data for each node is initialized.
       */
 
