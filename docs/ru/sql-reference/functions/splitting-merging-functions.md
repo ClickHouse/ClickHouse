@@ -14,7 +14,7 @@ separator должен быть константной строкой из ро�
 **Синтаксис**
 
 ``` sql
-splitByChar(<separator>, <s>)
+splitByChar(separator, s)
 ```
 
 **Аргументы**
@@ -30,12 +30,12 @@ splitByChar(<separator>, <s>)
 -   Задано несколько последовательных разделителей;
 -   Исходная строка `s` пуста.
 
-Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Пример**
 
 ``` sql
-SELECT splitByChar(',', '1,2,3,abcde')
+SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ``` text
@@ -67,12 +67,12 @@ splitByString(separator, s)
 -   Задано несколько последовательных разделителей;
 -   Исходная строка `s` пуста.
 
-Тип: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Примеры**
 
 ``` sql
-SELECT splitByString(', ', '1, 2 3, 4,5, abcde')
+SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ``` text
@@ -82,7 +82,7 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde')
 ```
 
 ``` sql
-SELECT splitByString('', 'abcde')
+SELECT splitByString('', 'abcde');
 ```
 
 ``` text
@@ -98,7 +98,7 @@ SELECT splitByString('', 'abcde')
 **Синтаксис**
 
 ``` sql
-splitByRegexp(<regexp>, <s>)
+splitByRegexp(regexp, s)
 ```
 
 **Аргументы**
@@ -114,14 +114,14 @@ splitByRegexp(<regexp>, <s>)
 -   Имеется несколько последовательных совпадений c непустым регулярным выражением;
 -   Исходная строка `s` пуста, а регулярное выражение не пустое.
 
-Тип: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Примеры**
 
 Запрос:
 
 ``` sql
-SELECT splitByRegexp('\\d+', 'a12bc23de345f')
+SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 Результат:
@@ -135,7 +135,7 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f')
 Запрос:
 
 ``` sql
-SELECT splitByRegexp('', 'abcde')
+SELECT splitByRegexp('', 'abcde');
 ```
 
 Результат:
@@ -160,7 +160,7 @@ separator - необязательный параметр, константна�
 **Пример:**
 
 ``` sql
-SELECT alphaTokens('abca1abc')
+SELECT alphaTokens('abca1abc');
 ```
 
 ``` text
