@@ -103,17 +103,6 @@ public:
     };
 
     using Nodes = std::list<Node>;
-    struct EstimateCounters
-    {
-        std::string database_name;
-        std::string table_name;
-        Int64 parts = 0;
-        Int64 rows = 0;
-        Int64 marks = 0;
-        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
-        {
-        }
-    };
 private:
     Nodes nodes;
     Node * root = nullptr;

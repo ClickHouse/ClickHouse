@@ -434,48 +434,41 @@ void QueryPlan::explainEstimates(MutableColumns & columns)
 {
     checkInitialized();
 
-    struct Frame
+    struct EstimateCounters
     {
-        Node * node = nullptr;
-        bool is_description_printed = false;
-        size_t next_child = 0;
+        std::string database_name;
+        std::string table_name;
+        Int64 parts = 0;
+        Int64 rows = 0;
+        Int64 marks = 0;
+        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
+        {
+        }
     };
 
-    using CountersPtr = std::shared_ptr<QueryPlan::EstimateCounters>;
+    using CountersPtr = std::shared_ptr<EstimateCounters>;
     std::unordered_map<std::string, CountersPtr> counters;
-    std::stack<Frame> stack;
-    stack.push(Frame{.node = root});
-
-    while (!stack.empty())
+    using processNodeFuncType = std::function<void(const Node * node)>;
+    processNodeFuncType processNode = [&counters, &processNode] (const Node * node)
     {
-        auto & frame = stack.top();
-
-        if (!frame.is_description_printed)
+        if (const auto * step = dynamic_cast<ReadFromMergeTree*>(node->step.get()))
         {
-            if (const auto * step = dynamic_cast<ReadFromMergeTree*>(frame.node->step.get()))
+            const auto & id = step->getStorageID();
+            auto key = id.database_name + "." + id.table_name;
+            auto it = counters.find(key);
+            if (it == counters.end())
             {
-                const auto & id = step->getStorageID();
-                auto key = id.database_name + "." + id.table_name;
-                auto it = counters.find(key);
-                if (it == counters.end())
-                {
-                    it = counters.insert({key, std::make_shared<EstimateCounters>(id.database_name, id.table_name)}).first;
-                }
-                it->second->parts += step->getSelectedParts();
-                it->second->rows += step->getSelectedRows();
-                it->second->marks += step->getSelectedMarks();
+                it = counters.insert({key, std::make_shared<EstimateCounters>(id.database_name, id.table_name)}).first;
             }
-            frame.is_description_printed = true;
+            it->second->parts += step->getSelectedParts();
+            it->second->rows += step->getSelectedRows();
+            it->second->marks += step->getSelectedMarks();
         }
+        for (const auto * child : node->children)
+            processNode(child);
+    };
+    processNode(root);
 
-        if (frame.next_child < frame.node->children.size())
-        {
-            stack.push(Frame{frame.node->children[frame.next_child]});
-            ++frame.next_child;
-        }
-        else
-            stack.pop();
-    }
     for (const auto & counter : counters)
     {
         size_t index = 0;
