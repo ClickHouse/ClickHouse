@@ -171,7 +171,7 @@ Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal d
 
 **Returned value**
 
--   A binary string.
+-   A string in text format.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
