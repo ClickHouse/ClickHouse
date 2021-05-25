@@ -92,11 +92,12 @@ def test_attach_without_fetching(start_cluster):
     # 3. Break the part data on the second node to corrupt the checksums.
     # Replica 3 should download the data from replica 1 as there is no local data.
     # Replica 2 should also download the data from 1 as the checksums won't match.
-    print("Checking attach with corrupted part data with files missing")
+    logging.debug("Checking attach with corrupted part data with files missing")
 
-    print("Before deleting:", node_2.exec_in_container(['bash', '-c',
+    to_delete = node_2.exec_in_container(['bash', '-c',
                             'cd {p} && ls *.bin'.format(
-                                p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0")], privileged=True))
+                                p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0")], privileged=True)
+    logging.debug("Before deleting:", to_delete)
 
     node_2.exec_in_container(['bash', '-c',
                             'cd {p} && rm -fr *.bin'.format(

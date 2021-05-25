@@ -2334,7 +2334,7 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster):
     assert TSV(result) == TSV('{0}\t{0}\t{0}'.format(i[0] - 1)), 'Missing data!'
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(300)
 def test_bad_reschedule(kafka_cluster):
     messages = [json.dumps({'key': j + 1, 'value': j + 1}) for j in range(20000)]
     kafka_produce(kafka_cluster, 'test_bad_reschedule', messages)
