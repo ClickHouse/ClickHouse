@@ -155,7 +155,7 @@ public:
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
 
-    /** If function isSuitableForConstantFolding than, this method will be called during query analyzis
+    /** If function isSuitableForConstantFolding then, this method will be called during query analyzis
       * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
       * return they result based on some constant arguments.
       * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForConstants,
@@ -301,7 +301,7 @@ protected:
         return getReturnTypeImpl(data_types);
     }
 
-    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and build():
+    /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build():
       *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call build() with return_type = Nullable(Nothing),
       *  if some of arguments are Nullable, then:
       *   - Nullable types are substituted with nested types for getReturnType() function
@@ -311,7 +311,7 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and build().
+    /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build().
       * If function arguments has low cardinality types, convert them to ordinary types.
       * getReturnType returns ColumnLowCardinality if at least one argument type is ColumnLowCardinality.
       */
