@@ -47,7 +47,7 @@ public:
     using Chunk = Aws::Vector<Aws::S3::Model::ObjectIdentifier>;
     using Chunks = std::list<Chunk>;
 
-    S3PathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
+    explicit S3PathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
 
     void addPath(const String & path) override
     {
@@ -178,18 +178,19 @@ void DiskS3::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
     auto settings = current_settings.get();
     auto * s3_paths_keeper = dynamic_cast<S3PathKeeper *>(fs_paths_keeper.get());
 
-    s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
-    {
-        LOG_DEBUG(log, "Remove AWS keys {}", S3PathKeeper::getChunkKeys(chunk));
-        Aws::S3::Model::Delete delkeys;
-        delkeys.SetObjects(chunk);
-        /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
-        Aws::S3::Model::DeleteObjectsRequest request;
-        request.SetBucket(bucket);
-        request.SetDelete(delkeys);
-        auto outcome = settings->client->DeleteObjects(request);
-        throwIfError(outcome);
-    });
+    if (s3_paths_keeper)
+        s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
+        {
+            LOG_DEBUG(log, "Remove AWS keys {}", S3PathKeeper::getChunkKeys(chunk));
+            Aws::S3::Model::Delete delkeys;
+            delkeys.SetObjects(chunk);
+            /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
+            Aws::S3::Model::DeleteObjectsRequest request;
+            request.SetBucket(bucket);
+            request.SetDelete(delkeys);
+            auto outcome = settings->client->DeleteObjects(request);
+            throwIfError(outcome);
+        });
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
