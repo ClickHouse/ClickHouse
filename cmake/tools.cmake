@@ -77,7 +77,7 @@ if (OS_LINUX AND NOT LINKER_NAME)
     endif ()
 endif ()
 
-if (LINKER_NAME AND NOT LLD_PATH)
+if (NOT OS_DARWIN AND LINKER_NAME AND NOT LLD_PATH)
     find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
     find_program (GOLD_PATH NAMES "ld.gold" "gold")
 endif ()
