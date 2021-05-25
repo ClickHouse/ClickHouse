@@ -98,7 +98,7 @@ def test_attach_without_fetching(start_cluster):
     to_delete = node_2.exec_in_container(['bash', '-c',
                             'cd {p} && ls *.bin'.format(
                                 p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0")], privileged=True)
-    logging.debug("Before deleting:", to_delete)
+    logging.debug(f"Before deleting: {to_delete}")
 
     node_2.exec_in_container(['bash', '-c',
                             'cd {p} && rm -fr *.bin'.format(
