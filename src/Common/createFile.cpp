@@ -10,31 +10,13 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int FILE_ALREADY_EXISTS;
 extern const int PATH_ACCESS_DENIED;
-extern const int NOT_ENOUGH_SPACE;
 extern const int CANNOT_CREATE_FILE;
 }
 }
 
 namespace FS
 {
-[[noreturn]] void handleLastError(const std::string & path)
-{
-    switch (errno)
-    {
-        case EEXIST:
-            throw DB::Exception(DB::ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exist", path);
-        case EPERM:
-            throw DB::Exception(DB::ErrorCodes::PATH_ACCESS_DENIED, "Not enough permissions to create file {}", path);
-        case ENOSPC:
-            throw DB::Exception(DB::ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space to create file {}", path);
-        case ENAMETOOLONG:
-            throw DB::Exception(DB::ErrorCodes::CANNOT_CREATE_FILE, "File name {} is too long");
-        default:
-            throw DB::Exception(DB::ErrorCodes::CANNOT_CREATE_FILE, "Cannot create file {}. Error: {}", path, strerror(errno));
-    }
-}
 
 /// Copy from Poco::createFile
 bool createFile(const std::string & path)
@@ -45,6 +27,38 @@ bool createFile(const std::string & path)
         close(n);
         return true;
     }
-    handleLastError(path);
+    DB::throwFromErrnoWithPath("Cannot create file: " + path, path, DB::ErrorCodes::CANNOT_CREATE_FILE);
 }
+
+bool canRead(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+    {
+        if (st.st_uid == geteuid())
+            return (st.st_mode & S_IRUSR) != 0;
+        else if (st.st_gid == getegid())
+            return (st.st_mode & S_IRGRP) != 0;
+        else
+            return (st.st_mode & S_IROTH) != 0 || geteuid() == 0;
+    }
+    DB::throwFromErrnoWithPath("Cannot check read access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+
+bool canWrite(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+    {
+        if (st.st_uid == geteuid())
+            return (st.st_mode & S_IWUSR) != 0;
+        else if (st.st_gid == getegid())
+            return (st.st_mode & S_IWGRP) != 0;
+        else
+            return (st.st_mode & S_IWOTH) != 0 || geteuid() == 0;
+    }
+    DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
+
 }

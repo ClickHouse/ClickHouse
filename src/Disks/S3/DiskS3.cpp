@@ -1506,11 +1506,9 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
             LOG_DEBUG(log, "Move directory to 'detached' {} -> {}", path, detached_path);
 
             fs::path from_path = fs::path(metadata_path) / path;
-            fs::path to_path = fs::path(metadata_path) / detached_path;
+            fs::path to_path = fs::path(metadata_path) / detached_path / from_path.filename();
             if (path.ends_with('/'))
-                to_path /= from_path.parent_path().filename();
-            else
-                to_path /= from_path.filename();
+                to_path /= to_path.parent_path();
             fs::copy(from_path, to_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
             fs::remove_all(from_path);
         }
