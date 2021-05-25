@@ -4,6 +4,7 @@
 #if USE_PARQUET
 #    include <Processors/Formats/IOutputFormat.h>
 #    include <Formats/FormatSettings.h>
+#    include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 namespace arrow
 {
@@ -36,6 +37,7 @@ private:
     const FormatSettings format_settings;
 
     std::unique_ptr<parquet::arrow::FileWriter> file_writer;
+    CHColumnToArrowColumn ch_column_to_arrow_column;
 };
 
 }

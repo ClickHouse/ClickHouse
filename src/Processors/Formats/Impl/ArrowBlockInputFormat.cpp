@@ -63,7 +63,7 @@ Chunk ArrowBlockInputFormat::generate()
 
     ++record_batch_current;
 
-    ArrowColumnToCHColumn::arrowTableToCHChunk(res, *table_result, header, "Arrow");
+    arrow_column_to_ch_column.arrowTableToCHChunk(res, *table_result, header, "Arrow");
 
     return res;
 }
