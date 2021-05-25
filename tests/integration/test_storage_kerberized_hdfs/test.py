@@ -53,7 +53,7 @@ def test_write_storage_not_expired(started_cluster):
 
     node1.query("create table SimpleHDFSStorageNotExpired (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://kerberizedhdfs1:9010/simple_storage_not_expired', 'TSV')")
 
-    time.sleep(45)   # wait for ticket expiration
+    time.sleep(15)   # wait for ticket expiration
     node1.query("insert into SimpleHDFSStorageNotExpired values (1, 'Mark', 72.53)")
 
     api_read = hdfs_api.read_data("/simple_storage_not_expired")
@@ -83,7 +83,7 @@ def test_read_table_expired(started_cluster):
     hdfs_api.write_data("/simple_table_function_relogin", data)
 
     started_cluster.pause_container('hdfskerberos')
-    time.sleep(45)
+    time.sleep(15)
 
     try:
         select_read = node1.query("select * from hdfs('hdfs://reloginuser&kerberizedhdfs1:9010/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')")
