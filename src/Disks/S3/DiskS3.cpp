@@ -39,7 +39,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Remove s3 objects in chunks. Default chunk limit for one DeleteObject request is 1000:
+/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
 /// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
 class S3PathKeeper : public RemoteFSPathKeeper
 {
@@ -66,6 +66,19 @@ public:
     {
         for (auto & chunk : chunks)
             remove_chunk_func(std::move(chunk));
+    }
+
+    static String getChunkKeys(const Chunk & chunk)
+    {
+        String res;
+        for (const auto & obj : chunk)
+        {
+            const auto & key = obj.GetKey();
+            if (!res.empty())
+                res.append(", ");
+            res.append(key.c_str(), key.size());
+        }
+        return res;
     }
 
 private:
@@ -167,6 +180,7 @@ void DiskS3::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
 
     s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
     {
+        LOG_DEBUG(log, "Remove AWS keys {}", S3PathKeeper::getChunkKeys(chunk));
         Aws::S3::Model::Delete delkeys;
         delkeys.SetObjects(chunk);
         /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
