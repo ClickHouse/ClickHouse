@@ -312,29 +312,7 @@ static FunctionBasePtr compile(
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
-}
-
-static bool checkIfFunctionIsComparisonEdgeCase(const ActionsDAG::Node & node, const IFunctionBase & impl)
-{
-    static std::unordered_set<std::string_view> comparison_functions
-    {
-        NameEquals::name,
-        NameNotEquals::name,
-        NameLess::name,
-        NameGreater::name,
-        NameLessOrEquals::name,
-        NameGreaterOrEquals::name
-    };
-
-    auto it = comparison_functions.find(impl.getName());
-    if (it == comparison_functions.end())
-        return false;
-
-    const auto * lhs_node = node.children[0];
-    const auto * rhs_node = node.children[1];
-
-    return lhs_node == rhs_node && !isTuple(lhs_node->result_type);
+    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
 }
 
 static bool isCompilableFunction(const ActionsDAG::Node & node)
@@ -353,22 +331,14 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
             return false;
     }
 
-    if (checkIfFunctionIsComparisonEdgeCase(node, *node.function_base))
-        return false;
-
     return function.isCompilable();
-}
-
-static bool isCompilableInput(const ActionsDAG::Node & node)
-{
-    return node.type == ActionsDAG::ActionType::INPUT || node.type == ActionsDAG::ActionType::ALIAS;
 }
 
 static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children)
 {
-    /// Extract CompileDAG from root actions dag node, it is important that each root child is compilable.
+    /// Extract CompileDAG from root actions dag node.
 
     CompileDAG dag;
 
@@ -387,6 +357,32 @@ static CompileDAG getCompilableDAG(
     {
         auto & frame = stack.top();
         const auto * node = frame.node;
+
+        bool is_compilable_constant = isCompilableConstant(*node);
+        bool is_compilable_function = isCompilableFunction(*node);
+
+        if (!is_compilable_function || is_compilable_constant)
+        {
+           CompileDAG::Node compile_node;
+           compile_node.function = node->function_base;
+           compile_node.result_type = node->result_type;
+
+           if (is_compilable_constant)
+           {
+               compile_node.type = CompileDAG::CompileType::CONSTANT;
+               compile_node.column = node->column;
+           }
+           else
+           {
+                compile_node.type = CompileDAG::CompileType::INPUT;
+                children.emplace_back(node);
+           }
+
+           visited_node_to_compile_dag_position[node] = dag.getNodesCount();
+           dag.addNode(std::move(compile_node));
+           stack.pop();
+           continue;
+        }
 
         while (frame.next_child_to_visit < node->children.size())
         {
@@ -407,26 +403,15 @@ static CompileDAG getCompilableDAG(
         if (!all_children_visited)
             continue;
 
+        /// Here we process only functions that are not compiled constants
+
         CompileDAG::Node compile_node;
         compile_node.function = node->function_base;
         compile_node.result_type = node->result_type;
+        compile_node.type = CompileDAG::CompileType::FUNCTION;
 
-        if (isCompilableConstant(*node))
-        {
-            compile_node.type = CompileDAG::CompileType::CONSTANT;
-            compile_node.column = node->column;
-        }
-        else if (node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            compile_node.type = CompileDAG::CompileType::FUNCTION;
-            for (const auto * child : node->children)
-                compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
-        }
-        else
-        {
-            compile_node.type = CompileDAG::CompileType::INPUT;
-            children.emplace_back(node);
-        }
+        for (const auto * child : node->children)
+            compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
 
         visited_node_to_compile_dag_position[node] = dag.getNodesCount();
 
@@ -442,8 +427,8 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     struct Data
     {
         bool is_compilable_in_isolation = false;
-        bool all_children_compilable = false;
         bool all_parents_compilable = true;
+        size_t compilable_children_size = 0;
         size_t children_size = 0;
     };
 
@@ -453,7 +438,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
     for (const auto & node : nodes)
     {
-        bool node_is_compilable_in_isolation = isCompilableConstant(node) || isCompilableFunction(node) || isCompilableInput(node);
+        bool node_is_compilable_in_isolation = isCompilableFunction(node) && !isCompilableConstant(node);
         node_to_data[&node].is_compilable_in_isolation = node_is_compilable_in_isolation;
     }
 
@@ -466,8 +451,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     std::stack<Frame> stack;
     std::unordered_set<const Node *> visited_nodes;
 
-    /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable status.
-      * Node is compilable if all its children are compilable and node is also compilable.
+    /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable_children_size.
       * After this procedure data for each node is initialized.
       */
 
@@ -504,14 +488,18 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
             auto & current_node_data = node_to_data[current_node];
 
-            current_node_data.all_children_compilable = true;
-
             if (current_node_data.is_compilable_in_isolation)
             {
                 for (const auto * child : current_node->children)
                 {
-                    current_node_data.all_children_compilable &= node_to_data[child].is_compilable_in_isolation;
-                    current_node_data.all_children_compilable &= node_to_data[child].all_children_compilable;
+                    auto & child_data = node_to_data[child];
+
+                    if (child_data.is_compilable_in_isolation)
+                    {
+                        current_node_data.compilable_children_size += child_data.compilable_children_size;
+                        current_node_data.compilable_children_size += 1;
+                    }
+
                     current_node_data.children_size += node_to_data[child].children_size;
                 }
 
@@ -526,10 +514,10 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     for (const auto & node : nodes)
     {
         auto & node_data = node_to_data[&node];
-        bool is_compilable = node_data.is_compilable_in_isolation && node_data.all_children_compilable;
+        bool node_is_valid_for_compilation = node_data.is_compilable_in_isolation && node_data.compilable_children_size > 0;
 
         for (const auto & child : node.children)
-            node_to_data[child].all_parents_compilable &= is_compilable;
+            node_to_data[child].all_parents_compilable &= node_is_valid_for_compilation;
     }
 
     for (const auto & node : index)
@@ -544,11 +532,10 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     {
         auto & node_data = node_to_data[&node];
 
-        bool node_is_valid_for_compilation = !isCompilableConstant(node) && node.children.size() > 1;
-        bool can_be_compiled = node_data.is_compilable_in_isolation && node_data.all_children_compilable && node_is_valid_for_compilation;
+        bool node_is_valid_for_compilation = node_data.is_compilable_in_isolation && node_data.compilable_children_size > 0;
 
         /// If all parents are compilable then this node should not be standalone compiled
-        bool should_compile = can_be_compiled && !node_data.all_parents_compilable;
+        bool should_compile = node_is_valid_for_compilation && !node_data.all_parents_compilable;
 
         if (!should_compile)
             continue;
