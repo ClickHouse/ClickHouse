@@ -114,7 +114,7 @@ void loadMetadata(ContextPtr context, const String & default_database_name)
             /// TODO: DETACH DATABASE PERMANENTLY ?
             if (fs::path(current_file).extension() == ".sql")
             {
-                String db_name = current_file.substr(0, current_file.size() - 4);
+                String db_name = fs::path(current_file).stem();
                 if (db_name != DatabaseCatalog::SYSTEM_DATABASE)
                     databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
             }

@@ -208,17 +208,7 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
     fs::path from_file = fs::path(disk_path) / from_path;
     fs::path to_file = fs::path(disk_path) / to_path;
-    if (fs::exists(to_file))
-    {
-        fs::path tmp_file(to_file.string() + ".old");
-        fs::rename(to_file, tmp_file);
-        fs::rename(from_file, fs::path(disk_path) / to_path);
-        fs::remove(tmp_file);
-    }
-    else
-    {
-        fs::rename(from_file, to_file);
-    }
+    fs::rename(from_file, to_file);
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -300,8 +290,8 @@ void DiskLocal::createFile(const String & path)
 void DiskLocal::setReadOnly(const String & path)
 {
     fs::permissions(fs::path(disk_path) / path,
-                    fs::perms::owner_read | fs::perms::group_read | fs::perms::others_read,
-                    fs::perm_options::replace);
+                    fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write,
+                    fs::perm_options::remove);
 }
 
 bool inline isSameDiskType(const IDisk & one, const IDisk & another)
@@ -399,15 +389,7 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         }
 
-        fs::path disk(path);
-        fs::perms p = fs::status(disk).permissions();
-        bool is_readable = ((p & fs::perms::owner_read) != fs::perms::none)
-                           | ((p & fs::perms::group_read) != fs::perms::none)
-                           | ((p & fs::perms::others_read) != fs::perms::none);
-        bool is_writable = ((p & fs::perms::owner_write) != fs::perms::none)
-                           | ((p & fs::perms::group_write) != fs::perms::none)
-                           | ((p & fs::perms::others_write) != fs::perms::none);
-        if (!is_readable || !is_writable)
+        if (!FS::canRead(path) || !FS::canWrite(path))
             throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
