@@ -205,34 +205,31 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function = node.function_base->prepare(arguments);
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (all_const && node.function_base->isSuitableForConstantFolding())
+    if (node.function_base->isSuitableForConstantFolding())
     {
-        size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
-        auto col = node.function->execute(arguments, node.result_type, num_rows, true);
+        ColumnPtr column;
+
+        if (all_const)
+        {
+            size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
+            column = node.function->execute(arguments, node.result_type, num_rows, true);
+        }
+        else
+        {
+            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
+        }
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.
-        if (isColumnConst(*col))
+        if (column && isColumnConst(*column))
         {
             /// All constant (literal) columns in block are added with size 1.
             /// But if there was no columns in block before executing a function, the result has size 0.
             /// Change the size to 1.
 
-            if (col->empty())
-                col = col->cloneResized(1);
+            if (column->empty())
+                column = column->cloneResized(1);
 
-            node.column = std::move(col);
-        }
-    }
-
-    /// Some functions like ignore(), indexHint() or getTypeName() always return constant result even if arguments are not constant.
-    /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
-    /// unnecessary materialization.
-    if (!node.column && node.function_base->isSuitableForConstantFolding())
-    {
-        if (auto col = node.function_base->getResultIfAlwaysReturnsConstantAndHasArguments(arguments))
-        {
-            node.column = std::move(col);
-            node.allow_constant_folding = false;
+            node.column = std::move(column);
         }
     }
 
@@ -408,13 +405,10 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
 
     for (auto & node : nodes)
     {
-        /// We cannot remove function with side effects even if it returns constant (e.g. ignore(...)).
-        bool prevent_constant_folding = node.column && isColumnConst(*node.column) && !node.allow_constant_folding;
         /// We cannot remove arrayJoin because it changes the number of rows.
         bool is_array_join = node.type == ActionType::ARRAY_JOIN;
 
-        bool must_keep_node = is_array_join || prevent_constant_folding;
-        if (must_keep_node && visited_nodes.count(&node) == 0)
+        if (is_array_join && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -429,7 +423,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
         auto * node = stack.top();
         stack.pop();
 
-        if (!node->children.empty() && node->column && isColumnConst(*node->column) && node->allow_constant_folding)
+        if (!node->children.empty() && node->column && isColumnConst(*node->column))
         {
             /// Constant folding.
             node->type = ActionsDAG::ActionType::COLUMN;
@@ -540,7 +534,7 @@ Block ActionsDAG::updateHeader(Block header) const
 
     struct Frame
     {
-        const Node * node;
+        const Node * node = nullptr;
         size_t next_child = 0;
     };
 
@@ -587,8 +581,7 @@ Block ActionsDAG::updateHeader(Block header) const
                 }
             }
 
-            auto & column = node_to_column[output];
-            if (column.column)
+            if (node_to_column[output].column)
                 result_columns.push_back(node_to_column[output]);
         }
     }
