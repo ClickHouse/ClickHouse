@@ -98,14 +98,14 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 
 Columns are mapped according to their position in the SELECT clause. However, their names in the SELECT expression and the table for INSERT may differ. If necessary, type casting is performed.
 
-To insert a default value instead of `NULL` into a column with not nullable data type enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.    
-
 None of the data formats except Values allow setting values to expressions such as `now()`, `1 + 2`, and so on. The Values format allows limited use of expressions, but this is not recommended, because in this case inefficient code is used for their execution.
 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
 `FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../../sql-reference/table-functions/input.md).
+
+To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.   
 
 ### Performance Considerations {#performance-considerations}
 
