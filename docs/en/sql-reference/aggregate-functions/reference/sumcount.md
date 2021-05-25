@@ -4,7 +4,7 @@ toc_priority: 142
 
 # sumCount {#agg_function-sumCount}
 
-Short description.
+Calculates the sum of the numbers and counts the number of rows at the same time.
 
 **Syntax**
 
@@ -14,8 +14,7 @@ sumCount(x)
 
 **Arguments** 
 
--   `x` — Description. Optional (only for optional arguments). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type). 
--   `y` — Description. Optional (only for optional arguments). Possible values: <values list>.Default value: <value>. [Type name](relative/path/to/type/dscr.md#type). 
+-   `x` — Input value, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
@@ -25,19 +24,22 @@ Type: [Tuple](../../../sql-reference/data-types/tuple.md).
 
 **Example**
 
-The example must show usage and/or a use cases. The following text contains recommended parts of an example.
-
-Input table (Optional):
-
-``` text
-```
-
 Query:
 
 ``` sql
+CREATE TABLE test (x Int8) Engine = Log;
+INSERT INTO test SELECT number FROM numbers(1, 20);
+SELECT sumCount(x) from test;
 ```
 
 Result:
 
 ``` text
+┌─sumCount(a)─┐
+│ (210,20)    │
+└─────────────┘
 ```
+
+**See also**
+
+- [optimize_fuse_sum_count_avg](../../../operations/settings/settings.md#optimize_fuse_sum_count_avg) setting
