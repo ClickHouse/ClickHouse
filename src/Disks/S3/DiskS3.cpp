@@ -54,6 +54,7 @@ class DiskS3::AwsS3KeyKeeper : public std::list<Aws::Vector<Aws::S3::Model::Obje
 {
 public:
     void addKey(const String & key);
+    static String getChunkKeys(const Aws::Vector<Aws::S3::Model::ObjectIdentifier> & chunk);
 
 private:
     /// limit for one DeleteObject request
@@ -72,6 +73,19 @@ void DiskS3::AwsS3KeyKeeper::addKey(const String & key)
     Aws::S3::Model::ObjectIdentifier obj;
     obj.SetKey(key);
     back().push_back(obj);
+}
+
+String DiskS3::AwsS3KeyKeeper::getChunkKeys(const Aws::Vector<Aws::S3::Model::ObjectIdentifier> & chunk)
+{
+    String res;
+    for (const auto & obj : chunk)
+    {
+        const auto & key = obj.GetKey();
+        if (!res.empty())
+            res.append(", ");
+        res.append(key.c_str(), key.size());
+    }
+    return res;
 }
 
 String getRandomName()
@@ -794,6 +808,8 @@ void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
 
         for (const auto & chunk : keys)
         {
+            LOG_DEBUG(log, "Remove AWS keys {}", AwsS3KeyKeeper::getChunkKeys(chunk));
+
             Aws::S3::Model::Delete delkeys;
             delkeys.SetObjects(chunk);
 
