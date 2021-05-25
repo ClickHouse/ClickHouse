@@ -136,9 +136,7 @@ Union
 !!! note "Note"
     Step and query cost estimation is not supported.
 
-The result JSON is a tree representing query plan. Every query plan node is a dictionary that always has the keys `Node Type` and `Plans`. `Node Type` is a string with a step name. `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
-
-The following examples show the output of the query plan steps when `json` = 1 along with other settings.
+When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type` and `Plans`. `Node Type` is a string with a step name. `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
 
 Example:
 
