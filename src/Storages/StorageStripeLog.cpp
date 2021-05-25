@@ -258,6 +258,7 @@ StorageStripeLog::StorageStripeLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -270,6 +271,7 @@ StorageStripeLog::StorageStripeLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -410,8 +412,14 @@ void registerStorageStripeLog(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return StorageStripeLog::create(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
-            args.attach, args.getContext()->getSettings().max_compress_block_size);
+            disk,
+            args.relative_data_path,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.attach,
+            args.getContext()->getSettings().max_compress_block_size);
     }, features);
 }
 

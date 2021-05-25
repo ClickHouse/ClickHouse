@@ -7,6 +7,7 @@
 
 #include <unordered_map>
 #include <memory>
+#include <variant>
 
 namespace DB
 {
@@ -32,6 +33,13 @@ class Field;
 struct FormatSettings;
 struct NameAndTypePair;
 
+/** Represents serialization of data type.
+ *  Has methods to serialize/deserialize column in binary and several text formats.
+ *  Every data type has default serialization, but can be serialized in different representations.
+ *  Default serialization can be wrapped to one of the special kind of serializations.
+ *  Currently there is only one special serialization: Sparse.
+ *  Each serialization has its own implemetation of IColumn as its in-memory representation.
+ */
 class ISerialization
 {
 public:
@@ -41,11 +49,13 @@ public:
     enum class Kind : UInt8
     {
         DEFAULT = 0,
-        SPARSE = 1
+        SPARSE = 1,
     };
 
     virtual Kind getKind() const { return Kind::DEFAULT; }
+    static Kind getKind(const IColumn & column);
     static String kindToString(Kind kind);
+    static Kind stringToKind(const String & str);
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *

@@ -34,10 +34,7 @@ public:
 
 private:
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
-    using Serializations = std::map<std::string, SerializationPtr>;
-
     FileStreams streams;
-    Serializations serializations;
 
     void addStreams(const NameAndTypePair & name_and_type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);

@@ -22,7 +22,7 @@ private:
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
     virtual BridgeHelperPtr createBridgeHelper(ContextPtr context,
-        const Poco::Timespan & http_timeout_,
+        Poco::Timespan http_timeout_,
         const std::string & connection_string_) const = 0;
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
@@ -48,7 +48,7 @@ public:
 
 private:
     BridgeHelperPtr createBridgeHelper(ContextPtr context,
-        const Poco::Timespan & http_timeout_,
+        Poco::Timespan http_timeout_,
         const std::string & connection_string_) const override
     {
         return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_);
@@ -68,7 +68,7 @@ public:
 
 private:
     BridgeHelperPtr createBridgeHelper(ContextPtr context,
-        const Poco::Timespan & http_timeout_,
+        Poco::Timespan http_timeout_,
         const std::string & connection_string_) const override
     {
         return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_);

@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -35,6 +35,8 @@ public:
     /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+
     String getName() const override
     {
         return name;
@@ -48,11 +50,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
-    }
-
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &) const override
-    {
-        return DataTypeUInt8().createColumnConst(1, 0u);
     }
 };
 

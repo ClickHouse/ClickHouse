@@ -31,7 +31,12 @@ class SerializationInfo;
 
 
 /** Properties of data type.
-  * Contains methods for serialization/deserialization.
+  *
+  * Contains methods for getting serialization instances.
+  * One data type may have different serializations, which can be chosen
+  * dynamically before reading or writing, according to information about
+  * column content (see `getSerialization` methods).
+  *
   * Implementations of this interface represent a data type (example: UInt8)
   *  or parametric family of data types (example: Array(...)).
   *
@@ -69,26 +74,24 @@ public:
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
 
-    /// Asks wether the stream with given name exists in table.
-    /// If callback returned true for all streams, which are required for
-    /// one of serialization types, that serialization will be chosen for reading.
-    /// If callback always returned false, the default serialization will be chosen.
-    using StreamExistenceCallback = std::function<bool(const String &)>;
     using BaseSerializationGetter = std::function<SerializationPtr(const IDataType &)>;
 
-    virtual SerializationPtr getSerialization(const IColumn & column) const;
-    virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
+    /// Returns serialization wrapper for reading one particular subcolumn of data type.
     virtual SerializationPtr getSubcolumnSerialization(
         const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
 
-    static SerializationPtr getSerialization(
-        const NameAndTypePair & column,
-        const StreamExistenceCallback & callback = [](const String &) { return false; });
+    /// Chooses serialziation according to column content.
+    virtual SerializationPtr getSerialization(const IColumn & column) const;
 
+    /// Chooses serialization according to collected information about content of columns.
     virtual SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
 
+    /// Chooses serialization according to settings.
     SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
-    // SerializationPtr getSerialization(const IColumn & column) const;
+
+    /// Chooses beetween subcolumn serialization and regular serialization according to @column.
+    /// This method typically should be used to get serialization for reading column or subcolumn.
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
 
     using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
 
@@ -103,10 +106,12 @@ protected:
     DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
 
 public:
-    /** Create empty column for corresponding type.
+    /** Create empty column for corresponding type and default serialization.
       */
     virtual MutableColumnPtr createColumn() const = 0;
 
+    /** Create empty column for corresponding type and serialization.
+     */
     virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
@@ -178,7 +183,7 @@ public:
       */
     virtual bool canBeComparedWithCollation() const { return false; }
 
-    /** If the type is totally comparable (Ints, Date, DateTime, not nullable, not floats)
+    /** If the type is totally comparable (Ints, Date, DateTime, DateTime64, not nullable, not floats)
       *  and "simple" enough (not String, FixedString) to be used as version number
       *  (to select rows with maximum version).
       */
@@ -344,9 +349,8 @@ struct WhichDataType
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
 
-    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
-
     constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
+    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isUInt128() || isInt256() || isUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -366,6 +370,7 @@ inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_t
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
 inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
 inline bool isObject(const DataTypePtr & data_type) {return WhichDataType(data_type).isObject(); }
+inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
 
 template <typename T>
 inline bool isUInt8(const T & data_type)
@@ -434,7 +439,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
 }
 
 template <typename T>
@@ -471,19 +476,6 @@ inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 inline bool isCompilableType(const DataTypePtr & data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
-}
-
-template <TypeIndex TYPE_IDX, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    WhichDataType which(data_type);
-    return which.idx == TYPE_IDX;
-}
-
-template <typename ExpectedDataType, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    return isDataType<ExpectedDataType::type_id>(data_type);
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

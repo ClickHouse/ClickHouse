@@ -17,6 +17,7 @@ PEERDIR(
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
+    contrib/libs/cxxsupp/libcxxabi-parts
     contrib/restricted/dragonbox
 )
 
@@ -24,7 +25,7 @@ INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
 
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

@@ -65,6 +65,16 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             }
 
             column_positions[i] = std::move(position);
+
+            if (column_from_part.isSubcolumn())
+            {
+                auto name_in_storage = column_from_part.getNameInStorage();
+                /// We have to read whole column and extract subcolumn.
+                serializations.emplace(name_in_storage, data_part->getSerializationForColumn(
+                    {name_in_storage, column_from_part.getTypeInStorage()}));
+            }
+
+            serializations.emplace(column_from_part.name, data_part->getSerializationForColumn(column_from_part));
         }
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
@@ -145,8 +155,9 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         if (!column_positions[i])
             continue;
 
+        auto column_from_part = getColumnFromPart(*column_it);
         if (res_columns[i] == nullptr)
-            res_columns[i] = getColumnFromPart(*column_it).type->createColumn();
+            res_columns[i] = column_from_part.type->createColumn(*serializations.at(column_from_part.name));
     }
 
     while (read_rows < max_rows_to_read)
@@ -221,17 +232,19 @@ void MergeTreeReaderCompact::readData(
 
     if (name_and_type.isSubcolumn())
     {
+        auto name_in_storage = name_and_type.getNameInStorage();
         auto type_in_storage = name_and_type.getTypeInStorage();
-        ColumnPtr temp_column = type_in_storage->createColumn();
 
-        auto serialization = type_in_storage->getDefaultSerialization();
+        const auto & serialization = serializations.at(name_in_storage);
+        ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
+
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
         column = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
     }
     else
     {
-        auto serialization = type->getDefaultSerialization();
+        const auto & serialization = serializations.at(name);
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }

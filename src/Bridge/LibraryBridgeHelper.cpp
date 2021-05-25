@@ -24,11 +24,11 @@ LibraryBridgeHelper::LibraryBridgeHelper(
         ContextPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_)
-    : IBridgeHelper(context_)
+    : IBridgeHelper(context_->getGlobalContext())
     , log(&Poco::Logger::get("LibraryBridgeHelper"))
     , sample_block(sample_block_)
     , config(context_->getConfigRef())
-    , http_timeout(context_->getSettingsRef().http_receive_timeout.value.totalSeconds())
+    , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
     , dictionary_id(dictionary_id_)
 {
     bridge_port = config.getUInt("library_bridge.port", DEFAULT_PORT);

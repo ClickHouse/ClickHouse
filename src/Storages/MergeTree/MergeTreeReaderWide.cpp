@@ -174,7 +174,7 @@ void MergeTreeReaderWide::readData(
 {
     auto get_stream_getter = [&](bool stream_for_prefix) -> ISerialization::InputStreamGetter
     {
-        return [&, stream_for_prefix](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
+        return [&, stream_for_prefix](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer * //-V1047
         {
             /// If substream have already been read.
             if (cache.count(ISerialization::getSubcolumnNameForStream(substream_path)))

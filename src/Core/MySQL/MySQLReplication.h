@@ -452,7 +452,7 @@ namespace MySQLReplication
         UInt32 number_columns;
         String schema;
         String table;
-        std::vector<Field> rows;
+        Row rows;
 
         RowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
             : EventBase(std::move(header_)), number_columns(0), table_map(table_map_)

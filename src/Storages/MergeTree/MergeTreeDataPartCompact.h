@@ -26,13 +26,15 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {});
+        const std::optional<String> & relative_path_ = {},
+        const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeDataPartCompact(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {});
+        const std::optional<String> & relative_path_ = {},
+        const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
@@ -49,7 +51,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const SerializationInfo & serialization_info_,
+        const SerializationInfoPtr & serialization_info_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity) const override;
 

@@ -36,7 +36,7 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(const std::string &
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);
 
-    AggregateFunctionPtr res(createWithTwoNumericTypes<FunctionTemplate>(*argument_types[0], *argument_types[1], argument_types));
+    AggregateFunctionPtr res(createWithTwoBasicNumericTypes<FunctionTemplate>(*argument_types[0], *argument_types[1], argument_types));
     if (!res)
         throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
             + " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

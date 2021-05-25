@@ -10,7 +10,6 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/SpaceSaving.h>
-#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>

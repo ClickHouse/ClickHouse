@@ -1,11 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB

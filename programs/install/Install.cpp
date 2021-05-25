@@ -844,8 +844,8 @@ namespace
                 fmt::print("The pidof command returned unusual output.\n");
             }
 
-            WriteBufferFromFileDescriptor stderr(STDERR_FILENO);
-            copyData(sh->err, stderr);
+            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
+            copyData(sh->err, std_err);
 
             sh->tryWait();
         }
@@ -856,6 +856,13 @@ namespace
             {
                 fmt::print("The process with pid = {} is running.\n", pid);
             }
+            else if (errno == ESRCH)
+            {
+                fmt::print("The process with pid = {} does not exist.\n", pid);
+                return 0;
+            }
+            else
+                throwFromErrno(fmt::format("Cannot obtain the status of pid {} with `kill`", pid), ErrorCodes::CANNOT_KILL);
         }
 
         if (!pid)
@@ -976,7 +983,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     desc.add_options()
         ("help,h", "produce help message")
         ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
-        ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
+        ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
     ;
 
     po::variables_map options;

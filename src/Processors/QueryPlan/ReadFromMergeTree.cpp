@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 #include <common/logger_useful.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -25,6 +26,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
         storage_.getSampleBlockForColumns(metadata_snapshot_, required_columns_),
         prewhere_info_,
+        storage_.getPartitionValueType(),
         virt_column_names_)})
     , storage(storage_)
     , metadata_snapshot(std::move(metadata_snapshot_))
@@ -198,16 +200,27 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
     }
 }
 
+void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Read Type", readTypeToString(read_type));
+    if (index_stats && !index_stats->empty())
+    {
+        map.add("Parts", index_stats->back().num_parts_after);
+        map.add("Granules", index_stats->back().num_granules_after);
+    }
+}
+
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
     std::string prefix(format_settings.offset, format_settings.indent_char);
     if (index_stats && !index_stats->empty())
     {
-        std::string indent(format_settings.indent, format_settings.indent_char);
-
         /// Do not print anything if no indexes is applied.
-        if (index_stats->size() > 1 || index_stats->front().type != IndexType::None)
-            format_settings.out << prefix << "Indexes:\n";
+        if (index_stats->size() == 1 && index_stats->front().type == IndexType::None)
+            return;
+
+        std::string indent(format_settings.indent, format_settings.indent_char);
+        format_settings.out << prefix << "Indexes:\n";
 
         for (size_t i = 0; i < index_stats->size(); ++i)
         {
@@ -243,6 +256,60 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
                 format_settings.out << '/' << (*index_stats)[i - 1].num_granules_after;
             format_settings.out << '\n';
         }
+    }
+}
+
+void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
+{
+    if (index_stats && !index_stats->empty())
+    {
+        /// Do not print anything if no indexes is applied.
+        if (index_stats->size() == 1 && index_stats->front().type == IndexType::None)
+            return;
+
+        auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
+
+        for (size_t i = 0; i < index_stats->size(); ++i)
+        {
+            const auto & stat = (*index_stats)[i];
+            if (stat.type == IndexType::None)
+                continue;
+
+            auto index_map = std::make_unique<JSONBuilder::JSONMap>();
+
+            index_map->add("Type", indexTypeToString(stat.type));
+
+            if (!stat.name.empty())
+                index_map->add("Name", stat.name);
+
+            if (!stat.description.empty())
+                index_map->add("Description", stat.description);
+
+            if (!stat.used_keys.empty())
+            {
+                auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
+
+                for (const auto & used_key : stat.used_keys)
+                    keys_array->add(used_key);
+
+                index_map->add("Keys", std::move(keys_array));
+            }
+
+            if (!stat.condition.empty())
+                index_map->add("Condition", stat.condition);
+
+            if (i)
+                index_map->add("Initial Parts", (*index_stats)[i - 1].num_parts_after);
+            index_map->add("Selected Parts", stat.num_parts_after);
+
+            if (i)
+                index_map->add("Initial Granules", (*index_stats)[i - 1].num_granules_after);
+            index_map->add("Selected Granules", stat.num_granules_after);
+
+            indexes_array->add(std::move(index_map));
+        }
+
+        map.add("Indexes", std::move(indexes_array));
     }
 }
 

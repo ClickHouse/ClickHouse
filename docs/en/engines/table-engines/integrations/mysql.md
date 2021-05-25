@@ -15,7 +15,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
+) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
+SETTINGS
+    [connection_pool_size=16, ]
+    [connection_max_tries=3, ]
+    [connection_auto_close=true ]
+;
 ```
 
 See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.

@@ -6,6 +6,8 @@
 namespace DB
 {
 
+/// Wrapper for serialization, which calls methods, which are not overridden, from nested serialization.
+/// You can inherit this class, when you need to override bunch of methods, to avoid boilerplate code.
 class SerializationWrapper : public ISerialization
 {
 protected:

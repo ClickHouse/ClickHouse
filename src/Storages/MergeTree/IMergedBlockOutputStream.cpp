@@ -4,14 +4,18 @@
 
 namespace DB
 {
+
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_)
+    const StorageMetadataPtr & metadata_snapshot_,
+    const SerializationInfoPtr & input_serialization_info_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
     , volume(data_part->volume)
     , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
-    , new_serialization_info(data_part->storage.getSettings()->ratio_for_sparse_serialization)
+    , input_serialization_info(input_serialization_info_)
+    , new_serialization_info(std::make_shared<SerializationInfoBuilder>(
+        data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization))
 {
 }
 
@@ -32,11 +36,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     std::unordered_map<String, SerializationPtr> serialziations;
     for (const NameAndTypePair & column : columns)
     {
-        auto serialization = IDataType::getSerialization(column, [&](const String & stream_name)
-        {
-            /// Checksums of data_part are not initialized here.
-            return checksums.files.count(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION) != 0;
-        });
+        auto serialization = IDataType::getSerialization(column, *data_part->serialization_info);
 
         serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)

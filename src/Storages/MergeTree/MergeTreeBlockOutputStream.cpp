@@ -28,7 +28,7 @@ void MergeTreeBlockOutputStream::write(const Block & block)
     {
         Stopwatch watch;
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.

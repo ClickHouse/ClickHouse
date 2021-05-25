@@ -20,6 +20,7 @@
 #    include <Parsers/parseQuery.h>
 #    include <Parsers/queryToString.h>
 #    include <Storages/StorageMySQL.h>
+#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Common/escapeForFileName.h>
 #    include <Common/parseAddress.h>
 #    include <Common/setThreadName.h>
@@ -246,9 +247,20 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
             local_tables_cache.erase(iterator);
         }
 
-        local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
-            StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
-            false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, getContext()));
+        local_tables_cache[table_name] = std::make_pair(
+            table_modification_time,
+            StorageMySQL::create(
+                StorageID(database_name, table_name),
+                std::move(mysql_pool),
+                database_name_in_mysql,
+                table_name,
+                /* replace_query_ */ false,
+                /* on_duplicate_clause = */ "",
+                ColumnsDescription{columns_name_and_type},
+                ConstraintsDescription{},
+                String{},
+                getContext(),
+                MySQLSettings{}));
     }
 }
 
@@ -306,7 +318,7 @@ void DatabaseConnectionMySQL::shutdown()
     }
 
     for (const auto & [table_name, modify_time_and_storage] : tables_snapshot)
-        modify_time_and_storage.second->shutdown();
+        modify_time_and_storage.second->flushAndShutdown();
 
     std::lock_guard lock(mutex);
     local_tables_cache.clear();
@@ -333,7 +345,7 @@ void DatabaseConnectionMySQL::cleanOutdatedTables()
             {
                 const auto table_lock = (*iterator)->lockExclusively(RWLockImpl::NO_QUERY, lock_acquire_timeout);
 
-                (*iterator)->shutdown();
+                (*iterator)->flushAndShutdown();
                 (*iterator)->is_dropped = true;
                 iterator = outdated_tables.erase(iterator);
             }

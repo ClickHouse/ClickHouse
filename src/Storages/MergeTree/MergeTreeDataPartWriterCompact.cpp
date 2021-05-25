@@ -16,7 +16,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const SerializationInfo & serialization_info_,
+    const SerializationInfoPtr & serialization_info_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
@@ -37,7 +37,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     serializations.reserve(columns_list.size());
     for (const auto & column : columns_list)
     {
-        serializations.emplace(column.name, column.type->getDefaultSerialization());
+        serializations.emplace(column.name, column.type->getSerialization(column.name, *serialization_info));
         addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
     }
 }
@@ -119,8 +119,8 @@ void writeColumnSingleGranule(
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
 
     serialize_settings.getter = stream_getter;
-    serialize_settings.position_independent_encoding = true;
-    serialize_settings.low_cardinality_max_dictionary_size = 0;
+    serialize_settings.position_independent_encoding = true; //-V1048
+    serialize_settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
     serialization->serializeBinaryBulkStatePrefix(serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -360,7 +360,9 @@ size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
 
 void MergeTreeDataPartWriterCompact::finish(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    finishDataSerialization(checksums, sync);
+    // If we don't have anything to write, skip finalization.
+    if (!columns_list.empty())
+        finishDataSerialization(checksums, sync);
 
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(checksums, sync);

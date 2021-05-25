@@ -124,8 +124,8 @@ static NamesAndTypesList getNames(const ASTFunction & expr, ContextPtr context, 
 
     ASTPtr temp_ast = expr.clone();
     auto syntax = TreeRewriter(context).analyze(temp_ast, columns);
-    auto expression = ExpressionAnalyzer(temp_ast, syntax, context).getActions(false);
-    return expression->getRequiredColumnsWithTypes();
+    auto required_columns = ExpressionAnalyzer(temp_ast, syntax, context).getActionsDAG(false)->getRequiredColumns();
+    return required_columns;
 }
 
 static NamesAndTypesList modifyPrimaryKeysToNonNullable(const NamesAndTypesList & primary_keys, NamesAndTypesList & columns)
@@ -185,7 +185,7 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
                     {
                         const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
 
-                        if (prefix_limit && isInt64FieldType(prefix_limit->value.getType()))
+                        if (prefix_limit && isInt64OrUInt64FieldType(prefix_limit->value.getType()))
                             res->children.back() = std::make_shared<ASTIdentifier>(function->name);
                     }
                 }

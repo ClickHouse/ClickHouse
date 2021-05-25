@@ -5,12 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
-}
-
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
 {
     factory.registerSimpleDataTypeCustom("IPv4", []

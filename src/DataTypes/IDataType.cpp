@@ -170,14 +170,11 @@ SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_n
 
 SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
 {
-    ISerialization::Settings settings =
-    {
-        .num_rows = info.getNumberOfRows(),
-        .num_default_rows = info.getNumberOfDefaultRows(column_name),
-        .ratio_for_sparse_serialization = info.getRatioForSparseSerialization()
-    };
+    auto kind = info.getKind(column_name);
+    if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
+        return getSparseSerialization();
 
-    return getSerialization(settings);
+    return getDefaultSerialization();
 }
 
 SerializationPtr IDataType::getSerialization(const IColumn & column) const
@@ -185,14 +182,7 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
     if (column.isSparse())
         return getSparseSerialization();
 
-    ISerialization::Settings settings =
-    {
-        .num_rows = column.size(),
-        .num_default_rows = column.getNumberOfDefaultRows(IColumn::DEFAULT_ROWS_SEARCH_STEP),
-        .ratio_for_sparse_serialization = 10
-    };
-
-    return getSerialization(settings);
+    return getDefaultSerialization();
 }
 
 SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
@@ -200,7 +190,7 @@ SerializationPtr IDataType::getSerialization(const ISerialization::Settings & se
     if (supportsSparseSerialization())
     {
         double ratio = settings.num_rows ? std::min(static_cast<double>(settings.num_default_rows) / settings.num_rows, 1.0) : 0.0;
-        if (ratio >= settings.ratio_for_sparse_serialization)
+        if (ratio > settings.ratio_for_sparse_serialization)
             return getSparseSerialization();
     }
 
@@ -208,32 +198,20 @@ SerializationPtr IDataType::getSerialization(const ISerialization::Settings & se
 }
 
 // static
-SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const IDataType::StreamExistenceCallback & callback)
+SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const SerializationInfo & info)
 {
     if (column.isSubcolumn())
     {
         auto base_serialization_getter = [&](const IDataType & subcolumn_type)
         {
-            return subcolumn_type.getSerialization(column.name, callback);
+            return subcolumn_type.getSerialization(column.name, info);
         };
 
         auto type_in_storage = column.getTypeInStorage();
         return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization_getter);
     }
 
-    return column.type->getSerialization(column.name, callback);
-}
-
-SerializationPtr IDataType::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const
-{
-    if (supportsSparseSerialization())
-    {
-        auto sparse_idx_name = escapeForFileName(column_name) + ".sparse.idx";
-        if (callback(sparse_idx_name))
-            return getSparseSerialization();
-    }
-
-    return getDefaultSerialization();
+    return column.type->getSerialization(column.name, info);
 }
 
 DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const

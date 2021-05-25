@@ -22,7 +22,7 @@ R"({"k1" : [
     ]
 })";
 
-TEST(JSONDataParser, ReadInto)
+TEST(JSONDataParser, ReadJSON)
 {
 
     {
@@ -31,7 +31,7 @@ TEST(JSONDataParser, ReadInto)
         JSONDataParser<SimdJSONParser> parser;
         ReadBufferFromString buf(json_bad);
         String res;
-        parser.readInto(res, buf);
+        parser.readJSON(res, buf);
         ASSERT_EQ(json1, res);
     }
 
@@ -41,7 +41,7 @@ TEST(JSONDataParser, ReadInto)
         JSONDataParser<SimdJSONParser> parser;
         ReadBufferFromString buf(json_bad);
         String res;
-        parser.readInto(res, buf);
+        parser.readJSON(res, buf);
         ASSERT_EQ(json2, res);
     }
 }

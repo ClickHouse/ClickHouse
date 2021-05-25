@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Core/AccurateComparison.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>

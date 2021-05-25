@@ -83,6 +83,8 @@
 #define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
 #define DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO 54447
 
+#define DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION 54452
+
 /// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
 #define DBMS_TCP_PROTOCOL_VERSION 54448
 
@@ -97,6 +99,8 @@
 #define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
+
+#define KEEPER_DEFAULT_PATH "/var/lib/clickhouse-keeper/"
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 

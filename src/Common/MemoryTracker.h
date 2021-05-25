@@ -208,7 +208,7 @@ public:
 
         static bool isBlocked(VariableContext current_level, bool fault_injection)
         {
-            return counter > 0 && current_level >= level && (!fault_injection || (fault_injection && block_fault_injections));
+            return counter > 0 && current_level >= level && (!fault_injection || block_fault_injections);
         }
     };
 };

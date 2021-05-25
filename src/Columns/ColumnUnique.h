@@ -50,6 +50,7 @@ public:
     const ColumnPtr & getNestedColumn() const override;
     const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
     bool nestedColumnIsNullable() const override { return is_nullable; }
+    void nestedToNullable() override;
 
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
@@ -261,6 +262,13 @@ void ColumnUnique<ColumnType>::updateNullMask()
         if (nested_null_mask->size() != size)
             assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
     }
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::nestedToNullable()
+{
+    is_nullable = true;
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -657,7 +665,7 @@ UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & co
             column.updateHashWithValue(i, sip_hash);
 
         std::lock_guard lock(mutex);
-        sip_hash.get128(hash.low, hash.high);
+        sip_hash.get128(hash);
         cur_hash = hash;
         num_added_rows.store(column_size);
     }

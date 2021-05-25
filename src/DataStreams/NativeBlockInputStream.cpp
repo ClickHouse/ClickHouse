@@ -10,6 +10,7 @@
 
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Columns/ColumnSparse.h>
 
@@ -73,7 +74,7 @@ void NativeBlockInputStream::resetParser()
     is_killed.store(false);
 }
 
-void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
+void NativeBlockInputStream::readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -81,10 +82,9 @@ void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column
     settings.position_independent_encoding = false;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
-    auto serialization = type.getSerialization(*column);
 
-    serialization->deserializeBinaryBulkStatePrefix(settings, state);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkStatePrefix(settings, state);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column->size()) + ". Rows expected: " + toString(rows) + ".",
@@ -134,6 +134,18 @@ Block NativeBlockInputStream::readImpl()
         rows = index_block_it->num_rows;
     }
 
+    /// Serialization
+    SerializationInfoPtr serialization_info;
+    if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+    {
+        auto serialization_kinds = SerializationInfo::readKindsBinary(istr);
+        serialization_info = std::make_shared<SerializationInfo>(rows, serialization_kinds);
+    }
+    else
+    {
+        serialization_info = std::make_shared<SerializationInfo>();
+    }
+
     for (size_t i = 0; i < columns; ++i)
     {
         if (use_index)
@@ -152,10 +164,6 @@ Block NativeBlockInputStream::readImpl()
         readBinary(type_name, istr);
         column.type = data_type_factory.get(type_name);
 
-        /// TODO: check revision.
-        ISerialization::Kind serialization_kind;
-        readIntBinary(serialization_kind, istr);
-
         if (use_index)
         {
             /// Index allows to do more checks.
@@ -166,19 +174,14 @@ Block NativeBlockInputStream::readImpl()
         }
 
         /// Data
-        ColumnPtr read_column = column.type->createColumn();
-        if (serialization_kind == ISerialization::Kind::SPARSE)
-            read_column = ColumnSparse::create(read_column);
+        auto serialization = column.type->getSerialization(column.name, *serialization_info);
+        ColumnPtr read_column = column.type->createColumn(*serialization);
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*column.type, read_column, istr, rows, avg_value_size_hint);
+            readData(*serialization, read_column, istr, rows, avg_value_size_hint);
 
-        /// TODO: maybe remove.
-        read_column = recursiveRemoveSparse(read_column);
         column.column = std::move(read_column);
-
-        // std::cerr << "column.column: " << column.column->dumpStructure() << "\n";
 
         if (header)
         {

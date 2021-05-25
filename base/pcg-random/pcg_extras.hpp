@@ -447,69 +447,6 @@ inline SrcIter uneven_copy(SrcIter src_first,
                             std::integral_constant<bool, DEST_IS_SMALLER>{});
 }
 
-/* generate_to, fill in a fixed-size array of integral type using a SeedSeq
- * (actually works for any random-access iterator)
- */
-
-template <size_t size, typename SeedSeq, typename DestIter>
-inline void generate_to_impl(SeedSeq&& generator, DestIter dest,
-                             std::true_type)
-{
-    generator.generate(dest, dest+size);
-}
-
-template <size_t size, typename SeedSeq, typename DestIter>
-void generate_to_impl(SeedSeq&& generator, DestIter dest,
-                      std::false_type)
-{
-    typedef typename std::iterator_traits<DestIter>::value_type dest_t;
-    constexpr auto DEST_SIZE = sizeof(dest_t);
-    constexpr auto GEN_SIZE  = sizeof(uint32_t);
-
-    constexpr bool GEN_IS_SMALLER = GEN_SIZE < DEST_SIZE;
-    constexpr size_t FROM_ELEMS =
-        GEN_IS_SMALLER
-            ? size * ((DEST_SIZE+GEN_SIZE-1) / GEN_SIZE)
-            : (size + (GEN_SIZE / DEST_SIZE) - 1)
-                / ((GEN_SIZE / DEST_SIZE) + GEN_IS_SMALLER);
-                        //  this odd code ^^^^^^^^^^^^^^^^^ is work-around for
-                        //  a bug: http://llvm.org/bugs/show_bug.cgi?id=21287
-
-    if (FROM_ELEMS <= 1024) {
-        uint32_t buffer[FROM_ELEMS];
-        generator.generate(buffer, buffer+FROM_ELEMS);
-        uneven_copy(buffer, dest, dest+size);
-    } else {
-        uint32_t* buffer = static_cast<uint32_t*>(malloc(GEN_SIZE * FROM_ELEMS));
-        generator.generate(buffer, buffer+FROM_ELEMS);
-        uneven_copy(buffer, dest, dest+size);
-        free(static_cast<void*>(buffer));
-    }
-}
-
-template <size_t size, typename SeedSeq, typename DestIter>
-inline void generate_to(SeedSeq&& generator, DestIter dest)
-{
-    typedef typename std::iterator_traits<DestIter>::value_type dest_t;
-    constexpr bool IS_32BIT = sizeof(dest_t) == sizeof(uint32_t);
-
-    generate_to_impl<size>(std::forward<SeedSeq>(generator), dest,
-                           std::integral_constant<bool, IS_32BIT>{});
-}
-
-/* generate_one, produce a value of integral type using a SeedSeq
- * (optionally, we can have it produce more than one and pick which one
- * we want)
- */
-
-template <typename UInt, size_t i = 0UL, size_t N = i+1UL, typename SeedSeq>
-inline UInt generate_one(SeedSeq&& generator)
-{
-    UInt result[N];
-    generate_to<N>(std::forward<SeedSeq>(generator), result);
-    return result[i];
-}
-
 template <typename RngType>
 auto bounded_rand(RngType& rng, typename RngType::result_type upper_bound)
         -> typename RngType::result_type
@@ -517,7 +454,7 @@ auto bounded_rand(RngType& rng, typename RngType::result_type upper_bound)
     typedef typename RngType::result_type rtype;
     rtype threshold = (RngType::max() - RngType::min() + rtype(1) - upper_bound)
                     % upper_bound;
-    for (;;) {
+    for (;;) { //-V1044
         rtype r = rng() - RngType::min();
         if (r >= threshold)
             return r % upper_bound;

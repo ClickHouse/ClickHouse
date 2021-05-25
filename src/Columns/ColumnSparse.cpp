@@ -36,6 +36,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
     if (!offsets_concrete)
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
+    /// 'values' should contain one extra element: default value at 0 position.
     if (offsets->size() + 1 != values->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Values size ({}) is inconsistent with offsets size ({})", values->size(), offsets->size());
@@ -46,7 +47,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
 
 #ifndef NDEBUG
     const auto & offsets_data = getOffsetsData();
-    auto it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<UInt64>());
+    const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<UInt64>());
     if (it != offsets_data.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets of ColumnSparse must be strictly sorted");
 #endif
@@ -117,7 +118,7 @@ StringRef ColumnSparse::getDataAt(size_t n) const
 
 ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
 {
-    return values->createWithOffsets(getOffsetsData(), _size);
+    return values->createWithOffsets(getOffsetsData(), _size, 1);
 }
 
 void ColumnSparse::insertData(const char * pos, size_t length)
@@ -177,6 +178,8 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
                 ++_size;
             }
 
+            /// 'end' <= 'src_offsets[offsets_end]', but end is excluded, so index is 'offsets_end' - 1.
+            /// Since 'end' is excluded need, to substract one more row from result.
             insertManyDefaults(end - src_offsets[offset_end - 1] - 1);
             values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
         }
@@ -326,7 +329,7 @@ ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
     /// and avoid binary search for obtaining every index.
     /// 3 is just a guess for overhead on copying indexes.
     bool execute_linear =
-        limit == _size || limit * log2(offsets->size() + 1) > _size * 3;
+        limit == _size || limit * std::bit_width(offsets->size()) > _size * 3;
 
     if (execute_linear)
     {
@@ -432,7 +435,7 @@ int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
 
 bool ColumnSparse::hasEqualValues() const
 {
-    return offsets->size() == 0;
+    return offsets->empty();
 }
 
 void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
@@ -452,7 +455,8 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
         limit = _size;
 
     Permutation perm;
-    /// limit + 1 for case when there is 0 default values
+    /// Firstly we sort all values.
+    /// limit + 1 for case when there are 0 default values.
     if (collator)
         values->getPermutationWithCollation(*collator, reverse, limit + 1, null_direction_hint, perm);
     else
@@ -462,8 +466,8 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
     size_t row = 0;
 
     const auto & offsets_data = getOffsetsData();
-    auto offset_it = begin();
 
+    /// Fill the permutation.
     for (size_t i = 0; i < perm.size() && row < limit; ++i)
     {
         if (perm[i] == 0)
@@ -471,9 +475,11 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
             if (!num_of_defaults)
                 continue;
 
+            /// Fill the positions of default values in the required quantity.
+            auto offset_it = begin();
             while (row < limit)
             {
-                while (offset_it != end() && !offset_it.isDefault())
+                while (offset_it.getCurrentRow() < _size && !offset_it.isDefault())
                     ++offset_it;
 
                 if (offset_it.getCurrentRow() == _size)
@@ -513,10 +519,6 @@ void ColumnSparse::updatePermutationWithCollation(
 {
     auto this_full = convertToFullColumnIfSparse();
     this_full->updatePermutationWithCollation(collator, reverse, limit, null_direction_hint, res, equal_range);
-}
-
-void ColumnSparse::reserve(size_t)
-{
 }
 
 size_t ColumnSparse::byteSize() const
@@ -638,8 +640,8 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
 void ColumnSparse::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
 {
     const auto & offsets_data = getOffsetsData();
-    auto start = from ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from) : offsets_data.begin();
-    auto end = limit ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from + limit) : offsets_data.end();
+    const auto * start = from ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from) : offsets_data.begin();
+    const auto * end = limit ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from + limit) : offsets_data.end();
 
     indices.assign(start, end);
 }
@@ -701,7 +703,7 @@ size_t ColumnSparse::getValueIndex(size_t n) const
     assert(n < _size);
 
     const auto & offsets_data = getOffsetsData();
-    auto it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
+    const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
     if (it == offsets_data.end() || *it != n)
         return 0;
 

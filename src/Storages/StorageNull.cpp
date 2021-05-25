@@ -29,7 +29,7 @@ void registerStorageNull(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageNull::create(args.table_id, args.columns, args.constraints);
+        return StorageNull::create(args.table_id, args.columns, args.constraints, args.comment);
     },
     {
         .supports_parallel_insert = true,
@@ -46,7 +46,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
-        if (command.type == AlterCommand::DROP_COLUMN)
+        if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())

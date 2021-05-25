@@ -2,7 +2,6 @@
 
 #include <DataStreams/IBlockInputStream.h>
 
-#include <Core/Row.h>
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
@@ -10,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeProjections.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -45,11 +45,6 @@ class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 
-
-namespace ErrorCodes
-{
-}
-
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
@@ -75,14 +70,16 @@ public:
         const MergeTreePartInfo & info_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
-        Type part_type_);
+        Type part_type_,
+        const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
-        Type part_type_);
+        Type part_type_,
+        const IMergeTreeDataPart * parent_part_);
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
@@ -99,7 +96,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const SerializationInfo & serialization_info_,
+        const SerializationInfoPtr & serialization_info_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity = {}) const = 0;
 
@@ -134,6 +131,8 @@ public:
     void assertOnDisk() const;
 
     void remove(bool keep_s3 = false) const;
+
+    void projectionRemove(const String & parent_to) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -187,10 +186,9 @@ public:
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     /// TODO: add comment
-    SerializationInfo serialization_info;
+    SerializationInfoPtr serialization_info;
 
     size_t rows_count = 0;
-
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -355,6 +353,23 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
+    bool isProjectionPart() const { return parent_part != nullptr; }
+
+    const IMergeTreeDataPart * getParentPart() const { return parent_part; }
+
+    const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
+
+    void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part)
+    {
+        projection_parts.emplace(projection_name, std::move(projection_part));
+    }
+
+    bool hasProjection(const String & projection_name) const
+    {
+        return projection_parts.find(projection_name) != projection_parts.end();
+    }
+
+    void loadProjections(bool require_columns_checksums, bool check_consistency);
 
     /// Return set of metadat file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -376,7 +391,7 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Returns serialization for column according to files in which column is written in part.
+    /// Returns serialization for column according to serialization_info.
     SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
 
     /// Return some uniq string for file
@@ -398,6 +413,11 @@ protected:
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
     const Type part_type;
+
+    /// Not null when it's a projection part.
+    const IMergeTreeDataPart * parent_part;
+
+    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
     void removeIfNeeded();
 
@@ -436,7 +456,7 @@ private:
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
 
-    void loadSerializationInfo();
+    void loadSerializationInfo() const;
 
     void loadPartitionAndMinMaxIndex();
 
