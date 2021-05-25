@@ -451,6 +451,8 @@ void QueryPlan::explainEstimates(MutableColumns & columns)
     using processNodeFuncType = std::function<void(const Node * node)>;
     processNodeFuncType processNode = [&counters, &processNode] (const Node * node)
     {
+        if (!node)
+            return;
         if (const auto * step = dynamic_cast<ReadFromMergeTree*>(node->step.get()))
         {
             const auto & id = step->getStorageID();
