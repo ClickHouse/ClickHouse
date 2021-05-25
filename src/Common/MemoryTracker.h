@@ -73,6 +73,10 @@ public:
       */
     void alloc(Int64 size);
 
+    void allocNoThrow(Int64 size);
+
+    void allocImpl(Int64 size, bool throw_if_memory_exceeded);
+
     void realloc(Int64 old_size, Int64 new_size)
     {
         Int64 addition = new_size - old_size;
