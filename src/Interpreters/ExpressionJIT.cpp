@@ -312,7 +312,7 @@ static FunctionBasePtr compile(
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
+    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
 }
 
 static bool isCompilableFunction(const ActionsDAG::Node & node)
