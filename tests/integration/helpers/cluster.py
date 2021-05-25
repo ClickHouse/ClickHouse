@@ -851,7 +851,7 @@ class ClickHouseCluster:
         run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
-        node.wait_for_start(start_timeout=20.0, connection_timeout=600.0)  # seconds
+        node.wait_for_start(start_timeout=180.0, connection_timeout=600.0)  # seconds
         return node
 
     def restart_service(self, service_name):
@@ -1399,7 +1399,7 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            start_timeout = 60.0  # seconds
+            start_timeout = 180.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
