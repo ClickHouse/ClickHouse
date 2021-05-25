@@ -28,8 +28,8 @@ done
 set -e
 
 # cleanup for retry run if volume is not recreated
-docker kill `docker ps -aq` || true
-docker rm `docker ps -aq` || true
+docker kill "$(docker ps -aq)" || true
+docker rm "$(docker ps -aq)" || true
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
