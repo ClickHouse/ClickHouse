@@ -144,7 +144,7 @@ Example:
 EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ```
 
-```sql
+```json
 [
   {
     "Plan": {
@@ -184,7 +184,7 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 
 With `description` = 1, the `Description` key is added to the step:
 
-```sql
+```json
 {
   "Node Type": "ReadFromStorage",
   "Description": "SystemOne"
@@ -199,7 +199,7 @@ Example:
 EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ```
 
-```sql
+```json
 [
   {
     "Plan": {
@@ -254,7 +254,7 @@ With `indexes` = 1, the `Indexes` key is added. It contains an array of used ind
 
 Example:
 
-```sql
+```json
 "Node Type": "ReadFromMergeTree",
 "Indexes": [
   {
@@ -313,7 +313,7 @@ Example:
 EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ```
 
-```sql
+```json
 [
   {
     "Plan": {
