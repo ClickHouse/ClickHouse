@@ -1,7 +1,5 @@
 #include <Disks/IDiskRemote.h>
 
-#if USE_AWS_S3
-
 #include "Disks/DiskFactory.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -177,7 +175,7 @@ IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 }
 
 
-void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeper & fs_paths_keeper)
+void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
 {
     LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
 
@@ -195,7 +193,7 @@ void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeper & fs_paths_
         {
             file.remove();
             for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
-                fs_paths_keeper.addPath(remote_fs_root_path + remote_fs_object_path);
+                fs_paths_keeper->addPath(remote_fs_root_path + remote_fs_object_path);
         }
         else /// In other case decrement number of references, save metadata and delete file.
         {
@@ -220,7 +218,7 @@ void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeper & fs_paths_
 }
 
 
-void IDiskRemote::removeMetaRecursive(const String & path, RemoteFSPathKeeper & fs_paths_keeper)
+void IDiskRemote::removeMetaRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
@@ -286,8 +284,8 @@ IDiskRemote::IDiskRemote(
     const String & remote_fs_root_path_,
     const String & metadata_path_,
     const String & log_name_,
-    std::unique_ptr<Executor> executor_)
-    : IDisk(std::move(executor_))
+    size_t thread_pool_size)
+    : IDisk(std::make_unique<AsyncExecutor>(log_name_, thread_pool_size))
     , log(&Poco::Logger::get(log_name_))
     , name(name_)
     , remote_fs_root_path(remote_fs_root_path_)
@@ -348,7 +346,7 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
 
 void IDiskRemote::removeFileIfExists(const String & path)
 {
-    RemoteFSPathKeeper fs_paths_keeper;
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     if (Poco::File(metadata_path + path).exists())
     {
         removeMeta(path, fs_paths_keeper);
@@ -359,7 +357,7 @@ void IDiskRemote::removeFileIfExists(const String & path)
 
 void IDiskRemote::removeSharedFile(const String & path, bool keep_in_remote_fs)
 {
-    RemoteFSPathKeeper fs_paths_keeper;
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     removeMeta(path, fs_paths_keeper);
     if (!keep_in_remote_fs)
         removeFromRemoteFS(fs_paths_keeper);
@@ -368,7 +366,7 @@ void IDiskRemote::removeSharedFile(const String & path, bool keep_in_remote_fs)
 
 void IDiskRemote::removeSharedRecursive(const String & path, bool keep_in_remote_fs)
 {
-    RemoteFSPathKeeper fs_paths_keeper;
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
     removeMetaRecursive(path, fs_paths_keeper);
     if (!keep_in_remote_fs)
         removeFromRemoteFS(fs_paths_keeper);
@@ -487,5 +485,3 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
 }
 
 }
-
-#endif
