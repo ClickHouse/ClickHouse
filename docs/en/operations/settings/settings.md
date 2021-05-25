@@ -1520,8 +1520,8 @@ Do not merge aggregation states from different servers for distributed query pro
 Possible values:
 
 -   0 — Disabled (final query processing is done on the initiator node).
--   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data).
--   2 - Same as 1 but apply `ORDER BY` and `LIMIT` on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
+-   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possilbe when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
 
 **Example**
 
@@ -2033,6 +2033,16 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+## background_fetches_pool_size {#background_fetches_pool_size}
+
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recomended to use default value.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
 
 ## always_fetch_merged_part {#always_fetch_merged_part}
 
@@ -2862,6 +2872,39 @@ Default value: `5`.
 Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
 
 Default value: `60`.
+
+## http_connection_timeout {#http_connection_timeout}
+
+HTTP connection timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1.
+
+## http_send_timeout {#http_send_timeout}
+
+HTTP send timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1800.
+
+## http_receive_timeout {#http_receive_timeout}
+
+HTTP receive timeout (in seconds).
+
+Possible values:
+
+-   Any positive integer.
+-   0 - Disabled (infinite timeout).
+
+Default value: 1800.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
