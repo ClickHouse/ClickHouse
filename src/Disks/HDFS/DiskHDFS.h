@@ -12,8 +12,18 @@ namespace DB
 struct DiskHDFSSettings
 {
     size_t min_bytes_for_seek;
-    DiskHDFSSettings(int min_bytes_for_seek_) : min_bytes_for_seek(min_bytes_for_seek_) {}
+    int thread_pool_size;
+    int objects_chunk_size_to_delete;
+
+    DiskHDFSSettings(
+            int min_bytes_for_seek_,
+            int thread_pool_size_,
+            int objects_chunk_size_to_delete_)
+        : min_bytes_for_seek(min_bytes_for_seek_)
+        , thread_pool_size(thread_pool_size_)
+        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_) {}
 };
+
 
 /**
  * Storage for persisting data in HDFS and metadata on the local disk.
@@ -22,9 +32,6 @@ struct DiskHDFSSettings
  */
 class DiskHDFS final : public IDiskRemote
 {
-
-friend class DiskHDFSReservation;
-
 public:
     using SettingsPtr = std::unique_ptr<DiskHDFSSettings>;
 
@@ -47,7 +54,9 @@ public:
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 
-    void removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper) override;
+    void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) override;
+
+    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
 private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }

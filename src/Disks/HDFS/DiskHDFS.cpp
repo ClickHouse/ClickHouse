@@ -17,6 +17,36 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+class HDFSPathKeeper : public RemoteFSPathKeeper
+{
+public:
+    using Chunk = std::vector<std::string>;
+    using Chunks = std::list<Chunk>;
+
+    HDFSPathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
+
+    void addPath(const String & path) override
+    {
+        if (chunks.empty() || chunks.back().size() >= chunk_limit)
+        {
+            chunks.push_back(Chunks::value_type());
+            chunks.back().reserve(chunk_limit);
+        }
+        chunks.back().push_back(path.data());
+    }
+
+    void removePaths(const std::function<void(Chunk &&)> & remove_chunk_func)
+    {
+        for (auto & chunk : chunks)
+            remove_chunk_func(std::move(chunk));
+    }
+
+private:
+    Chunks chunks;
+};
+
+
 /// Reads data from HDFS using stored paths in metadata.
 class ReadIndirectBufferFromHDFS final : public ReadIndirectBufferFromRemoteFS<ReadBufferFromHDFS>
 {
@@ -54,7 +84,7 @@ DiskHDFS::DiskHDFS(
     SettingsPtr settings_,
     const String & metadata_path_,
     const Poco::Util::AbstractConfiguration & config_)
-    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskHDFS")
+    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskHDFS", settings_->thread_pool_size)
     , config(config_)
     , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
     , hdfs_fs(createHDFSFS(hdfs_builder.get()))
@@ -98,13 +128,20 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 }
 
 
-void DiskHDFS::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
+RemoteFSPathKeeperPtr DiskHDFS::createFSPathKeeper() const
 {
-    for (const auto & chunk : fs_paths_keeper)
+    return std::make_shared<HDFSPathKeeper>(settings->objects_chunk_size_to_delete);
+}
+
+
+void DiskHDFS::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
+{
+    auto * hdfs_paths_keeper = dynamic_cast<HDFSPathKeeper *>(fs_paths_keeper.get());
+    hdfs_paths_keeper->removePaths([&](std::vector<std::string> && chunk)
     {
         for (const auto & hdfs_object_path : chunk)
         {
-            const String & hdfs_path = hdfs_object_path.GetKey();
+            const String & hdfs_path = hdfs_object_path;
             const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
 
             /// Add path from root to file name
@@ -112,7 +149,7 @@ void DiskHDFS::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
             if (res == -1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
         }
-    }
+    });
 }
 
 
@@ -120,7 +157,10 @@ namespace
 {
 std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    return std::make_unique<DiskHDFSSettings>(config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
+    return std::make_unique<DiskHDFSSettings>(
+        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
+        config.getInt(config_prefix + ".thread_pool_size", 16),
+        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
 }
 }
 

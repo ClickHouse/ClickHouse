@@ -28,7 +28,8 @@ struct DiskS3Settings
         size_t min_bytes_for_seek_,
         bool send_metadata_,
         int thread_pool_size_,
-        int list_object_keys_size_);
+        int list_object_keys_size_,
+        int objects_chunk_size_to_delete_);
 
     std::shared_ptr<Aws::S3::S3Client> client;
     size_t s3_max_single_read_retries;
@@ -38,6 +39,7 @@ struct DiskS3Settings
     bool send_metadata;
     int thread_pool_size;
     int list_object_keys_size;
+    int objects_chunk_size_to_delete;
 };
 
 
@@ -78,7 +80,9 @@ public:
         size_t buf_size,
         WriteMode mode) override;
 
-    void removeFromRemoteFS(const RemoteFSPathKeeper & keeper) final override;
+    void removeFromRemoteFS(RemoteFSPathKeeperPtr keeper) override;
+
+    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
     void moveFile(const String & from_path, const String & to_path, bool send_metadata);
     void moveFile(const String & from_path, const String & to_path) override;

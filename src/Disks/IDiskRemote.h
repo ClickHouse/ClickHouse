@@ -1,47 +1,35 @@
 #pragma once
 #include <Common/config.h>
 
-#if USE_AWS_S3
-
 #include <atomic>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 #include <Poco/DirectoryIterator.h>
 #include <utility>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/HeadObjectRequest.h>
 #include <Common/MultiVersion.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
 {
 
-/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API).
-/// Used for both S3 and HDFS.
-class RemoteFSPathKeeper : public std::list<Aws::Vector<Aws::S3::Model::ObjectIdentifier>>
+/// Helper class to collect paths into chunks of maximum size.
+/// For s3 it is Aws::vector<ObjectIdentifier>, for hdfs it is std::vector<std::string>.
+class RemoteFSPathKeeper
 {
 public:
-    void addPath(const String & path)
-    {
-        if (empty() || back().size() >= chunk_limit)
-        { /// add one more chunk
-            push_back(value_type());
-            back().reserve(chunk_limit);
-        }
+    RemoteFSPathKeeper(size_t chunk_limit_) : chunk_limit(chunk_limit_) {}
 
-        Aws::S3::Model::ObjectIdentifier obj;
-        obj.SetKey(path);
-        back().push_back(obj);
-    }
+    virtual ~RemoteFSPathKeeper() = default;
 
-private:
-    /// limit for one DeleteObject request
-    /// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
-    const static size_t chunk_limit = 1000;
+    virtual void addPath(const String & path) = 0;
+
+protected:
+    size_t chunk_limit;
 };
+
+using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
+
 
 /// Base Disk class for remote FS's, which are not posix-compatible (DiskS3 and DiskHDFS)
 class IDiskRemote : public IDisk
@@ -55,7 +43,7 @@ public:
         const String & remote_fs_root_path_,
         const String & metadata_path_,
         const String & log_name_,
-        std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>());
+        size_t thread_pool_size);
 
     struct Metadata;
 
@@ -125,7 +113,9 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    virtual void removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper) = 0;
+    virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
+
+    virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
 
 protected:
     Poco::Logger * log;
@@ -135,9 +125,9 @@ protected:
     const String metadata_path;
 
 private:
-    void removeMeta(const String & path, RemoteFSPathKeeper & fs_paths_keeper);
+    void removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
 
-    void removeMetaRecursive(const String & path, RemoteFSPathKeeper & fs_paths_keeper);
+    void removeMetaRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
 
     bool tryReserve(UInt64 bytes);
 
@@ -245,6 +235,49 @@ private:
     CurrentMetrics::Increment metric_increment;
 };
 
-}
 
-#endif
+/// Runs tasks asynchronously using thread pool.
+class AsyncExecutor : public Executor
+{
+public:
+    explicit AsyncExecutor(const String & name_, int thread_pool_size)
+        : name(name_)
+        , pool(ThreadPool(thread_pool_size)) {}
+
+    std::future<void> execute(std::function<void()> task) override
+    {
+        auto promise = std::make_shared<std::promise<void>>();
+        pool.scheduleOrThrowOnError(
+            [promise, task]()
+            {
+                try
+                {
+                    task();
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("Failed to run async task");
+
+                    try
+                    {
+                        promise->set_exception(std::current_exception());
+                    }
+                    catch (...) {}
+                }
+            });
+
+        return promise->get_future();
+    }
+
+    void setMaxThreads(size_t threads)
+    {
+        pool.setMaxThreads(threads);
+    }
+
+private:
+    String name;
+    ThreadPool pool;
+};
+
+}

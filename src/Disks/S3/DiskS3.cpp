@@ -19,8 +19,12 @@
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Common/checkStackSize.h>
-#include <Common/ThreadPool.h>
 #include <boost/algorithm/string.hpp>
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/HeadObjectRequest.h>
 
 
 namespace DB
@@ -35,6 +39,38 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Remove s3 objects in chunks. Default chunk limit for one DeleteObject request is 1000:
+/// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+class S3PathKeeper : public RemoteFSPathKeeper
+{
+public:
+    using Chunk = Aws::Vector<Aws::S3::Model::ObjectIdentifier>;
+    using Chunks = std::list<Chunk>;
+
+    S3PathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
+
+    void addPath(const String & path) override
+    {
+        if (chunks.empty() || chunks.back().size() >= chunk_limit)
+        {
+            /// add one more chunk
+            chunks.push_back(Chunks::value_type());
+            chunks.back().reserve(chunk_limit);
+        }
+        Aws::S3::Model::ObjectIdentifier obj;
+        obj.SetKey(path);
+        chunks.back().push_back(obj);
+    }
+
+    void removePaths(const std::function<void(Chunk &&)> & remove_chunk_func)
+    {
+        for (auto & chunk : chunks)
+            remove_chunk_func(std::move(chunk));
+    }
+
+private:
+    Chunks chunks;
+};
 
 String getRandomName()
 {
@@ -95,46 +131,6 @@ private:
     size_t buf_size;
 };
 
-/// Runs tasks asynchronously using thread pool.
-class AsyncExecutor : public Executor
-{
-public:
-    explicit AsyncExecutor(int thread_pool_size) : pool(ThreadPool(thread_pool_size)) { }
-
-    std::future<void> execute(std::function<void()> task) override
-    {
-        auto promise = std::make_shared<std::promise<void>>();
-        pool.scheduleOrThrowOnError(
-            [promise, task]()
-            {
-                try
-                {
-                    task();
-                    promise->set_value();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("DiskS3", "Failed to run async task");
-
-                    try
-                    {
-                        promise->set_exception(std::current_exception());
-                    } catch (...) { }
-                }
-            });
-
-        return promise->get_future();
-    }
-
-    void setMaxThreads(size_t threads)
-    {
-        pool.setMaxThreads(threads);
-    }
-private:
-    ThreadPool pool;
-};
-
-
 DiskS3::DiskS3(
     String name_,
     String bucket_,
@@ -142,7 +138,7 @@ DiskS3::DiskS3(
     String metadata_path_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
-    : IDiskRemote(name_, s3_root_path_, metadata_path_, "DiskS3", std::make_unique<AsyncExecutor>(settings_->thread_pool_size))
+    : IDiskRemote(name_, s3_root_path_, metadata_path_, "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
@@ -156,6 +152,30 @@ String DiskS3::getUniqueId(const String & path) const
     if (!metadata.remote_fs_objects.empty())
         id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
     return id;
+}
+
+RemoteFSPathKeeperPtr DiskS3::createFSPathKeeper() const
+{
+    auto settings = current_settings.get();
+    return std::make_shared<S3PathKeeper>(settings->objects_chunk_size_to_delete);
+}
+
+void DiskS3::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
+{
+    auto settings = current_settings.get();
+    auto * s3_paths_keeper = dynamic_cast<S3PathKeeper *>(fs_paths_keeper.get());
+
+    s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
+    {
+        Aws::S3::Model::Delete delkeys;
+        delkeys.SetObjects(chunk);
+        /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
+        Aws::S3::Model::DeleteObjectsRequest request;
+        request.SetBucket(bucket);
+        request.SetDelete(delkeys);
+        auto outcome = settings->client->DeleteObjects(request);
+        throwIfError(outcome);
+    });
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
@@ -226,26 +246,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         buf_size);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(metadata), s3_path);
-}
-
-void DiskS3::removeFromRemoteFS(const RemoteFSPathKeeper & fs_paths_keeper)
-{
-    if (fs_paths_keeper.empty())
-        return;
-
-    auto settings = current_settings.get();
-    for (const auto & chunk : fs_paths_keeper)
-    {
-        Aws::S3::Model::Delete delkeys;
-        delkeys.SetObjects(chunk);
-
-        /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
-        Aws::S3::Model::DeleteObjectsRequest request;
-        request.SetBucket(bucket);
-        request.SetDelete(delkeys);
-        auto outcome = settings->client->DeleteObjects(request);
-        throwIfError(outcome);
-    }
 }
 
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
@@ -919,7 +919,8 @@ DiskS3Settings::DiskS3Settings(
     size_t min_bytes_for_seek_,
     bool send_metadata_,
     int thread_pool_size_,
-    int list_object_keys_size_)
+    int list_object_keys_size_,
+    int objects_chunk_size_to_delete_)
     : client(client_)
     , s3_max_single_read_retries(s3_max_single_read_retries_)
     , s3_min_upload_part_size(s3_min_upload_part_size_)
@@ -928,6 +929,7 @@ DiskS3Settings::DiskS3Settings(
     , send_metadata(send_metadata_)
     , thread_pool_size(thread_pool_size_)
     , list_object_keys_size(list_object_keys_size_)
+    , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
 {
 }
 
