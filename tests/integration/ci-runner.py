@@ -14,6 +14,7 @@ import csv
 MAX_RETRY = 2
 NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
+PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
 DOCKERD_LOGS_PATH = "/ClickHouse/tests/integration/dockerd.log"
@@ -52,6 +53,11 @@ def filter_existing_tests(tests_to_run, repo_path):
 def _get_deselect_option(tests):
     return ' '.join(['--deselect {}'.format(t) for t in tests])
 
+# https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 def parse_test_results_output(fname):
     read = False
@@ -269,15 +275,15 @@ class ClickhouseIntegrationTestsRunner:
                 all_tests.append(line.strip())
         return list(sorted(all_tests))
 
-    def _get_parallel_tests(self, repo_path):
-        parallel_tests_file_path = "{}/tests/integration/parallel.json".format(repo_path)
-        if not os.path.isfile(parallel_tests_file_path) or os.path.getsize(parallel_tests_file_path) == 0:
-            raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(parallel_tests_file_path))
+    def _get_parallel_tests_skip_list(self, repo_path):
+        skip_list_file_path = "{}/tests/integration/parallel.json".format(repo_path)
+        if not os.path.isfile(skip_list_file_path) or os.path.getsize(skip_list_file_path) == 0:
+            raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(skip_list_file_path))
 
-        parallel_tests = []
-        with open(parallel_tests_file_path, "r") as parallel_tests_file:
-            parallel_tests = json.load(parallel_tests_file)
-        return list(sorted(parallel_tests))
+        skip_list_tests = []
+        with open(skip_list_file_path, "r") as skip_list_file:
+            skip_list_tests = json.load(skip_list_file)
+        return list(sorted(skip_list_tests))
 
     def group_test_by_file(self, tests):
         result = {}
@@ -298,7 +304,6 @@ class ClickhouseIntegrationTestsRunner:
                 if test in main_counters["ERROR"]:
                     main_counters["ERROR"].remove(test)
                     is_flaky = True
-
                 if is_flaky:
                     main_counters["FLAKY"].append(test)
                 else:
@@ -476,16 +481,19 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
-        parallel_tests = self._get_parallel_tests(repo_path)
+        parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
-        filtered_parallel_tests = list(filter(lambda test: test in all_tests, parallel_tests))
-        filtered_unparallel_tests = list(filter(lambda test: test not in parallel_tests, all_tests))
-        not_found_tests = list(filter(lambda test: test not in all_tests, parallel_tests))
+        filtered_sequential_tests = list(filter(lambda test: test in all_tests, parallel_skip_tests))
+        filtered_parallel_tests = list(filter(lambda test: test not in parallel_skip_tests, all_tests))
+        not_found_tests = list(filter(lambda test: test not in all_tests, parallel_skip_tests))
         logging.info("Found %s tests first 3 %s, parallel %s, other %s", len(all_tests), ' '.join(all_tests[:3]), len(filtered_parallel_tests), len(filtered_unparallel_tests))
         logging.info("Not found %s tests first 3 %s", len(not_found_tests), ' '.join(not_found_tests[:3]))
 
-        grouped_tests = self.group_test_by_file(filtered_unparallel_tests)
-        grouped_tests["parallel"] = filtered_parallel_tests
+        grouped_tests = self.group_test_by_file(filtered_sequential_tests)
+        i = 0
+        for par_group in  chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
+            grouped_tests["parallel{}".format(i)] = par_group
+            i+=1
         logging.info("Found %s tests groups", len(grouped_tests))
 
         counters = {
