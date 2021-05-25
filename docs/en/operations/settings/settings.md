@@ -372,7 +372,7 @@ This setting is applied to `INSERT ... VALUES` queries.
 
 Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md#create-default-values) instead of [NULL](../../sql-reference/syntax.md#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) data type. 
 This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
-If column type is nullable then `NULL` values are inserted as is regardless of this setting.
+If column type is nullable then `NULL` values are inserted as is, regardless of this setting.
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception.
 
 Possible values:
