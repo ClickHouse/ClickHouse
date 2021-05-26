@@ -32,10 +32,22 @@ ClickHouse не оповещает клиента. Чтобы включить �
 
  Список столбцов для дедупликации должен включать все столбцы, указанные в условиях сортировки (первичный ключ и ключ сортировки), а также в условиях партиционирования (ключ партиционирования).
 
- !!! note "Примечание"
-    Обратите внимание, что символ подстановки `*` обрабатывается так же, как и в запросах `SELECT`: столбцы `MATERIALIZED` и `ALIAS` не включаются в результат.
+!!! note "Примечание"
+    Обратите внимание, что символ подстановки `*` обрабатывается так же, как и в запросах `SELECT`: столбцы [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) и [ALIAS](../../sql-reference/statements/create/table.md#alias) не включаются в результат.
     Если указать пустой список или выражение, которое возвращает пустой список, или дедуплицировать столбец по псевдониму (`ALIAS`), то сервер вернет ошибку.
 
+**Синтаксис**
+
+``` sql
+OPTIMIZE TABLE table DEDUPLICATE; -- по всем столбцам
+OPTIMIZE TABLE table DEDUPLICATE BY *; -- исключаются MATERIALIZED и ALIAS столбцы
+OPTIMIZE TABLE table DEDUPLICATE BY colX,colY,colZ;
+OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT colX;
+OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT (colX, colY);
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex');
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT colX;
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (colX, colY);
+```
 
 **Примеры**
 
@@ -50,38 +62,131 @@ CREATE TABLE example (
     materialized_value UInt32 MATERIALIZED 12345,
     aliased_value UInt32 ALIAS 2,
     PRIMARY KEY primary_key
-) ENGINE=MergeTree
-PARTITION BY partition_key;
+) ENGINE=MergeTree　
+PARTITION BY partition_key
+ORDER BY (primary_key, secondary_key);
+```
+``` sql
+INSERT INTO example (primary_key, secondary_key, value, partition_key) 
+VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
+```
+``` sql
+SELECT * FROM example;
+```
+Результат:
 ```
 
-Прежний способ дедупликации, когда учитываются все столбцы. Строка удаляется только в том случае, если все значения во всех столбцах равны соответствующим значениям в предыдущей строке.
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
 
+Если в запросе не указаны столбцы, по которым нужно дедуплицировать, то учитываются все столбцы таблицы. Строка удаляется только в том случае, если все значения во всех столбцах равны соответствующим значениям в другой строке.
 ``` sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE;
 ```
-
-Дедупликация по всем столбцам, кроме `ALIAS` и `MATERIALIZED`: `primary_key`, `secondary_key`, `value`, `partition_key` и `materialized_value`.
-
-
 ``` sql
-OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
+SELECT * FROM example;
+```
+Результат:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-Дедупликация по всем столбцам, кроме `ALIAS`, `MATERIALIZED` и `materialized_value`: столбцы `primary_key`, `secondary_key`, `value` и `partition_key`.
-
-
+Если столбцы в запросе указаны через `*`, то дедупликация пройдет по всем столбцам, кроме `ALIAS` и `MATERIALIZED`. Для таблицы `example` будут учтены: `primary_key`, `secondary_key`, `value` и `partition_key`.
+```sql
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
+```
 ``` sql
-OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT materialized_value;
+SELECT * FROM example;
+```
+Результат:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+Дедупликация по всем столбцам, кроме `ALIAS` и `MATERIALIZED` (BY `*`), и с исключением столбца `value`: `primary_key`, `secondary_key` и `partition_key`.
+``` sql
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
+```
+``` sql
+SELECT * FROM example;
+```
+Результат:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
 ```
 
 Дедупликация по столбцам `primary_key`, `secondary_key` и `partition_key`.
-
-``` sql
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
 ```
-
-Дедупликация по любому столбцу, соответствующему регулярному выражению: столбцам `primary_key`, `secondary_key` и `partition_key`.
-
 ``` sql
+SELECT * FROM example;
+```
+Результат:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+Дедупликация по любому столбцу, который соответствует регулярному выражению `.*_key`: `primary_key`, `secondary_key` и `partition_key`.
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
+```
+``` sql
+SELECT * FROM example;
+```
+Результат:
+```
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
 ```
