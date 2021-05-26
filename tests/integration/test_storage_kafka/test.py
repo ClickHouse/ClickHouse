@@ -1623,25 +1623,22 @@ def test_kafka_virtual_columns2(kafka_cluster):
     producer.send(topic='virt2_0', value=json.dumps({'value': 2}), partition=0, key='k2', timestamp_ms=1577836802002,
                   headers=[('empty_value', b''), ('', b'empty name'), ('', b''), ('repetition', b'1'), ('repetition', b'2')])
     producer.flush()
-    time.sleep(1)
 
     producer.send(topic='virt2_0', value=json.dumps({'value': 3}), partition=1, key='k3', timestamp_ms=1577836803003,
                   headers=[('b', b'b'), ('a', b'a')])
     producer.send(topic='virt2_0', value=json.dumps({'value': 4}), partition=1, key='k4', timestamp_ms=1577836804004,
                   headers=[('a', b'a'), ('b', b'b')])
     producer.flush()
-    time.sleep(1)
 
     producer.send(topic='virt2_1', value=json.dumps({'value': 5}), partition=0, key='k5', timestamp_ms=1577836805005)
     producer.send(topic='virt2_1', value=json.dumps({'value': 6}), partition=0, key='k6', timestamp_ms=1577836806006)
     producer.flush()
-    time.sleep(1)
 
     producer.send(topic='virt2_1', value=json.dumps({'value': 7}), partition=1, key='k7', timestamp_ms=1577836807007)
     producer.send(topic='virt2_1', value=json.dumps({'value': 8}), partition=1, key='k8', timestamp_ms=1577836808008)
     producer.flush()
 
-    time.sleep(10)
+    instance.wait_for_log_line('kafka.*Committed offset 2.*virt2_[01]', repetitions=4, look_behind_lines=6000)
 
     members = describe_consumer_group('virt2')
     # pprint.pprint(members)
@@ -1707,8 +1704,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
                                                                                                               1577836804))
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(5, 5, 'k5', 1577836805))
 
-    while int(instance.query("SELECT count() FROM test.view")) < 5:
-        time.sleep(1)
+    instance.wait_for_log_line("Committed offset 5")
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
