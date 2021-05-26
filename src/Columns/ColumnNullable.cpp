@@ -707,10 +707,11 @@ void ColumnNullable::getIndicesOfNonDefaultValues(Offsets & indices, size_t from
             indices.push_back(i);
 }
 
-ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const
+ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
 {
-    auto new_values = nested_column->createWithOffsets(offsets, total_rows, shift);
-    auto new_null_map = null_map->createWithOffsets(offsets, total_rows, shift);
+    /// TODO: check if default_field is null.
+    auto new_values = nested_column->createWithOffsets(offsets, default_field, total_rows, shift);
+    auto new_null_map = null_map->createWithOffsets(offsets, Field(1), total_rows, shift);
 
     return ColumnNullable::create(new_values, new_null_map);
 }

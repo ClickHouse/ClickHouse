@@ -96,7 +96,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
                 non_nothing_types.emplace_back(type);
 
         if (non_nothing_types.size() < types.size())
-            return getLeastSupertype(non_nothing_types);
+            return getLeastSupertype(non_nothing_types, allow_conversion_to_string);
     }
 
     /// For Arrays
@@ -123,7 +123,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
             if (!all_arrays)
                 return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are Array and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeArray>(getLeastSupertype(nested_types));
+            return std::make_shared<DataTypeArray>(getLeastSupertype(nested_types, allow_conversion_to_string));
         }
     }
 
@@ -165,7 +165,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                common_tuple_types[elem_idx] = getLeastSupertype(nested_types[elem_idx]);
+                common_tuple_types[elem_idx] = getLeastSupertype(nested_types[elem_idx], allow_conversion_to_string);
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
@@ -197,7 +197,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
             if (!all_maps)
                 return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
+            return std::make_shared<DataTypeMap>(
+                getLeastSupertype(key_types, allow_conversion_to_string),
+                getLeastSupertype(value_types, allow_conversion_to_string));
         }
     }
 
@@ -228,9 +230,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
         if (have_low_cardinality)
         {
             if (have_not_low_cardinality)
-                return getLeastSupertype(nested_types);
+                return getLeastSupertype(nested_types, allow_conversion_to_string);
             else
-                return std::make_shared<DataTypeLowCardinality>(getLeastSupertype(nested_types));
+                return std::make_shared<DataTypeLowCardinality>(getLeastSupertype(nested_types, allow_conversion_to_string));
         }
     }
 
@@ -256,7 +258,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
 
         if (have_nullable)
         {
-            return std::make_shared<DataTypeNullable>(getLeastSupertype(nested_types));
+            return std::make_shared<DataTypeNullable>(getLeastSupertype(nested_types, allow_conversion_to_string));
         }
     }
 

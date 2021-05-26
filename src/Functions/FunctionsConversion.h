@@ -2599,6 +2599,7 @@ private:
 
         if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
         {
+            std::cerr << "converting tuples...\n";
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
             from_positions.reserve(from_names.size());

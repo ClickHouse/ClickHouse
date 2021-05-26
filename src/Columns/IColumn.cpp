@@ -44,7 +44,7 @@ void IColumn::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_
         indices.push_back(i);
 }
 
-ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows, size_t shift) const
+ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -60,14 +60,14 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows,
         current_offset = offsets[i];
 
         if (offsets_diff > 1)
-            res->insertManyFrom(*this, 0, offsets_diff - 1);
+            res->insertMany(default_field, offsets_diff - 1);
 
         res->insertFrom(*this, i + shift);
     }
 
     ssize_t offsets_diff = static_cast<ssize_t>(total_rows) - current_offset;
     if (offsets_diff > 1)
-        res->insertManyFrom(*this, 0, offsets_diff - 1);
+        res->insertMany(default_field, offsets_diff - 1);
 
     return res;
 }

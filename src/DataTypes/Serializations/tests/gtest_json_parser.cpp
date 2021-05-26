@@ -55,7 +55,7 @@ TEST(JSONDataParser, Parse)
 
         const auto & [paths, values] = *res;
         ASSERT_EQ(paths, (Strings{"k1", "k2.k3", "k2.k4"}));
-        ASSERT_EQ(values, (std::vector<Field>{"1", "aa", "2"}));
+        ASSERT_EQ(values, (std::vector<Field>{1, "aa", 2}));
     }
 
     {

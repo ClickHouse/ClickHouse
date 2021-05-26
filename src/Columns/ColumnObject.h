@@ -38,7 +38,7 @@ public:
 
 private:
     SubcolumnsMap subcolumns;
-    bool optimized_subcolumn_types = false;
+    bool optimized_types_of_subcolumns = false;
 
 public:
     ColumnObject() = default;
@@ -74,47 +74,40 @@ public:
 
     /// All other methods throw exception.
 
-    ColumnPtr decompress() const override { throwMustBeDecompressed(); }
-
-    TypeIndex getDataType() const override { throwMustBeDecompressed(); }
-    Field operator[](size_t) const override { throwMustBeDecompressed(); }
-    void get(size_t, Field &) const override { throwMustBeDecompressed(); }
-    StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
-    void insert(const Field &) override { throwMustBeDecompressed(); }
-    void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
-    void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
-    void insertDefault() override { throwMustBeDecompressed(); }
-    void popBack(size_t) override { throwMustBeDecompressed(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeDecompressed(); }
-    const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
-    const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }
-    void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
-    void updateWeakHash32(WeakHash32 &) const override { throwMustBeDecompressed(); }
-    void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
-    ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
-    ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
-    ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }
-    int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throwMustBeDecompressed();
-    }
-    bool hasEqualValues() const override
-    {
-        throwMustBeDecompressed();
-    }
-    void getPermutation(bool, size_t, int, Permutation &) const override { throwMustBeDecompressed(); }
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
-    ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }
-    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeDecompressed(); }
-    void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
-    void getExtremes(Field &, Field &) const override { throwMustBeDecompressed(); }
-    size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
+    ColumnPtr decompress() const override { throwMustBeConcrete(); }
+    TypeIndex getDataType() const override { throwMustBeConcrete(); }
+    Field operator[](size_t) const override { throwMustBeConcrete(); }
+    void get(size_t, Field &) const override { throwMustBeConcrete(); }
+    StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
+    void insert(const Field &) override { throwMustBeConcrete(); }
+    void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeConcrete(); }
+    void insertData(const char *, size_t) override { throwMustBeConcrete(); }
+    void insertDefault() override { throwMustBeConcrete(); }
+    void popBack(size_t) override { throwMustBeConcrete(); }
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeConcrete(); }
+    const char * deserializeAndInsertFromArena(const char *) override { throwMustBeConcrete(); }
+    const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
+    void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
+    void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
+    void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
+    ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeConcrete(); }
+    ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeConcrete(); }
+    ColumnPtr index(const IColumn &, size_t) const override { throwMustBeConcrete(); }
+    int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeConcrete(); }
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override { throwMustBeConcrete(); }
+    bool hasEqualValues() const override { throwMustBeConcrete(); }
+    void getPermutation(bool, size_t, int, Permutation &) const override { throwMustBeConcrete(); }
+    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeConcrete(); }
+    ColumnPtr replicate(const Offsets &) const override { throwMustBeConcrete(); }
+    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeConcrete(); }
+    void gather(ColumnGathererStream &) override { throwMustBeConcrete(); }
+    void getExtremes(Field &, Field &) const override { throwMustBeConcrete(); }
+    size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
 
 private:
-    [[noreturn]] void throwMustBeDecompressed() const
+    [[noreturn]] void throwMustBeConcrete() const
     {
-        throw Exception("ColumnCompressed must be decompressed before use", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::LOGICAL_ERROR);
     }
 };
 

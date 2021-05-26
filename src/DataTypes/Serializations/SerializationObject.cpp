@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/ObjectUtils.h>
@@ -23,6 +24,40 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int TYPE_MISMATCH;
+}
+
+namespace
+{
+
+class FieldVisitorReplaceNull : public StaticVisitor<Field>
+{
+public:
+    FieldVisitorReplaceNull(const Field & replacement_)
+        : replacement(replacement_)
+    {
+    }
+
+    Field operator() (const Null &) const { return replacement; }
+
+    template <typename T>
+    Field operator() (const T & x) const
+    {
+        if constexpr (std::is_base_of_v<FieldVector, T>)
+        {
+            const size_t size = x.size();
+            T res(size);
+            for (size_t i = 0; i < size; ++i)
+                res[i] = applyVisitor(*this, x[i]);
+            return res;
+        }
+        else
+            return x;
+    }
+
+private:
+    Field replacement;
+};
+
 }
 
 template <typename Parser>
@@ -49,11 +84,21 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     size_t column_size = column_object.size();
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        auto value_type = applyVisitor(FieldToDataType(/*allow_conversion_to_string=*/true), values[i]);
+        Field value = std::move(values[i]);
 
+        auto value_type = applyVisitor(FieldToDataType(/*allow_conversion_to_string=*/ true), value);
         auto value_dim = getNumberOfDimensions(*value_type);
+        auto base_type = getBaseTypeOfArray(value_type);
+
+        if (base_type->isNullable())
+        {
+            base_type = removeNullable(base_type);
+            value = applyVisitor(FieldVisitorReplaceNull(base_type->getDefault()), value);
+            value_type = createArrayOfType(base_type, value_dim);
+        }
+
         auto array_type = createArrayOfType(std::make_shared<DataTypeString>(), value_dim);
-        auto converted_value = convertFieldToTypeOrThrow(values[i], *array_type, value_type.get());
+        auto converted_value = convertFieldToTypeOrThrow(value, *array_type);
 
         if (!column_object.hasSubcolumn(paths[i]))
             column_object.addSubcolumn(paths[i], array_type->createColumn(), column_size);
@@ -63,8 +108,9 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
 
         if (value_dim != column_dim)
             throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Dimension of types mismatched beetwen value and column. Dimension of value: {}. Dimension of column: {}",
-                value_dim, column_dim);
+                "Dimension of types mismatched beetwen inserted value and column at key '{}'. "
+                "Dimension of value: {}. Dimension of column: {}",
+                paths[i], value_dim, column_dim);
 
         subcolumn.insert(converted_value, value_type);
     }

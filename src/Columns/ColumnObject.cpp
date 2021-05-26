@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <Interpreters/castColumn.h>
 
+#include <Common/FieldVisitors.h>
+
 namespace DB
 {
 
@@ -154,7 +156,7 @@ Names ColumnObject::getKeys() const
 
 void ColumnObject::optimizeTypesOfSubcolumns()
 {
-    if (optimized_subcolumn_types)
+    if (optimized_types_of_subcolumns)
         return;
 
     for (auto & [_, subcolumn] : subcolumns)
@@ -164,7 +166,7 @@ void ColumnObject::optimizeTypesOfSubcolumns()
             continue;
 
         size_t subcolumn_size = subcolumn.size();
-        if (subcolumn.data->getNumberOfDefaultRows(1) == 0)
+        if (subcolumn.data->getNumberOfDefaultRows(/*step=*/ 1) == 0)
         {
             subcolumn.data = castColumn({subcolumn.data, from_type, ""}, subcolumn.least_common_type);
         }
@@ -174,13 +176,16 @@ void ColumnObject::optimizeTypesOfSubcolumns()
             auto & offsets_data = offsets->getData();
 
             subcolumn.data->getIndicesOfNonDefaultValues(offsets_data, 0, subcolumn_size);
-            auto values = subcolumn.data->index(*offsets, subcolumn_size);
-            values = castColumn({subcolumn.data, from_type, ""}, subcolumn.least_common_type);
-            subcolumn.data = values->createWithOffsets(offsets_data, subcolumn_size, /*shift=*/ 0);
+
+            auto values = subcolumn.data->index(*offsets, offsets->size());
+            values = castColumn({values, from_type, ""}, subcolumn.least_common_type);
+
+            subcolumn.data = values->createWithOffsets(
+                offsets_data, subcolumn.least_common_type->getDefault(), subcolumn_size, /*shift=*/ 0);
         }
     }
 
-    optimized_subcolumn_types = true;
+    optimized_types_of_subcolumns = true;
 }
 
 }
