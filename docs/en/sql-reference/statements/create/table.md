@@ -354,3 +354,70 @@ SELECT * FROM base.t1;
 │ 3 │
 └───┘
 ```
+
+## COMMENT TABLE {#comment-table}
+
+You can add a comment to the table when you creating it.
+
+!!!note "Note"
+    The comment is supported for all table engines besides [Kafka](../../../engines/table-engines/integrations/kafka.md) and [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md).
+	
+
+**Syntax**
+
+``` sql
+CREATE TABLE db.table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+COMMENT 'Comment';
+```
+	
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE table1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+SELECT name,comment FROM system.tables WHERE name = 't1';
+```
+
+Result:
+
+```text
+┌─name─┬─comment─────────────┐
+│ t1   │ The temporary table │
+└──────┴─────────────────────┘
+```
+
+Query:
+
+``` sql
+CREATE TABLE t2 (x String) ENGINE = Memory COMMENT 'The MergeTree table';
+SELECT name,comment FROM system.tables WHERE name = 't2';
+```
+
+Result:
+
+```text
+┌─name─┬─comment─────────────┐
+│ t2   │ The MergeTree table │
+└──────┴─────────────────────┘
+
+```
+
+Query:
+
+``` sql
+CREATE TABLE t3 (x String) ENGINE = Memory COMMENT 'The Log table';
+SELECT name,comment FROM system.tables WHERE name = 't3';
+```
+
+Result:
+
+```text
+┌─name─┬─comment───────┐
+│ t3   │ The Log table │
+└──────┴───────────────┘
+```
