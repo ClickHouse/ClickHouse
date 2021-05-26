@@ -296,6 +296,79 @@ def add_report_errors():
     tables.insert(1, text)
     errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while building the report</a>']);
 
+
+def add_flamegraphs():
+    all_files = []
+    for file in os.listdir("."):
+        if file.endswith(".svg"):
+            all_files.append(os.path.join(".", file))
+
+    all_files.sort()
+    result = ""
+
+    result += """
+        <style type="text/css">
+        #wrap {
+           width:100%;
+           margin:0 auto;
+        }
+        #first_col {
+           float:left;
+           width:33%;
+        }
+        #second_col {
+           float:left;
+           width:33%;
+        }
+        #third_col {
+           float:left;
+           width:33%;
+        }
+    </style>
+    """
+
+    pattern = """
+    <p>{name}</p>
+    <object class="p" data="{name}" type="image/svg+xml" style="width:100%">
+    </object>
+"""
+  
+    pattern_row = """
+    <div id="wrap">
+        {}
+    </div>
+    """
+
+    
+
+    for i in range(0, len(all_files), 3):
+        group = all_files[i:i+3]
+
+        first_column = """<div id="first_col">"""
+        second_column = """<div id="second_col">"""
+        third_column = """<div id="third_col">"""
+
+        first_column += pattern.format(name=group[0])
+        second_column += pattern.format(name=group[1])
+        third_column += pattern.format(name=group[2])
+
+        first_column += """</div>"""
+        second_column += """</div>"""
+        third_column += """</div>"""
+
+
+        result += "<h3>{}</h3>".format("".join(group[1].split('.')[:-2]))
+        result += "<br>"
+        result += pattern_row.format(first_column + second_column + third_column)
+
+            
+
+    
+    
+
+    return result
+
+
 def add_errors_explained():
     if not errors_explained:
         return
@@ -523,6 +596,8 @@ if args.report == 'main':
     for t in tables:
         print(t)
 
+    print(add_flamegraphs())
+
     print(f"""
     </div>
     <p class="links">
@@ -640,6 +715,7 @@ elif args.report == 'all-queries':
     add_report_errors()
     for t in tables:
         print(t)
+
 
     print(f"""
     </div>
