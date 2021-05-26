@@ -100,7 +100,7 @@ When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONAR
 
 **See Also**
 
--   [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+-   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 

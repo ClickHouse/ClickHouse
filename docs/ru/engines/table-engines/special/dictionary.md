@@ -92,4 +92,4 @@ select * from products limit 1;
 
 **Смотрите также**
 
--   [Функция dictionary](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+-   [Функция dictionary](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
