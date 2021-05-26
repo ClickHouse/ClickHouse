@@ -2915,7 +2915,8 @@ EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 SELECT
     sum(a),
     sumCount(b).1,
-    sumCount(b).2
+    sumCount(b).2,
+    (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
 ```
 
