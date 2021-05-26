@@ -41,8 +41,8 @@ LibraryDictionarySource::LibraryDictionarySource(
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
 {
-    if (created_from_ddl && !pathStartsWith(path, context->getUserFilesPath()))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getUserFilesPath());
+    if (created_from_ddl && !pathStartsWith(path, context->getDictionariesLibPath()))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getDictionariesLibPath());
 
     if (!Poco::File(path).exists())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", Poco::File(path).path());
