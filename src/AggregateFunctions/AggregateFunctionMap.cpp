@@ -25,19 +25,14 @@ public:
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
         if (map_type)
         {
-            if (arguments->size() > 1)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    getName() + " combinator takes only one map argument");
+            if (arguments.size() > 1)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, getName() + " combinator takes only one map argument");
 
             return DataTypes({map_type->getValueType()});
         }
 
         // we need this part just to pass to redirection for mapped arrays
-        auto check_func = [](DataTypePtr t)
-        {
-            return t->getTypeId() == TypeIndex::Array;
-        };
+        auto check_func = [](DataTypePtr t) { return t->getTypeId() == TypeIndex::Array; };
 
         const auto * tup_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         if (tup_type)
@@ -46,8 +41,8 @@ public:
             bool arrays_match = arguments.size() == 1 && types.size() >= 2 && std::all_of(types.begin(), types.end(), check_func);
             if (arrays_match)
             {
-                const auto & val_array_type = assert_cast<const DataTypeArray &>(types[1]);
-                return DataTypes({val_array_type.getNestedType()});
+                const auto * val_array_type = assert_cast<const DataTypeArray *>(types[1].get());
+                return DataTypes({val_array_type->getNestedType()});
             }
         }
         else
@@ -55,7 +50,7 @@ public:
             bool arrays_match = arguments.size() >= 2 && std::all_of(arguments.begin(), arguments.end(), check_func);
             if (arrays_match)
             {
-                const auto & val_array_type = assert_cast<const DataTypeArray &>(arguments[1]);
+                const auto * val_array_type = assert_cast<const DataTypeArray *>(arguments[1].get());
                 return DataTypes({val_array_type->getNestedType()});
             }
         }
@@ -72,9 +67,9 @@ public:
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
         if (map_type)
         {
-            auto key_type_id = map_type->getKeyType()->getTypeId();
+            const auto & key_type = map_type->getKeyType();
 
-            switch (key_type_id)
+            switch (key_type->getTypeId())
             {
                 case TypeIndex::Enum8:
                 case TypeIndex::Int8:
@@ -86,6 +81,10 @@ public:
                     return std::make_shared<AggregateFunctionMap<Int32>>(nested_function, arguments);
                 case TypeIndex::Int64:
                     return std::make_shared<AggregateFunctionMap<Int64>>(nested_function, arguments);
+                case TypeIndex::Int128:
+                    return std::make_shared<AggregateFunctionMap<Int128>>(nested_function, arguments);
+                case TypeIndex::Int256:
+                    return std::make_shared<AggregateFunctionMap<Int256>>(nested_function, arguments);
                 case TypeIndex::UInt8:
                     return std::make_shared<AggregateFunctionMap<UInt8>>(nested_function, arguments);
                 case TypeIndex::Date:
@@ -96,13 +95,19 @@ public:
                     return std::make_shared<AggregateFunctionMap<UInt32>>(nested_function, arguments);
                 case TypeIndex::UInt64:
                     return std::make_shared<AggregateFunctionMap<UInt64>>(nested_function, arguments);
-                case TypeIndex::UUID:
+                case TypeIndex::UInt128:
                     return std::make_shared<AggregateFunctionMap<UInt128>>(nested_function, arguments);
+                case TypeIndex::UInt256:
+                    return std::make_shared<AggregateFunctionMap<UInt256>>(nested_function, arguments);
+                case TypeIndex::UUID:
+                    return std::make_shared<AggregateFunctionMap<UUID>>(nested_function, arguments);
                 case TypeIndex::FixedString:
                 case TypeIndex::String:
                     return std::make_shared<AggregateFunctionMap<String>>(nested_function, arguments);
                 default:
-                    throw Exception{"Illegal columns in arguments for combinator " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    throw Exception{
+                        "Map key type " + key_type->getName() + " is not is not supported by combinator " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
             }
         }
         else
@@ -115,9 +120,10 @@ public:
                 auto & aggr_func_factory = AggregateFunctionFactory::instance();
                 return aggr_func_factory.get(nested_func_name + "MappedArrays", arguments, params, out_properties);
             }
+            else
+                throw Exception{
+                    "Aggregation '" + nested_func_name + "Map' is not implemented for mapped arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
-
-        throw Exception{"Illegal columns in arguments for combinator " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
