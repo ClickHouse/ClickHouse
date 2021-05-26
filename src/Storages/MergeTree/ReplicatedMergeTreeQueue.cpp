@@ -268,28 +268,27 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 
     bool some_mutations_are_probably_done = false;
 
-    for (auto it = in_partition->second.begin(); it != in_partition->second.end(); ++it)
+    for (auto & [block_id, status] : in_partition->second)
     {
-        MutationStatus & status = *it->second;
 
         if (remove_part && remove_covered_parts)
-            status.parts_to_do.removePartAndCoveredParts(part_name);
+            status->parts_to_do.removePartAndCoveredParts(part_name);
         else if (remove_covered_parts)
-            status.parts_to_do.removePartsCoveredBy(part_name);
+            status->parts_to_do.removePartsCoveredBy(part_name);
         else if (remove_part)
-            status.parts_to_do.remove(part_name);
+            status->parts_to_do.remove(part_name);
         else
             throw Exception("Called remove part from mutations, but nothing removed", ErrorCodes::LOGICAL_ERROR);
 
-        if (status.parts_to_do.size() == 0)
+        if (status->parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
 
-        if (!status.latest_failed_part.empty() && part_info.contains(status.latest_failed_part_info))
+        if (!status->latest_failed_part.empty() && part_info.contains(status->latest_failed_part_info))
         {
-            status.latest_failed_part.clear();
-            status.latest_failed_part_info = MergeTreePartInfo();
-            status.latest_fail_time = 0;
-            status.latest_fail_reason.clear();
+            status->latest_failed_part.clear();
+            status->latest_failed_part_info = MergeTreePartInfo();
+            status->latest_fail_time = 0;
+            status->latest_fail_reason.clear();
         }
     }
 
