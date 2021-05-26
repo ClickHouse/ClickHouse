@@ -1,2 +1,0 @@
-[libfuzzer]
-dict = YAML_fuzzer.dict
