@@ -23,7 +23,7 @@ A ClickHouse table.
 
 **Example**
 
-Input table:
+Input table `dictionary_source_table`:
 
 ``` text
 ┌─id─┬─value─┐
