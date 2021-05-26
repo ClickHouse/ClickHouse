@@ -374,6 +374,7 @@ function run_tests
         01801_s3_cluster
 
         # Depends on LLVM JIT
+        01072_nullable_jit
         01852_jit_if
         01865_jit_comparison_constant_result
         01871_merge_tree_compile_expressions
