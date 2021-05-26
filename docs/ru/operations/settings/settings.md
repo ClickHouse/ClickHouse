@@ -348,14 +348,23 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки. 
+
 Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
+
+Возможные значения:
+
+-   0 — вставка `NULL` в столбец, не позволяющий хранить `NULL`, приведет к возникновению исключения.
+-   1 — ячейки с `NULL` инициализируются значением столбца по умолчанию.
+
+Значение по умолчанию: `1`.
 
 ## insert_null_as_default {#insert_null_as_default}
 
 Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable). 
+Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
+
 Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
-Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
-Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения.
 
 Возможные значения:
 
