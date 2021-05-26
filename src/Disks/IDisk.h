@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
+#include "Disks/Executor.h"
 
 #include <memory>
 #include <mutex>
@@ -179,17 +180,17 @@ public:
     virtual void removeRecursive(const String & path) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
-    /// Differs from removeFile for S3 disks
+    /// Differs from removeFile for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFile(const String & path, bool) { removeFile(path); }
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
-    /// Differs from removeRecursive for S3 disks
+    /// Differs from removeRecursive for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedRecursive(const String & path, bool) { removeRecursive(path); }
 
     /// Remove file or directory if it exists.
-    /// Differs from removeFileIfExists for S3 disks
+    /// Differs from removeFileIfExists for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
 
