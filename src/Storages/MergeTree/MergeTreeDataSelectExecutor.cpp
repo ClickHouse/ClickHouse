@@ -633,6 +633,271 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     return sampling;
 }
 
+RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
+    MergeTreeData::DataPartsVector & parts,
+    StorageMetadataPtr metadata_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr & context,
+    KeyCondition & key_condition,
+    const MergeTreeReaderSettings & reader_settings,
+    Poco::Logger * log,
+    size_t num_streams,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    RangesInDataParts parts_with_ranges(parts.size());
+    const Settings & settings = context->getSettingsRef();
+
+    /// Let's start analyzing all useful indices
+
+    struct DataSkippingIndexAndCondition
+    {
+        MergeTreeIndexPtr index;
+        MergeTreeIndexConditionPtr condition;
+        std::atomic<size_t> total_granules{0};
+        std::atomic<size_t> granules_dropped{0};
+        std::atomic<size_t> total_parts{0};
+        std::atomic<size_t> parts_dropped{0};
+
+        DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
+            : index(index_), condition(condition_)
+        {
+        }
+    };
+    std::list<DataSkippingIndexAndCondition> useful_indices;
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+        auto condition = index_helper->createIndexCondition(query_info, context);
+        if (!condition->alwaysUnknownOrTrue())
+            useful_indices.emplace_back(index_helper, condition);
+    }
+
+    if (settings.force_data_skipping_indices.changed)
+    {
+        const auto & indices = settings.force_data_skipping_indices.toString();
+
+        Strings forced_indices;
+        {
+            Tokens tokens(&indices[0], &indices[indices.size()], settings.max_query_size);
+            IParser::Pos pos(tokens, settings.max_parser_depth);
+            Expected expected;
+            if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse force_data_skipping_indices ('{}')", indices);
+        }
+
+        if (forced_indices.empty())
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices);
+
+        std::unordered_set<std::string> useful_indices_names;
+        for (const auto & useful_index : useful_indices)
+            useful_indices_names.insert(useful_index.index->index.name);
+
+        for (const auto & index_name : forced_indices)
+        {
+            if (!useful_indices_names.count(index_name))
+            {
+                throw Exception(
+                    ErrorCodes::INDEX_NOT_USED,
+                    "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                    backQuote(index_name));
+            }
+        }
+    }
+
+    std::atomic<size_t> sum_marks_pk = 0;
+    std::atomic<size_t> sum_parts_pk = 0;
+
+    /// Let's find what range to read from each part.
+    {
+        std::atomic<size_t> total_rows{0};
+
+        SizeLimits limits;
+        if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
+            limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
+
+        SizeLimits leaf_limits;
+        if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
+
+        auto process_part = [&](size_t part_index)
+        {
+            auto & part = parts[part_index];
+
+            RangesInDataPart ranges(part, part_index);
+
+            size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
+
+            if (metadata_snapshot->hasPrimaryKey())
+                ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
+            else if (total_marks_count)
+                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+
+            sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
+
+            if (!ranges.ranges.empty())
+                sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
+
+            for (auto & index_and_condition : useful_indices)
+            {
+                if (ranges.ranges.empty())
+                    break;
+
+                index_and_condition.total_parts.fetch_add(1, std::memory_order_relaxed);
+
+                size_t total_granules = 0;
+                size_t granules_dropped = 0;
+                ranges.ranges = filterMarksUsingIndex(
+                    index_and_condition.index,
+                    index_and_condition.condition,
+                    part,
+                    ranges.ranges,
+                    settings,
+                    reader_settings,
+                    total_granules,
+                    granules_dropped,
+                    log);
+
+                index_and_condition.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
+                index_and_condition.granules_dropped.fetch_add(granules_dropped, std::memory_order_relaxed);
+
+                if (ranges.ranges.empty())
+                    index_and_condition.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            if (!ranges.ranges.empty())
+            {
+                if (limits.max_rows || leaf_limits.max_rows)
+                {
+                    /// Fail fast if estimated number of rows to read exceeds the limit
+                    auto current_rows_estimate = ranges.getRowsCount();
+                    size_t prev_total_rows_estimate = total_rows.fetch_add(current_rows_estimate);
+                    size_t total_rows_estimate = current_rows_estimate + prev_total_rows_estimate;
+                    limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+                    leaf_limits.check(
+                        total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
+                }
+
+                parts_with_ranges[part_index] = std::move(ranges);
+            }
+        };
+
+        size_t num_threads = std::min(size_t(num_streams), parts.size());
+
+        if (num_threads <= 1)
+        {
+            for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+                process_part(part_index);
+        }
+        else
+        {
+            /// Parallel loading of data parts.
+            ThreadPool pool(num_threads);
+
+            for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+                pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
+                {
+                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachQueryIfNotDetached(););
+                    if (thread_group)
+                        CurrentThread::attachTo(thread_group);
+
+                    process_part(part_index);
+                });
+
+            pool.wait();
+        }
+
+        /// Skip empty ranges.
+        size_t next_part = 0;
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        {
+            auto & part = parts_with_ranges[part_index];
+            if (!part.data_part)
+                continue;
+
+            if (next_part != part_index)
+                std::swap(parts_with_ranges[next_part], part);
+
+            ++next_part;
+        }
+
+        parts_with_ranges.resize(next_part);
+    }
+
+    if (metadata_snapshot->hasPrimaryKey())
+    {
+        auto description = key_condition.getDescription();
+
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PrimaryKey,
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
+            .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
+            .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed)});
+    }
+
+    for (const auto & index_and_condition : useful_indices)
+    {
+        const auto & index_name = index_and_condition.index->index.name;
+        LOG_DEBUG(
+            log,
+            "Index {} has dropped {}/{} granules.",
+            backQuote(index_name),
+            index_and_condition.granules_dropped,
+            index_and_condition.total_granules);
+
+        std::string description
+            = index_and_condition.index->index.type + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
+
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Skip,
+            .name = index_name,
+            .description = std::move(description),
+            .num_parts_after = index_and_condition.total_parts - index_and_condition.parts_dropped,
+            .num_granules_after = index_and_condition.total_granules - index_and_condition.granules_dropped});
+    }
+
+    return parts_with_ranges;
+}
+
+void checkLimits(MergeTreeData & data, const RangesInDataParts & parts_with_range, ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    // Check limitations. query_id is used as the quota RAII's resource key.
+    String query_id;
+    {
+        const auto data_settings = data.getSettings();
+        auto max_partitions_to_read
+                = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data_settings->max_partitions_to_read;
+        if (max_partitions_to_read > 0)
+        {
+            std::set<String> partitions;
+            for (auto & part_with_ranges : parts_with_ranges)
+                partitions.insert(part_with_ranges.data_part->info.partition_id);
+            if (partitions.size() > size_t(max_partitions_to_read))
+                throw Exception(
+                        ErrorCodes::TOO_MANY_PARTITIONS,
+                        "Too many partitions to read. Current {}, max {}",
+                        partitions.size(),
+                        max_partitions_to_read);
+        }
+
+        if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0)
+        {
+            size_t sum_marks = 0;
+            for (const auto & part : parts_with_ranges)
+                sum_marks += part.getMarksCount();
+
+            if (sum_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
+            {
+                query_id = context->getCurrentQueryId();
+                if (!query_id.empty())
+                    data.insertQueryIdOrThrow(query_id, data_settings->max_concurrent_queries);
+            }
+        }
+    }
+}
+
 QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
