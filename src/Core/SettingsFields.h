@@ -101,7 +101,7 @@ struct SettingFieldTimespan
     Poco::Timespan value;
     bool changed = false;
 
-    explicit SettingFieldTimespan(const Poco::Timespan & x = {}) : value(x) {}
+    explicit SettingFieldTimespan(Poco::Timespan x = {}) : value(x) {}
 
     template <class Rep, class Period = std::ratio<1>>
     explicit SettingFieldTimespan(const std::chrono::duration<Rep, Period> & x)
@@ -110,7 +110,7 @@ struct SettingFieldTimespan
     explicit SettingFieldTimespan(UInt64 x) : SettingFieldTimespan(Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)}) {}
     explicit SettingFieldTimespan(const Field & f);
 
-    SettingFieldTimespan & operator =(const Poco::Timespan & x) { value = x; changed = true; return *this; }
+    SettingFieldTimespan & operator =(Poco::Timespan x) { value = x; changed = true; return *this; }
 
     template <class Rep, class Period = std::ratio<1>>
     SettingFieldTimespan & operator =(const std::chrono::duration<Rep, Period> & x) { *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(std::chrono::duration_cast<std::chrono::microseconds>(x).count())}; return *this; }

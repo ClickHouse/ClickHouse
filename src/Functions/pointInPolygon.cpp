@@ -13,6 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
+#include <common/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -59,10 +60,10 @@ public:
 
     explicit FunctionPointInPolygon(bool validate_) : validate(validate_) {}
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(
-            context.getSettingsRef().validate_polygons);
+            context->getSettingsRef().validate_polygons);
     }
 
     String getName() const override
@@ -425,7 +426,14 @@ private:
     {
         out_container.reserve(end - begin);
         for (size_t i = begin; i < end; ++i)
+        {
+            Int64 result = 0;
+            if (common::mulOverflow(static_cast<Int64>(x_data[i]), static_cast<Int64>(y_data[i]), result))
+                throw Exception("The coordinates of the point are such that subsequent calculations cannot be performed correctly. " \
+                                "Most likely they are very large in modulus.", ErrorCodes::BAD_ARGUMENTS);
+
             out_container.emplace_back(x_data[i], y_data[i]);
+        }
     }
 
     void parseConstPolygonWithoutHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
@@ -540,7 +548,7 @@ private:
         }
     }
 
-    void parseConstPolygon(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
+    void NO_SANITIZE_UNDEFINED parseConstPolygon(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         if (arguments.size() == 2)
             parseConstPolygonFromSingleColumn(arguments, out_polygon);

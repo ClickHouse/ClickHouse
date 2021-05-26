@@ -1,6 +1,6 @@
 ---
 toc_priority: 19
-toc_title: "\u0048\u0054\u0054\u0050\u002d\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441"
+toc_title: "HTTP-интерфейс"
 ---
 
 # HTTP-интерфейс {#http-interface}
@@ -149,27 +149,47 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Для запросов, которые не возвращают таблицу с данными, в случае успеха, выдаётся пустое тело ответа.
 
-Вы можете использовать внутренний формат сжатия Clickhouse при передаче данных. Формат сжатых данных нестандартный, и вам придётся использовать для работы с ним специальную программу `clickhouse-compressor` (устанавливается вместе с пакетом `clickhouse-client`). Для повышения эффективности вставки данных можно отключить проверку контрольной суммы на стороне сервера с помощью настройки[http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress).
 
-Если вы указали `compress = 1` в URL, то сервер сжимает данные, которые он отправляет.
-Если вы указали `decompress = 1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
+## Сжатие {#compression}
 
-Также, можно использовать [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). Для отправки сжатого запроса `POST`, добавьте заголовок `Content-Encoding: compression_method`. Чтобы ClickHouse сжимал ответ, добавьте заголовок `Accept-Encoding: compression_method`. ClickHouse поддерживает следующие [методы сжатия](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens): `gzip`, `br`, and `deflate`. Чтобы включить HTTP compression, используйте настройку ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression). Уровень сжатия данных для всех методов сжатия можно настроить с помощью настройки [http_zlib_compression_level](#settings-http_zlib_compression_level).
+Сжатие можно использовать для уменьшения трафика по сети при передаче большого количества данных, а также для создания сразу сжатых дампов.
 
-Это может быть использовано для уменьшения трафика по сети при передаче большого количества данных, а также для создания сразу сжатых дампов.
+Вы можете использовать внутренний формат сжатия Clickhouse при передаче данных. Формат сжатых данных нестандартный, и вам придётся использовать для работы с ним специальную программу `clickhouse-compressor`. Она устанавливается вместе с пакетом `clickhouse-client`. Для повышения эффективности вставки данных можно отключить проверку контрольной суммы на стороне сервера с помощью настройки [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress).
 
-Примеры отправки данных со сжатием:
+Если вы указали `compress=1` в URL, то сервер сжимает данные, которые он отправляет. Если вы указали `decompress=1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
 
-``` bash
-$ #Отправка данных на сервер:
-$ curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
+Также можно использовать [сжатие HTTP](https://en.wikipedia.org/wiki/HTTP_compression). ClickHouse поддерживает следующие [методы сжатия](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens): 
 
-$ #Отправка данных клиенту:
-$ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
-```
+- `gzip`
+- `br`
+- `deflate`
+- `xz`
+
+Для отправки сжатого запроса `POST`, добавьте заголовок `Content-Encoding: compression_method`. 
+Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level).
 
 !!! note "Примечание"
     Некоторые HTTP-клиенты могут по умолчанию распаковывать данные (`gzip` и `deflate`) с сервера в фоновом режиме и вы можете получить распакованные данные, даже если правильно используете настройки сжатия.
+
+**Примеры**
+
+``` bash
+# Отправка сжатых данных на сервер
+$ echo "SELECT 1" | gzip -c | \
+  curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
+```
+
+``` bash
+# Получение сжатых данных с сервера
+$ curl -vsS "http://localhost:8123/?enable_http_compression=1" \
+    -H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
+$ zcat result.gz
+0
+1
+2
+```
+
+## База данных по умолчанию {#default-database}
 
 Вы можете использовать параметр URL `database` или заголовок `X-ClickHouse-Database`, чтобы указать БД по умолчанию.
 
@@ -615,4 +635,3 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 * Connection #0 to host localhost left intact
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/http_interface/) <!--hide-->

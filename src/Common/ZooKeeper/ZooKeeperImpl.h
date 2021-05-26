@@ -88,7 +88,7 @@ using namespace DB;
 
 /** Usage scenario: look at the documentation for IKeeper class.
   */
-class ZooKeeper : public IKeeper
+class ZooKeeper final : public IKeeper
 {
 public:
     struct Node
@@ -121,6 +121,9 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    void executeGenericRequest(
+        const ZooKeeperRequestPtr & request,
+        ResponseCallback callback);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -166,6 +169,20 @@ public:
     void multi(
         const Requests & requests,
         MultiCallback callback) override;
+
+    /// Without forcefully invalidating (finalizing) ZooKeeper session before
+    /// establishing a new one, there was a possibility that server is using
+    /// two ZooKeeper sessions simultaneously in different parts of code.
+    /// This is strong antipattern and we always prevented it.
+
+    /// ZooKeeper is linearizeable for writes, but not linearizeable for
+    /// reads, it only maintains "sequential consistency": in every session
+    /// you observe all events in order but possibly with some delay. If you
+    /// perform write in one session, then notify different part of code and
+    /// it will do read in another session, that read may not see the
+    /// already performed write.
+
+    void finalize()  override { finalize(false, false); }
 
 private:
     String root_path;

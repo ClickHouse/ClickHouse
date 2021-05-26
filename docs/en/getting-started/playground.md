@@ -38,10 +38,10 @@ The queries are executed as a read-only user. It implies some limitations:
 
 The following settings are also enforced:
 
-- [max_result_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
-- [max_result_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
-- [result_overflow_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
-- [max_execution_time=60000](../operations/settings/query_complexity/#max-execution-time)
+- [max_result_bytes=10485760](../operations/settings/query-complexity/#max-result-bytes)
+- [max_result_rows=2000](../operations/settings/query-complexity/#setting-max_result_rows)
+- [result_overflow_mode=break](../operations/settings/query-complexity/#result-overflow-mode)
+- [max_execution_time=60000](../operations/settings/query-complexity/#max-execution-time)
 
 ## Examples {#examples}
 

@@ -8,10 +8,10 @@
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
+#include <IO/TimeoutSetter.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context.h>
-#include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
 
@@ -89,7 +89,7 @@ struct QueryState
         *this = QueryState();
     }
 
-    bool empty()
+    bool empty() const
     {
         return is_empty;
     }
@@ -113,14 +113,13 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_,
-        std::string server_display_name_);
+    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
     ~TCPHandler() override;
 
     void run() override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(DB::Context & /*context*/) {}
+    virtual void customizeContext(ContextPtr /*context*/) {}
 
 private:
     IServer & server;
@@ -133,8 +132,10 @@ private:
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
 
-    Context connection_context;
-    std::optional<Context> query_context;
+    ContextPtr connection_context;
+    ContextPtr query_context;
+
+    size_t unknown_packet_in_send_data = 0;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
@@ -151,6 +152,7 @@ private:
     String cluster;
     String cluster_secret;
 
+    std::mutex task_callback_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -170,9 +172,11 @@ private:
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
+    String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
-    bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
+    bool readDataNext(size_t poll_interval, time_t receive_timeout);
     void readData(const Settings & connection_settings);
+    void receiveClusterNameAndSalt();
     std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);
 
     [[noreturn]] void receiveUnexpectedData();
@@ -199,11 +203,10 @@ private:
     void sendLogs();
     void sendEndOfStream();
     void sendPartUUIDs();
+    void sendReadTaskRequestAssumeLocked();
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
-
-    void receiveClusterNameAndSalt();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

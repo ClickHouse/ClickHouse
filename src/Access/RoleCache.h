@@ -20,7 +20,8 @@ public:
     ~RoleCache();
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
-        const boost::container::flat_set<UUID> & current_roles, const boost::container::flat_set<UUID> & current_roles_with_admin_option);
+        const std::vector<UUID> & current_roles,
+        const std::vector<UUID> & current_roles_with_admin_option);
 
 private:
     void collectEnabledRoles(ext::scope_guard & notifications);

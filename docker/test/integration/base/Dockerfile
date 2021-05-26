@@ -18,7 +18,9 @@ RUN apt-get update \
         curl \
         tar \
         krb5-user \
-        iproute2
+        iproute2 \
+        lsof \
+        g++
 RUN rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

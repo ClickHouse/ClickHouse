@@ -1,6 +1,6 @@
 ---
 toc_priority: 28
-toc_title: "\u0412\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u044b\u0435\u0020\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u044b\u0020\u043e\u0442\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0445\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
+toc_title: "Визуальные интерфейсы от сторонних разработчиков"
 ---
 
 
@@ -103,7 +103,11 @@ toc_title: "\u0412\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u044b\u0435\u0020\u
 
 [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) — это ядро Jupyter для ClickHouse, которое поддерживает запрос ClickHouse-данных с использованием SQL в Jupyter.
 
-## Коммерческие {#kommercheskie}
+### MindsDB Studio {#mindsdb}
+
+[MindsDB](https://mindsdb.com/) — это продукт с открытым исходным кодом, реализующий слой искусственного интеллекта (Artificial Intelligence, AI) для различных СУБД, в том числе для ClickHouse. MindsDB облегчает процессы создания, обучения и развертывания современных моделей машинного обучения. Графический пользовательский интерфейс MindsDB Studio позволяет обучать новые модели на основе данных в БД, интерпретировать сделанные моделями прогнозы, выявлять потенциальные ошибки в данных, визуализировать и оценивать достоверность моделей с помощью функции Explainable AI, так чтобы вы могли быстрее адаптировать и настраивать ваши модели машинного обучения.
+
+## Коммерческие {#commercial}
 
 ### DataGrip {#datagrip}
 
@@ -146,7 +150,6 @@ toc_title: "\u0412\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u044b\u0435\u0020\u
 -   Подготовка данных и возможности ETL.
 -   Моделирование данных с помощью SQL для их реляционного отображения.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
 
 ### Looker {#looker}
 
@@ -163,4 +166,25 @@ toc_title: "\u0412\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u044b\u0435\u0020\u
 
 [Как сконфигурировать ClickHouse в Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-[Original article](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
+### SeekTable {#seektable}
+
+[SeekTable](https://www.seektable.com) — это аналитический инструмент для самостоятельного анализа и обработки данных бизнес-аналитики. Он доступен как в виде облачного сервиса, так и в виде локальной версии. Отчеты из SeekTable могут быть встроены в любое веб-приложение.
+
+Основные возможности:
+
+-   Удобный конструктор отчетов.
+-   Гибкая настройка отчетов SQL и создание запросов для специфичных отчетов.
+-   Интегрируется с ClickHouse, используя собственную точку приема запроса TCP/IP или интерфейс HTTP(S) (два разных драйвера).
+-   Поддерживает всю мощь диалекта ClickHouse SQL для построения запросов по различным измерениям и показателям.
+-   [WEB-API](https://www.seektable.com/help/web-api-integration) для автоматизированной генерации отчетов.
+-   Процесс разработки отчетов поддерживает [резервное копирование/восстановление данных](https://www.seektable.com/help/self-hosted-backup-restore); конфигурация моделей данных (кубов) / отчетов представляет собой удобочитаемый XML-файл, который может храниться в системе контроля версий.
+
+SeekTable [бесплатен](https://www.seektable.com/help/cloud-pricing) для личного/индивидуального использования.
+
+[Как сконфигурировать подключение ClickHouse в SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+
+### Chadmin {#chadmin}
+
+[Chadmin](https://github.com/bun4uk/chadmin) — простой графический интерфейс для визуализации запущенных запросов на вашем кластере ClickHouse. Он отображает информацию о запросах и дает возможность их завершать.
+
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->

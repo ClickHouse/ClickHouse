@@ -18,18 +18,18 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_, std::string resource
 }
 
 
-void WebUIRequestHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
 
     response.setContentType("text/html; charset=UTF-8");
 
-    if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+    if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
     setResponseDefaultHeaders(response, keep_alive_timeout);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    response.send() << getResource(resource_name);
+    *response.send() << getResource(resource_name);
 }
 
 }

@@ -35,10 +35,10 @@ Takes any integer and converts it into [binary form](https://en.wikipedia.org/wi
 SELECT bitTest(number, index)
 ```
 
-**Parameters**
+**Arguments**
 
--   `number` – integer number.
--   `index` – position of bit.
+-   `number` – Integer number.
+-   `index` – Position of bit.
 
 **Returned values**
 
@@ -53,7 +53,7 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 Query:
 
 ``` sql
-SELECT bitTest(43, 1)
+SELECT bitTest(43, 1);
 ```
 
 Result:
@@ -69,7 +69,7 @@ Another example:
 Query:
 
 ``` sql
-SELECT bitTest(43, 2)
+SELECT bitTest(43, 2);
 ```
 
 Result:
@@ -100,10 +100,10 @@ The conjuction for bitwise operations:
 SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 ```
 
-**Parameters**
+**Arguments**
 
--   `number` – integer number.
--   `index1`, `index2`, `index3`, `index4` – positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
+-   `number` – Integer number.
+-   `index1`, `index2`, `index3`, `index4` – Positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
 
 **Returned values**
 
@@ -118,7 +118,7 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 Query:
 
 ``` sql
-SELECT bitTestAll(43, 0, 1, 3, 5)
+SELECT bitTestAll(43, 0, 1, 3, 5);
 ```
 
 Result:
@@ -134,7 +134,7 @@ Another example:
 Query:
 
 ``` sql
-SELECT bitTestAll(43, 0, 1, 3, 5, 2)
+SELECT bitTestAll(43, 0, 1, 3, 5, 2);
 ```
 
 Result:
@@ -165,10 +165,10 @@ The disjunction for bitwise operations:
 SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 ```
 
-**Parameters**
+**Arguments**
 
--   `number` – integer number.
--   `index1`, `index2`, `index3`, `index4` – positions of bit.
+-   `number` – Integer number.
+-   `index1`, `index2`, `index3`, `index4` – Positions of bit.
 
 **Returned values**
 
@@ -183,7 +183,7 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 Query:
 
 ``` sql
-SELECT bitTestAny(43, 0, 2)
+SELECT bitTestAny(43, 0, 2);
 ```
 
 Result:
@@ -199,7 +199,7 @@ Another example:
 Query:
 
 ``` sql
-SELECT bitTestAny(43, 4, 2)
+SELECT bitTestAny(43, 4, 2);
 ```
 
 Result:
@@ -220,7 +220,7 @@ Calculates the number of bits set to one in the binary representation of a numbe
 bitCount(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — [Integer](../../sql-reference/data-types/int-uint.md) or [floating-point](../../sql-reference/data-types/float.md) number. The function uses the value representation in memory. It allows supporting floating-point numbers.
 
@@ -239,7 +239,7 @@ Take for example the number 333. Its binary representation: 0000000101001101.
 Query:
 
 ``` sql
-SELECT bitCount(333)
+SELECT bitCount(333);
 ```
 
 Result:
@@ -250,4 +250,53 @@ Result:
 └───────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/bit_functions/) <!--hide-->
+## bitHammingDistance {#bithammingdistance}
+
+Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two integer values. Can be used with [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash) functions for detection of semi-duplicate strings. The smaller is the distance, the more likely those strings are the same.
+
+**Syntax**
+
+``` sql
+bitHammingDistance(int1, int2)
+```
+
+**Arguments**
+
+-   `int1` — First integer value. [Int64](../../sql-reference/data-types/int-uint.md).
+-   `int2` — Second integer value. [Int64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   The Hamming distance. 
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT bitHammingDistance(111, 121);
+```
+
+Result:
+
+``` text
+┌─bitHammingDistance(111, 121)─┐
+│                            3 │
+└──────────────────────────────┘
+```
+
+With [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash):
+
+``` sql
+SELECT bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat'));
+```
+
+Result:
+
+``` text
+┌─bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat'))─┐
+│                                                                            5 │
+└──────────────────────────────────────────────────────────────────────────────┘
+```

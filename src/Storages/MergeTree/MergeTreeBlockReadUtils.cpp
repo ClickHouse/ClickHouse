@@ -87,7 +87,9 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
     bool have_at_least_one_physical_column = false;
 
     const auto & storage_columns = metadata_snapshot->getColumns();
-    auto alter_conversions = storage.getAlterConversionsForPart(part);
+    MergeTreeData::AlterConversions alter_conversions;
+    if (!part->isProjectionPart())
+        alter_conversions = storage.getAlterConversionsForPart(part);
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// We are going to fetch only physical columns
@@ -272,7 +274,20 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         if (prewhere_info->alias_actions)
             pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
         else
+        {
             pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+
+            if (prewhere_info->row_level_filter)
+            {
+                NameSet names(pre_column_names.begin(), pre_column_names.end());
+
+                for (auto & name : prewhere_info->row_level_filter->getRequiredColumns())
+                {
+                    if (names.count(name) == 0)
+                        pre_column_names.push_back(name);
+                }
+            }
+        }
 
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);

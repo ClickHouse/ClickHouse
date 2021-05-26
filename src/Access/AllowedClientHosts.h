@@ -14,7 +14,7 @@ namespace DB
 
 using Strings = std::vector<String>;
 
-/// Represents lists of hosts an user is allowed to connect to server from.
+/// Represents lists of hosts a user is allowed to connect to server from.
 class AllowedClientHosts
 {
 public:

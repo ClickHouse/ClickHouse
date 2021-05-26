@@ -3,7 +3,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -468,6 +467,14 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 }
 
 
+bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (ParserTableFunctionView().parse(pos, node, expected))
+        return true;
+    return elem_parser.parse(pos, node, expected);
+}
+
+
 bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// try to find any of the valid operators
@@ -550,11 +557,32 @@ bool ParserUnaryMinusExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 }
 
 
+bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr expr_ast;
+    if (!elem_parser.parse(pos, expr_ast, expected))
+        return false;
+
+    ASTPtr type_ast;
+    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
+        && ParserDataType().parse(pos, type_ast, expected))
+    {
+        node = createFunctionCast(expr_ast, type_ast);
+    }
+    else
+    {
+        node = expr_ast;
+    }
+
+    return true;
+}
+
+
 bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &expected)
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserExpressionElement>(),
+        std::make_unique<ParserCastExpression>(),
         std::make_unique<ParserExpressionWithOptionalAlias>(false)
     }.parse(pos, node, expected);
 }
@@ -570,9 +598,10 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 }
 
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
-    : impl(std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserExpression>(),
-                                                     allow_alias_without_as_keyword))
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function)
+    : impl(std::make_unique<ParserWithOptionalAlias>(
+        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>()),
+        allow_alias_without_as_keyword))
 {
 }
 
@@ -580,7 +609,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }

@@ -1,27 +1,27 @@
 ---
-title: How do I export data from ClickHouse to a file?
+title: Как экспортировать данные из ClickHouse в файл?
 toc_hidden: true
 toc_priority: 10
 ---
 
-## Как экспортировать данные из ClickHouse в файл? {#how-to-export-to-file-rus}
+# Как экспортировать данные из ClickHouse в файл? {#how-to-export-to-file-rus}
 
-### Секция INTO OUTFILE {#sektsiia-into-outfile-rus}
+## Секция INTO OUTFILE {#using-into-outfile-clause}
 
-Добавьте секцию [INTO OUTFILE](../../sql-reference/statements/select/into-outfile.md#into-outfile-clause) к своему запросу.
+Добавьте к своему запросу секцию [INTO OUTFILE](../../sql-reference/statements/select/into-outfile.md#into-outfile-clause).
 
 Например:
 
 ``` sql
-SELECT * FROM table INTO OUTFILE 'file'
+SELECT * FROM table INTO OUTFILE 'file';
 ```
 
-По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../../interfaces/formats.md), используйте секцию [FORMAT](../../sql-reference/statements/select/format.md#format-clause).
+По умолчанию при выдаче данных ClickHouse использует формат [TabSeparated](../../interfaces/formats.md#tabseparated). Чтобы выбрать другой [формат данных](../../interfaces/formats.md), используйте секцию [FORMAT](../../sql-reference/statements/select/format.md#format-clause).
 
 Например:
 
 ``` sql
-SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
+SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV;
 ```
 
 ## Таблица с движком File {#using-a-file-engine-table}

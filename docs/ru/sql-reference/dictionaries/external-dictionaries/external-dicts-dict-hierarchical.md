@@ -1,6 +1,6 @@
 ---
 toc_priority: 45
-toc_title: "\u0418\u0435\u0440\u0430\u0440\u0445\u0438\u0447\u0435\u0441\u043a\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0438"
+toc_title: "Иерархические словари"
 ---
 
 # Иерархические словари {#ierarkhicheskie-slovari}
@@ -65,4 +65,3 @@ ClickHouse поддерживает свойство [hierarchical](external-dic
 </dictionary>
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->

@@ -139,7 +139,7 @@ You can assign a quotas set for the user. For a detailed description of quotas c
 
 ### user_name/databases {#user-namedatabases}
 
-In this section, you can you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
+In this section, you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
 
 **Example**
 

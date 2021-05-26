@@ -45,7 +45,7 @@ private:
     }
 
 public:
-    WriteBufferFromVector(VectorType & vector_)
+    explicit WriteBufferFromVector(VectorType & vector_)
         : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
     {
         if (vector.empty())
@@ -95,7 +95,7 @@ public:
     ~WriteBufferFromVector() override
     {
         /// FIXME move final flush into the caller
-        MemoryTracker::LockExceptionInThread lock;
+        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
         finalize();
     }
 };

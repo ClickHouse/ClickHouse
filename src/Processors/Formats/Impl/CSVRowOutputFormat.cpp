@@ -40,9 +40,9 @@ void CSVRowOutputFormat::doWritePrefix()
 }
 
 
-void CSVRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void CSVRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    type.serializeAsTextCSV(column, row_num, out, format_settings);
+    serialization.serializeTextCSV(column, row_num, out, format_settings);
 }
 
 

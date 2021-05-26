@@ -20,5 +20,6 @@ The list of documented datasets:
 -   [Terabyte of Click Logs from Criteo](../../getting-started/example-datasets/criteo.md)
 -   [AMPLab Big Data Benchmark](../../getting-started/example-datasets/amplab-benchmark.md)
 -   [Brown University Benchmark](../../getting-started/example-datasets/brown-benchmark.md)
+-   [Cell Towers](../../getting-started/example-datasets/cell-towers.md)
 
 [Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->

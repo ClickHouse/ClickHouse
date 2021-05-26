@@ -42,3 +42,6 @@ execute_group_by
 # if memory accounting will be incorrect, the second query will be failed with MEMORY_LIMIT_EXCEEDED
 execute_group_by
 wait
+
+# Reset max_memory_usage_for_user, so it will not affect other tests
+${CLICKHOUSE_CLIENT} --max_memory_usage_for_user=0 -q "SELECT 1 FORMAT Null"

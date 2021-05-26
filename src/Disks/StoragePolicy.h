@@ -47,6 +47,9 @@ public:
     /// Returns disks ordered by volumes priority
     Disks getDisks() const override;
 
+    /// Returns disks by type ordered by volumes priority
+    Disks getDisksByType(DiskType::Type type) const override;
+
     /// Returns any disk
     /// Used when it's not important, for example for
     /// mutations files

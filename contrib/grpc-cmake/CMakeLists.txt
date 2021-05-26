@@ -39,11 +39,6 @@ set(_gRPC_SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 
 # Use abseil-cpp from ClickHouse contrib, not from gRPC third_party.
 set(gRPC_ABSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(ABSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
-if(NOT EXISTS "${ABSL_ROOT_DIR}/CMakeLists.txt")
-  message(FATAL_ERROR " grpc: submodule third_party/abseil-cpp is missing. To fix try run: \n git submodule update --init --recursive")
-endif()
-add_subdirectory("${ABSL_ROOT_DIR}" "${ClickHouse_BINARY_DIR}/contrib/abseil-cpp")
 
 # Choose to build static or shared library for c-ares.
 if (MAKE_STATIC_LIBRARIES)

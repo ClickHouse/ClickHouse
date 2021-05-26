@@ -20,8 +20,7 @@ DateTime([timezone])
 ## Использование {#ispolzovanie}
 
 Момент времени сохраняется как [Unix timestamp](https://ru.wikipedia.org/wiki/Unix-%D0%B2%D1%80%D0%B5%D0%BC%D1%8F), независимо от часового пояса и переходов на летнее/зимнее время. Дополнительно, тип `DateTime` позволяет хранить часовой пояс, единый для всей колонки, который влияет на то, как будут отображаться значения типа `DateTime` в текстовом виде и как будут парситься значения заданные в виде строк (‘2020-01-01 05:00:01’). Часовой пояс не хранится в строках таблицы (выборки), а хранится в метаданных колонки.
-Список поддерживаемых временных зон можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones).
-Пакет `tzdata`, содержащий [базу данных часовых поясов IANA](https://www.iana.org/time-zones), должен быть установлен в системе. Используйте команду `timedatectl list-timezones` для получения списка часовых поясов, известных локальной системе.
+Список поддерживаемых часовых поясов можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones) или получить из базы данных, выполнив запрос `SELECT * FROM system.time_zones`. Также [список](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) есть в Википедии.
 
 Часовой пояс для столбца типа `DateTime` можно в явном виде установить при создании таблицы. Если часовой пояс не установлен, то ClickHouse использует значение параметра [timezone](../../sql-reference/data-types/datetime.md#server_configuration_parameters-timezone), установленное в конфигурации сервера или в настройках операционной системы на момент запуска сервера.
 
@@ -126,4 +125,3 @@ FROM dt
 -   [Тип данных `Date`](date.md)
 -   [Тип данных `DateTime64`](datetime64.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/datetime/) <!--hide-->

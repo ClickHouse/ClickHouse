@@ -134,6 +134,8 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
+    const TableJoin & getTableJoin() const override { return *table_join; }
+
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
@@ -156,6 +158,8 @@ public:
     bool hasTotals() const override { return totals; }
 
     void joinTotals(Block & block) const override;
+
+    bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
@@ -220,15 +224,15 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        std::unique_ptr<FixedHashMap<UInt8, Mapped>>   key8;
-        std::unique_ptr<FixedHashMap<UInt16, Mapped>> key16;
-        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>                     key32;
-        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>                     key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
-        std::unique_ptr<HashMap<DummyUInt256, Mapped, UInt256HashCRC32>>                keys256;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
+        std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
+        std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
+        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
+        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>   key64;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_string;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_fixed_string;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>   keys128;
+        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>   keys256;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
 
         void create(Type which)
         {
@@ -306,10 +310,6 @@ public:
 
     struct RightTableData
     {
-        /// Protect state for concurrent use in insertFromBlock and joinBlock.
-        /// @note that these methods could be called simultaneously only while use of StorageJoin.
-        mutable std::shared_mutex rwlock;
-
         Type type = Type::EMPTY;
         bool empty = true;
 
@@ -321,6 +321,13 @@ public:
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
     };
+
+    /// We keep correspondence between used_flags and hash table internal buffer.
+    /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
+    void setLock(std::shared_mutex & rwlock)
+    {
+        storage_join_lock = std::shared_lock<std::shared_mutex>(rwlock);
+    }
 
     void reuseJoinedData(const HashJoin & join);
 
@@ -339,6 +346,9 @@ private:
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
+    /// This join was created from StorageJoin and it is already filled.
+    bool from_storage_join = false;
+
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
     const Names & key_names_right;
 
@@ -353,6 +363,8 @@ private:
     /// Flags that indicate that particular row already used in join.
     /// Flag is stored for every record in hash map.
     /// Number of this flags equals to hashtable buffer size (plus one for zero value).
+    /// Changes in hash table broke correspondence,
+    /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
     Sizes key_sizes;
 
@@ -371,6 +383,10 @@ private:
 
     Block totals;
 
+    /// Should be set via setLock to protect hash table from modification from StorageJoin
+    /// If set HashJoin instance is not available for modification (addJoinedBlock)
+    std::shared_lock<std::shared_mutex> storage_join_lock;
+
     void init(Type type_);
 
     const Block & savedBlockSample() const { return data->sample_block; }
@@ -388,14 +404,7 @@ private:
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
-    template <typename Maps>
-    ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
-
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
-
-    /// Call with already locked rwlock.
-    size_t getTotalRowCountLocked() const;
-    size_t getTotalByteCountLocked() const;
 
     bool empty() const;
     bool overDictionary() const;

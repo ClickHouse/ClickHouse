@@ -12,21 +12,27 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Rewrite original query removing joined tables from it
-bool removeJoin(ASTSelectQuery & select)
+bool hasJoin(const ASTSelectQuery & select)
 {
     const auto & tables = select.tables();
     if (!tables || tables->children.size() < 2)
         return false;
 
     const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
-    if (!joined_table.table_join)
-        return false;
+    return joined_table.table_join != nullptr;
+}
 
-    /// The most simple temporary solution: leave only the first table in query.
-    /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
-    tables->children.resize(1);
-    return true;
+/// Rewrite original query removing joined tables from it
+bool removeJoin(ASTSelectQuery & select)
+{
+    if (hasJoin(select))
+    {
+        /// The most simple temporary solution: leave only the first table in query.
+        /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
+        select.tables()->children.resize(1);
+        return true;
+    }
+    return false;
 }
 
 Block getHeaderForProcessingStage(
@@ -34,7 +40,7 @@ Block getHeaderForProcessingStage(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage)
 {
     switch (processed_stage)
@@ -44,9 +50,19 @@ Block getHeaderForProcessingStage(
             Block header = metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
             if (query_info.prewhere_info)
             {
-                query_info.prewhere_info->prewhere_actions->execute(header);
-                if (query_info.prewhere_info->remove_prewhere_column)
-                    header.erase(query_info.prewhere_info->prewhere_column_name);
+                auto & prewhere_info = *query_info.prewhere_info;
+
+                if (prewhere_info.row_level_filter)
+                {
+                    prewhere_info.row_level_filter->execute(header);
+                    header.erase(prewhere_info.row_level_column_name);
+                }
+
+                if (prewhere_info.prewhere_actions)
+                    prewhere_info.prewhere_actions->execute(header);
+
+                if (prewhere_info.remove_prewhere_column)
+                    header.erase(prewhere_info.prewhere_column_name);
             }
             return header;
         }

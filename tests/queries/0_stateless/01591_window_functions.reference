@@ -771,6 +771,28 @@ order by x;
 125	124	127	4
 126	125	127	3
 127	126	127	2
+-- We need large offsets to trigger overflow to positive direction, or
+-- else the frame end runs into partition end w/o overflow and doesn't move
+-- after that. The frame from this query is equivalent to the entire partition.
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toUInt8(if(mod(number, 2),
+        toInt64(255 - intDiv(number, 2)),
+        toInt64(intDiv(number, 2)))) x
+    from numbers(10)
+)
+window w as (order by x range between 255 preceding and 255 following)
+order by x;
+0	0	255	10
+1	0	255	10
+2	0	255	10
+3	0	255	10
+4	0	255	10
+251	0	255	10
+252	0	255	10
+253	0	255	10
+254	0	255	10
+255	0	255	10
 -- RANGE OFFSET ORDER BY DESC
 select x, min(x) over w, max(x) over w, count(x) over w from (
     select toUInt8(number) x from numbers(11)) t
@@ -920,6 +942,36 @@ FROM numbers(2)
 ;
 1	0
 1	1
+-- optimize_read_in_order conflicts with sorting for window functions, check that
+-- it is disabled.
+drop table if exists window_mt;
+create table window_mt engine MergeTree order by number
+    as select number, mod(number, 3) p from numbers(100);
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 0;
+0	34
+1	33
+2	33
+3	34
+4	33
+5	33
+6	34
+7	33
+8	33
+9	34
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 1;
+0	34
+1	33
+2	33
+3	34
+4	33
+5	33
+6	34
+7	33
+8	33
+9	34
+drop table window_mt;
 -- some true window functions -- rank and friends
 select number, p, o,
     count(*) over w,
@@ -974,6 +1026,34 @@ from numbers(5);
 1	3
 2	4
 3	\N
+-- variants of lag/lead that respect the frame
+select number, p, pp,
+    lagInFrame(number) over w as lag1,
+    lagInFrame(number, number - pp) over w as lag2,
+    lagInFrame(number, number - pp, number * 11) over w as lag,
+    leadInFrame(number, number - pp, number * 11) over w as lead
+from (select number, intDiv(number, 5) p, p * 5 pp from numbers(16))
+window w as (partition by p order by number
+    rows between unbounded preceding and unbounded following)
+order by number
+settings max_block_size = 3;
+;
+0	0	0	0	0	0	0
+1	0	0	0	0	0	2
+2	0	0	1	0	0	4
+3	0	0	2	0	0	33
+4	0	0	3	0	0	44
+5	1	5	0	5	5	5
+6	1	5	5	5	5	7
+7	1	5	6	5	5	9
+8	1	5	7	5	5	88
+9	1	5	8	5	5	99
+10	2	10	0	10	10	10
+11	2	10	10	10	10	12
+12	2	10	11	10	10	14
+13	2	10	12	10	10	143
+14	2	10	13	10	10	154
+15	3	15	0	15	15	15
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
@@ -993,3 +1073,44 @@ order by number
 7	6	8
 8	7	9
 9	8	9
+-- In this case, we had a problem with PartialSortingTransform returning zero-row
+-- chunks for input chunks w/o columns.
+select count() over () from numbers(4) where number < 2;
+2
+2
+-- floating point RANGE frame
+select
+    count(*) over (order by toFloat32(number) range 5. preceding),
+    count(*) over (order by toFloat64(number) range 5. preceding),
+    count(*) over (order by toFloat32(number) range between current row and 5. following),
+    count(*) over (order by toFloat64(number) range between current row and 5. following)
+from numbers(7)
+;
+1	1	6	6
+2	2	6	6
+3	3	5	5
+4	4	4	4
+5	5	3	3
+6	6	2	2
+6	6	1	1
+-- negative offsets should not be allowed
+select count() over (order by toInt64(number) range between -1 preceding and unbounded following) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between -1 following and unbounded following) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between unbounded preceding and -1 preceding) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between unbounded preceding and -1 following) from numbers(1); -- { serverError 36 }
+-- a test with aggregate function that allocates memory in arena
+select sum(a[length(a)])
+from (
+    select groupArray(number) over (partition by modulo(number, 11)
+            order by modulo(number, 1111), number) a
+    from numbers_mt(10000)
+) settings max_block_size = 7;
+49995000
+-- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
+-- under UBSan. Should be limited to at most INT_MAX.
+select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
+-- Somehow in this case WindowTransform gets empty input chunks not marked as
+-- input end, and then two (!) empty input chunks marked as input end. Whatever.
+select count() over () from (select 1 a) l inner join (select 2 a) r using a;
+-- This case works as expected, one empty input chunk marked as input end.
+select count() over () where null;

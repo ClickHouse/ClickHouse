@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint16_t dimensions)
+static DataTypePtr convertPostgreSQLDataType(String & type, bool is_nullable, uint16_t dimensions)
 {
     DataTypePtr res;
 
@@ -40,6 +40,8 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         res = std::make_shared<DataTypeInt32>();
     else if (type == "bigint")
         res = std::make_shared<DataTypeInt64>();
+    else if (type == "boolean")
+        res = std::make_shared<DataTypeUInt8>();
     else if (type == "real")
         res = std::make_shared<DataTypeFloat32>();
     else if (type == "double precision")
@@ -54,19 +56,32 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         res = std::make_shared<DataTypeDate>();
     else if (type.starts_with("numeric"))
     {
-        /// Numeric and decimal will both end up here as numeric.
-        res = DataTypeFactory::instance().get(type);
-        uint32_t precision = getDecimalPrecision(*res);
-        uint32_t scale = getDecimalScale(*res);
+        /// Numeric and decimal will both end up here as numeric. If it has type and precision,
+        /// there will be Numeric(x, y), otherwise just Numeric
+        UInt32 precision, scale;
+        if (type.ends_with(")"))
+        {
+            res = DataTypeFactory::instance().get(type);
+            precision = getDecimalPrecision(*res);
+            scale = getDecimalScale(*res);
 
-        if (precision <= DecimalUtils::maxPrecision<Decimal32>())
-            res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
-            res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
+            if (precision <= DecimalUtils::max_precision<Decimal32>)
+                res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
+            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+                res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
+            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+                res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
+            else if (precision <= DecimalUtils::max_precision<Decimal256>) //-V547
+                res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
+        }
+        else
+        {
+            precision = DecimalUtils::max_precision<Decimal128>;
+            scale = precision / 2;
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal256>())
-            res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+        }
     }
 
     if (!res)
@@ -81,7 +96,7 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
 
 
 std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
-    std::shared_ptr<pqxx::connection> connection, const String & postgres_table_name, bool use_nulls)
+    postgres::ConnectionHolderPtr connection_holder, const String & postgres_table_name, bool use_nulls)
 {
     auto columns = NamesAndTypesList();
 
@@ -100,7 +115,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
            "AND NOT attisdropped AND attnum > 0", postgres_table_name);
     try
     {
-        pqxx::read_transaction tx(*connection);
+        pqxx::read_transaction tx(connection_holder->get());
         pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
 
         std::tuple<std::string, std::string, std::string, uint16_t> row;
@@ -120,7 +135,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
     {
         throw Exception(fmt::format(
                     "PostgreSQL table {}.{} does not exist",
-                    connection->dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
+                    connection_holder->get().dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
     }
     catch (Exception & e)
     {

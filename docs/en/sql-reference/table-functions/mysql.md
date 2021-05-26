@@ -13,7 +13,7 @@ Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a
 mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `host:port` — MySQL server address.
 
@@ -44,7 +44,7 @@ The rest of the conditions and the `LIMIT` sampling constraint are executed in C
 A table object with the same columns as the original MySQL table.
 
 !!! info "Note"
-    In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below. 
+    In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below. 
 
 **Examples**
 

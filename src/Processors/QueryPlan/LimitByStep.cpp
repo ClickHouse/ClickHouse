@@ -2,6 +2,7 @@
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -33,7 +34,7 @@ LimitByStep::LimitByStep(
 }
 
 
-void LimitByStep::transformPipeline(QueryPipeline & pipeline)
+void LimitByStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
 
@@ -70,6 +71,17 @@ void LimitByStep::describeActions(FormatSettings & settings) const
 
     settings.out << prefix << "Length " << group_length << '\n';
     settings.out << prefix << "Offset " << group_offset << '\n';
+}
+
+void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & column : columns)
+        columns_array->add(column);
+
+    map.add("Columns", std::move(columns_array));
+    map.add("Length", group_length);
+    map.add("Offset", group_offset);
 }
 
 }

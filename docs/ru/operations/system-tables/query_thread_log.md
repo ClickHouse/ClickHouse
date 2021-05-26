@@ -114,4 +114,3 @@ ProfileEvents.Values:          [1,1,11,11,591,148,3,71,29,6533808,1,11,72,18,47,
 
 - [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — описание системной таблицы `query_log`, которая содержит общую информацию о выполненных запросах.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_thread_log) <!--hide-->

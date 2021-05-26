@@ -1,6 +1,6 @@
 ---
 toc_priority: 64
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043c\u0430\u0448\u0438\u043d\u043d\u043e\u0433\u043e\u0020\u043e\u0431\u0443\u0447\u0435\u043d\u0438\u044f"
+toc_title: "Функции машинного обучения"
 ---
 
 # Функции машинного обучения {#funktsii-mashinnogo-obucheniia}
@@ -27,7 +27,7 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043c\u0430\u0448\u
 bayesAB(distribution_name, higher_is_better, variant_names, x, y)
 ```
 
-**Параметры** 
+**Аргументы** 
 
 -   `distribution_name` — вероятностное распределение. [String](../../sql-reference/data-types/string.md). Возможные значения:
 
@@ -36,14 +36,14 @@ bayesAB(distribution_name, higher_is_better, variant_names, x, y)
 
 -   `higher_is_better` — способ определения предпочтений. [Boolean](../../sql-reference/data-types/boolean.md). Возможные значения:
 
-    -    `0` - чем меньше значение, тем лучше
-    -    `1` - чем больше значение, тем лучше
+    -    `0` — чем меньше значение, тем лучше
+    -    `1` — чем больше значение, тем лучше
 
--   `variant_names` - массив, содержащий названия вариантов. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+-   `variant_names` — массив, содержащий названия вариантов. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
--   `x` - массив, содержащий число проведенных тестов (испытаний) для каждого варианта. [Array](../../sql-reference/data-types/array.md)([Float64](../../sql-reference/data-types/float.md)).
+-   `x` — массив, содержащий число проведенных тестов (испытаний) для каждого варианта. [Array](../../sql-reference/data-types/array.md)([Float64](../../sql-reference/data-types/float.md)).
 
--   `y` - массив, содержащий число успешных тестов (испытаний) для каждого варианта. [Array](../../sql-reference/data-types/array.md)([Float64](../../sql-reference/data-types/float.md)).
+-   `y` — массив, содержащий число успешных тестов (испытаний) для каждого варианта. [Array](../../sql-reference/data-types/array.md)([Float64](../../sql-reference/data-types/float.md)).
 
 !!! note "Замечание"
     Все три массива должны иметь одинаковый размер. Все значения `x` и `y` должны быть неотрицательными числами (константами). Значение `y` не может превышать соответствующее значение `x`.
@@ -51,8 +51,8 @@ bayesAB(distribution_name, higher_is_better, variant_names, x, y)
 **Возвращаемые значения**
 
 Для каждого варианта рассчитываются:
--   `beats_control` - вероятность, что данный вариант превосходит контрольный в долгосрочной перспективе
--   `to_be_best` - вероятность, что данный вариант является лучшим в долгосрочной перспективе
+-   `beats_control` — вероятность, что данный вариант превосходит контрольный в долгосрочной перспективе
+-   `to_be_best` — вероятность, что данный вариант является лучшим в долгосрочной перспективе
 
 Тип: JSON.
 

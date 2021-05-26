@@ -10,7 +10,7 @@ Bitmap или агрегатные вычисления для столбца с
 groupBitmap(expr)
 ```
 
-**Параметры**
+**Аргументы**
 
 `expr` – выражение, результат которого имеет тип данных `UInt*`.
 
@@ -43,4 +43,3 @@ num
 3
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/) <!--hide-->

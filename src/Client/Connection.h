@@ -21,12 +21,12 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <Compression/ICompressionCodec.h>
 
 #include <atomic>
 #include <optional>
-
 
 namespace DB
 {
@@ -41,6 +41,7 @@ struct ExternalTableData
     /// Pipe of data form table;
     std::unique_ptr<Pipe> pipe;
     std::string table_name;
+    std::function<std::unique_ptr<Pipe>()> creating_pipe_callback;
     /// Flag if need to stop reading.
     std::atomic_bool is_cancelled = false;
 };
@@ -52,8 +53,6 @@ class Connection;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
-
-using Scalars = std::map<String, Block>;
 
 
 /// Packet that could be received from server.
@@ -89,9 +88,9 @@ public:
         const String & user_, const String & password_,
         const String & cluster_,
         const String & cluster_secret_,
-        const String & client_name_ = "client",
-        Protocol::Compression compression_ = Protocol::Compression::Enable,
-        Protocol::Secure secure_ = Protocol::Secure::Disable,
+        const String & client_name_,
+        Protocol::Compression compression_,
+        Protocol::Secure secure_,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
@@ -112,7 +111,7 @@ public:
         setDescription();
     }
 
-    virtual ~Connection() {}
+    virtual ~Connection() = default;
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)
@@ -141,6 +140,8 @@ public:
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
 
+    Protocol::Compression getCompression() const { return compression; }
+
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
         const ConnectionTimeouts & timeouts,
@@ -161,6 +162,8 @@ public:
     /// Send parts' uuids to excluded them from query processing
     void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
+    void sendReadTaskResponse(const String &);
+
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
     void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
@@ -175,8 +178,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    /// Each time read blocks and async_callback is set, it will be called. You can poll socket inside it.
-    Packet receivePacket(std::function<void(Poco::Net::Socket &)> async_callback = {});
+    Packet receivePacket();
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -194,6 +196,16 @@ public:
 
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
+
+    Poco::Net::Socket * getSocket() { return socket.get(); }
+
+    /// Each time read from socket blocks and async_callback is set, it will be called. You can poll socket inside it.
+    void setAsyncCallback(AsyncCallback async_callback_)
+    {
+        async_callback = std::move(async_callback_);
+        if (in)
+            in->setAsyncCallback(std::move(async_callback));
+    }
 
 private:
     String host;
@@ -262,7 +274,7 @@ private:
     class LoggerWrapper
     {
     public:
-        LoggerWrapper(Connection & parent_)
+        explicit LoggerWrapper(Connection & parent_)
             : log(nullptr), parent(parent_)
         {
         }
@@ -282,6 +294,8 @@ private:
 
     LoggerWrapper log_wrapper;
 
+    AsyncCallback async_callback = {};
+
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
@@ -295,16 +309,32 @@ private:
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type);
-    std::unique_ptr<Exception> receiveException();
-    Progress receiveProgress();
-    BlockStreamProfileInfo receiveProfileInfo();
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
+    std::unique_ptr<Exception> receiveException() const;
+    Progress receiveProgress() const;
+    BlockStreamProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
     void initBlockInput();
     void initBlockLogsInput();
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
+};
+
+class AsyncCallbackSetter
+{
+public:
+    AsyncCallbackSetter(Connection * connection_, AsyncCallback async_callback) : connection(connection_)
+    {
+        connection->setAsyncCallback(std::move(async_callback));
+    }
+
+    ~AsyncCallbackSetter()
+    {
+        connection->setAsyncCallback({});
+    }
+private:
+    Connection * connection;
 };
 
 }

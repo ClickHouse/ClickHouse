@@ -2,7 +2,9 @@
 set -exu
 set -o pipefail
 trap "exit" INT TERM
-trap 'kill $(jobs -pr) ||:' EXIT
+# The watchdog is in the separate process group, so we have to kill it separately
+# if the script terminates earlier.
+trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -97,6 +99,7 @@ function configure
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
     rm -r db0/{data,metadata}/system ||:
+    rm db0/status ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }
@@ -240,9 +243,12 @@ function run_tests
     profile_seconds_left=600
 
     # Run the tests.
+    total_tests=$(echo "$test_files" | wc -w)
+    current_test=0
     test_name="<none>"
     for test in $test_files
     do
+        echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
@@ -270,6 +276,7 @@ function run_tests
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
+        current_test=$((current_test + 1))
     done
 
     unset TIMEFORMAT
@@ -357,6 +364,8 @@ mkdir analyze analyze/tmp ||:
 build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
+# To debug calculations only for a particular test, substitute a suitable
+# wildcard here, e.g. `for test_file in modulo-raw.tsv`.
 for test_file in *-raw.tsv
 do
     test_name=$(basename "$test_file" "-raw.tsv")
@@ -466,7 +475,13 @@ create view broken_queries as
 create table query_run_metrics_for_stats engine File(
         TSV, -- do not add header -- will parse with grep
         'analyze/query-run-metrics-for-stats.tsv')
-    as select test, query_index, 0 run, version, metric_values
+    as select test, query_index, 0 run, version,
+        -- For debugging, add a filter for a particular metric like this:
+        -- arrayFilter(m, n -> n = 'client_time', metric_values, metric_names)
+        --     metric_values
+        -- Note that further reporting may break, because the metric names are
+        -- not filtered.
+        metric_values
     from query_run_metric_arrays
     where (test, query_index) not in broken_queries
     order by test, query_index, run, version
@@ -584,8 +599,19 @@ create view query_metric_stats as
 -- Main statistics for queries -- query time as reported in query log.
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
-        abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
-        abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
+        -- It is important to have a non-strict inequality with stat_threshold
+        -- here. The randomization distribution is actually discrete, and when
+        -- the number of runs is small, the quantile we need (e.g. 0.99) turns
+        -- out to be the maximum value of the distribution. We can also hit this
+        -- maximum possible value with our test run, and this obviously means
+        -- that we have observed the difference to the best precision possible
+        -- for the given number of runs. If we use a strict equality here, we
+        -- will miss such cases. This happened in the wild and lead to some
+        -- uncaught regressions, because for the default 7 runs we do for PRs,
+        -- the randomization distribution has only 16 values, so the max quantile
+        -- is actually 0.9375.
+        abs(diff) > report_threshold        and abs(diff) >= stat_threshold as changed_fail,
+        abs(diff) > report_threshold - 0.05 and abs(diff) >= stat_threshold as changed_show,
 
         not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
         not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
@@ -738,7 +764,7 @@ create view test_times_view as
         total_client_time,
         queries,
         query_max,
-        real / queries avg_real_per_query,
+        real / if(queries > 0, queries, 1) avg_real_per_query,
         query_min,
         runs
     from test_time
@@ -759,7 +785,7 @@ create view test_times_view_total as
         sum(total_client_time),
         sum(queries),
         max(query_max),
-        sum(real) / sum(queries) avg_real_per_query,
+        sum(real) / if(sum(queries) > 0, sum(queries), 1) avg_real_per_query,
         min(query_min),
         -- Totaling the number of runs doesn't make sense, but use the max so
         -- that the reporting script doesn't complain about queries being too
@@ -993,6 +1019,7 @@ done
 wait
 
 # Create per-query flamegraphs
+touch report/query-files.txt
 IFS=$'\n'
 for version in {right,left}
 do
@@ -1127,20 +1154,21 @@ function upload_results
         return 0
     fi 
 
-    # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-    # so I have to extract host and port with clickhouse-local. I tried to use
-    # Poco URI parser to support this in the client, but it's broken and can't
-    # parse host:port.
     set +x # Don't show password in the log
-    clickhouse-client \
-        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV") \
-        --secure \
-        --user "${CHPC_DATABASE_USER}" \
-        --password "${CHPC_DATABASE_PASSWORD}" \
-        --config "right/config/client_config.xml" \
-        --database perftest \
-        --date_time_input_format=best_effort \
-        --query "
+    client=(clickhouse-client
+        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+        # so I have to extract host and port with clickhouse-local. I tried to use
+        # Poco URI parser to support this in the client, but it's broken and can't
+        # parse host:port.
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        --secure
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
+        --config "right/config/client_config.xml"
+        --database perftest
+        --date_time_input_format=best_effort)
+
+    "${client[@]}" --query "
             insert into query_metrics_v2
             select
                 toDate(event_time) event_date,
@@ -1163,6 +1191,31 @@ function upload_results
             format TSV
             settings date_time_input_format='best_effort'
 " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
+
+    # Upload some run attributes. I use this weird form because it is the same
+    # form that can be used for historical data when you only have compare.log.
+    cat compare.log \
+        | sed -n '
+            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
+            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
+            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
+            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
+            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
+            s/.*left_sha=\(.*\)$/old-sha	\1/p;
+            s/.*right_sha=\(.*\)/new-sha	\1/p' \
+        | awk '
+            BEGIN { FS = "\t"; OFS = "\t" }
+            /^old-sha/ { old_sha=$2 }
+            /^new-sha/ { new_sha=$2 }
+            /^metric/ { print old_sha, new_sha, $2, $3 }' \
+        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
+
+    # Grepping numactl results from log is too crazy, I'll just call it again.
+    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+EOF
+
     set -x
 }
 
@@ -1245,3 +1298,4 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
+

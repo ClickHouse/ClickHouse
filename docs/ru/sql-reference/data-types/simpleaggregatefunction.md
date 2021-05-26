@@ -1,8 +1,11 @@
-# SimpleAggregateFunction {#data-type-simpleaggregatefunction}
+# SimpleAggregateFunction(func, type) {#data-type-simpleaggregatefunction}
 
-`SimpleAggregateFunction(name, types_of_arguments…)` data type stores current value of the aggregate function, and does not store its full state as [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) does. This optimization can be applied to functions for which the following property holds: the result of applying a function `f` to a row set `S1 UNION ALL S2` can be obtained by applying `f` to parts of the row set separately, and then again applying `f` to the results: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`. This property guarantees that partial aggregation results are enough to compute the combined one, so we don’t have to store and process any extra data.
+Хранит только текущее значение агрегатной функции и не сохраняет ее полное состояние, как это делает [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md). Такая оптимизация может быть применена к функциям, которые обладают следующим свойством: результат выполнения функции `f` к набору строк `S1 UNION ALL S2` может быть получен путем выполнения `f` к отдельным частям набора строк,
+а затем повторного выполнения `f` к результатам: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`. Это свойство гарантирует, что результатов частичной агрегации достаточно для вычисления комбинированной, поэтому хранить и обрабатывать какие-либо дополнительные данные не требуется.
 
-The following aggregate functions are supported:
+Чтобы получить промежуточное значение, обычно используются агрегатные функции с суффиксом [-SimpleState](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-simplestate).
+
+Поддерживаются следующие агрегатные функции:
 
 -   [`any`](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)
 -   [`anyLast`](../../sql-reference/aggregate-functions/reference/anylast.md#anylastx)
@@ -14,23 +17,26 @@ The following aggregate functions are supported:
 -   [`groupBitOr`](../../sql-reference/aggregate-functions/reference/groupbitor.md#groupbitor)
 -   [`groupBitXor`](../../sql-reference/aggregate-functions/reference/groupbitxor.md#groupbitxor)
 -   [`groupArrayArray`](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray)
--   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupuniqarray.md#groupuniqarray)
+-   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
+-   [`sumMap`](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap)
+-   [`minMap`](../../sql-reference/aggregate-functions/reference/minmap.md#agg_functions-minmap)
+-   [`maxMap`](../../sql-reference/aggregate-functions/reference/maxmap.md#agg_functions-maxmap)
+-   [`argMin`](../../sql-reference/aggregate-functions/reference/argmin.md)
+-   [`argMax`](../../sql-reference/aggregate-functions/reference/argmax.md)
 
-Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes. `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
+!!! note "Примечание"
+    Значения `SimpleAggregateFunction(func, Type)` отображаются и хранятся так же, как и `Type`, поэтому комбинаторы [-Merge](../../sql-reference/aggregate-functions/combinators.md#aggregate_functions_combinators-merge) и [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) не требуются.
 
-**Parameters**
+    `SimpleAggregateFunction` имеет лучшую производительность, чем `AggregateFunction` с той же агрегатной функцией.
 
--   Name of the aggregate function.
--   Types of the aggregate function arguments.
+**Параметры**
 
-**Example**
+-   `func` — имя агрегатной функции.
+-   `type` — типы аргументов агрегатной функции.
+
+**Пример**
 
 ``` sql
-CREATE TABLE t
-(
-    column1 SimpleAggregateFunction(sum, UInt64),
-    column2 SimpleAggregateFunction(any, String)
-) ENGINE = ...
+CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/data_types/simpleaggregatefunction/) <!--hide-->

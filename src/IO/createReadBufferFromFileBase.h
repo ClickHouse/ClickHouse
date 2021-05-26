@@ -8,6 +8,9 @@
 namespace DB
 {
 
+class MMappedFileCache;
+
+
 /** Create an object to read data from a file.
   * estimated_size - the number of bytes to read
   * aio_threshold - the minimum number of bytes for asynchronous reads
@@ -20,6 +23,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     size_t estimated_size,
     size_t aio_threshold,
     size_t mmap_threshold,
+    MMappedFileCache * mmap_cache,
     size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
     int flags_ = -1,
     char * existing_memory_ = nullptr,

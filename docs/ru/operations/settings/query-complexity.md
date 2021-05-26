@@ -1,6 +1,6 @@
 ---
 toc_priority: 59
-toc_title: "\u041e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u044f\u0020\u043d\u0430\u0020\u0441\u043b\u043e\u0436\u043d\u043e\u0441\u0442\u044c\u0020\u0437\u0430\u043f\u0440\u043e\u0441\u0430"
+toc_title: "Ограничения на сложность запроса"
 ---
 
 # Ограничения на сложность запроса {#restrictions-on-query-complexity}
@@ -314,4 +314,3 @@ FORMAT Null;
 
 > «Too many partitions for single INSERT block (more than» + toString(max_parts) + «). The limit is controlled by ‘max_partitions_per_insert_block’ setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).»
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/query_complexity/) <!--hide-->

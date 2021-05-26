@@ -428,4 +428,69 @@ errors_count:            0
 estimated_recovery_time: 0
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
+## SHOW SETTINGS {#show-settings}
+
+Returns a list of system settings and their values. Selects data from the [system.settings](../../operations/system-tables/settings.md) table.
+
+**Syntax**
+
+```sql
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
+```
+
+**Clauses**
+
+`LIKE|ILIKE` allow to specify a matching pattern for the setting name. It can contain globs such as `%` or `_`. `LIKE` clause is case-sensitive, `ILIKE` — case insensitive.
+
+When the `CHANGED` clause is used, the query returns only settings changed from their default values.
+
+**Examples**
+
+Query with the `LIKE` clause:
+
+```sql
+SHOW SETTINGS LIKE 'send_timeout';
+```
+Result:
+
+```text
+┌─name─────────┬─type────┬─value─┐
+│ send_timeout │ Seconds │ 300   │
+└──────────────┴─────────┴───────┘
+```
+
+Query with the `ILIKE` clause:
+
+```sql
+SHOW SETTINGS ILIKE '%CONNECT_timeout%'
+```
+
+Result:
+
+```text
+┌─name────────────────────────────────────┬─type─────────┬─value─┐
+│ connect_timeout                         │ Seconds      │ 10    │
+│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
+│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
+└─────────────────────────────────────────┴──────────────┴───────┘
+```
+
+Query with the `CHANGED` clause:
+
+```sql
+SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
+```
+
+Result:
+
+```text
+┌─name─────────────┬─type───┬─value───────┐
+│ max_memory_usage │ UInt64 │ 10000000000 │
+└──────────────────┴────────┴─────────────┘
+```
+
+**See Also**
+
+-   [system.settings](../../operations/system-tables/settings.md) table
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/show/) <!--hide-->

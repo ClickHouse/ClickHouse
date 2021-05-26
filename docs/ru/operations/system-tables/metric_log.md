@@ -48,4 +48,3 @@ CurrentMetric_ReplicatedChecks:                             0
 -   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
 -   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/metric_log) <!--hide-->

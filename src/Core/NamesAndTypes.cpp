@@ -6,7 +6,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -23,7 +22,9 @@ NameAndTypePair::NameAndTypePair(
     : name(name_in_storage_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
     , type(subcolumn_type_)
     , type_in_storage(type_in_storage_)
-    , subcolumn_delimiter_position(name_in_storage_.size()) {}
+    , subcolumn_delimiter_position(subcolumn_name_.empty() ? std::nullopt : std::make_optional(name_in_storage_.size()))
+{
+}
 
 String NameAndTypePair::getNameInStorage() const
 {

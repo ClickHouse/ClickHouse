@@ -4,14 +4,14 @@ toc_priority: 1
 
 # count {#agg_function-count}
 
-Вычисляет количество строк или не NULL значений .
+Вычисляет количество строк или не NULL значений.
 
 ClickHouse поддерживает следующие виды синтаксиса для `count`:
 
 -   `count(expr)` или `COUNT(DISTINCT expr)`.
 -   `count()` или `COUNT(*)`. Синтаксис `count()` специфичен для ClickHouse.
 
-**Параметры**
+**Аргументы**
 
 Функция может принимать:
 
@@ -21,7 +21,7 @@ ClickHouse поддерживает следующие виды синтакси
 **Возвращаемое значение**
 
 -   Если функция вызывается без параметров, она вычисляет количество строк.
--   Если передаётся [выражение](../../syntax.md#syntax-expressions) , то функция вычисляет количество раз, когда выражение возвращает не NULL. Если выражение возвращает значение типа [Nullable](../../../sql-reference/data-types/nullable.md), то результат `count` не становится `Nullable`. Функция возвращает 0, если выражение возвращает `NULL` для всех строк.
+-   Если передаётся [выражение](../../syntax.md#syntax-expressions), то функция подсчитывает количество раз, когда выражение не равно NULL. Если выражение имеет тип [Nullable](../../../sql-reference/data-types/nullable.md), то результат `count` не становится `Nullable`. Функция возвращает 0, если выражение равно `NULL` для всех строк.
 
 В обоих случаях тип возвращаемого значения [UInt64](../../../sql-reference/data-types/int-uint.md).
 
@@ -69,4 +69,3 @@ SELECT count(DISTINCT num) FROM t
 
 Этот пример показывает, что `count(DISTINCT num)` выполняется с помощью функции `uniqExact` в соответствии со значением настройки `count_distinct_implementation`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/count/) <!--hide-->

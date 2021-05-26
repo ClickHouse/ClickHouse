@@ -25,25 +25,25 @@ def feature(self, node="clickhouse1"):
             with Finally("I drop the quota"):
                 node.query(f"DROP QUOTA IF EXISTS {quota}")
 
-    with Scenario("I show quotas", flags=TE, requirements=[
+    with Scenario("I show quotas", requirements=[
             RQ_SRS_006_RBAC_Quota_ShowQuotas("1.0")]):
         with cleanup("quota0"), cleanup("quota1"):
             with When("I run show quota command"):
                 node.query("SHOW QUOTAS")
 
-    with Scenario("I show quotas into outfile", flags=TE, requirements=[
+    with Scenario("I show quotas into outfile", requirements=[
             RQ_SRS_006_RBAC_Quota_ShowQuotas_IntoOutfile("1.0")]):
         with cleanup("quota0"), cleanup("quota1"):
             with When("I run show quota command"):
                 node.query("SHOW QUOTAS INTO OUTFILE 'quotas.txt'")
 
-    with Scenario("I show quotas with format", flags=TE, requirements=[
+    with Scenario("I show quotas with format", requirements=[
             RQ_SRS_006_RBAC_Quota_ShowQuotas_Format("1.0")]):
         with cleanup("quota0"), cleanup("quota1"):
             with When("I run show quota command"):
                 node.query("SHOW QUOTAS FORMAT TabSeparated")
 
-    with Scenario("I show quotas with settings", flags=TE, requirements=[
+    with Scenario("I show quotas with settings", requirements=[
             RQ_SRS_006_RBAC_Quota_ShowQuotas("1.0")]):
         with cleanup("quota0"), cleanup("quota1"):
             with When("I run show quota command"):

@@ -8,6 +8,7 @@ PEERDIR(
     contrib/libs/poco/MongoDB
     contrib/libs/poco/Redis
     contrib/libs/sparsehash
+    contrib/restricted/abseil-cpp
 )
 
 IF (USE_ODBC)
@@ -18,7 +19,7 @@ NO_COMPILER_WARNINGS()
 
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -P 'tests|PostgreSQL' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -P 'tests|PostgreSQL' | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

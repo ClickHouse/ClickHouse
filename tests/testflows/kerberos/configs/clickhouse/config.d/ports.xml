@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<yandex>
+    <https_port>8443</https_port>
+    <tcp_port_secure>9440</tcp_port_secure>
+</yandex>

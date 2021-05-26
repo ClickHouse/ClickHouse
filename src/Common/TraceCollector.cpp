@@ -22,7 +22,12 @@ namespace
 {
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    constexpr size_t QUERY_ID_MAX_LEN = 1024;
+    ///
+    /// And it cannot be large, since otherwise it will not fit into PIPE_BUF.
+    /// The performance test query ids can be surprisingly long like
+    /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
+    /// so make some allowance for them as well.
+    constexpr size_t QUERY_ID_MAX_LEN = 128;
 }
 
 LazyPipeFDs pipe;
@@ -60,10 +65,14 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
         8 * sizeof(char) +                     // maximum VarUInt length for string size
         QUERY_ID_MAX_LEN * sizeof(char) +      // maximum query_id length
         sizeof(UInt8) +                        // number of stack frames
-        sizeof(StackTrace::Frames) +           // collected stack trace, maximum capacity
+        sizeof(StackTrace::FramePointers) +    // collected stack trace, maximum capacity
         sizeof(TraceType) +                    // trace type
         sizeof(UInt64) +                       // thread_id
         sizeof(Int64);                         // size
+    /// Write should be atomic to avoid overlaps
+    /// (since recursive collect() is possible)
+    static_assert(buf_size < PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic");
+
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 

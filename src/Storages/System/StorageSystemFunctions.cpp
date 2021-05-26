@@ -34,7 +34,7 @@ NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
     };
 }
 
-void StorageSystemFunctions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();

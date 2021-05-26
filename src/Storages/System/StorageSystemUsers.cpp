@@ -47,20 +47,23 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
         {"default_roles_all", std::make_shared<DataTypeUInt8>()},
         {"default_roles_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"default_roles_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"grantees_any", std::make_shared<DataTypeUInt8>()},
+        {"grantees_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"grantees_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     };
     return names_and_types;
 }
 
 
-void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_USERS);
-    const auto & access_control = context.getAccessControlManager();
+    context->checkAccess(AccessType::SHOW_USERS);
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<User>();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_auth_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
     auto & column_auth_params = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -77,24 +80,36 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
     auto & column_default_roles_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_default_roles_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_default_roles_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_grantees_any = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_grantees_list = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_grantees_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_grantees_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_grantees_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
 
     auto add_row = [&](const String & name,
                        const UUID & id,
                        const String & storage_name,
                        const Authentication & authentication,
                        const AllowedClientHosts & allowed_hosts,
-                       const RolesOrUsersSet & default_roles)
+                       const RolesOrUsersSet & default_roles,
+                       const RolesOrUsersSet & grantees)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
 
-        if (authentication.getType() == Authentication::Type::LDAP_SERVER)
+        if (
+            authentication.getType() == Authentication::Type::LDAP ||
+            authentication.getType() == Authentication::Type::KERBEROS
+        )
         {
             Poco::JSON::Object auth_params_json;
 
-            auth_params_json.set("server", authentication.getServerName());
+            if (authentication.getType() == Authentication::Type::LDAP)
+                auth_params_json.set("server", authentication.getLDAPServerName());
+            else if (authentication.getType() == Authentication::Type::KERBEROS)
+                auth_params_json.set("realm", authentication.getKerberosRealm());
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);
@@ -150,14 +165,21 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
 
         auto default_roles_ast = default_roles.toASTWithNames(access_control);
         column_default_roles_all.push_back(default_roles_ast->all);
-
         for (const auto & role_name : default_roles_ast->names)
             column_default_roles_list.insertData(role_name.data(), role_name.length());
         column_default_roles_list_offsets.push_back(column_default_roles_list.size());
-
-        for (const auto & role_name : default_roles_ast->except_names)
-            column_default_roles_except.insertData(role_name.data(), role_name.length());
+        for (const auto & except_name : default_roles_ast->except_names)
+            column_default_roles_except.insertData(except_name.data(), except_name.length());
         column_default_roles_except_offsets.push_back(column_default_roles_except.size());
+
+        auto grantees_ast = grantees.toASTWithNames(access_control);
+        column_grantees_any.push_back(grantees_ast->all);
+        for (const auto & grantee_name : grantees_ast->names)
+            column_grantees_list.insertData(grantee_name.data(), grantee_name.length());
+        column_grantees_list_offsets.push_back(column_grantees_list.size());
+        for (const auto & except_name : grantees_ast->except_names)
+            column_grantees_except.insertData(except_name.data(), except_name.length());
+        column_grantees_except_offsets.push_back(column_grantees_except.size());
     };
 
     for (const auto & id : ids)
@@ -170,7 +192,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         if (!storage)
             continue;
 
-        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts, user->default_roles);
+        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts, user->default_roles, user->grantees);
     }
 }
 

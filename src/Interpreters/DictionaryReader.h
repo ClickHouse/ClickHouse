@@ -3,11 +3,10 @@
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-
-class Context;
 
 /// Read block of required columns from Dictionary by UInt64 key column. Rename columns if needed.
 /// Current implementation uses dictHas() + N * dictGet() functions.
@@ -35,7 +34,7 @@ public:
     };
 
     DictionaryReader(const String & dictionary_name, const Names & src_column_names, const NamesAndTypesList & result_columns,
-                     const Context & context);
+                     ContextPtr context);
     void readKeys(const IColumn & keys, Block & out_block, ColumnVector<UInt8>::Container & found, std::vector<size_t> & positions) const;
 
 private:

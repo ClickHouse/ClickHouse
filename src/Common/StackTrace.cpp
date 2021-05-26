@@ -35,7 +35,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             else
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__)
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__) && !defined(__powerpc__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
@@ -184,8 +184,14 @@ static void * getCallerAddress(const ucontext_t & context)
 #    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 #    endif
+
+#elif defined(__APPLE__) && defined(__aarch64__)
+    return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
+
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
+#elif defined(__powerpc64__)
+    return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
 #else
     return nullptr;
 #endif

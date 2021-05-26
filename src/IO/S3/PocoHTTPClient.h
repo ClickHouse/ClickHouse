@@ -1,13 +1,17 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include <Common/RemoteHostFilter.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
-#include <aws/core/client/ClientConfiguration.h>
-#include <aws/core/http/HttpClient.h>
-#include <aws/core/http/HttpRequest.h>
-#include <aws/core/http/standard/StandardHttpResponse.h>
+#include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
+#include <aws/core/http/HttpClient.h> // Y_IGNORE
+#include <aws/core/http/HttpRequest.h> // Y_IGNORE
+#include <aws/core/http/standard/StandardHttpResponse.h> // Y_IGNORE
 
 namespace Aws::Http::Standard
 {
@@ -25,13 +29,14 @@ class ClientFactory;
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
+    String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
 
     void updateSchemeAndRegion();
 
 private:
-    PocoHTTPClientConfiguration(const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_);
+    PocoHTTPClientConfiguration(const String & force_region_, const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_);
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
     friend ClientFactory;
@@ -40,7 +45,7 @@ private:
 class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
 {
 public:
-    using SessionPtr = PooledHTTPSessionPtr;
+    using SessionPtr = HTTPSessionPtr;
 
     PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> request)
         : Aws::Http::Standard::StandardHttpResponse(request)
@@ -91,7 +96,8 @@ private:
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
-    unsigned int max_connections;
 };
 
 }
+
+#endif

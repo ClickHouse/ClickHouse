@@ -184,7 +184,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 }
 
 
-void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
+static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec, bool allow_different_codecs)
 {
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
@@ -210,8 +210,35 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
                             ErrorCodes::CANNOT_DECOMPRESS);
         }
     }
+}
 
+
+void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
+{
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
     codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
+}
+
+
+void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
+{
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
+
+    if (codec->isNone())
+    {
+        /// Shortcut for NONE codec to avoid extra memcpy.
+        /// We doing it by changing the buffer `to` to point to existing uncompressed data.
+
+        UInt8 header_size = ICompressionCodec::getHeaderSize();
+        if (size_compressed_without_checksum < header_size)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})",
+                    size_compressed_without_checksum, static_cast<size_t>(header_size));
+
+        to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
+    }
+    else
+        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
 }
 
 

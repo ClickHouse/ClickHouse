@@ -384,7 +384,7 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys256, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, DummyUInt256, Mapped, false, false, false, use_offset>;
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt256, Mapped, false, false, false, use_offset>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::hashed, Value, Mapped>
 {
@@ -421,25 +421,12 @@ bool HashJoin::empty() const
     return data->type == Type::EMPTY;
 }
 
-size_t HashJoin::getTotalByteCount() const
-{
-    std::shared_lock lock(data->rwlock);
-    return getTotalByteCountLocked();
-}
-
-size_t HashJoin::getTotalRowCount() const
-{
-    std::shared_lock lock(data->rwlock);
-    return getTotalRowCountLocked();
-}
-
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    std::shared_lock lock(data->rwlock);
     return isInnerOrRight(getKind()) && data->empty && !overDictionary();
 }
 
-size_t HashJoin::getTotalRowCountLocked() const
+size_t HashJoin::getTotalRowCount() const
 {
     size_t res = 0;
 
@@ -456,7 +443,7 @@ size_t HashJoin::getTotalRowCountLocked() const
     return res;
 }
 
-size_t HashJoin::getTotalByteCountLocked() const
+size_t HashJoin::getTotalByteCount() const
 {
     size_t res = 0;
 
@@ -652,7 +639,9 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     size_t total_bytes = 0;
 
     {
-        std::unique_lock lock(data->rwlock);
+        if (storage_join_lock.mutex())
+            throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
+                                ErrorCodes::LOGICAL_ERROR);
 
         data->blocks.emplace_back(std::move(structured_block));
         Block * stored_block = &data->blocks.back();
@@ -677,8 +666,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             return true;
 
         /// TODO: Do not calculate them every time
-        total_rows = getTotalRowCountLocked();
-        total_bytes = getTotalByteCountLocked();
+        total_rows = getTotalRowCount();
+        total_bytes = getTotalByteCount();
     }
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -1216,11 +1205,8 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
     block = block.cloneWithColumns(std::move(dst_columns));
 }
 
-
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
 {
-    std::shared_lock lock(data->rwlock);
-
     size_t num_keys = data_types.size();
     if (right_table_keys.columns() != num_keys)
         throw Exception(
@@ -1232,8 +1218,8 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     {
         const auto & left_type_origin = data_types[i];
         const auto & [c2, right_type_origin, right_name] = right_table_keys.safeGetByPosition(i);
-        auto left_type = removeNullable(left_type_origin);
-        auto right_type = removeNullable(right_type_origin);
+        auto left_type = removeNullable(recursiveRemoveLowCardinality(left_type_origin));
+        auto right_type = removeNullable(recursiveRemoveLowCardinality(right_type_origin));
         if (!left_type->equals(*right_type))
             throw Exception(
                 "Type mismatch in joinGet key " + toString(i) + ": found type " + left_type->getName() + ", while the needed type is "
@@ -1250,11 +1236,16 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
     return elem.type;
 }
 
-
-template <typename Maps>
-ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const
+/// TODO: return multiple columns as named tuple
+/// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
+ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
 {
-    // Assemble the key block with correct names.
+    bool is_valid = (strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny)
+        && kind == ASTTableJoin::Kind::Left;
+    if (!is_valid)
+        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+
+    /// Assemble the key block with correct names.
     Block keys;
     for (size_t i = 0; i < block.columns(); ++i)
     {
@@ -1263,32 +1254,15 @@ ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & b
         keys.insert(std::move(key));
     }
 
+    static_assert(!MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>::flagged,
+                  "joinGet are not protected from hash table changes between block processing");
     joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
-        keys, key_names_right, block_with_columns_to_add, maps_);
+        keys, key_names_right, block_with_columns_to_add, std::get<MapsOne>(data->maps));
     return keys.getByPosition(keys.columns() - 1);
 }
 
-
-// TODO: return multiple columns as named tuple
-// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
-ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
-{
-    std::shared_lock lock(data->rwlock);
-
-    if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&
-        kind == ASTTableJoin::Kind::Left)
-    {
-        return joinGetImpl(block, block_with_columns_to_add, std::get<MapsOne>(data->maps));
-    }
-    else
-        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
-}
-
-
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    std::shared_lock lock(data->rwlock);
-
     const Names & key_names_left = table_join->keyNamesLeft();
     JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 
@@ -1337,7 +1311,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, key_names_right, block);
+    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, *table_join, block);
 }
 
 
@@ -1530,6 +1504,7 @@ BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result
 void HashJoin::reuseJoinedData(const HashJoin & join)
 {
     data = join.data;
+    from_storage_join = true;
     joinDispatch(kind, strictness, data->maps, [this](auto kind_, auto strictness_, auto & map)
     {
         used_flags.reinit<kind_, strictness_>(map.getBufferSizeInCells(data->type) + 1);

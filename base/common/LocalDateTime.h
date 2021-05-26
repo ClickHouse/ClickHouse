@@ -29,29 +29,16 @@ private:
     /// NOTE We may use attribute packed instead, but it is less portable.
     unsigned char pad = 0;
 
-    void init(time_t time)
+    void init(time_t time, const DateLUTImpl & time_zone)
     {
-        if (unlikely(time > DATE_LUT_MAX || time == 0))
-        {
-            m_year = 0;
-            m_month = 0;
-            m_day = 0;
-            m_hour = 0;
-            m_minute = 0;
-            m_second = 0;
+        DateLUTImpl::DateTimeComponents components = time_zone.toDateTimeComponents(time);
 
-            return;
-        }
-
-        const auto & date_lut = DateLUT::instance();
-        const auto & values = date_lut.getValues(time);
-
-        m_year = values.year;
-        m_month = values.month;
-        m_day = values.day_of_month;
-        m_hour = date_lut.toHour(time);
-        m_minute = date_lut.toMinute(time);
-        m_second = date_lut.toSecond(time);
+        m_year = components.date.year;
+        m_month = components.date.month;
+        m_day = components.date.day;
+        m_hour = components.time.hour;
+        m_minute = components.time.minute;
+        m_second = components.time.second;
 
         (void)pad;  /// Suppress unused private field warning.
     }
@@ -73,9 +60,9 @@ private:
     }
 
 public:
-    explicit LocalDateTime(time_t time)
+    explicit LocalDateTime(time_t time, const DateLUTImpl & time_zone = DateLUT::instance())
     {
-        init(time);
+        init(time, time_zone);
     }
 
     LocalDateTime(unsigned short year_, unsigned char month_, unsigned char day_,
@@ -104,19 +91,6 @@ public:
     LocalDateTime(const LocalDateTime &) noexcept = default;
     LocalDateTime & operator= (const LocalDateTime &) noexcept = default;
 
-    LocalDateTime & operator= (time_t time)
-    {
-        init(time);
-        return *this;
-    }
-
-    operator time_t() const
-    {
-        return m_year == 0
-            ? 0
-            : DateLUT::instance().makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
-    }
-
     unsigned short year() const { return m_year; }
     unsigned char month() const { return m_month; }
     unsigned char day() const { return m_day; }
@@ -132,8 +106,30 @@ public:
     void second(unsigned char x) { m_second = x; }
 
     LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
+    LocalDateTime toStartOfDate() const { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-    LocalDateTime toStartOfDate() { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
+    std::string toString() const
+    {
+        std::string s{"0000-00-00 00:00:00"};
+
+        s[0] += m_year / 1000;
+        s[1] += (m_year / 100) % 10;
+        s[2] += (m_year / 10) % 10;
+        s[3] += m_year % 10;
+        s[5] += m_month / 10;
+        s[6] += m_month % 10;
+        s[8] += m_day / 10;
+        s[9] += m_day % 10;
+
+        s[11] += m_hour / 10;
+        s[12] += m_hour % 10;
+        s[14] += m_minute / 10;
+        s[15] += m_minute % 10;
+        s[17] += m_second / 10;
+        s[18] += m_second % 10;
+
+        return s;
+    }
 
     bool operator< (const LocalDateTime & other) const
     {
@@ -167,14 +163,3 @@ public:
 };
 
 static_assert(sizeof(LocalDateTime) == 8);
-
-
-namespace std
-{
-inline string to_string(const LocalDateTime & datetime)
-{
-    stringstream str;
-    str << datetime;
-    return str.str();
-}
-}

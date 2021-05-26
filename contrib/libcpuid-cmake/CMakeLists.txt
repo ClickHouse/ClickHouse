@@ -1,11 +1,9 @@
-if (NOT ARCH_ARM)
+if(ARCH_AMD64)
     option (ENABLE_CPUID "Enable libcpuid library (only internal)" ${ENABLE_LIBRARIES})
-endif()
-
-if (ARCH_ARM AND ENABLE_CPUID)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "cpuid is not supported on ARM")
+elseif(ENABLE_CPUID)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "libcpuid is only supported on x86_64")
     set (ENABLE_CPUID 0)
-endif ()
+endif()
 
 if (NOT ENABLE_CPUID)
     add_library (cpuid INTERFACE)

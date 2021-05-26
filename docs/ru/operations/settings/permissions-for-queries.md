@@ -1,6 +1,6 @@
 ---
 toc_priority: 58
-toc_title: "\u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043d\u0438\u044f\u0020\u0434\u043b\u044f\u0020\u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432"
+toc_title: "Разрешения для запросов"
 ---
 
 # Разрешения для запросов {#permissions_for_queries}
@@ -59,4 +59,3 @@ toc_title: "\u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043d\u0438\u044f\u0020\u
 
 1
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/permissions_for_queries/) <!--hide-->

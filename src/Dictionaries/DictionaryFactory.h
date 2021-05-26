@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include "IDictionary.h"
 #include "registerDictionaries.h"
 #include <Parsers/ASTCreateQuery.h>
@@ -21,8 +22,6 @@ class Logger;
 namespace DB
 {
 
-class Context;
-
 /** Create dictionary according to its layout.
   */
 class DictionaryFactory : private boost::noncopyable
@@ -37,13 +36,13 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const Context & context,
+        ContextPtr context,
         bool check_source_config = false) const;
 
     /// Create dictionary from DDL-query
     DictionaryPtr create(const std::string & name,
         const ASTCreateQuery & ast,
-        const Context & context) const;
+        ContextPtr context) const;
 
     using Creator = std::function<DictionaryPtr(
         const std::string & name,

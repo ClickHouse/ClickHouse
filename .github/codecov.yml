@@ -1,5 +1,5 @@
 codecov:
-  max_report_age: off
+  max_report_age: "off"
   strict_yaml_branch: "master"
 
 ignore:

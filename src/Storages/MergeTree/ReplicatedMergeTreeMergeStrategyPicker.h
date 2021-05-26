@@ -52,6 +52,10 @@ public:
     /// and we may need to do a fetch (or postpone) instead of merge
     bool shouldMergeOnSingleReplica(const ReplicatedMergeTreeLogEntryData & entry) const;
 
+    /// return true if s3_execute_merges_on_single_replica_time_threshold feature is active
+    /// and we may need to do a fetch (or postpone) instead of merge
+    bool shouldMergeOnSingleReplicaS3Shared(const ReplicatedMergeTreeLogEntryData & entry) const;
+
     /// returns the replica name
     /// and it's not current replica should do the merge
     /// used in shouldExecuteLogEntry and in tryExecuteMerge
@@ -68,6 +72,7 @@ private:
     uint64_t getEntryHash(const ReplicatedMergeTreeLogEntryData & entry) const;
 
     std::atomic<time_t> execute_merges_on_single_replica_time_threshold = 0;
+    std::atomic<time_t> s3_execute_merges_on_single_replica_time_threshold = 0;
     std::atomic<time_t> last_refresh_time = 0;
 
     std::mutex mutex;

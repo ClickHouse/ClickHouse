@@ -16,6 +16,10 @@ if (ENABLE_CLANG_TIDY)
 
         set (USE_CLANG_TIDY ON)
 
+        # clang-tidy requires assertions to guide the analysis
+        # Note that NDEBUG is set implicitly by CMake for non-debug builds
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -UNDEBUG")
+
         # The variable CMAKE_CXX_CLANG_TIDY will be set inside src and base directories with non third-party code.
         # set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
     elseif (FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)

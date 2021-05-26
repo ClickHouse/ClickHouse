@@ -12,7 +12,7 @@
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-
+#    include <Formats/MySQLBlockInputStream.h>
 
 namespace Poco
 {
@@ -34,8 +34,9 @@ public:
     MySQLDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        const Block & sample_block_);
+        const String & config_prefix,
+        const Block & sample_block_,
+        const StreamSettings & settings_);
 
     /// copy-constructor is provided in order to support cloneability
     MySQLDictionarySource(const MySQLDictionarySource & other);
@@ -60,6 +61,8 @@ public:
     std::string toString() const override;
 
 private:
+    BlockInputStreamPtr loadFromQuery(const String & query);
+
     std::string getUpdateFieldAndDate();
 
     static std::string quoteForLike(const std::string s);
@@ -79,13 +82,13 @@ private:
     const std::string update_field;
     const bool dont_check_update_time;
     Block sample_block;
-    mutable mysqlxx::PoolWithFailover pool;
+    mutable mysqlxx::PoolWithFailoverPtr pool;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     LocalDateTime last_modification;
     std::string invalidate_query;
     mutable std::string invalidate_query_response;
-    const bool close_connection;
+    const StreamSettings settings;
 };
 
 }

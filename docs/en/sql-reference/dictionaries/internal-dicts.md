@@ -50,4 +50,3 @@ We recommend periodically updating the dictionaries with the geobase. During an 
 
 There are also functions for working with OS identifiers and Yandex.Metrica search engines, but they shouldn’t be used.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/internal_dicts/) <!--hide-->

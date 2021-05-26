@@ -127,4 +127,16 @@ void IColumn::doCompareColumn(const Derived & rhs, size_t rhs_row_num,
     }
 }
 
+template <typename Derived>
+bool IColumn::hasEqualValuesImpl() const
+{
+    size_t num_rows = size();
+    for (size_t i = 1; i < num_rows; ++i)
+    {
+        if (compareAt(i, 0, static_cast<const Derived &>(*this), false) != 0)
+            return false;
+    }
+    return true;
+}
+
 }

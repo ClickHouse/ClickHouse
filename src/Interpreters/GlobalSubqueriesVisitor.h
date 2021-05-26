@@ -1,37 +1,36 @@
 #pragma once
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Interpreters/interpretSubquery.h>
-#include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/IAST.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int WRONG_GLOBAL_SUBQUERY;
 }
 
-
 class GlobalSubqueriesMatcher
 {
 public:
-    struct Data
+    struct Data : WithContext
     {
-        const Context & context;
         size_t subquery_depth;
         bool is_remote;
         size_t external_table_id;
@@ -39,16 +38,22 @@ public:
         SubqueriesForSets & subqueries_for_sets;
         bool & has_global_subqueries;
 
-        Data(const Context & context_, size_t subquery_depth_, bool is_remote_,
-             TemporaryTablesMapping & tables, SubqueriesForSets & subqueries_for_sets_, bool & has_global_subqueries_)
-        :   context(context_),
-            subquery_depth(subquery_depth_),
-            is_remote(is_remote_),
-            external_table_id(1),
-            external_tables(tables),
-            subqueries_for_sets(subqueries_for_sets_),
-            has_global_subqueries(has_global_subqueries_)
-        {}
+        Data(
+            ContextPtr context_,
+            size_t subquery_depth_,
+            bool is_remote_,
+            TemporaryTablesMapping & tables,
+            SubqueriesForSets & subqueries_for_sets_,
+            bool & has_global_subqueries_)
+            : WithContext(context_)
+            , subquery_depth(subquery_depth_)
+            , is_remote(is_remote_)
+            , external_table_id(1)
+            , external_tables(tables)
+            , subqueries_for_sets(subqueries_for_sets_)
+            , has_global_subqueries(has_global_subqueries_)
+        {
+        }
 
         void addExternalStorage(ASTPtr & ast, bool set_alias = false)
         {
@@ -80,7 +85,7 @@ public:
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
                 auto temporary_table_name = getIdentifierName(subquery_or_table_name);
                 bool exists_in_local_map = external_tables.end() != external_tables.find(temporary_table_name);
-                bool exists_in_context = context.tryResolveStorageID(StorageID("", temporary_table_name), Context::ResolveExternal);
+                bool exists_in_context = getContext()->tryResolveStorageID(StorageID("", temporary_table_name), Context::ResolveExternal);
                 if (exists_in_local_map || exists_in_context)
                     return;
             }
@@ -97,14 +102,17 @@ public:
                 }
             }
 
-            auto interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
+            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, {});
 
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
             auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
-                    context, ColumnsDescription{columns}, ConstraintsDescription{}, nullptr,
-                    /*create_for_global_subquery*/ true);
+                getContext(),
+                ColumnsDescription{columns},
+                ConstraintsDescription{},
+                nullptr,
+                /*create_for_global_subquery*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
 
             /** We replace the subquery with the name of the temporary table.
@@ -136,10 +144,10 @@ public:
 
             external_tables[external_table_name] = external_storage_holder;
 
-            if (context.getSettingsRef().use_index_for_in_with_subqueries)
+            if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
             {
                 auto external_table = external_storage_holder->getTable();
-                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), context);
+                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
                 PullingPipelineExecutor executor(io.pipeline);
 
@@ -176,9 +184,7 @@ public:
     static bool needChildVisit(ASTPtr &, const ASTPtr & child)
     {
         /// We do not go into subqueries.
-        if (child->as<ASTSelectQuery>())
-            return false;
-        return true;
+        return !child->as<ASTSelectQuery>();
     }
 
 private:

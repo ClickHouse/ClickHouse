@@ -30,6 +30,6 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
 
-    void replaceEmptyDatabaseWithCurrent(const String & current_database) const;
+    void replaceEmptyDatabase(const String & current_database) const;
 };
 }

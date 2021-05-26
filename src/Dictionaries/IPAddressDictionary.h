@@ -20,7 +20,7 @@
 
 namespace DB
 {
-class IPAddressDictionary final : public IDictionaryBase
+class IPAddressDictionary final : public IDictionary
 {
 public:
     IPAddressDictionary(
@@ -37,6 +37,14 @@ public:
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
 
     double getHitRate() const override { return 1.0; }
 
@@ -67,7 +75,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+        const ColumnPtr & default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -94,15 +102,20 @@ private:
             UInt32,
             UInt64,
             UInt128,
+            UInt256,
             Int8,
             Int16,
             Int32,
             Int64,
+            Int128,
+            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
+            Decimal256,
             Float32,
             Float64,
+            UUID,
             String>
             null_values;
         std::variant<
@@ -111,15 +124,20 @@ private:
             ContainerType<UInt32>,
             ContainerType<UInt64>,
             ContainerType<UInt128>,
+            ContainerType<UInt256>,
             ContainerType<Int8>,
             ContainerType<Int16>,
             ContainerType<Int32>,
             ContainerType<Int64>,
+            ContainerType<Int128>,
+            ContainerType<Int256>,
             ContainerType<Decimal32>,
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
+            ContainerType<Decimal256>,
             ContainerType<Float32>,
             ContainerType<Float64>,
+            ContainerType<UUID>,
             ContainerType<StringRef>>
             maps;
         std::unique_ptr<Arena> string_arena;
@@ -200,6 +218,7 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 
     Poco::Logger * logger;
 };

@@ -29,7 +29,7 @@ class FunctionH3GetBaseCell : public IFunction
 public:
     static constexpr auto name = "h3GetBaseCell";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3GetBaseCell>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetBaseCell>(); }
 
     std::string getName() const override { return name; }
 

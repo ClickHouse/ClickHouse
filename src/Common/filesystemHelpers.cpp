@@ -79,7 +79,6 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
         if (device_id != parent_device_id)
             return absolute_path;
         absolute_path = parent;
-        device_id = parent_device_id;
     }
 
     return absolute_path;

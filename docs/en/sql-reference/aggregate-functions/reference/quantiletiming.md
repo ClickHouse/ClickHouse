@@ -18,7 +18,7 @@ quantileTiming(level)(expr)
 
 Alias: `medianTiming`.
 
-**Parameters**
+**Arguments**
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 

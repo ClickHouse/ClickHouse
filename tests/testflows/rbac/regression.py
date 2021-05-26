@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from testflows.core import *
@@ -27,6 +28,8 @@ issue_17655 = "https://github.com/ClickHouse/ClickHouse/issues/17655"
 issue_17766 = "https://github.com/ClickHouse/ClickHouse/issues/17766"
 issue_18110 = "https://github.com/ClickHouse/ClickHouse/issues/18110"
 issue_18206 = "https://github.com/ClickHouse/ClickHouse/issues/18206"
+issue_21083 = "https://github.com/ClickHouse/ClickHouse/issues/21083"
+issue_21084 = "https://github.com/ClickHouse/ClickHouse/issues/21084"
 
 xfails = {
     "syntax/show create quota/I show create quota current":
@@ -131,6 +134,16 @@ xfails = {
         [(Fail, issue_18206)],
     "privileges/system replication queues/:/:/:/:/SYSTEM:":
         [(Fail, issue_18206)],
+    "privileges/: row policy/nested live:":
+        [(Fail, issue_21083)],
+    "privileges/: row policy/nested mat:":
+        [(Fail, issue_21084)],
+    "privileges/show dictionaries/:/check privilege/check privilege=SHOW DICTIONARIES/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=CREATE DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
+    "privileges/show dictionaries/:/check privilege/check privilege=DROP DICTIONARY/show dict/SHOW DICTIONARIES with privilege":
+        [(Fail, "new bug")],
 }
 
 xflags = {
@@ -149,20 +162,24 @@ xflags = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """RBAC regression.
     """
+    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
+
+    if stress is not None:
         self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
 
-        if parallel is not None:
-            self.context.parallel = parallel
+    with Cluster(local, clickhouse_binary_path, nodes=nodes,
+            docker_compose_project_dir=os.path.join(current_dir(), "rbac_env")) as cluster:
+        self.context.cluster = cluster
 
-        Feature(run=load("rbac.tests.syntax.feature", "feature"), flags=TE)
-        Feature(run=load("rbac.tests.privileges.feature", "feature"), flags=TE)
-        Feature(run=load("rbac.tests.views.feature", "feature"), flags=TE)
+        Feature(run=load("rbac.tests.syntax.feature", "feature"))
+        Feature(run=load("rbac.tests.privileges.feature", "feature"))
+        Feature(run=load("rbac.tests.views.feature", "feature"))
 
 if main():
     regression()

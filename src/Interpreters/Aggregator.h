@@ -15,7 +15,6 @@
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 
 #include <Common/ThreadPool.h>
-#include <Common/UInt128.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
@@ -78,7 +77,7 @@ using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
-using AggregatedDataWithKeys256 = HashMap<DummyUInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
 using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
@@ -88,7 +87,7 @@ using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<Aggregate
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
-using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<DummyUInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
 /** Variants with better hash function, using more than 32 bits for hash.
   * Using for merging phase of external aggregation, where number of keys may be far greater than 4 billion,
@@ -100,7 +99,7 @@ using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<DummyUInt256, Aggregat
 using AggregatedDataWithUInt64KeyHash64 = HashMap<UInt64, AggregateDataPtr, DefaultHash<UInt64>>;
 using AggregatedDataWithStringKeyHash64 = HashMapWithSavedHash<StringRef, AggregateDataPtr, StringRefHash64>;
 using AggregatedDataWithKeys128Hash64 = HashMap<UInt128, AggregateDataPtr, UInt128Hash>;
-using AggregatedDataWithKeys256Hash64 = HashMap<DummyUInt256, AggregateDataPtr, UInt256Hash>;
+using AggregatedDataWithKeys256Hash64 = HashMap<UInt256, AggregateDataPtr, UInt256Hash>;
 
 template <typename Base>
 struct AggregationDataWithNullKey : public Base
@@ -196,11 +195,14 @@ struct AggregationMethodOneNumber
     /// Use optimization for low cardinality.
     static const bool low_cardinality_optimization = false;
 
+    /// Shuffle key columns before `insertKeyIntoColumns` call if needed.
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
     // Insert the key from the hash table into columns.
-    static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
     {
         const auto * key_holder = reinterpret_cast<const char *>(&key);
-        auto * column = static_cast<ColumnVectorHelper *>(key_columns[0].get());
+        auto * column = static_cast<ColumnVectorHelper *>(key_columns[0]);
         column->insertRawData<sizeof(FieldType)>(key_holder);
     }
 };
@@ -225,9 +227,11 @@ struct AggregationMethodString
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
 };
 
@@ -251,9 +255,11 @@ struct AggregationMethodStringNoCache
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0].get())->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
 };
 
@@ -277,9 +283,11 @@ struct AggregationMethodFixedString
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
+        static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
     }
 };
 
@@ -302,9 +310,11 @@ struct AggregationMethodFixedStringNoCache
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0].get())->insertData(key.data, key.size);
+        static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
     }
 };
 
@@ -331,10 +341,12 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     static const bool low_cardinality_optimization = true;
 
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
     static void insertKeyIntoColumns(const Key & key,
-        MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
+         std::vector<IColumn *> & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
     {
-        auto * col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get());
+        auto * col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0]);
 
         if constexpr (std::is_same_v<Key, StringRef>)
         {
@@ -365,11 +377,22 @@ struct AggregationMethodKeysFixed
     template <typename Other>
     AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
-    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache>;
+    using State = ColumnsHashing::HashMethodKeysFixed<
+        typename Data::value_type,
+        Key,
+        Mapped,
+        has_nullable_keys,
+        has_low_cardinality,
+        use_cache>;
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & key_sizes)
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        return State::shuffleKeyColumns(key_columns, key_sizes);
+    }
+
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
     {
         size_t keys_size = key_columns.size();
 
@@ -395,7 +418,7 @@ struct AggregationMethodKeysFixed
             }
             else
             {
-                observed_column = key_columns[i].get();
+                observed_column = key_columns[i];
                 null_map = nullptr;
             }
 
@@ -447,7 +470,9 @@ struct AggregationMethodSerialized
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         const auto * pos = key.data;
         for (auto & column : key_columns)
@@ -841,7 +866,7 @@ using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants
 
 /** Aggregates the source of the blocks.
   */
-class Aggregator
+class Aggregator final
 {
 public:
     struct Params
@@ -890,8 +915,10 @@ public:
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             VolumePtr tmp_volume_, size_t max_threads_,
-            size_t min_free_disk_space_)
+            size_t min_free_disk_space_,
+            const Block & intermediate_header_ = {})
             : src_header(src_header_),
+            intermediate_header(intermediate_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
             group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
@@ -924,9 +951,10 @@ public:
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(WriteBuffer & out, size_t indent) const;
+        void explain(JSONBuilder::JSONMap & map) const;
     };
 
-    Aggregator(const Params & params_);
+    explicit Aggregator(const Params & params_);
 
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
@@ -957,6 +985,8 @@ public:
     /// Merge partially aggregated blocks separated to buckets into one data structure.
     void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads);
 
+    bool mergeBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys);
+
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
     /// (either all blocks are from overflow data or none blocks are).
@@ -967,12 +997,6 @@ public:
       * This is needed to simplify merging of that data with other results, that are already two-level.
       */
     std::vector<Block> convertBlockToTwoLevel(const Block & block);
-
-    using CancellationHook = std::function<bool()>;
-
-    /** Set a function that checks whether the current task can be aborted.
-      */
-    void setCancellationHook(const CancellationHook & cancellation_hook);
 
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path);
@@ -999,7 +1023,8 @@ public:
     /// Get data structure of the result.
     Block getHeader(bool final) const;
 
-protected:
+private:
+
     friend struct AggregatedDataVariants;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
@@ -1016,22 +1041,17 @@ protected:
 
     /** This array serves two purposes.
       *
-      * 1. Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
+      * Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
       * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
-      *
-      * 2. Calling a function by pointer is better than a virtual call, because in the case of a virtual call,
-      *  GCC 5.1.2 generates code that, at each iteration of the loop, reloads the function address from memory into the register
-      *  (the offset value in the virtual function table).
       */
     struct AggregateFunctionInstruction
     {
-        const IAggregateFunction * that;
-        IAggregateFunction::AddFunc func;
-        size_t state_offset;
-        const IColumn ** arguments;
-        const IAggregateFunction * batch_that;
-        const IColumn ** batch_arguments;
-        const UInt64 * offsets = nullptr;
+        const IAggregateFunction * that{};
+        size_t state_offset{};
+        const IColumn ** arguments{};
+        const IAggregateFunction * batch_that{};
+        const IColumn ** batch_arguments{};
+        const UInt64 * offsets{};
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
@@ -1049,12 +1069,7 @@ protected:
     /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
-    std::mutex mutex;
-
     Poco::Logger * log = &Poco::Logger::get("Aggregator");
-
-    /// Returns true if you can abort the current task.
-    CancellationHook isCancelled;
 
     /// For external aggregation.
     TemporaryFiles temporary_files;
@@ -1085,21 +1100,13 @@ protected:
 
     /// Specialization for a particular value no_more_keys.
     template <bool no_more_keys, typename Method>
-    void executeImplCase(
+    void executeImplBatch(
         Method & method,
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
         AggregateFunctionInstruction * aggregate_instructions,
         AggregateDataPtr overflow_row) const;
-
-    template <typename Method>
-    void executeImplBatch(
-        Method & method,
-        typename Method::State & state,
-        Arena * aggregates_pool,
-        size_t rows,
-        AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// For case when there are no keys (all aggregate into one row).
     static void executeWithoutKeyImpl(
@@ -1121,7 +1128,6 @@ protected:
         Method & method,
         IBlockOutputStream & out);
 
-protected:
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
@@ -1178,7 +1184,7 @@ protected:
     void convertToBlockImplFinal(
         Method & method,
         Table & data,
-        MutableColumns & key_columns,
+        std::vector<IColumn *> key_columns,
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
 
@@ -1186,7 +1192,7 @@ protected:
     void convertToBlockImplNotFinal(
         Method & method,
         Table & data,
-        MutableColumns & key_columns,
+        std::vector<IColumn *>  key_columns,
         AggregateColumnsData & aggregate_columns) const;
 
     template <typename Filler>
@@ -1277,14 +1283,18 @@ protected:
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder);
 
-    void fillAggregateColumnsWithSingleKey(
-        AggregatedDataVariants & data_variants,
-        MutableColumns & final_aggregate_columns);
+    void addSingleKeyToAggregateColumns(
+        const AggregatedDataVariants & data_variants,
+        MutableColumns & aggregate_columns) const;
+
+    void addArenasToAggregateColumns(
+        const AggregatedDataVariants & data_variants,
+        MutableColumns & aggregate_columns) const;
 
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
-        MutableColumns & final_key_columns);
+        MutableColumns & final_key_columns) const;
 };
 
 

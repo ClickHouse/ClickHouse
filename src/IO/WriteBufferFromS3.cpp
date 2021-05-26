@@ -21,6 +21,7 @@ namespace ProfileEvents
     extern const Event S3WriteBytes;
 }
 
+
 namespace DB
 {
 // S3 protocol does not allow to have multipart upload with more than 10000 parts.
@@ -50,9 +51,9 @@ WriteBufferFromS3::WriteBufferFromS3(
     , client_ptr(std::move(client_ptr_))
     , minimum_upload_part_size(minimum_upload_part_size_)
     , max_single_part_upload_size(max_single_part_upload_size_)
-    , temporary_buffer(Aws::MakeShared<Aws::StringStream>("temporary buffer"))
-    , last_part_size(0)
-{ }
+{
+    allocateBuffer();
+}
 
 void WriteBufferFromS3::nextImpl()
 {
@@ -72,15 +73,21 @@ void WriteBufferFromS3::nextImpl()
     if (!multipart_upload_id.empty() && last_part_size > minimum_upload_part_size)
     {
         writePart();
-        last_part_size = 0;
-        temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
+        allocateBuffer();
     }
+}
+
+void WriteBufferFromS3::allocateBuffer()
+{
+    temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
+    temporary_buffer->exceptions(std::ios::badbit);
+    last_part_size = 0;
 }
 
 void WriteBufferFromS3::finalize()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     finalizeImpl();
 }
 
@@ -105,11 +112,6 @@ void WriteBufferFromS3::finalizeImpl()
     finalized = true;
 }
 
-WriteBufferFromS3::~WriteBufferFromS3()
-{
-    finalizeImpl();
-}
-
 void WriteBufferFromS3::createMultipartUpload()
 {
     Aws::S3::Model::CreateMultipartUploadRequest req;
@@ -123,17 +125,26 @@ void WriteBufferFromS3::createMultipartUpload()
     if (outcome.IsSuccess())
     {
         multipart_upload_id = outcome.GetResult().GetUploadId();
-        LOG_DEBUG(log, "Multipart upload has created. Upload id: {}", multipart_upload_id);
+        LOG_DEBUG(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", bucket, key, multipart_upload_id);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
-
 void WriteBufferFromS3::writePart()
 {
-    if (temporary_buffer->tellp() <= 0)
+    auto size = temporary_buffer->tellp();
+
+    LOG_DEBUG(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", bucket, key, multipart_upload_id, size);
+
+    if (size < 0)
+        throw Exception("Failed to write part. Buffer in invalid state.", ErrorCodes::S3_ERROR);
+
+    if (size == 0)
+    {
+        LOG_DEBUG(log, "Skipping writing part. Buffer is empty.");
         return;
+    }
 
     if (part_tags.size() == S3_WARN_MAX_PARTS)
     {
@@ -147,18 +158,16 @@ void WriteBufferFromS3::writePart()
     req.SetKey(key);
     req.SetPartNumber(part_tags.size() + 1);
     req.SetUploadId(multipart_upload_id);
-    req.SetContentLength(temporary_buffer->tellp());
+    req.SetContentLength(size);
     req.SetBody(temporary_buffer);
 
     auto outcome = client_ptr->UploadPart(req);
-
-    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, multipart_upload_id, temporary_buffer->tellp());
 
     if (outcome.IsSuccess())
     {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
-        LOG_DEBUG(log, "Writing part finished. Total parts: {}, Upload_id: {}, Etag: {}", part_tags.size(), multipart_upload_id, etag);
+        LOG_DEBUG(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, etag, part_tags.size());
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -166,7 +175,10 @@ void WriteBufferFromS3::writePart()
 
 void WriteBufferFromS3::completeMultipartUpload()
 {
-    LOG_DEBUG(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}", bucket, key, multipart_upload_id);
+    LOG_DEBUG(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
+
+    if (part_tags.empty())
+        throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
 
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);
@@ -185,22 +197,30 @@ void WriteBufferFromS3::completeMultipartUpload()
     auto outcome = client_ptr->CompleteMultipartUpload(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG(log, "Multipart upload has completed. Upload_id: {}", multipart_upload_id);
+        LOG_DEBUG(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
 void WriteBufferFromS3::makeSinglepartUpload()
 {
-    if (temporary_buffer->tellp() <= 0)
-        return;
+    auto size = temporary_buffer->tellp();
 
-    LOG_DEBUG(log, "Making single part upload. Bucket: {}, Key: {}", bucket, key);
+    LOG_DEBUG(log, "Making single part upload. Bucket: {}, Key: {}, Size: {}", bucket, key, size);
+
+    if (size < 0)
+        throw Exception("Failed to make single part upload. Buffer in invalid state", ErrorCodes::S3_ERROR);
+
+    if (size == 0)
+    {
+        LOG_DEBUG(log, "Skipping single part upload. Buffer is empty.");
+        return;
+    }
 
     Aws::S3::Model::PutObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    req.SetContentLength(temporary_buffer->tellp());
+    req.SetContentLength(size);
     req.SetBody(temporary_buffer);
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
@@ -208,7 +228,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
     auto outcome = client_ptr->PutObject(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}", bucket, key);
+        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}", bucket, key, req.GetContentLength());
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }

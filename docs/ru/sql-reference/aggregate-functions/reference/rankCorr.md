@@ -8,10 +8,10 @@
 rankCorr(x, y)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `x` — Произвольное значение. [Float32](../../../sql-reference/data-types/float.md#float32-float64) или [Float64](../../../sql-reference/data-types/float.md#float32-float64).
--   `y` — Произвольное значение. [Float32](../../../sql-reference/data-types/float.md#float32-float64) или [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — произвольное значение. [Float32](../../../sql-reference/data-types/float.md#float32-float64) или [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+-   `y` — произвольное значение. [Float32](../../../sql-reference/data-types/float.md#float32-float64) или [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
 **Возвращаемое значение**
 

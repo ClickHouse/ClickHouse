@@ -416,7 +416,9 @@ static void sanitizerDeathCallback()
     else
         log_message = "Terminate called without an active exception";
 
-    static const size_t buf_size = 1024;
+    /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
+    /// And the buffer should not be too small because our exception messages can be large.
+    static constexpr size_t buf_size = PIPE_BUF;
 
     if (log_message.size() > buf_size - 16)
         log_message.resize(buf_size - 16);
@@ -466,7 +468,7 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", "config.xml");
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     DB::ConfigProcessor config_processor(config_path, false, true);
     config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
@@ -512,6 +514,11 @@ void BaseDaemon::kill()
 std::string BaseDaemon::getDefaultCorePath() const
 {
     return "/opt/cores/";
+}
+
+std::string BaseDaemon::getDefaultConfigFileName() const
+{
+    return "config.xml";
 }
 
 void BaseDaemon::closeFDs()
@@ -562,6 +569,7 @@ void debugIncreaseOOMScore()
     {
         DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
         buf.write(new_score.c_str(), new_score.size());
+        buf.close();
     }
     catch (const Poco::Exception & e)
     {

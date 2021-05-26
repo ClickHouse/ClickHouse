@@ -1,0 +1,28 @@
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+PREWHERE y > 100
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+PREWHERE y > 100
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+WHERE z > 400
+SELECT
+    x,
+    y,
+    z
+FROM prewhere_move_select_final
+FINAL
+PREWHERE y > 100
+WHERE (y > 100) AND (z > 400)

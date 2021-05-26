@@ -11,14 +11,6 @@ body.blog .dropdown-item:focus {
     background: #eee;
 }
 
-.comment-even {
-  background: #fff;
-}
-
-.comment-odd, .comments-bg {
-  background: #f8f9fa;
-}
-
 @media (prefers-color-scheme: dark) {
   body.blog .dropdown-item {
     color: #fff !important;
@@ -32,13 +24,5 @@ body.blog .dropdown-item:focus {
 
   .blog .social-icon {
     background: #444451;
-  }
-
-  .comment-even {
-    background: #111;
-  }
-
-  .comment-odd, .comments-bg {
-    background: #333;
   }
 }

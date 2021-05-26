@@ -10,7 +10,6 @@
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
         "00157_cache_dictionary",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01193_metadata_loading",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
@@ -18,7 +17,8 @@
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
         "01646_system_restart_replicas_smoke", /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
-        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy for TSan
+        "01641_memory_tracking_insert_optimize", /// INSERT lots of rows is too heavy for TSan
+        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
     "address-sanitizer": [
         "00877",
@@ -26,10 +26,10 @@
         "memory_profiler",
         "odbc_roundtrip",
         "01103_check_cpu_instructions_at_startup",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
     "ub-sanitizer": [
         "capnproto",
@@ -37,7 +37,6 @@
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
         "00900_orc_load",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"
@@ -46,13 +45,14 @@
         "capnproto",
         "query_profiler",
         "memory_profiler",
+        "01175_distributed_ddl_output_mode_long",  /// issue 21600
         "01103_check_cpu_instructions_at_startup",
         "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
     ],
     "debug-build": [
         "query_profiler",
@@ -61,7 +61,6 @@
         "00980_alter_settings_race",
         "00834_kill_mutation_replicated_zookeeper",
         "00834_kill_mutation",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01200_mutations_memory_consumption",
         "01103_check_cpu_instructions_at_startup",
         "01037_polygon_dicts_",
@@ -87,7 +86,6 @@
         "00505_secure",
         "00505_shard_secure",
         "odbc_roundtrip",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "01103_check_cpu_instructions_at_startup",
         "01114_mysql_database_engine_segfault",
         "00834_cancel_http_readonly_queries_on_client_close",
@@ -98,22 +96,83 @@
         "01370_client_autocomplete_word_break_characters",
         "01676_clickhouse_client_autocomplete",
         "01193_metadata_loading",
-        "01455_time_zones"
+        "01455_time_zones",
+        "01755_client_highlight_multi_line_comment_regression"
     ],
     "release-build": [
-        "00992_system_parts_race_condition_zookeeper" /// TODO remove me (alesapin)
     ],
     "database-ordinary": [
         "00604_show_create_database",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
         "00738_lock_for_inner_table",
-        "00992_system_parts_race_condition_zookeeper" /// TODO remove me (alesapin)
+        "01153_attach_mv_uuid"
+    ],
+    "database-replicated": [
+        "memory_tracking",
+        "memory_usage",
+        "live_view",
+        "01181_db_atomic_drop_on_cluster",
+        "01175_distributed_ddl_output_mode",
+        "01415_sticking_mutations",
+        "00980_zookeeper_merge_tree_alter_settings",
+        "01148_zookeeper_path_macros_unfolding",
+        "01294_system_distributed_on_cluster",
+        "01269_create_with_null",
+        "01451_replicated_detach_drop_and_quorum",
+        "01188_attach_table_from_path",
+        "01149_zookeeper_mutation_stuck_after_replace_partition",
+        /// user_files
+        "01721_engine_file_truncate_on_insert",
+        /// Fails due to additional replicas or shards
+        "quorum",
+        "01650_drop_part_and_deduplication_zookeeper",
+        "01532_execute_merges_on_single_replica",
+        "00652_replicated_mutations_default_database_zookeeper",
+        "00620_optimize_on_nonleader_replica_zookeeper",
+        /// grep -c
+        "01018_ddl_dictionaries_bad_queries",
+        "00908_bloom_filter_index",
+        /// Unsupported type of ALTER query
+        "01650_fetch_patition_with_macro_in_zk_path",
+        "01451_detach_drop_part",
+        "01451_replicated_detach_drop_part",
+        "01417_freeze_partition_verbose",
+        "01417_freeze_partition_verbose_zookeeper",
+        "01130_in_memory_parts_partitons",
+        "01060_shutdown_table_after_detach",
+        "01021_only_tuple_columns",
+        "01015_attach_part",
+        "00955_test_final_mark",
+        "00753_alter_attach",
+        "00626_replace_partition_from_table_zookeeper",
+        "00626_replace_partition_from_table",
+        "00152_insert_different_granularity",
+        "00054_merge_tree_partitions",
+        "01781_merge_tree_deduplication",
+        /// Old syntax is not allowed
+        "01062_alter_on_mutataion_zookeeper",
+        "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
+        "00754_alter_modify_order_by_replicated_zookeeper",
+        "00652_replicated_mutations_zookeeper",
+        "00623_replicated_truncate_table_zookeeper",
+        "00516_deduplication_after_drop_partition_zookeeper",
+        "00446_clear_column_in_partition_concurrent_zookeeper",
+        "00236_replicated_drop_on_non_leader_zookeeper",
+        "00226_zookeeper_deduplication_and_unexpected_parts",
+        "00215_primary_key_order_zookeeper",
+        "00121_drop_column_zookeeper",
+        "00083_create_merge_tree_zookeeper",
+        "00062_replicated_merge_tree_alter_zookeeper",
+        /// Does not support renaming of multiple tables in single query
+        "00634_rename_view",
+        "00140_rename",
+        "01783_http_chunk_size",
+        "01710_projection_fetch"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
-        "01482_move_to_prewhere_and_cast", /// bug, shoud be fixed
-        "00992_system_parts_race_condition_zookeeper" /// TODO remove me (alesapin)
+        "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
     ],
     "antlr": [
         "00186_very_long_arrays",
@@ -124,13 +183,23 @@
         "00534_functions_bad_arguments4",
         "00534_functions_bad_arguments9",
         "00564_temporary_table_management",
+        "00600_replace_running_query",
         "00626_replace_partition_from_table_zookeeper",
         "00652_replicated_mutations_zookeeper",
         "00687_top_and_offset",
         "00746_sql_fuzzy",
         "00763_create_query_as_table_engine_bug",
         "00765_sql_compatibility_aliases",
-        "00825_protobuf_format_input",
+        "00825_protobuf_format_array_3dim",
+        "00825_protobuf_format_array_of_arrays",
+        "00825_protobuf_format_enum_mapping",
+        "00825_protobuf_format_map",
+        "00825_protobuf_format_nested_in_nested",
+        "00825_protobuf_format_nested_optional",
+        "00825_protobuf_format_no_length_delimiter",
+        "00825_protobuf_format_persons",
+        "00825_protobuf_format_squares",
+        "00825_protobuf_format_table_default",
         "00826_cross_to_inner_join",
         "00834_not_between",
         "00909_kill_not_initialized_query",
@@ -143,7 +212,7 @@
         "00954_client_prepared_statements",
         "00956_sensitive_data_masking",
         "00969_columns_clause",
-        "00975_indices_mutation_replicated_zookeeper",
+        "00975_indices_mutation_replicated_zookeeper_long",
         "00975_values_list",
         "00976_system_stop_ttl_merges",
         "00977_int_div",
@@ -153,7 +222,6 @@
         "00982_array_enumerate_uniq_ranked",
         "00984_materialized_view_to_columns",
         "00988_constraints_replication_zookeeper",
-        "00992_system_parts_race_condition_zookeeper", /// TODO remove me (alesapin)
         "00995_order_by_with_fill",
         "01001_enums_in_in_section",
         "01011_group_uniq_array_memsan",
@@ -162,6 +230,7 @@
         "01015_attach_part",
         "01015_database_bad_tables",
         "01017_uniqCombined_memory_usage",
+        "01018_ddl_dictionaries_concurrent_requrests",  /// Cannot parse ATTACH DICTIONARY IF NOT EXISTS
         "01019_alter_materialized_view_atomic",
         "01019_alter_materialized_view_consistent",
         "01019_alter_materialized_view_query",
@@ -203,6 +272,7 @@
         "01145_with_fill_const",
         "01149_zookeeper_mutation_stuck_after_replace_partition",
         "01150_ddl_guard_rwr",
+        "01155_old_mutation_parts_to_do",
         "01185_create_or_replace_table",
         "01187_set_profile_as_setting",
         "01188_attach_table_from_path",
@@ -232,7 +302,7 @@
         "01293_pretty_max_value_width",
         "01293_show_settings",
         "01294_create_settings_profile",
-        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
         "01295_create_row_policy",
         "01296_create_row_policy_in_current_database",
         "01297_create_quota",
@@ -278,8 +348,9 @@
         "01504_compression_multiple_streams",
         "01508_explain_header",
         "01508_partition_pruning_long",
-        "01509_check_parallel_quorum_inserts",
-        "01509_parallel_quorum_and_merge",
+        "01509_check_parallel_quorum_inserts_long",
+        "01509_parallel_quorum_and_merge_long",
+        "01509_dictionary_preallocate",
         "01515_mv_and_array_join_optimisation_bag",
         "01516_create_table_primary_key",
         "01517_drop_mv_with_inner_table",
@@ -291,7 +362,7 @@
         "01530_drop_database_atomic_sync",
         "01532_execute_merges_on_single_replica",
         "01532_primary_key_without_order_by_zookeeper",
-        "01541_max_memory_usage_for_user",
+        "01541_max_memory_usage_for_user_long",
         "01551_mergetree_read_in_order_spread",
         "01552_dict_fixedstring",
         "01554_bloom_filter_index_big_integer_uuid",
@@ -323,7 +394,16 @@
         "01655_plan_optimizations",
         "01475_read_subcolumns_storages",
         "01674_clickhouse_client_query_param_cte",
-        "01666_merge_tree_max_query_limit"
+        "01666_merge_tree_max_query_limit",
+        "01710_projections",
+        "01710_normal_projections",
+        "01710_aggregate_projections",
+        "01786_explain_merge_tree",
+        "01666_merge_tree_max_query_limit",
+        "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
+        "01823_explain_json",
+        "01852_cast_operator",
+        "01852_cast_operator_bad_cases"
     ],
     "parallel":
     [
@@ -358,6 +438,7 @@
         "00571_non_exist_database_when_create_materializ_view",
         "00575_illegal_column_exception_when_drop_depen_column",
         "00599_create_view_with_subquery",
+        "00600_replace_running_query",
         "00604_show_create_database",
         "00612_http_max_query_size",
         "00619_union_highlite",
@@ -368,6 +449,7 @@
         "00626_replace_partition_from_table",
         "00626_replace_partition_from_table_zookeeper",
         "00633_materialized_view_and_too_many_parts_zookeeper",
+        "00643_cast_zookeeper",
         "00652_mergetree_mutations",
         "00652_replicated_mutations_zookeeper",
         "00682_empty_parts_merge",
@@ -408,12 +490,14 @@
         "00933_test_fix_extra_seek_on_compressed_cache",
         "00933_ttl_replicated_zookeeper",
         "00933_ttl_with_default",
+        "00950_dict_get",
         "00955_test_final_mark",
         "00976_ttl_with_old_parts",
         "00980_merge_alter_settings",
         "00980_zookeeper_merge_tree_alter_settings",
         "00988_constraints_replication_zookeeper",
         "00989_parallel_parts_loading",
+        "00992_system_parts_race_condition_zookeeper_long",
         "00993_system_parts_race_condition_drop_zookeeper",
         "01012_show_tables_limit",
         "01013_sync_replica_timeout_zookeeper",
@@ -426,7 +510,7 @@
         "01018_ddl_dictionaries_select",
         "01018_ddl_dictionaries_special",
         "01018_dictionaries_from_dictionaries",
-        "01018_ip_dictionary",
+        "01018_ip_dictionary_long",
         "01021_only_tuple_columns",
         "01023_materialized_view_query_context",
         "01031_mutations_interpreter_and_context",
@@ -486,6 +570,10 @@
         "01135_default_and_alter_zookeeper",
         "01148_zookeeper_path_macros_unfolding",
         "01150_ddl_guard_rwr",
+        "01153_attach_mv_uuid",
+        "01152_cross_replication",
+        "01154_move_partition_long",
+        "01155_rename_move_materialized_view",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
@@ -515,7 +603,7 @@
         "01281_unsucceeded_insert_select_queries_counter",
         "01293_system_distribution_queue",
         "01294_lazy_database_concurrent",
-        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+        "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
         "01294_system_distributed_on_cluster",
         "01296_create_row_policy_in_current_database",
         "01297_create_quota",
@@ -568,8 +656,11 @@
         "01527_clickhouse_local_optimize",
         "01527_dist_sharding_key_dictGet_reload",
         "01530_drop_database_atomic_sync",
-        "01541_max_memory_usage_for_user",
+        "01541_max_memory_usage_for_user_long",
         "01542_dictionary_load_exception_race",
+        "01545_system_errors", // looks at the difference of values in system.errors
+        "01560_optimize_on_insert_zookeeper",
+        "01563_distributed_query_finish", // looks at system.errors which is global
         "01575_disable_detach_table_of_dictionary",
         "01593_concurrent_alter_mutations_kill",
         "01593_concurrent_alter_mutations_kill_many_replicas",
@@ -580,10 +671,30 @@
         "01601_detach_permanently",
         "01602_show_create_view",
         "01603_rename_overwrite_bug",
+        "01666_blns",
         "01646_system_restart_replicas_smoke", // system restart replicas is a global query
+        "01656_test_query_log_factories_info",
+        "01658_read_file_to_stringcolumn",
+        "01669_columns_declaration_serde",
         "01676_dictget_in_default_expression",
-        "01715_background_checker_blather_zookeeper",
+        "01681_cache_dictionary_simple_key",
+        "01682_cache_dictionary_complex_key",
+        "01683_flat_dictionary",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key",
         "01700_system_zookeeper_path_in",
+        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
+        "01702_system_query_log", // Runs many global system queries
+        "01715_background_checker_blather_zookeeper",
+        "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01722_long_brotli_http_compression_json_format", // It is broken in some unimaginable way with the genius error 'cannot write to ofstream'. Not sure how to debug this
+        "01747_alter_partition_key_enum_zookeeper",
+        "01748_dictionary_table_dot", // creates database
+        "01760_polygon_dictionaries",
+        "01760_system_dictionaries",
+        "01761_alter_decimal_zookeeper",
+        "01360_materialized_view_with_join_on_query_log", // creates and drops MVs on query_log, which may interrupt flushes.
+        "01509_parallel_quorum_insert_no_replicas", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "attach",
         "ddl_dictionaries",
         "dictionary",
@@ -591,6 +702,29 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts" // they use an explicitly specified database
+        "polygon_dicts", // they use an explicitly specified database
+        "01658_read_file_to_stringcolumn",
+        "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
+        "01748_dictionary_table_dot", // creates database
+        "00950_dict_get",
+        "01683_flat_dictionary",
+        "01681_cache_dictionary_simple_key",
+        "01682_cache_dictionary_complex_key",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key",
+        "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01760_system_dictionaries",
+        "01760_polygon_dictionaries",
+        "01778_hierarchical_dictionaries",
+        "01780_clickhouse_dictionary_source_loop",
+        "01785_dictionary_element_count",
+        "01802_test_postgresql_protocol_with_row_policy", /// Creates database and users
+        "01804_dictionary_decimal256_type",
+        "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
+        "01821_table_comment",
+        "01710_projection_fetch",
+        "01870_modulo_partition_key",
+        "01870_buffer_flush" // creates database
     ]
 }

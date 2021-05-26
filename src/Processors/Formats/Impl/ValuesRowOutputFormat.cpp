@@ -15,9 +15,9 @@ ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, const Block & h
 {
 }
 
-void ValuesRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void ValuesRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    type.serializeAsTextQuoted(column, row_num, out, format_settings);
+    serialization.serializeTextQuoted(column, row_num, out, format_settings);
 }
 
 void ValuesRowOutputFormat::writeFieldDelimiter()

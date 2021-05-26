@@ -60,11 +60,11 @@ Otherwise you will get only exported symbols from program headers.
 #endif
 
 #define __msan_unpoison_string(X) // NOLINT
-#if defined(__has_feature)
-#   if __has_feature(memory_sanitizer)
-#       undef __msan_unpoison_string
-#       include <sanitizer/msan_interface.h>
-#   endif
+#if defined(ch_has_feature)
+#    if ch_has_feature(memory_sanitizer)
+#        undef __msan_unpoison_string
+#        include <sanitizer/msan_interface.h>
+#    endif
 #endif
 
 

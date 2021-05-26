@@ -4,9 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_BENCHMARK --iterations 10 --query "SELECT 1" 1>/dev/null 2>"$CLICKHOUSE_TMP"/err
+LOG="$CLICKHOUSE_TMP/err-$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_BENCHMARK --iterations 10 --query "SELECT 1" 1>/dev/null 2>"$LOG"
 
-cat "$CLICKHOUSE_TMP"/err | grep Exception
-cat "$CLICKHOUSE_TMP"/err | grep Loaded
+cat "$LOG" | grep Exception
+cat "$LOG" | grep Loaded
 
-rm "$CLICKHOUSE_TMP"/err
+rm "$LOG"

@@ -8,4 +8,3 @@
  - `with_admin_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Флаг, который показывает, обладает ли `current_role` роль привилегией `ADMIN OPTION`.
  - `is_default` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) —  Флаг, который показывает, является ли `current_role` ролью по умолчанию. 
 
- [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/current-roles) <!--hide-->
