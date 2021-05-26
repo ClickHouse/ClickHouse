@@ -983,7 +983,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     desc.add_options()
         ("help,h", "produce help message")
         ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
-        ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
+        ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
     ;
 
     po::variables_map options;
