@@ -72,7 +72,6 @@ private:
 
     QueryPlanPtr spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
-        ReadFromMergeTree::IndexStatPtr index_stats,
         size_t num_streams,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -87,7 +86,6 @@ private:
     /// out_projection - save projection only with columns, requested to read
     QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
-        ReadFromMergeTree::IndexStatPtr index_stats,
         size_t num_streams,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -104,7 +102,6 @@ private:
 
     QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
-        ReadFromMergeTree::IndexStatPtr index_stats,
         size_t num_streams,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -178,6 +175,17 @@ public:
         PartFilterCounters & counters,
         Poco::Logger * log);
 
+    static RangesInDataParts filterParts(
+        MergeTreeData::DataPartsVector & parts,
+        StorageMetadataPtr metadata_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr & context,
+        KeyCondition & key_condition,
+        const MergeTreeReaderSettings & reader_settings,
+        Poco::Logger * log,
+        size_t num_streams,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     static MergeTreeDataSelectSamplingData getSampling(
         const ASTSelectQuery & select,
         MergeTreeData::DataPartsVector & parts,
@@ -188,6 +196,8 @@ public:
         bool sample_factor_column_queried,
         NamesAndTypesList available_real_columns,
         ContextPtr context);
+
+    static String checkLimits(MergeTreeData & data, const RangesInDataParts & parts_with_ranges, ContextPtr & context);
 };
 
 }

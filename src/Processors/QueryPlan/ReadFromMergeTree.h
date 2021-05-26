@@ -74,7 +74,7 @@ public:
         const MergeTreeData & data_,
         const MergeTreeData & storage_,
         StorageMetadataPtr metadata_snapshot_,
-        String query_id_,
+        StorageMetadataPtr metadata_snapshot_base_,
         Names real_column_names_,
         MergeTreeData::DataPartsVector parts_,
         //IndexStatPtr index_stats_,
@@ -82,7 +82,7 @@ public:
         Names virt_column_names_,
         Settings settings_,
         size_t num_streams_,
-        ReadType read_type_
+        //ReadType read_type_
     );
 
     String getName() const override { return "ReadFromMergeTree"; }
@@ -102,26 +102,42 @@ private:
     const MergeTreeData & data;
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
-    String query_id;
+    StorageMetadataPtr metadata_snapshot_base;
 
     Names real_column_names;
     MergeTreeData::DataPartsVector parts;
-    IndexStat index_stats;
+    IndexStats index_stats;
     PrewhereInfoPtr prewhere_info;
     Names virt_column_names;
     Settings settings;
 
     size_t num_streams;
-    ReadType read_type;
+    //ReadType read_type;
 
     Poco::Logger * log;
 
-    Pipe read();
-    Pipe readFromPool();
-    Pipe readInOrder();
+    Pipe read(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, size_t used_max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
+    Pipe readFromPool(RangesInDataParts parts_with_ranges, Names required_columns, size_t used_max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
+    Pipe readInOrder(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, bool use_uncompressed_cache);
 
     template<typename TSource>
-    ProcessorPtr createSource(const RangesInDataPart & part);
+    ProcessorPtr createSource(const RangesInDataPart & part, const Names & required_columns, bool use_uncompressed_cache);
+
+    Pipe spreadMarkRangesAmongStreams(
+        RangesInDataParts && parts_with_ranges,
+        const Names & column_names);
+
+    Pipe spreadMarkRangesAmongStreamsWithOrder(
+        RangesInDataParts && parts_with_ranges,
+        const Names & column_names,
+        const ActionsDAGPtr & sorting_key_prefix_expr,
+        ActionsDAGPtr & out_projection,
+        const InputOrderInfoPtr & input_order_info);
+
+    Pipe spreadMarkRangesAmongStreamsFinal(
+        RangesInDataParts && parts,
+        const Names & column_names,
+        ActionsDAGPtr & out_projection);
 };
 
 }
