@@ -70,6 +70,6 @@ res:         /lib/x86_64-linux-gnu/libpthread-2.27.so
 **Смотрите также**
 
 -   [Функции интроспекции](../../sql-reference/functions/introspection.md) — что такое функции интроспекции и как их использовать.
--   [system.trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) — содержит трассировки стека, собранные профилировщиком выборочных запросов.
+-   [system.trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) — системная таблица, содержащая трассировки стека, собранные профилировщиком выборочных запросов.
 -   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — описание и пример использования функции `arrayMap`.
 -   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — описание и пример использования функции `arrayFilter`.
