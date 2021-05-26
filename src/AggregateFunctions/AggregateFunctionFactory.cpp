@@ -23,7 +23,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -138,8 +137,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
 
-        const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
-        return found.creator(name, argument_types, parameters, settings);
+        return found.creator(name, argument_types, parameters);
     }
 
     /// Combinators of aggregate functions.

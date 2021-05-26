@@ -20,8 +20,7 @@ namespace
 AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
     const String & name,
     const DataTypes & arguments,
-    const Array & params,
-    const Settings *)
+    const Array & params)
 {
     assertNoParameters(name, params);
 

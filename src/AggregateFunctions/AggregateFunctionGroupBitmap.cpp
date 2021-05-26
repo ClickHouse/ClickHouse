@@ -9,8 +9,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -35,7 +33,7 @@ namespace
     }
 
     template <template <typename> class Data>
-    AggregateFunctionPtr createAggregateFunctionBitmap(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    AggregateFunctionPtr createAggregateFunctionBitmap(const std::string & name, const DataTypes & argument_types, const Array & parameters)
     {
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
@@ -59,7 +57,7 @@ namespace
     // Additional aggregate functions to manipulate bitmaps.
     template <template <typename, typename> class AggregateFunctionTemplate>
     AggregateFunctionPtr
-    createAggregateFunctionBitmapL2(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    createAggregateFunctionBitmapL2(const std::string & name, const DataTypes & argument_types, const Array & parameters)
     {
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
