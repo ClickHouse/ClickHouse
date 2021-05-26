@@ -1,4 +1,9 @@
 [
+  "test_host_ip_change/test.py::test_dns_cache_update",
+  "test_host_ip_change/test.py::test_ip_change_drop_dns_cache",
+  "test_host_ip_change/test.py::test_ip_change_update_dns_cache",
+  "test_host_ip_change/test.py::test_user_access_ip_change[node0]",
+  "test_host_ip_change/test.py::test_user_access_ip_change[node1]",
   "test_atomic_drop_table/test.py::test_atomic_delete_with_stopped_zookeeper",
   "test_attach_without_fetching/test.py::test_attach_without_fetching",
   "test_broken_part_during_merge/test.py::test_merge_and_part_corruption",
