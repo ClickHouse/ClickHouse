@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Параметры ReplacingMergeTree**
 
--   `ver` — столбец с версией. Тип `UInt*`, `Date`, `DateTime` или `DateTime64`. Необязательный параметр.
+-   `ver` — столбец с номером версии. Тип `UInt*`, `Date`, `DateTime` или `DateTime64`. Необязательный параметр.
 
     При слиянии `ReplacingMergeTree` оставляет только строку для каждого уникального ключа сортировки:
 
