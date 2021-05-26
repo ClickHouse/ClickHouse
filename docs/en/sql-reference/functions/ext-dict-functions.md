@@ -3,6 +3,9 @@ toc_priority: 58
 toc_title: External Dictionaries
 ---
 
+!!! attention "Attention"
+    For dictionaries, created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
+
 # Functions for Working with External Dictionaries {#ext_dict_functions}
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
@@ -22,10 +25,6 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
 -   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
-
-
-!!! attention "Attention"
-    For `dict_name` argument, if database name is not specified for dictionaries created with DDL, current database is used.
 
 **Returned value**
 
@@ -114,9 +113,6 @@ dictHas('dict_name', id_expr)
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
 
-!!! attention "Attention"
-    For `dict_name` argument, if database name is not specified for dictionaries created with DDL, current database is used.
-
 **Returned value**
 
 -   0, if there is no key.
@@ -139,9 +135,6 @@ dictGetHierarchy('dict_name', key)
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
 
-!!! attention "Attention"
-    `dict_name` parameter must be fully qualified for dictionaries created with DDL queries. Eg. `<database>.<dict_name>`.
-
 **Returned value**
 
 -   Parents for the key.
@@ -161,9 +154,6 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `child_id_expr` — Key to be checked. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
 -   `ancestor_id_expr` — Alleged ancestor of the `child_id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
-
-!!! attention "Attention"
-    `dict_name` parameter must be fully qualified for dictionaries created with DDL queries. Eg. `<database>.<dict_name>`.
 
 **Returned value**
 
@@ -201,9 +191,6 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
 -   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
-
-!!! attention "Attention"
-    `dict_name` parameter must be fully qualified for dictionaries created with DDL queries. Eg. `<database>.<dict_name>`.
 
 **Returned value**
 

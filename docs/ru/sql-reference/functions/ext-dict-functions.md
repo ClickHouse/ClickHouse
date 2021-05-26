@@ -3,6 +3,9 @@ toc_priority: 58
 toc_title: "Функции для работы с внешними словарями"
 ---
 
+!!! attention "Внимание"
+    Для словарей, созданных с помощью [DDL-запросов](../../sql-reference/statements/create/dictionary.md), в параметре `dict_name` указывается полное имя словаря вместе с базой данных, например: `<database>.<dict_name>`. Если база данных не указана, используется текущая.
+
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
 Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
@@ -22,9 +25,6 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 -   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
-
-!!! attention "Внимание"
-    Если в параметре `dict_name` не указано имя базы данных перед именем созданного с помощью DDL-запросов словаря, тогда используется имя текущей базы данных.
 
 **Возвращаемое значение**
 
@@ -113,9 +113,6 @@ dictHas('dict_name', id)
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 
-!!! attention "Внимание"
-    Если в параметре `dict_name` не указано имя базы данных перед именем созданного с помощью DDL-запросов словаря, тогда используется имя текущей базы данных.
-
 **Возвращаемое значение**
 
 -   0, если ключа нет.
@@ -138,9 +135,6 @@ dictGetHierarchy('dict_name', key)
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 
-!!! attention "Внимание"
-    В аргументе `dict_name` для словарей, созданных с помощью DDL-запросов, имя должно указываться целиком, включая базу данных. Формат: `<database>.<dict_name>`.
-
 **Возвращаемое значение**
 
 -   Цепочка предков заданного ключа.
@@ -158,9 +152,6 @@ Type: [Array(UInt64)](../../sql-reference/functions/ext-dict-functions.md).
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `child_id_expr` — ключ для проверки. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 -   `ancestor_id_expr` — предполагаемый предок ключа `child_id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
-
-!!! attention "Внимание"
-    В аргументе `dict_name` для словарей, созданных с помощью DDL-запросов, имя должно указываться целиком, включая базу данных. Формат: `<database>.<dict_name>`.
 
 **Возвращаемое значение**
 
@@ -198,9 +189,6 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 -   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
-
-!!! attention "Внимание"
-    В аргументе `dict_name` для словарей, созданных с помощью DDL-запросов, имя должно указываться целиком, включая базу данных. Формат: `<database>.<dict_name>`.
 
 **Возвращаемое значение**
 
