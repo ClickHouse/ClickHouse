@@ -199,7 +199,7 @@ public:
         StoragePtr block_storage
             = StorageValues::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), block, source_storage->getVirtuals());
 
-        ContextPtr local_context = context;
+        ContextPtr local_context = Context::createCopy(context);
         local_context->addViewSource(block_storage);
 
         InterpreterSelectQuery select(query.inner_query, local_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
@@ -306,7 +306,7 @@ void StorageAggregatingMemory::lazy_initialize()
 
     ASTPtr select_ptr = select_query.inner_query;
 
-    auto select_context = std::make_unique<ContextPtr>(constructor_context);
+    auto select_context = constructor_context;
 
     /// Get info about source table.
     JoinedTables joined_tables(constructor_context, select_ptr->as<ASTSelectQuery &>());
@@ -321,7 +321,7 @@ void StorageAggregatingMemory::lazy_initialize()
     }
 
     /// Get list of columns we get from select query.
-    Block header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze()).getSampleBlock();
+    Block header = InterpreterSelectQuery(select_ptr, select_context, SelectQueryOptions().analyze()).getSampleBlock();
 
     ColumnsDescription columns_after_aggr;
 
@@ -347,18 +347,18 @@ void StorageAggregatingMemory::lazy_initialize()
     Names required_result_column_names;
 
     auto syntax_analyzer_result
-        = TreeRewriter(*select_context)
+        = TreeRewriter(select_context)
               .analyzeSelect(
                   select_ptr, TreeRewriterResult(src_block_header.getNamesAndTypesList()), {}, {}, required_result_column_names, {});
 
     query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
         select_ptr,
         syntax_analyzer_result,
-        *select_context,
+        select_context,
         src_metadata_snapshot,
         NameSet(required_result_column_names.begin(), required_result_column_names.end()));
 
-    const Settings & settings = (*select_context)->getSettingsRef();
+    const Settings & settings = select_context->getSettingsRef();
 
     analysis_result = ExpressionAnalysisResult(*query_analyzer, src_metadata_snapshot, false, false, false, nullptr, src_block_header);
 
@@ -383,7 +383,7 @@ void StorageAggregatingMemory::lazy_initialize()
                               settings.group_by_two_level_threshold_bytes,
                               settings.max_bytes_before_external_group_by,
                               settings.empty_result_for_aggregation_by_empty_set,
-                              (*select_context)->getTemporaryVolume(),
+                              select_context->getTemporaryVolume(),
                               settings.max_threads,
                               settings.min_free_disk_space_for_temporary_data,
                               true);
@@ -438,7 +438,7 @@ Pipe StorageAggregatingMemory::read(
 
     StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source);
 
-    ContextPtr local_context = context;
+    ContextPtr local_context = Context::createCopy(context);
     local_context->addViewSource(mergable_storage);
     
     InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, local_context, SelectQueryOptions());

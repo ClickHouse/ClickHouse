@@ -330,7 +330,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.empty_result_for_aggregation_by_empty_set,
                     context->getTemporaryVolume(),
                     settings.max_threads,
-                    settings.min_free_disk_space_for_temporary_data);
+                    settings.min_free_disk_space_for_temporary_data,
+                    false);
 
                 transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), query_info.projection->aggregate_final);
             }
