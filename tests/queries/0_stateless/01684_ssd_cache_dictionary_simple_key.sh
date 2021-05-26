@@ -117,7 +117,7 @@ $CLICKHOUSE_CLIENT -n --query="
     PRIMARY KEY id
     SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_hierarchy_table'))
     LIFETIME(MIN 1 MAX 1000)
-    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH './user_files/2d'));
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$USER_FILES_PATH/2d'));
 
     SELECT 'Dictionary cache_dictionary_simple_key_hierarchy';
     SELECT 'dictGet';
