@@ -773,7 +773,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     // Generate valid expressions for filtering
     bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
 
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, local_context, true /* strict */);
+    PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
@@ -877,13 +877,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             {
                 /// Create and correctly initialize global WAL object
                 write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
-                for (auto && part : write_ahead_log->restore(metadata_snapshot))
+                for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext()))
                     parts_from_wal.push_back(std::move(part));
             }
             else if (settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                for (auto && part : wal.restore(metadata_snapshot))
+                for (auto && part : wal.restore(metadata_snapshot, getContext()))
                     parts_from_wal.push_back(std::move(part));
             }
         }
