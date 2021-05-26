@@ -11,6 +11,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
@@ -360,6 +361,10 @@ struct ContextSharedPart
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+
+    mutable ThrottlerPtr replicated_fetches_throttler; /// A server-wide throttler for replicated fetches
+    mutable ThrottlerPtr replicated_sends_throttler; /// A server-wide throttler for replicated sends
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -1623,6 +1628,26 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
+}
+
+ThrottlerPtr Context::getReplicatedFetchesThrottler() const
+{
+    auto lock = getLock();
+    if (!shared->replicated_fetches_throttler)
+        shared->replicated_fetches_throttler = std::make_shared<Throttler>(
+            settings.max_replicated_fetches_network_bandwidth_for_server);
+
+    return  shared->replicated_fetches_throttler;
+}
+
+ThrottlerPtr Context::getReplicatedSendsThrottler() const
+{
+    auto lock = getLock();
+    if (!shared->replicated_sends_throttler)
+        shared->replicated_sends_throttler = std::make_shared<Throttler>(
+            settings.max_replicated_sends_network_bandwidth_for_server);
+
+    return  shared->replicated_fetches_throttler;
 }
 
 bool Context::hasDistributedDDL() const
