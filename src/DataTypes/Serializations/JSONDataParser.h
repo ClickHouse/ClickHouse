@@ -28,9 +28,13 @@ Field getValueAsField(const Element & element)
 String getNextPath(const String & current_path, const std::string_view & key)
 {
     String next_path = current_path;
-    if (!next_path.empty())
-        next_path += ".";
-    next_path += key;
+    if (!key.empty())
+    {
+        if (!next_path.empty())
+            next_path += ".";
+        next_path += key;
+    }
+
     return next_path;
 }
 

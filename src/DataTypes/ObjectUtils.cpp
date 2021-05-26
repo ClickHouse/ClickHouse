@@ -3,12 +3,14 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 
@@ -40,6 +42,13 @@ size_t getNumberOfDimensions(const IColumn & column)
     return 0;
 }
 
+DataTypePtr getBaseTypeOfArray(DataTypePtr type)
+{
+    while (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        type = type_array->getNestedType();
+    return type;
+}
+
 DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension)
 {
     for (size_t i = 0; i < dimension; ++i)
@@ -50,14 +59,28 @@ DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension)
 DataTypePtr getDataTypeByColumn(const IColumn & column)
 {
     auto idx = column.getDataType();
-    if (WhichDataType(column.getDataType()).isSimple())
+    if (WhichDataType(idx).isSimple())
         return DataTypeFactory::instance().get(getTypeName(idx));
 
-    if (const auto * column_array = typeid_cast<const ColumnArray *>(&column))
+    if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return std::make_shared<DataTypeArray>(getDataTypeByColumn(column_array->getData()));
+
+    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
+        return makeNullable(getDataTypeByColumn(column_nullable->getNestedColumn()));
 
     /// TODO: add more types.
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get data type of column {}", column.getFamilyName());
+}
+
+template <int I, typename Tuple>
+static auto extractVector(const std::vector<Tuple> & vec)
+{
+    static_assert(I < std::tuple_size_v<Tuple>);
+    std::vector<std::tuple_element_t<I, Tuple>> res;
+    res.reserve(vec.size());
+    for (const auto & elem : vec)
+        res.emplace_back(std::get<I>(elem));
+    return res;
 }
 
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block)
@@ -76,16 +99,16 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block)
             const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
             const auto & subcolumns_map = column_object.getSubcolumns();
 
-            Names tuple_names;
-            DataTypes tuple_types;
-            Columns tuple_columns;
-
+            std::vector<std::tuple<String, DataTypePtr, ColumnPtr>> tuple_elements;
             for (const auto & [key, subcolumn] : subcolumns_map)
-            {
-                tuple_names.push_back(key);
-                tuple_types.push_back(getDataTypeByColumn(*subcolumn.data));
-                tuple_columns.push_back(subcolumn.data);
-            }
+                tuple_elements.emplace_back(key, getDataTypeByColumn(*subcolumn.data), subcolumn.data);
+
+            std::sort(tuple_elements.begin(), tuple_elements.end(),
+                [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); } );
+
+            auto tuple_names = extractVector<0>(tuple_elements);
+            auto tuple_types = extractVector<1>(tuple_elements);
+            auto tuple_columns = extractVector<2>(tuple_elements);
 
             auto type_tuple = std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
             auto column_tuple = ColumnTuple::create(tuple_columns);
@@ -115,9 +138,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
             subcolumns_types[tuple_names[i]].push_back(tuple_types[i]);
     }
 
-    Names tuple_names;
-    DataTypes tuple_types;
-
+    std::vector<std::tuple<String, DataTypePtr>> tuple_elements;
     for (const auto & [name, subtypes] : subcolumns_types)
     {
         assert(!subtypes.empty());
@@ -129,9 +150,14 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
                     "Uncompatible types of subcolumn '{}': {} and {}",
                     name, subtypes[0]->getName(), subtypes[i]->getName());
 
-        tuple_names.push_back(name);
-        tuple_types.push_back(getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
+        tuple_elements.emplace_back(name, getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
     }
+
+    std::sort(tuple_elements.begin(), tuple_elements.end(),
+        [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); } );
+
+    auto tuple_names = extractVector<0>(tuple_elements);
+    auto tuple_types = extractVector<1>(tuple_elements);
 
     return std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
 }

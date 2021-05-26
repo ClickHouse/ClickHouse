@@ -323,7 +323,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             if (!res->isDefaultAt(0))
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
-                return res->createWithOffsets(offsets_data, input_rows_count, /*shift=*/ 1);
+                return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);
             }
 
             return ColumnSparse::create(res, sparse_offsets, input_rows_count);

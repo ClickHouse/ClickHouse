@@ -118,7 +118,7 @@ StringRef ColumnSparse::getDataAt(size_t n) const
 
 ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
 {
-    return values->createWithOffsets(getOffsetsData(), _size, 1);
+    return values->createWithOffsets(getOffsetsData(), (*values)[0], _size, /*shift=*/ 1);
 }
 
 void ColumnSparse::insertData(const char * pos, size_t length)

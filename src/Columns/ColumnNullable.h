@@ -174,7 +174,7 @@ public:
 
     size_t getNumberOfDefaultRows(size_t step) const override;
     void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const override;
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
 private:
     WrappedPtr nested_column;
