@@ -486,7 +486,7 @@ class ClickhouseIntegrationTestsRunner:
         filtered_sequential_tests = list(filter(lambda test: test in all_tests, parallel_skip_tests))
         filtered_parallel_tests = list(filter(lambda test: test not in parallel_skip_tests, all_tests))
         not_found_tests = list(filter(lambda test: test not in all_tests, parallel_skip_tests))
-        logging.info("Found %s tests first 3 %s, parallel %s, other %s", len(all_tests), ' '.join(all_tests[:3]), len(filtered_parallel_tests), len(filtered_unparallel_tests))
+        logging.info("Found %s tests first 3 %s, parallel %s, other %s", len(all_tests), ' '.join(all_tests[:3]), len(filtered_parallel_tests), len(filtered_sequential_tests))
         logging.info("Not found %s tests first 3 %s", len(not_found_tests), ' '.join(not_found_tests[:3]))
 
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
