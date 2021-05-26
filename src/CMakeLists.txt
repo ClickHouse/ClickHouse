@@ -101,6 +101,7 @@ endif()
 
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
+    add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
