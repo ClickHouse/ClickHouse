@@ -3015,7 +3015,7 @@ Query:
 ``` sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_fuse_sum_count_avg = 1;
-EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b) from fuse_tbl FORMAT TSV;
+EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 ```
 
 Result:
