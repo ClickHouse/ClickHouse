@@ -85,8 +85,6 @@ Result:
 │           1 │             1 │     2 │             3 │
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
-
-5 rows in set.
 ```
 
 When columns for deduplication are not specified, all of them are taken into account. Row is removed only if all values in all columns are equal to corresponding values in previous row:
@@ -109,8 +107,6 @@ Result:
 │           1 │             1 │     2 │             3 │
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
-
-4 rows in set.
 ```
 
 When columns are specified implicitly, the table is deduplicated by all columns that are not `ALIAS` or `MATERIALIZED`. Considering the table above, these are `primary_key`, `secondary_key`, `value`, and `partition_key` columns:
@@ -132,8 +128,6 @@ Result:
 │           1 │             1 │     2 │             3 │
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
-
-4 rows in set.
 ```
 
 Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `value`: `primary_key`, `secondary_key`, and `partition_key` columns.
@@ -155,8 +149,6 @@ Result:
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
-
-3 rows in set.
 ```
 
 Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` columns:
@@ -177,8 +169,6 @@ Result:
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
-
-3 rows in set.
 ```
 
 Deduplicate by any column matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
@@ -199,6 +189,4 @@ Result:
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
-
-3 rows in set.
 ```
