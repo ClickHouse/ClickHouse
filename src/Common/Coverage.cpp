@@ -1,20 +1,26 @@
 #include "Coverage.h"
 
-#include <filesystem>
-#include <fstream>
 #include <memory>
-#include <mutex>
-#include <stdexcept>
-#include <string>
 #include <utility>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
 
 #include "Common/ProfileEvents.h"
+#include "Common/ErrorCodes.h"
+#include "Common/Exception.h"
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_ALREADY_EXISTS;
+    extern const int LOGICAL_ERROR;
+}
 
 namespace detail
 {
+using Exception = DB::Exception;
+
 namespace
 {
 // Unused in Darwin and FreeBSD builds.
@@ -197,14 +203,14 @@ void Writer::onServerInitialized()
     // This leads to data corruption.
     // To prevent such situation, target file is not allowed to exist by server start.
     if (std::filesystem::exists(report_path))
-        throw std::runtime_error("Report file already exists " + report_path);
+        throw Exception(DB::ErrorCodes::FILE_ALREADY_EXISTS, "Report file {} already exists", report_path);
 
     // fwrite also cannot be called before server initialization (some internal state is left uninitialized if we
     // try to write file in PC table callback).
     report_file.set(report_path, "w");
 
     if (report_file.file() == nullptr)
-        throw std::runtime_error(fmt::format("Failed to open {}: {}", report_path, strerror(errno)));
+        throw Exception(DB::ErrorCodes::CANNOT_OPEN_FILE, "Failed to open {}: {}", report_path, strerror(errno));
     else
         LOG_INFO(base_log, "Opened report file {}", report_path);
 
@@ -470,7 +476,7 @@ Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, 
             const size_t count = end_index - start_index;
 
             const Poco::Logger * log = &Poco::Logger::get(
-                std::string{logger_base_name} + "." + std::to_string(thread_index));
+                String{logger_base_name} + "." + std::to_string(thread_index));
 
             LocalCache<CacheItem>& cache = local_caches[thread_index];
             cache.reserve(total_source_files_hint / hardware_concurrency);
@@ -483,11 +489,13 @@ Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, 
                 const EdgeIndex edge_index = data[i];
 
                 const auto loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[edge_index]));
+                const String file = loc.file.toString();
 
-                SourceRelativePath source_rel_path = std::filesystem::path(loc.file.toString())
+                if (file.empty())
+                    throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Internal symbolizer error");
+
+                SourceRelativePath source_rel_path = std::filesystem::path(file)
                     .lexically_relative(clickhouse_src_dir_abs_path)
-                    .lexically_normal() // duplicated as single one removes only one foo/../sequence
-                    .lexically_normal()
                     .string();
 
                 const int line = static_cast<int>(loc.line);

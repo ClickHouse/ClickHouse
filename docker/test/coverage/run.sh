@@ -49,7 +49,7 @@ wail_till_ready () {
     instrumented_contribs=$(grep "contrib/" < /report.ccr)
     has_contribs=$(echo "$instrumented_contribs" | wc -l)
 
-    if ((has_contribs > 0)); then
+    if ((has_contribs > 1)); then
         echo "Warning: found instrumented files from contrib/. Please remove them explicitly via cmake"
         echo "$instrumented_contribs"
     fi
@@ -95,7 +95,14 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
+# Skip tests that invoke clickhouse-server or any of other ClickHouse modes
+# as in coverage mode only one instance is allowed to run.
 clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --coverage \
+    --skip 01737_clickhouse_server_wait_server_pool_long \
+        01801_s3_cluster \
+        01526_max_untracked_memory \
+        01507_clickhouse_server_start_with_embedded_config \
+        01086_odbc_roundtrip \
     2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
 kill_clickhouse
@@ -106,7 +113,6 @@ kill_clickhouse
 
 cp /report.ccr "${OUTPUT_DIR}"/report.ccr
 python3 ccr_converter.py /report.ccr --genhtml-slim-report report.info
-cp report.info "${OUTPUT_DIR}"/report.info
 
 # Demangling names by c++filt here is cheaper than demangling names in binary
 time genhtml \

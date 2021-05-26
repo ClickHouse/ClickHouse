@@ -13,7 +13,6 @@
 #include <string>
 #include <thread>
 #include <queue>
-#include <list>
 #include <string_view>
 #include <type_traits>
 #include <vector>

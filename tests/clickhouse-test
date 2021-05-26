@@ -370,9 +370,6 @@ def run_tests_array(all_tests_with_params):
     if all_tests:
         print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
-    if args.coverage:
-        _, failures = run_query("SET coverage_tests_count={};".format(len(all_tests)), failures)
-
     for case in all_tests:
         if SERVER_DIED:
             stop_tests()
@@ -563,9 +560,6 @@ def run_tests_array(all_tests_with_params):
         if failures_chain >= 20:
             stop_tests()
             break
-
-    if args.coverage:
-        _, failures = run_query("SET coverage_test_name='';", failures)
 
     failures_total = failures_total + failures
 
@@ -804,6 +798,12 @@ def main(args):
             return 99997, ''
 
     total_tests_run = 0
+
+    if args.coverage:
+        tests_count: int = sum([len(os.listdir(base_dir + '/' + subdir)) for subdir in next(os.walk(base_dir))[1]])
+        print("Pre-allocating space for {} tests".format(tests_count))
+        run_query("SET coverage_tests_count={};".format(tests_count), 0)
+
     for suite in sorted(os.listdir(base_dir), key=sute_key_func):
         if SERVER_DIED:
             break
@@ -818,8 +818,8 @@ def main(args):
             os.makedirs(suite_tmp_dir)
 
         suite = suite_re_obj.group(1)
-        if os.path.isdir(suite_dir):
 
+        if os.path.isdir(suite_dir):
             if 'stateful' in suite and not args.no_stateful and not is_data_present():
                 print("Won't run stateful tests because test data wasn't loaded.")
                 continue
@@ -850,14 +850,18 @@ def main(args):
 
             all_tests = os.listdir(suite_dir)
             all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case)]
+
             if args.test:
                 all_tests = [t for t in all_tests if any(re.search(r, t) for r in args.test)]
+
             all_tests = all_tests * args.test_runs
             all_tests.sort(key=key_func)
 
             jobs = args.jobs
+
             parallel_tests = []
             sequential_tests = []
+
             for test in all_tests:
                 if any(s in test for s in args.sequential):
                     sequential_tests.append(test)
@@ -935,6 +939,9 @@ def main(args):
             exit_code = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
+
+    if args.coverage:
+        run_query("SET coverage_test_name='';", 0)
 
     if total_tests_run == 0:
         print("No tests were run.")
@@ -1075,6 +1082,10 @@ if __name__ == '__main__':
              "Context.cpp :: setSetting()")
 
     args = parser.parse_args()
+
+    if args.coverage:
+        # Need to process all tests separately in order to calculate per-test data
+        assert args.jobs == 1
 
     if args.queries and not os.path.isdir(args.queries):
         print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)
