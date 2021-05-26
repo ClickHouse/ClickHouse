@@ -98,6 +98,10 @@ Setting fields:
 
 When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
 
+**See Also**
+
+-   [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
