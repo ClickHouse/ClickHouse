@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 
+#include "Common/hex.h"
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>
@@ -2696,14 +2697,35 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     for (const String & name : active_parts)
     {
         LogEntry log_entry;
-        log_entry.type = are_restoring_replica ? LogEntry::ATTACH_PART : LogEntry::GET_PART;
 
         if (!are_restoring_replica)
             log_entry.type = LogEntry::GET_PART;
         else
         {
+            // The part we want to fetch is probably present in detached/ folder.
+            // However, we need to get part's checksum to check if it's not corrupt.
             log_entry.type = LogEntry::ATTACH_PART;
-            log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+
+            MinimalisticDataPartChecksums desired_checksums;
+
+            const String replica = findReplicaHavingPart(name, true);
+
+            // Won't be empty as active_parts are filled from active parts set.
+            assert(!replica.empty());
+
+            const String part_path = zookeeper_path + "/replicas/" + replica + "/parts/" + name;
+            const String part_znode = zookeeper->get(part_path);
+
+            if (!part_znode.empty())
+                desired_checksums = ReplicatedMergeTreePartHeader::fromString(part_znode).getChecksums();
+            else
+            {
+                String desired_checksums_str = zookeeper->get(part_path + "/checksums");
+                desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
+            }
+
+            const auto [lo, hi] = desired_checksums.hash_of_all_files;
+            log_entry.part_checksum = getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
         }
 
         log_entry.source_replica = "";
@@ -3898,6 +3920,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             MinimalisticDataPartChecksums desired_checksums;
             String part_path = source_replica_path + "/parts/" + part_name;
             String part_znode = zookeeper->get(part_path);
+
             if (!part_znode.empty())
                 desired_checksums = ReplicatedMergeTreePartHeader::fromString(part_znode).getChecksums();
             else
