@@ -7,7 +7,6 @@
 
 namespace DB
 {
-struct Settings;
 
 /** Aggregate function combinator allows to take one aggregate function
   *  and transform it to another aggregate function.
