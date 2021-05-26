@@ -236,4 +236,5 @@
 01801_s3_distributed
 01833_test_collation_alvarotuso
 01850_dist_INSERT_preserve_error
+01870_modulo_partition_key
 01880_remote_ipv6
