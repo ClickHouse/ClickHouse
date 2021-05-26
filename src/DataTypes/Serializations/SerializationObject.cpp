@@ -28,11 +28,10 @@ namespace ErrorCodes
 
 namespace
 {
-
 class FieldVisitorReplaceNull : public StaticVisitor<Field>
 {
 public:
-    FieldVisitorReplaceNull(const Field & replacement_)
+    [[maybe_unused]] explicit FieldVisitorReplaceNull(const Field & replacement_)
         : replacement(replacement_)
     {
     }

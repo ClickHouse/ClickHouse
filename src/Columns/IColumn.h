@@ -397,7 +397,7 @@ public:
 
     /// Returns column with @total_size elements.
     /// In result column values from current column are at positions from @offsets.
-    /// Other values are filled by @default_value.
+    /// Other values are filled by @default_field.
     /// @shift means how much rows to skip from the beginning of current column.
     /// Used to create full column from sparse.
     virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
