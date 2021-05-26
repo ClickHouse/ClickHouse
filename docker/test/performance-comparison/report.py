@@ -298,75 +298,100 @@ def add_report_errors():
 
 
 def add_flamegraphs():
+    global tables
+    result = """
+    <style type="text/css">
+    .flamegraph-columns-container {
+        display: table;
+        width: 100%;
+    }
+
+    .flamegraph-column {
+        display: table-cell;
+        width: auto;
+    }
+
+    .collapsible {
+    background-color: #777;
+    color: white;
+    cursor: pointer;
+    padding: 18px;
+    width: 100%;
+    border: none;
+    text-align: left;
+    outline: none;
+    font-size: 15px;
+    }
+
+    .active, .collapsible:hover {
+    background-color: #555;
+    }
+
+    .content {
+    padding: 0 18px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.2s ease-out;
+    background-color: #f1f1f1;
+    }
+    </style>
+    """
+
+    result += """
+    <button class="collapsible">Show Flamegraphs</button>
+    """
+
     all_files = []
     for file in os.listdir("."):
         if file.endswith(".svg"):
             all_files.append(os.path.join(".", file))
 
     all_files.sort()
-    result = ""
 
+    columns_html = ""
+    # There are 3 types of flamegraphs. From old server, from new server and the difference.
+    COLUMNS_COUNT = 3
+    for i in range(0, len(all_files), COLUMNS_COUNT):
+        pattern = """
+        <object class="p" data="{name}" type="image/svg+xml" style="width:100%"></object>"""
+
+        group = all_files[i:i+COLUMNS_COUNT]
+
+        columns = [""] * COLUMNS_COUNT
+
+        for i in range(COLUMNS_COUNT):
+            columns[i] += """<div class="flamegraph-column">"""
+
+        for i in range(COLUMNS_COUNT):
+            columns[i] += pattern.format(name=group[i])
+
+        for i in range(COLUMNS_COUNT):
+            columns[i] += """</div>"""
+
+        columns_html += "<h3>{}</h3>".format("".join(group[1].split('.')[:-2]))
+        columns_html += "<br>"
+        columns_html += """<div class="flamegraph-columns-container">{}</div>""".format("".join(columns))
+
+        
+    result += """<div class="content">{}</div>""".format(columns_html)
     result += """
-        <style type="text/css">
-        #wrap {
-           width:100%;
-           margin:0 auto;
-        }
-        #first_col {
-           float:left;
-           width:33%;
-        }
-        #second_col {
-           float:left;
-           width:33%;
-        }
-        #third_col {
-           float:left;
-           width:33%;
-        }
-    </style>
-    """
+    <script>
+    var coll = document.getElementsByClassName("collapsible");
 
-    pattern = """
-    <p>{name}</p>
-    <object class="p" data="{name}" type="image/svg+xml" style="width:100%">
-    </object>
-"""
-  
-    pattern_row = """
-    <div id="wrap">
-        {}
-    </div>
-    """
+    for (var i = 0; i < coll.length; i++) {
+    coll[i].addEventListener("click", function() {
+        this.classList.toggle("active");
+        var content = this.nextElementSibling;
+        if (content.style.maxHeight){
+            content.style.maxHeight = null;
+        } else {
+            content.style.maxHeight = content.scrollHeight + "px";
+        } 
+    });
+    }
+    </script>"""
 
-    
-
-    for i in range(0, len(all_files), 3):
-        group = all_files[i:i+3]
-
-        first_column = """<div id="first_col">"""
-        second_column = """<div id="second_col">"""
-        third_column = """<div id="third_col">"""
-
-        first_column += pattern.format(name=group[0])
-        second_column += pattern.format(name=group[1])
-        third_column += pattern.format(name=group[2])
-
-        first_column += """</div>"""
-        second_column += """</div>"""
-        third_column += """</div>"""
-
-
-        result += "<h3>{}</h3>".format("".join(group[1].split('.')[:-2]))
-        result += "<br>"
-        result += pattern_row.format(first_column + second_column + third_column)
-
-            
-
-    
-    
-
-    return result
+    tables.append(result)
 
 
 def add_errors_explained():
@@ -486,6 +511,7 @@ if args.report == 'main':
         tables.append(text)
 
     add_changes()
+    add_flamegraphs()
 
     def add_unstable_queries():
         global unstable_queries, very_unstable_queries, tables
@@ -596,7 +622,6 @@ if args.report == 'main':
     for t in tables:
         print(t)
 
-    print(add_flamegraphs())
 
     print(f"""
     </div>
