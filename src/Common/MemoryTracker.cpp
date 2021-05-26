@@ -233,8 +233,18 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
             formatReadableSizeWithBinarySuffix(current_hard_limit));
     }
 
-    bool log_memory_usage = !throw_if_memory_exceeded;
-    updatePeak(will_be, log_memory_usage);
+    if (throw_if_memory_exceeded)
+    {
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        BlockerInThread untrack_lock(VariableContext::Global);
+        bool log_memory_usage = true;
+        updatePeak(will_be, log_memory_usage);
+    }
+    else
+    {
+        bool log_memory_usage = false;
+        updatePeak(will_be, log_memory_usage);
+    }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->allocImpl(size, throw_if_memory_exceeded);
