@@ -10,7 +10,7 @@ Applies bitwise `AND` for series of numbers.
 groupBitAnd(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` – An expression that results in `UInt*` type.
 

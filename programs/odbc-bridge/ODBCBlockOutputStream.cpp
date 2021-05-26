@@ -1,5 +1,6 @@
 #include "ODBCBlockOutputStream.h"
 
+#include <Common/hex.h>
 #include <common/logger_useful.h>
 #include <Core/Field.h>
 #include <common/LocalDate.h>
@@ -8,15 +9,13 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include "getIdentifierQuote.h"
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_TYPE;
-}
 
 namespace
 {
@@ -39,70 +38,21 @@ namespace
         query.IAST::format(settings);
         return buf.str();
     }
-
-    std::string getQuestionMarks(size_t n)
-    {
-        std::string result = "(";
-        for (size_t i = 0; i < n; ++i)
-        {
-            if (i > 0)
-                result += ",";
-            result += "?";
-        }
-        return result + ")";
-    }
-
-    Poco::Dynamic::Var getVarFromField(const Field & field, const ValueType type)
-    {
-        switch (type)
-        {
-            case ValueType::vtUInt8:
-                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt64>())).convert<UInt64>();
-            case ValueType::vtUInt16:
-                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt64>())).convert<UInt64>();
-            case ValueType::vtUInt32:
-                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt64>())).convert<UInt64>();
-            case ValueType::vtUInt64:
-                return Poco::Dynamic::Var(field.get<UInt64>()).convert<UInt64>();
-            case ValueType::vtInt8:
-                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int64>())).convert<Int64>();
-            case ValueType::vtInt16:
-                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int64>())).convert<Int64>();
-            case ValueType::vtInt32:
-                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int64>())).convert<Int64>();
-            case ValueType::vtInt64:
-                return Poco::Dynamic::Var(field.get<Int64>()).convert<Int64>();
-            case ValueType::vtFloat32:
-                return Poco::Dynamic::Var(field.get<Float64>()).convert<Float64>();
-            case ValueType::vtFloat64:
-                return Poco::Dynamic::Var(field.get<Float64>()).convert<Float64>();
-            case ValueType::vtString:
-                return Poco::Dynamic::Var(field.get<String>()).convert<String>();
-            case ValueType::vtDate:
-                return Poco::Dynamic::Var(LocalDate(DayNum(field.get<UInt64>())).toString()).convert<String>();
-            case ValueType::vtDateTime:
-                return Poco::Dynamic::Var(std::to_string(LocalDateTime(time_t(field.get<UInt64>())))).convert<String>();
-            case ValueType::vtUUID:
-                return Poco::Dynamic::Var(UUID(field.get<UInt128>()).toUnderType().toHexString()).convert<std::string>();
-             default:
-                 throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
-
-        }
-        __builtin_unreachable();
-    }
 }
 
-ODBCBlockOutputStream::ODBCBlockOutputStream(Poco::Data::Session && session_,
+ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::ConnectionHolderPtr connection_,
                                              const std::string & remote_database_name_,
                                              const std::string & remote_table_name_,
                                              const Block & sample_block_,
+                                             ContextPtr local_context_,
                                              IdentifierQuotingStyle quoting_)
-    : session(session_)
+    : log(&Poco::Logger::get("ODBCBlockOutputStream"))
+    , connection(std::move(connection_))
     , db_name(remote_database_name_)
     , table_name(remote_table_name_)
     , sample_block(sample_block_)
+    , local_context(local_context_)
     , quoting(quoting_)
-    , log(&Poco::Logger::get("ODBCBlockOutputStream"))
 {
     description.init(sample_block);
 }
@@ -114,28 +64,12 @@ Block ODBCBlockOutputStream::getHeader() const
 
 void ODBCBlockOutputStream::write(const Block & block)
 {
-    ColumnsWithTypeAndName columns;
-    for (size_t i = 0; i < block.columns(); ++i)
-        columns.push_back({block.getColumns()[i], sample_block.getDataTypes()[i], sample_block.getNames()[i]});
+    WriteBufferFromOwnString values_buf;
+    auto writer = FormatFactory::instance().getOutputStream("Values", values_buf, sample_block, local_context);
+    writer->write(block);
 
-    std::vector<Poco::Dynamic::Var> row_to_insert(block.columns());
-    Poco::Data::Statement statement(session << getInsertQuery(db_name, table_name, columns, quoting) + getQuestionMarks(block.columns()));
-    for (size_t i = 0; i < block.columns(); ++i)
-        statement.addBind(Poco::Data::Keywords::use(row_to_insert[i]));
-
-    for (size_t i = 0; i < block.rows(); ++i)
-    {
-        for (size_t col_idx = 0; col_idx < block.columns(); ++col_idx)
-        {
-            Field val;
-            columns[col_idx].column->get(i, val);
-            if (val.isNull())
-                row_to_insert[col_idx] = Poco::Dynamic::Var();
-            else
-                row_to_insert[col_idx] = getVarFromField(val, description.types[col_idx].first);
-        }
-        statement.execute();
-    }
+    std::string query = getInsertQuery(db_name, table_name, block.getColumnsWithTypeAndName(), quoting) + values_buf.str();
+    execute(connection->get(), query);
 }
 
 }

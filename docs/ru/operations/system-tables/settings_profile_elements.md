@@ -27,4 +27,3 @@
 
 -    `inherit_profile` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Родительский профиль для данного профиля настроек. `NULL` если не задано. Профиль настроек может наследовать все значения и ограничения настроек (`min`, `max`, `readonly`) от своего родительского профиля.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/settings_profile_elements) <!--hide-->

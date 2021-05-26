@@ -110,4 +110,46 @@
         format Null
     </query>
 
+    <!-- Our variant of lead. -->
+    <query>
+        select leadInFrame(number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o
+            rows between unbounded preceding and unbounded following)
+        format Null
+    </query>
+
+    <!-- A faster replacement for lead with constant offset. -->
+    <query>
+        select any(number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o
+            rows between 1 following and 1 following)
+        format Null
+    </query>
+
+    <query>
+        select leadInFrame(number, number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o
+            rows between unbounded preceding and unbounded following)
+        format Null
+    </query>
+
+    <query>
+        select leadInFrame(number, number, number) over w
+        from
+            (select number, intDiv(number, 1111) p, mod(number, 111) o
+                from numbers(10000000)) t
+        window w as (partition by p order by o
+            rows between unbounded preceding and unbounded following)
+        format Null
+    </query>
+
 </test>

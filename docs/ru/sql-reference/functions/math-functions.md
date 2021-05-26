@@ -1,6 +1,6 @@
 ---
 toc_priority: 44
-toc_title: "\u041c\u0430\u0442\u0435\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+toc_title: "Математические функции"
 ---
 
 # Математические функции {#matematicheskie-funktsii}
@@ -54,7 +54,7 @@ toc_title: "\u041c\u0430\u0442\u0435\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u
 Пример (правило трёх сигм):
 
 ``` sql
-SELECT erf(3 / sqrt(2))
+SELECT erf(3 / sqrt(2));
 ```
 
 ``` text
@@ -113,7 +113,7 @@ SELECT erf(3 / sqrt(2))
 cosh(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — угол в радианах. Значения из интервала: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -149,7 +149,7 @@ SELECT cosh(0);
 acosh(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — гиперболический косинус угла. Значения из интервала: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -189,7 +189,7 @@ SELECT acosh(1);
 sinh(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — угол в радианах. Значения из интервала: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -225,7 +225,7 @@ SELECT sinh(0);
 asinh(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — гиперболический синус угла. Значения из интервала: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -265,7 +265,7 @@ SELECT asinh(0);
 atanh(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — гиперболический тангенс угла. Значения из интервала: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -301,7 +301,7 @@ SELECT atanh(0);
 atan2(y, x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `y` — координата y точки, в которую проведена линия. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 -   `x` — координата х точки, в которую проведена линия. [Float64](../../sql-reference/data-types/float.md#float32-float64).
@@ -338,7 +338,7 @@ SELECT atan2(1, 1);
 hypot(x, y)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — первый катет прямоугольного треугольника. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 -   `y` — второй катет прямоугольного треугольника. [Float64](../../sql-reference/data-types/float.md#float32-float64).
@@ -375,7 +375,7 @@ SELECT hypot(1, 1);
 log1p(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — значения из интервала: `-1 < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -405,4 +405,66 @@ SELECT log1p(0);
 
 -   [log(x)](../../sql-reference/functions/math-functions.md#logx)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/math_functions/) <!--hide-->
+## sign(x) {#signx}
+
+Возвращает знак действительного числа.
+
+**Синтаксис**
+
+``` sql
+sign(x)
+```
+
+**Аргумент**
+
+-   `x` — Значения от  `-∞` до `+∞`. Любой числовой тип, поддерживаемый ClickHouse.
+
+**Возвращаемое значение**
+
+- -1 если `x < 0`
+-  0 если `x = 0`
+-  1 если `x > 0`
+
+**Примеры**
+
+Результат sign() для нуля:
+
+``` sql
+SELECT sign(0);
+```
+Результат:
+
+``` text
+┌─sign(0)─┐
+│       0 │
+└─────────┘
+```
+
+Результат sign() для положительного аргумента:
+
+``` sql
+SELECT sign(1);
+```
+
+Результат:
+
+``` text
+┌─sign(1)─┐
+│       1 │
+└─────────┘
+```
+
+Результат sign() для отрицательного аргумента:
+
+``` sql
+SELECT sign(-1);
+```
+
+Результат:
+
+``` text
+┌─sign(-1)─┐
+│       -1 │
+└──────────┘
+```
+

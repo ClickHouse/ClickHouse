@@ -31,4 +31,3 @@
 
 -   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/users) <!--hide-->

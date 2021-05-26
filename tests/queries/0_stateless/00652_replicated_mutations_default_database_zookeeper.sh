@@ -11,7 +11,7 @@ ${CLICKHOUSE_CLIENT} --multiquery << EOF
 DROP TABLE IF EXISTS mutations_r1;
 DROP TABLE IF EXISTS for_subquery;
 
-CREATE TABLE mutations_r1(x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}/mutations', 'r1') ORDER BY x;
+CREATE TABLE mutations_r1(x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/mutations', 'r1') ORDER BY x;
 INSERT INTO mutations_r1 VALUES (123, 1), (234, 2), (345, 3);
 
 CREATE TABLE for_subquery(x UInt32) ENGINE TinyLog;

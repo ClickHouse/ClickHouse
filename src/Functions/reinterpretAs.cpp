@@ -11,10 +11,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
@@ -39,12 +42,12 @@ namespace
  * 3. Types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
  * String, and types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID).
  */
-class FunctionReinterpretAs : public IFunction
+class FunctionReinterpret : public IFunction
 {
 public:
-    static constexpr auto name = "reinterpretAs";
+    static constexpr auto name = "reinterpret";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAs>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpret>(); }
 
     String getName() const override { return name; }
 
@@ -93,6 +96,10 @@ public:
                     + " because only Numeric, String or FixedString can be reinterpreted in Numeric",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
+        else
+            throw Exception("Cannot reinterpret " + from_type->getName() + " as " + to_type->getName()
+                    + " because only reinterpretation in String, FixedString and Numeric types is supported",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return to_type;
     }
@@ -154,7 +161,7 @@ public:
                 {
                     const auto * col_from = assert_cast<const ColumnString *>(arguments[0].column.get());
 
-                    auto col_res = ToColumnType::create();
+                    auto col_res = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
 
                     const ColumnString::Chars & data_from = col_from->getChars();
                     const ColumnString::Offsets & offsets_from = col_from->getOffsets();
@@ -181,7 +188,7 @@ public:
                 {
                     const auto * col_from_fixed = assert_cast<const ColumnFixedString *>(arguments[0].column.get());
 
-                    auto col_res = ToColumnType::create();
+                    auto col_res = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
 
                     const ColumnString::Chars & data_from = col_from_fixed->getChars();
                     size_t step = col_from_fixed->getN();
@@ -205,12 +212,27 @@ public:
                 }
                 else if constexpr (CanBeReinterpretedAsNumeric<FromType>)
                 {
-                    using FromTypeFieldType = typename FromType::FieldType;
-                    const auto * col = assert_cast<const ColumnVector<FromTypeFieldType>*>(arguments[0].column.get());
+                    using From = typename FromType::FieldType;
+                    using To = typename ToType::FieldType;
 
-                    auto col_res = ToColumnType::create();
-                    reinterpretImpl(col->getData(), col_res->getData());
-                    result = std::move(col_res);
+                    using FromColumnType = std::conditional_t<IsDecimalNumber<From>, ColumnDecimal<From>, ColumnVector<From>>;
+
+                    const auto * column_from = assert_cast<const FromColumnType*>(arguments[0].column.get());
+
+                    auto column_to = numericColumnCreateHelper<ToType>(static_cast<const ToType&>(*result_type.get()));
+
+                    auto & from = column_from->getData();
+                    auto & to = column_to->getData();
+
+                    size_t size = from.size();
+                    to.resize_fill(size);
+
+                    static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+
+                    for (size_t i = 0; i < size; ++i)
+                        memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
+
+                    result = std::move(column_to);
 
                     return true;
                 }
@@ -228,7 +250,7 @@ public:
 private:
     template <typename T>
     static constexpr auto CanBeReinterpretedAsNumeric =
-        IsDataTypeNumber<T> ||
+        IsDataTypeDecimalOrNumber<T> ||
         std::is_same_v<T, DataTypeDate> ||
         std::is_same_v<T, DataTypeDateTime> ||
         std::is_same_v<T, DataTypeUUID>;
@@ -239,7 +261,8 @@ private:
             type.isInt() ||
             type.isDateOrDateTime() ||
             type.isFloat() ||
-            type.isUUID();
+            type.isUUID() ||
+            type.isDecimal();
     }
 
     static void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
@@ -292,27 +315,41 @@ private:
         }
     }
 
-    template <typename From, typename To>
-    static void reinterpretImpl(const PaddedPODArray<From> & from, PaddedPODArray<To> & to)
+    template <typename Type>
+    static typename Type::ColumnType::MutablePtr numericColumnCreateHelper(const Type & type)
     {
+        size_t column_size = 0;
+
+        using ColumnType = typename Type::ColumnType;
+
+        if constexpr (IsDataTypeDecimal<Type>)
+            return ColumnType::create(column_size, type.getScale());
+        else
+            return ColumnType::create(column_size);
+    }
+
+    template <typename FromContainer, typename ToContainer>
+    static void reinterpretImpl(const FromContainer & from, ToContainer & to)
+    {
+        using From = typename FromContainer::value_type;
+        using To = typename ToContainer::value_type;
+
         size_t size = from.size();
         to.resize_fill(size);
 
+        static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+
         for (size_t i = 0; i < size; ++i)
-        {
-            memcpy(static_cast<void*>(&to[i]),
-                static_cast<const void*>(&from[i]),
-                std::min(sizeof(From), sizeof(To)));
-        }
+            memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
     }
 };
 
 template <typename ToDataType, typename Name>
-class FunctionReinterpretAsTyped : public IFunction
+class FunctionReinterpretAs : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsTyped>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpretAs>(); }
 
     String getName() const override { return name; }
 
@@ -365,13 +402,14 @@ public:
         return impl.executeImpl(arguments_with_type, return_type, input_rows_count);
     }
 
-    FunctionReinterpretAs impl;
+    FunctionReinterpret impl;
 };
 
 struct NameReinterpretAsUInt8       { static constexpr auto name = "reinterpretAsUInt8"; };
 struct NameReinterpretAsUInt16      { static constexpr auto name = "reinterpretAsUInt16"; };
 struct NameReinterpretAsUInt32      { static constexpr auto name = "reinterpretAsUInt32"; };
 struct NameReinterpretAsUInt64      { static constexpr auto name = "reinterpretAsUInt64"; };
+struct NameReinterpretAsUInt128     { static constexpr auto name = "reinterpretAsUInt128"; };
 struct NameReinterpretAsUInt256     { static constexpr auto name = "reinterpretAsUInt256"; };
 struct NameReinterpretAsInt8        { static constexpr auto name = "reinterpretAsInt8"; };
 struct NameReinterpretAsInt16       { static constexpr auto name = "reinterpretAsInt16"; };
@@ -387,26 +425,27 @@ struct NameReinterpretAsUUID        { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsString      { static constexpr auto name = "reinterpretAsString"; };
 struct NameReinterpretAsFixedString { static constexpr auto name = "reinterpretAsFixedString"; };
 
-using FunctionReinterpretAsUInt8 = FunctionReinterpretAsTyped<DataTypeUInt8, NameReinterpretAsUInt8>;
-using FunctionReinterpretAsUInt16 = FunctionReinterpretAsTyped<DataTypeUInt16, NameReinterpretAsUInt16>;
-using FunctionReinterpretAsUInt32 = FunctionReinterpretAsTyped<DataTypeUInt32, NameReinterpretAsUInt32>;
-using FunctionReinterpretAsUInt64 = FunctionReinterpretAsTyped<DataTypeUInt64, NameReinterpretAsUInt64>;
-using FunctionReinterpretAsUInt256 = FunctionReinterpretAsTyped<DataTypeUInt256, NameReinterpretAsUInt256>;
-using FunctionReinterpretAsInt8 = FunctionReinterpretAsTyped<DataTypeInt8, NameReinterpretAsInt8>;
-using FunctionReinterpretAsInt16 = FunctionReinterpretAsTyped<DataTypeInt16, NameReinterpretAsInt16>;
-using FunctionReinterpretAsInt32 = FunctionReinterpretAsTyped<DataTypeInt32, NameReinterpretAsInt32>;
-using FunctionReinterpretAsInt64 = FunctionReinterpretAsTyped<DataTypeInt64, NameReinterpretAsInt64>;
-using FunctionReinterpretAsInt128 = FunctionReinterpretAsTyped<DataTypeInt128, NameReinterpretAsInt128>;
-using FunctionReinterpretAsInt256 = FunctionReinterpretAsTyped<DataTypeInt256, NameReinterpretAsInt256>;
-using FunctionReinterpretAsFloat32 = FunctionReinterpretAsTyped<DataTypeFloat32, NameReinterpretAsFloat32>;
-using FunctionReinterpretAsFloat64 = FunctionReinterpretAsTyped<DataTypeFloat64, NameReinterpretAsFloat64>;
-using FunctionReinterpretAsDate = FunctionReinterpretAsTyped<DataTypeDate, NameReinterpretAsDate>;
-using FunctionReinterpretAsDateTime = FunctionReinterpretAsTyped<DataTypeDateTime, NameReinterpretAsDateTime>;
-using FunctionReinterpretAsUUID = FunctionReinterpretAsTyped<DataTypeUUID, NameReinterpretAsUUID>;
+using FunctionReinterpretAsUInt8 = FunctionReinterpretAs<DataTypeUInt8, NameReinterpretAsUInt8>;
+using FunctionReinterpretAsUInt16 = FunctionReinterpretAs<DataTypeUInt16, NameReinterpretAsUInt16>;
+using FunctionReinterpretAsUInt32 = FunctionReinterpretAs<DataTypeUInt32, NameReinterpretAsUInt32>;
+using FunctionReinterpretAsUInt64 = FunctionReinterpretAs<DataTypeUInt64, NameReinterpretAsUInt64>;
+using FunctionReinterpretAsUInt128 = FunctionReinterpretAs<DataTypeUInt128, NameReinterpretAsUInt128>;
+using FunctionReinterpretAsUInt256 = FunctionReinterpretAs<DataTypeUInt256, NameReinterpretAsUInt256>;
+using FunctionReinterpretAsInt8 = FunctionReinterpretAs<DataTypeInt8, NameReinterpretAsInt8>;
+using FunctionReinterpretAsInt16 = FunctionReinterpretAs<DataTypeInt16, NameReinterpretAsInt16>;
+using FunctionReinterpretAsInt32 = FunctionReinterpretAs<DataTypeInt32, NameReinterpretAsInt32>;
+using FunctionReinterpretAsInt64 = FunctionReinterpretAs<DataTypeInt64, NameReinterpretAsInt64>;
+using FunctionReinterpretAsInt128 = FunctionReinterpretAs<DataTypeInt128, NameReinterpretAsInt128>;
+using FunctionReinterpretAsInt256 = FunctionReinterpretAs<DataTypeInt256, NameReinterpretAsInt256>;
+using FunctionReinterpretAsFloat32 = FunctionReinterpretAs<DataTypeFloat32, NameReinterpretAsFloat32>;
+using FunctionReinterpretAsFloat64 = FunctionReinterpretAs<DataTypeFloat64, NameReinterpretAsFloat64>;
+using FunctionReinterpretAsDate = FunctionReinterpretAs<DataTypeDate, NameReinterpretAsDate>;
+using FunctionReinterpretAsDateTime = FunctionReinterpretAs<DataTypeDateTime, NameReinterpretAsDateTime>;
+using FunctionReinterpretAsUUID = FunctionReinterpretAs<DataTypeUUID, NameReinterpretAsUUID>;
 
-using FunctionReinterpretAsString = FunctionReinterpretAsTyped<DataTypeString, NameReinterpretAsString>;
+using FunctionReinterpretAsString = FunctionReinterpretAs<DataTypeString, NameReinterpretAsString>;
 
-using FunctionReinterpretAsFixedString = FunctionReinterpretAsTyped<DataTypeFixedString, NameReinterpretAsFixedString>;
+using FunctionReinterpretAsFixedString = FunctionReinterpretAs<DataTypeFixedString, NameReinterpretAsFixedString>;
 
 }
 
@@ -416,6 +455,7 @@ void registerFunctionsReinterpretAs(FunctionFactory & factory)
     factory.registerFunction<FunctionReinterpretAsUInt16>();
     factory.registerFunction<FunctionReinterpretAsUInt32>();
     factory.registerFunction<FunctionReinterpretAsUInt64>();
+    factory.registerFunction<FunctionReinterpretAsUInt128>();
     factory.registerFunction<FunctionReinterpretAsUInt256>();
     factory.registerFunction<FunctionReinterpretAsInt8>();
     factory.registerFunction<FunctionReinterpretAsInt16>();
@@ -433,7 +473,7 @@ void registerFunctionsReinterpretAs(FunctionFactory & factory)
 
     factory.registerFunction<FunctionReinterpretAsFixedString>();
 
-    factory.registerFunction<FunctionReinterpretAs>();
+    factory.registerFunction<FunctionReinterpret>();
 }
 
 }

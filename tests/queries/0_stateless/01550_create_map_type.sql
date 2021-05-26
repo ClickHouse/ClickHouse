@@ -22,7 +22,21 @@ select a[b] from table_map;
 select b from table_map where a = map('name','lisi', 'gender', 'female');
 drop table if exists table_map;
 
--- Int type
+-- Big Integer type
+
+create table table_map (d DATE, m Map(Int8, UInt256)) ENGINE = MergeTree() order by d;
+insert into table_map values ('2020-01-01', map(1, 0, 2, 1));
+select * from table_map;
+drop table table_map;
+
+-- Integer type
+
+create table table_map (d DATE, m Map(Int8, Int8)) ENGINE = MergeTree() order by d;
+insert into table_map values ('2020-01-01', map(1, 0, 2, -1));
+select * from table_map;
+drop table table_map;
+
+-- Unsigned Int type
 drop table if exists table_map;
 create table table_map(a Map(UInt8, UInt64), b UInt8) Engine = MergeTree() order by b;
 insert into table_map select map(number, number+5), number from numbers(1111,4);

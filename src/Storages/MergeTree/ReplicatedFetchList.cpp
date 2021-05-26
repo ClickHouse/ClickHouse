@@ -39,7 +39,6 @@ ReplicatedFetchInfo ReplicatedFetchListElement::getInfo() const
     res.source_replica_port = source_replica_port;
     res.interserver_scheme = interserver_scheme;
     res.uri = uri;
-    res.interserver_scheme = interserver_scheme;
     res.to_detached = to_detached;
     res.elapsed = watch.elapsedSeconds();
     res.progress = progress.load(std::memory_order_relaxed);

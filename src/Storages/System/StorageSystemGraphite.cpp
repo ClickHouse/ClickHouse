@@ -25,7 +25,7 @@ NamesAndTypesList StorageSystemGraphite::getNamesAndTypes()
 /*
  * Looking for (Replicated)*GraphiteMergeTree and get all configuration parameters for them
  */
-static StorageSystemGraphite::Configs getConfigs(const Context & context)
+static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
     const Databases databases = DatabaseCatalog::instance().getDatabases();
     StorageSystemGraphite::Configs graphite_configs;
@@ -73,7 +73,7 @@ static StorageSystemGraphite::Configs getConfigs(const Context & context)
     return graphite_configs;
 }
 
-void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     Configs graphite_configs = getConfigs(context);
 

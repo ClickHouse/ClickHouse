@@ -1,6 +1,6 @@
 ---
 toc_priority: 63
-toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438\u0020\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u0439"
+toc_title: "Настройки пользователей"
 ---
 
 # Настройки пользователей {#nastroiki-polzovatelei}
@@ -162,4 +162,3 @@ toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438\u0020\u043f\u
 
 Элемент `filter` содержать любое выражение, возвращающее значение типа [UInt8](../../sql-reference/data-types/int-uint.md). Обычно он содержит сравнения и логические операторы. Строки `database_name.table1`, для которых фильтр возвращает 0 не выдаются пользователю. Фильтрация несовместима с операциями `PREWHERE` и отключает оптимизацию `WHERE→PREWHERE`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings_users/) <!--hide-->

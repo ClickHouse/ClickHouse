@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Common/UInt128.h>
 #include <common/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
@@ -84,6 +84,9 @@ public:
     String http_user_agent;
     String http_referer;
 
+    /// For mysql
+    UInt64 connection_id = 0;
+
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
     /// The element can be trusted only if you trust the corresponding proxy.
@@ -92,6 +95,8 @@ public:
 
     /// Common
     String quota_key;
+
+    UInt64 distributed_depth = 0;
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

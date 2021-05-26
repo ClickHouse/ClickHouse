@@ -4,6 +4,7 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_map>
+#include <Common/Epoll.h>
 
 namespace DB
 {
@@ -16,7 +17,7 @@ class PollingQueue
 public:
     struct TaskData
     {
-        size_t thread_num;
+        size_t thread_num = 0;
 
         void * data = nullptr;
         int fd = -1;
@@ -25,7 +26,7 @@ public:
     };
 
 private:
-    int epoll_fd;
+    Epoll epoll;
     int pipe_fd[2];
     std::atomic_bool is_finished = false;
     std::unordered_map<std::uintptr_t, TaskData> tasks;

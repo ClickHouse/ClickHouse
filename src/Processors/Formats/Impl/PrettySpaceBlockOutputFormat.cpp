@@ -24,6 +24,10 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
     const auto & header = getPort(port_kind).getHeader();
     const auto & columns = chunk.getColumns();
 
+    Serializations serializations(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
+
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
@@ -87,7 +91,8 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
 
             const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            writeValueWithPadding(*columns[column], type, row, cur_width, max_widths[column]);
+            writeValueWithPadding(*columns[column], *serializations[column],
+                row, cur_width, max_widths[column], type.shouldAlignRightInPrettyFormats());
         }
 
         writeChar('\n', out);

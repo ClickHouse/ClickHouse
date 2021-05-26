@@ -45,7 +45,7 @@ Restrictions on the «maximum amount of something» can take the value 0, which 
 
 用于在单个服务器上运行用户查询的最大RAM量。
 
-默认值定义在 [设置。h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Settings.h#L244). 默认情况下，金额不受限制 (`max_memory_usage_for_user = 0`).
+默认值定义在 [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Settings.h#L244). 默认情况下，数额不受限制 (`max_memory_usage_for_user = 0`).
 
 另请参阅说明 [max_memory_usage](#settings_max_memory_usage).
 
@@ -53,7 +53,7 @@ Restrictions on the «maximum amount of something» can take the value 0, which 
 
 用于在单个服务器上运行所有查询的最大RAM数量。
 
-默认值定义在 [设置。h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Settings.h#L245). 默认情况下，金额不受限制 (`max_memory_usage_for_all_queries = 0`).
+默认值定义在 [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Settings.h#L245). 默认情况下，数额不受限制 (`max_memory_usage_for_all_queries = 0`).
 
 另请参阅说明 [max_memory_usage](#settings_max_memory_usage).
 

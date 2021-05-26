@@ -1,6 +1,6 @@
 ---
 toc_priority: 61
-toc_title: "\u041f\u0440\u043e\u0444\u0438\u043b\u0438\u0020\u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043a"
+toc_title: "Профили настроек"
 ---
 
 # Профили настроек {#settings-profiles}
@@ -77,4 +77,3 @@ SET profile = 'web'
 
 Профиль `web` — обычный профиль, который может быть установлен с помощью запроса `SET` или параметра URL при запросе по HTTP.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings_profiles/) <!--hide-->

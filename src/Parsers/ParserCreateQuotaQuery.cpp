@@ -226,7 +226,7 @@ namespace
         {
             ASTPtr node;
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowAll().allowRoleNames().allowUserNames().allowCurrentUser().useIDMode(id_mode);
+            roles_p.allowAll().allowRoles().allowUsers().allowCurrentUser().useIDMode(id_mode);
             if (!ParserKeyword{"TO"}.ignore(pos, expected) || !roles_p.parse(pos, node, expected))
                 return false;
 

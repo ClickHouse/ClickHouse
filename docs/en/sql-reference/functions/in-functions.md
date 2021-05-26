@@ -9,4 +9,3 @@ toc_title: IN Operator
 
 See the section [IN operators](../../sql-reference/operators/in.md#select-in-operators).
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/in_functions/) <!--hide-->

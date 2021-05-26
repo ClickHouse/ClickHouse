@@ -57,4 +57,3 @@ You can [configure](../../../sql-reference/dictionaries/external-dictionaries/ex
 -   [Dictionary Key and Fields](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md)
 -   [Functions for Working with External Dictionaries](../../../sql-reference/functions/ext-dict-functions.md)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->

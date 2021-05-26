@@ -31,6 +31,12 @@ Also it accept the following settings:
 
 - `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
 
+- `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for async INSERT, an exception will be thrown. 0 - do not throw. Default 0.
+
+- `bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for async INSERT, the query will be delayed. 0 - do not delay. Default 0.
+
+- `max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for async send. Default 60.
+
 !!! note "Note"
 
     **Durability settings** (`fsync_...`):
@@ -38,6 +44,12 @@ Also it accept the following settings:
     - Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
     - May significantly decrease the inserts' performance
     - Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
+
+    For **Insert limit settings** (`..._insert`) see also:
+
+    - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
+    - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
+    - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
 
 Example:
 
@@ -61,19 +73,18 @@ Clusters are set like this:
 ``` xml
 <remote_servers>
     <logs>
+        <!-- Inter-server per-cluster secret for Distributed queries
+             default: no secret (no authentication will be performed)
+
+             If set, then Distributed queries will be validated on shards, so at least:
+             - such cluster should exist on the shard,
+             - such cluster should have the same secret.
+
+             And also (and which is more important), the initial_user will
+             be used as current user for the query.
+        -->
+        <!-- <secret></secret> -->
         <shard>
-            <!-- Inter-server per-cluster secret for Distributed queries
-                 default: no secret (no authentication will be performed)
-
-                 If set, then Distributed queries will be validated on shards, so at least:
-                 - such cluster should exist on the shard,
-                 - such cluster should have the same secret.
-
-                 And also (and which is more important), the initial_user will
-                 be used as current user for the query.
-            -->
-            <!-- <secret></secret> -->
-
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>
             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->

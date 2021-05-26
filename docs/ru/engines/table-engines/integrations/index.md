@@ -1,5 +1,5 @@
 ---
-toc_folder_title: "\u0414\u0432\u0438\u0436\u043a\u0438\u0020\u0442\u0430\u0431\u043b\u0438\u0446\u0020\u0434\u043b\u044f\u0020\u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438"
+toc_folder_title: "Движки таблиц для интеграции"
 toc_priority: 30
 ---
 
@@ -14,8 +14,9 @@ toc_priority: 30
 -   [MySQL](../../../engines/table-engines/integrations/mysql.md)
 -   [MongoDB](../../../engines/table-engines/integrations/mongodb.md)
 -   [HDFS](../../../engines/table-engines/integrations/hdfs.md)
+-   [S3](../../../engines/table-engines/integrations/s3.md)
 -   [Kafka](../../../engines/table-engines/integrations/kafka.md)
 -   [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md)
 -   [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md)
+-   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/integrations/) <!--hide-->

@@ -1,6 +1,6 @@
 ---
 toc_priority: 18
-toc_title: "\u0422\u0435\u0440\u0430\u0431\u0430\u0439\u0442\u0020\u043b\u043e\u0433\u043e\u0432\u0020\u043a\u043b\u0438\u043a\u043e\u0432\u0020\u043e\u0442\u0020\u0043\u0072\u0069\u0074\u0065\u006f"
+toc_title: "Терабайт логов кликов от Criteo"
 ---
 
 # Терабайт логов кликов от Criteo {#terabait-logov-klikov-ot-criteo}
@@ -76,4 +76,3 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 DROP TABLE criteo_log;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/criteo/) <!--hide-->

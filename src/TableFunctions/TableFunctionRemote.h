@@ -18,19 +18,19 @@ namespace DB
 class TableFunctionRemote : public ITableFunction
 {
 public:
-    TableFunctionRemote(const std::string & name_, bool secure_ = false);
+    explicit TableFunctionRemote(const std::string & name_, bool secure_ = false);
 
     std::string getName() const override { return name; }
 
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 
     bool needStructureConversion() const override { return false; }
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Distributed"; }
 
-    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     std::string name;
     bool is_cluster_function;

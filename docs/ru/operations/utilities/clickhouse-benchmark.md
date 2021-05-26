@@ -160,4 +160,3 @@ localhost:9000, queries 10, QPS: 6.082, RPS: 121959604.568, MiB/s: 930.478, resu
 99.990%     0.172 sec.
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/utilities/clickhouse-benchmark.md)

@@ -32,7 +32,7 @@ Produces a constant column with a random value.
 randConstant([x])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
@@ -81,7 +81,7 @@ fuzzBits([s], [prob])
 
 Inverts bits of `s`, each with probability `prob`.
 
-**Parameters**
+**Arguments**
 - `s` - `String` or `FixedString`
 - `prob` - constant `Float32/64`
 
@@ -102,4 +102,3 @@ FROM numbers(3)
 │ aeca2A │
 └───────────────────────────────────────┘
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/random_functions/) <!--hide-->

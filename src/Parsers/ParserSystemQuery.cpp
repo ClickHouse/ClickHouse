@@ -57,7 +57,35 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::RELOAD_MODEL:
+        {
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+            {
+                res->target_model = ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
+            else
+            {
+                ParserIdentifier model_parser;
+                ASTPtr model;
+                String target_model;
 
+                if (!model_parser.parse(pos, model, expected))
+                    return false;
+
+                if (!tryGetIdentifierNameInto(model, res->target_model))
+                    return false;
+            }
+
+            break;
+        }
         case Type::DROP_REPLICA:
         {
             ASTPtr ast;
@@ -105,6 +133,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
                 return false;
             break;
+
+        case Type::RESTART_DISK:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->disk = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
+
+            break;
+        }
 
         case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:

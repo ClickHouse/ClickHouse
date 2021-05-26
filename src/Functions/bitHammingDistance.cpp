@@ -74,7 +74,7 @@ class FunctionBitHammingDistance : public IFunction
 public:
     static constexpr auto name = "bitHammingDistance";
     using ResultType = UInt8;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitHammingDistance>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitHammingDistance>(); }
 
     String getName() const override { return name; }
 

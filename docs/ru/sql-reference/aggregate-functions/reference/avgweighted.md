@@ -12,10 +12,10 @@ toc_priority: 107
 avgWeighted(x, weight)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `x` — Значения. [Целые числа](../../../sql-reference/data-types/int-uint.md) или [числа с плавающей запятой](../../../sql-reference/data-types/float.md).
--   `weight` — Веса отдельных значений. [Целые числа](../../../sql-reference/data-types/int-uint.md) или [числа с плавающей запятой](../../../sql-reference/data-types/float.md).
+-   `x` — значения. [Целые числа](../../../sql-reference/data-types/int-uint.md) или [числа с плавающей запятой](../../../sql-reference/data-types/float.md).
+-   `weight` — веса отдельных значений. [Целые числа](../../../sql-reference/data-types/int-uint.md) или [числа с плавающей запятой](../../../sql-reference/data-types/float.md).
 
 Типы параметров должны совпадать.
 
@@ -43,4 +43,3 @@ FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
 └────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avgweighted/) <!--hide-->

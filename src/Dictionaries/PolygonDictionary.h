@@ -24,7 +24,7 @@ namespace bg = boost::geometry;
   * An implementation should inherit from this base class and preprocess the data upon construction if needed.
   * It must override the find method of this class which retrieves the polygon containing a single point.
   */
-class IPolygonDictionary : public IDictionaryBase
+class IPolygonDictionary : public IDictionary
 {
 public:
     /** Controls the different types of polygons allowed as input.
@@ -57,27 +57,33 @@ public:
             InputType input_type_,
             PointType point_type_);
 
-    std::string getTypeName() const override;
+    std::string getTypeName() const override { return "Polygon"; }
 
-    std::string getKeyDescription() const;
+    size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getBytesAllocated() const override;
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
-    size_t getQueryCount() const override;
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
 
-    double getHitRate() const override;
+    double getHitRate() const override { return 1.0; }
 
-    size_t getElementCount() const override;
+    size_t getElementCount() const override { return attributes.empty() ? 0 : attributes.front()->size(); }
 
-    double getLoadFactor() const override;
+    double getLoadFactor() const override { return 1.0; }
 
-    const IDictionarySource * getSource() const override;
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
-    const DictionaryStructure & getStructure() const override;
+    const DictionaryStructure & getStructure() const override { return dict_struct; }
 
-    const DictionaryLifetime  & getLifetime() const override;
+    const DictionaryLifetime  & getLifetime() const override { return dict_lifetime; }
 
-    bool isInjective(const std::string & attribute_name) const override;
+    bool isInjective(const std::string & attribute_name) const override { return dict_struct.getAttribute(attribute_name).injective; }
 
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
@@ -86,7 +92,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+        const ColumnPtr & default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -106,13 +112,9 @@ protected:
      *  If true id is set to the index of a polygon containing the given point.
      *  Overridden in different implementations of this interface.
      */
-    virtual bool find(const Point & point, size_t & id) const = 0;
+    virtual bool find(const Point & point, size_t & polygon_index) const = 0;
 
     std::vector<Polygon> polygons;
-    /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
-     *  corresponding to the row in which any other attributes for this entry are located.
-     */
-    std::vector<size_t> ids;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -126,7 +128,7 @@ private:
      *  The polygons serving as keys are extracted into boost types.
      *  All other values are stored in one column per attribute.
      */
-    void createAttributes();
+    void setup();
     void blockToAttributes(const Block & block);
     void loadData();
 
@@ -134,13 +136,6 @@ private:
 
     /** Checks whether a given attribute exists and returns its index */
     size_t getAttributeIndex(const std::string & attribute_name) const;
-
-    /** Helper functions to retrieve and instantiate the provided null value of an attribute.
-     *  Since a null value is obligatory for every attribute they are simply appended to null_values defined below.
-     */
-    template <typename T>
-    void appendNullValueImpl(const Field & null_value);
-    void appendNullValue(AttributeUnderlyingType type, const Field & value);
 
     /** Helper function for retrieving the value of an attribute by key. */
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
@@ -150,31 +145,16 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    /** A mapping from the names of the attributes to their index in the two vectors defined below. */
-    std::map<std::string, size_t> attribute_index_by_name;
-    /** A vector of columns storing the values of each attribute. */
     Columns attributes;
-    /** A vector of null values corresponding to each attribute. */
-    std::vector<std::variant<
-        UInt8,
-        UInt16,
-        UInt32,
-        UInt64,
-        UInt128,
-        Int8,
-        Int16,
-        Int32,
-        Int64,
-        Decimal32,
-        Decimal64,
-        Decimal128,
-        Float32,
-        Float64,
-        String>> null_values;
 
     size_t bytes_allocated = 0;
-    size_t element_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
+
+    /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
+     *  corresponding to the row in which any other attributes for this entry are located.
+     */
+    std::vector<size_t> polygon_index_to_attribute_value_index;
 
     /** Extracts a list of polygons from a column according to input_type and point_type.
      *  The polygons are appended to the dictionary with the corresponding ids.

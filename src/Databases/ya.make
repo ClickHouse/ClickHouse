@@ -16,7 +16,9 @@ SRCS(
     DatabaseMemory.cpp
     DatabaseOnDisk.cpp
     DatabaseOrdinary.cpp
-    DatabaseWithDictionaries.cpp
+    DatabaseReplicated.cpp
+    DatabaseReplicatedSettings.cpp
+    DatabaseReplicatedWorker.cpp
     DatabasesCommon.cpp
     MySQL/ConnectionMySQLSettings.cpp
     MySQL/DatabaseConnectionMySQL.cpp

@@ -11,7 +11,7 @@
 .syntax .hll { background-color: #b9b6b0 }
 .syntax  { background: #f8f9fa; color: #2f1e2e }
 .syntax .c { color: #8d8687 } /* Comment */
-.syntax .err { color: #ef6155 } /* Error */
+.syntax .err {} /* Error */
 .syntax .k { color: #000000; font-weight: bold } /* Keyword */
 .syntax .l { color: #0088ff } /* Literal */
 .syntax .n { color: #2f1e2e } /* Name */

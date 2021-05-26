@@ -12,7 +12,7 @@ You must install latest Docker from
 https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/#set-up-the-repository
 Don't use Docker from your system repository.
 
-* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev`
+* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev libkrb5-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
 * [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install:
 
@@ -39,7 +39,8 @@ sudo -H pip install \
     redis \
     tzlocal \
     urllib3 \
-    requests-kerberos
+    requests-kerberos \
+    dict2xml
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
@@ -51,11 +52,10 @@ To check, that you have access to Docker, run `docker ps`.
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 
 By default tests are run with system-wide client binary, server binary and base configs. To change that,
-set the following environment variables:`
+set the following environment variables:
 * `CLICKHOUSE_TESTS_SERVER_BIN_PATH` to choose the server binary.
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
-* `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and
-  `users.xml`) are taken.
+* `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and`users.xml`) are taken.
 
 For tests that use common docker compose files you may need to set up their path with environment variable: `DOCKER_COMPOSE_DIR=$HOME/ClickHouse/docker/test/integration/runner/compose`
 
@@ -145,4 +145,12 @@ If tests failing for misterious reasons, this may help:
 sudo service docker stop
 sudo bash -c 'rm -rf /var/lib/docker/*'
 sudo service docker start
+```
+
+#### `iptables-nft`
+
+On Ubuntu 20.10 and later in host network mode (default) one may encounter problem with nested containers not seeing each other. It happens because legacy and nftables rules are out of sync. Problem can be solved by:
+
+```
+sudo iptables -P FORWARD ACCEPT
 ```

@@ -30,7 +30,7 @@ CubeStep::CubeStep(const DataStream & input_stream_, AggregatingTransformParamsP
         output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
 }
 
-void CubeStep::transformPipeline(QueryPipeline & pipeline)
+void CubeStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
 
@@ -41,6 +41,11 @@ void CubeStep::transformPipeline(QueryPipeline & pipeline)
 
         return std::make_shared<CubeTransform>(header, std::move(params));
     });
+}
+
+const Aggregator::Params & CubeStep::getParams() const
+{
+    return params->params;
 }
 
 }

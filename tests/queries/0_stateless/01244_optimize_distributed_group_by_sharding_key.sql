@@ -1,9 +1,5 @@
 -- TODO: correct testing with real unique shards
 
--- Avoid "Connection failed at try №1" messages.
-SET send_logs_level = 'fatal';
-SET connect_timeout_with_failover_ms = 5000;
-
 set optimize_distributed_group_by_sharding_key=1;
 
 drop table if exists dist_01247;
@@ -109,6 +105,10 @@ select 'GROUP BY sharding_key, ...';
 select * from dist_01247 group by key, value;
 select 'GROUP BY ..., sharding_key';
 select * from dist_01247 group by value, key;
+
+-- window functions
+select 'window functions';
+select key, sum(sum(value)) over (rows unbounded preceding) from dist_01247 group by key settings allow_experimental_window_functions=1;
 
 drop table dist_01247;
 drop table data_01247;

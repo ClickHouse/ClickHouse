@@ -26,10 +26,6 @@ struct EnabledQuota::Impl
         std::chrono::seconds duration,
         std::chrono::system_clock::time_point end_of_interval)
     {
-        std::function<String(UInt64)> amount_to_string = [](UInt64 amount) { return std::to_string(amount); };
-        if (resource_type == Quota::EXECUTION_TIME)
-            amount_to_string = [&](UInt64 amount) { return ext::to_string(std::chrono::nanoseconds(amount)); };
-
         const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
         throw Exception(
             "Quota for user " + backQuote(user_name) + " for " + ext::to_string(duration) + " has been exceeded: "
@@ -39,35 +35,47 @@ struct EnabledQuota::Impl
     }
 
 
+    /// Returns the end of the current interval. If the passed `current_time` is greater than that end,
+    /// the function automatically recalculates the interval's end by adding the interval's duration
+    /// one or more times until the interval's end is greater than `current_time`.
+    /// If that recalculation occurs the function also resets amounts of resources used and sets the variable
+    /// `counters_were_reset`.
     static std::chrono::system_clock::time_point getEndOfInterval(
-        const Interval & interval, std::chrono::system_clock::time_point current_time, bool * counters_were_reset = nullptr)
+        const Interval & interval, std::chrono::system_clock::time_point current_time, bool & counters_were_reset)
     {
         auto & end_of_interval = interval.end_of_interval;
         auto end_loaded = end_of_interval.load();
         auto end = std::chrono::system_clock::time_point{end_loaded};
         if (current_time < end)
         {
-            if (counters_were_reset)
-                *counters_were_reset = false;
+            counters_were_reset = false;
             return end;
         }
 
-        const auto duration = interval.duration;
+        /// We reset counters only if the interval's end has been calculated before.
+        /// If it hasn't we just calculate the interval's end for the first time and don't reset counters yet.
+        bool need_reset_counters = (end_loaded.count() != 0);
 
         do
         {
-            end = end + (current_time - end + duration) / duration * duration;
+            /// Calculate the end of the next interval:
+            ///  |                     X                                 |
+            /// end               current_time                next_end = end + duration * n
+            /// where n is an integer number, n >= 1.
+            const auto duration = interval.duration;
+            UInt64 n = static_cast<UInt64>((current_time - end + duration) / duration);
+            end = end + duration * n;
             if (end_of_interval.compare_exchange_strong(end_loaded, end.time_since_epoch()))
-            {
-                boost::range::fill(interval.used, 0);
                 break;
-            }
             end = std::chrono::system_clock::time_point{end_loaded};
         }
         while (current_time >= end);
 
-        if (counters_were_reset)
-            *counters_were_reset = true;
+        if (need_reset_counters)
+        {
+            boost::range::fill(interval.used, 0);
+            counters_were_reset = true;
+        }
         return end;
     }
 
@@ -89,7 +97,7 @@ struct EnabledQuota::Impl
             if (used > max)
             {
                 bool counters_were_reset = false;
-                auto end_of_interval = getEndOfInterval(interval, current_time, &counters_were_reset);
+                auto end_of_interval = getEndOfInterval(interval, current_time, counters_were_reset);
                 if (counters_were_reset)
                 {
                     used = (interval.used[resource_type] += amount);
@@ -116,9 +124,9 @@ struct EnabledQuota::Impl
                 continue;
             if (used > max)
             {
-                bool used_counters_reset = false;
-                std::chrono::system_clock::time_point end_of_interval = getEndOfInterval(interval, current_time, &used_counters_reset);
-                if (!used_counters_reset)
+                bool counters_were_reset = false;
+                std::chrono::system_clock::time_point end_of_interval = getEndOfInterval(interval, current_time, counters_were_reset);
+                if (!counters_were_reset)
                     throwQuotaExceed(user_name, intervals.quota_name, resource_type, used, max, interval.duration, end_of_interval);
             }
         }
@@ -177,7 +185,8 @@ std::optional<QuotaUsage> EnabledQuota::Intervals::getUsage(std::chrono::system_
         auto & out = usage.intervals.back();
         out.duration = in.duration;
         out.randomize_interval = in.randomize_interval;
-        out.end_of_interval = Impl::getEndOfInterval(in, current_time);
+        bool counters_were_reset = false;
+        out.end_of_interval = Impl::getEndOfInterval(in, current_time, counters_were_reset);
         for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
         {
             if (in.max[resource_type])

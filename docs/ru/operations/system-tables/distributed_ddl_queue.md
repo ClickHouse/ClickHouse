@@ -14,7 +14,7 @@
 -   `initiator` ([String](../../sql-reference/data-types/string.md)) — узел, выполнивший запрос.
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала запроса.
 -   `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время окончания запроса.
--   `query_duration_ms` ([UInt64](../../sql-reference/data-types/datetime64.md)) — продолжительность выполнения запроса (в миллисекундах).
+-   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — продолжительность выполнения запроса (в миллисекундах).
 -   `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — код исключения из [ZooKeeper](../../operations/tips.md#zookeeper).
 
 **Пример**
@@ -61,5 +61,4 @@ exception_code:    ZOK
 2 rows in set. Elapsed: 0.025 sec.
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/distributed_ddl_queuedistributed_ddl_queue.md) <!--hide-->
  

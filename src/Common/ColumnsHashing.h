@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashingImpl.h>
@@ -15,6 +14,8 @@
 
 #include <Core/Defines.h>
 #include <memory>
+#include <cassert>
+
 
 namespace DB
 {
@@ -165,8 +166,7 @@ public:
         size_t operator()(const DictionaryKey & key) const
         {
             SipHash hash;
-            hash.update(key.hash.low);
-            hash.update(key.hash.high);
+            hash.update(key.hash);
             hash.update(key.size);
             return hash.get64();
         }
@@ -455,7 +455,14 @@ template <>
 struct LowCardinalityKeys<false> {};
 
 /// For the case when all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <typename Value, typename Key, typename Mapped, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool use_cache = true, bool need_offset = false>
+template <
+    typename Value,
+    typename Key,
+    typename Mapped,
+    bool has_nullable_keys_ = false,
+    bool has_low_cardinality_ = false,
+    bool use_cache = true,
+    bool need_offset = false>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
     , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
@@ -470,6 +477,26 @@ struct HashMethodKeysFixed
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
     size_t keys_size;
+
+    /// SSSE3 shuffle method can be used. Shuffle masks will be calculated and stored here.
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+    std::unique_ptr<uint8_t[]> masks;
+    std::unique_ptr<const char*[]> columns_data;
+#endif
+
+    PaddedPODArray<Key> prepared_keys;
+
+    static bool usePreparedKeys(const Sizes & key_sizes)
+    {
+        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
+            return false;
+
+        for (auto size : key_sizes)
+            if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
+                return false;
+
+        return true;
+    }
 
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
         : Base(key_columns), key_sizes(std::move(key_sizes_)), keys_size(key_columns.size())
@@ -491,6 +518,63 @@ struct HashMethodKeysFixed
                     low_cardinality_keys.nested_columns[i] = key_columns[i];
             }
         }
+
+        if (usePreparedKeys(key_sizes))
+        {
+            packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+        }
+
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+        else if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
+        {
+            /** The task is to "pack" multiple fixed-size fields into single larger Key.
+              * Example: pack UInt8, UInt32, UInt16, UInt64 into UInt128 key:
+              * [- ---- -- -------- -] - the resulting uint128 key
+              *  ^  ^   ^   ^       ^
+              *  u8 u32 u16 u64    zero
+              *
+              * We can do it with the help of SSSE3 shuffle instruction.
+              *
+              * There will be a mask for every GROUP BY element (keys_size masks in total).
+              * Every mask has 16 bytes but only sizeof(Key) bytes are used (other we don't care).
+              *
+              * Every byte in the mask has the following meaning:
+              * - if it is 0..15, take the element at this index from source register and place here in the result;
+              * - if it is 0xFF - set the elemend in the result to zero.
+              *
+              * Example:
+              * We want to copy UInt32 to offset 1 in the destination and set other bytes in the destination as zero.
+              * The corresponding mask will be: FF, 0, 1, 2, 3, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF
+              *
+              * The max size of destination is 16 bytes, because we cannot process more with SSSE3.
+              *
+              * The method is disabled under MSan, because it's allowed
+              * to load into SSE register and process up to 15 bytes of uninitialized memory in columns padding.
+              * We don't use this uninitialized memory but MSan cannot look "into" the shuffle instruction.
+              *
+              * 16-bytes masks can be placed overlapping, only first sizeof(Key) bytes are relevant in each mask.
+              * We initialize them to 0xFF and then set the needed elements.
+              */
+            size_t total_masks_size = sizeof(Key) * keys_size + (16 - sizeof(Key));
+            masks.reset(new uint8_t[total_masks_size]);
+            memset(masks.get(), 0xFF, total_masks_size);
+
+            size_t offset = 0;
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                for (size_t j = 0; j < key_sizes[i]; ++j)
+                {
+                    masks[i * sizeof(Key) + offset] = j;
+                    ++offset;
+                }
+            }
+
+            columns_data.reset(new const char*[keys_size]);
+
+            for (size_t i = 0; i < keys_size; ++i)
+                columns_data[i] = Base::getActualColumns()[i]->getRawData().data;
+        }
+#endif
     }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
@@ -506,8 +590,49 @@ struct HashMethodKeysFixed
                 return packFixed<Key, true>(row, keys_size, low_cardinality_keys.nested_columns, key_sizes,
                                             &low_cardinality_keys.positions, &low_cardinality_keys.position_sizes);
 
+            if (!prepared_keys.empty())
+                return prepared_keys[row];
+
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+            if constexpr (sizeof(Key) <= 16)
+            {
+                assert(!has_low_cardinality && !has_nullable_keys);
+                return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
+            }
+#endif
             return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
         }
+    }
+
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        if (!usePreparedKeys(key_sizes))
+            return {};
+
+        std::vector<IColumn *> new_columns;
+        new_columns.reserve(key_columns.size());
+
+        Sizes new_sizes;
+        auto fill_size = [&](size_t size)
+        {
+            for (size_t i = 0; i < key_sizes.size(); ++i)
+            {
+                if (key_sizes[i] == size)
+                {
+                    new_columns.push_back(key_columns[i]);
+                    new_sizes.push_back(size);
+                }
+            }
+        };
+
+        fill_size(16);
+        fill_size(8);
+        fill_size(4);
+        fill_size(2);
+        fill_size(1);
+
+        key_columns.swap(new_columns);
+        return new_sizes;
     }
 };
 

@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetRoleQuery.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTUserNameWithHost.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
@@ -20,7 +20,8 @@ namespace
         const ASTCreateUserQuery & query,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
-        const std::optional<SettingsProfileElements> & override_settings)
+        const std::optional<SettingsProfileElements> & override_settings,
+        const std::optional<RolesOrUsersSet> & override_grantees)
     {
         if (override_name)
             user.setName(override_name->toString());
@@ -62,6 +63,11 @@ namespace
             user.settings = *override_settings;
         else if (query.settings)
             user.settings = *query.settings;
+
+        if (override_grantees)
+            user.grantees = *override_grantees;
+        else if (query.grantees)
+            user.grantees = *query.grantees;
     }
 }
 
@@ -69,8 +75,8 @@ namespace
 BlockIO InterpreterCreateUserQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
-    auto & access_control = context.getAccessControlManager();
-    auto access = context.getAccess();
+    auto & access_control = getContext()->getAccessControlManager();
+    auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
@@ -85,7 +91,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+        return executeDDLQueryOnCluster(query_ptr, getContext());
 
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)
@@ -93,12 +99,17 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     if (query.alter)
     {
+        std::optional<RolesOrUsersSet> grantees_from_query;
+        if (query.grantees)
+            grantees_from_query = RolesOrUsersSet{*query.grantees, access_control};
+
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
-            updateUserFromQueryImpl(*updated_user, query, {}, default_roles_from_query, settings_from_query);
+            updateUserFromQueryImpl(*updated_user, query, {}, default_roles_from_query, settings_from_query, grantees_from_query);
             return updated_user;
         };
+
         Strings names = query.names->toStrings();
         if (query.if_exists)
         {
@@ -114,16 +125,28 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            updateUserFromQueryImpl(*new_user, query, name, default_roles_from_query, settings_from_query);
+            updateUserFromQueryImpl(*new_user, query, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{});
             new_users.emplace_back(std::move(new_user));
         }
 
+        std::vector<UUID> ids;
         if (query.if_not_exists)
-            access_control.tryInsert(new_users);
+            ids = access_control.tryInsert(new_users);
         else if (query.or_replace)
-            access_control.insertOrReplace(new_users);
+            ids = access_control.insertOrReplace(new_users);
         else
-            access_control.insert(new_users);
+            ids = access_control.insert(new_users);
+
+        if (query.grantees)
+        {
+            RolesOrUsersSet grantees_from_query = RolesOrUsersSet{*query.grantees, access_control};
+            access_control.update(ids, [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+            {
+                auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
+                updated_user->grantees = grantees_from_query;
+                return updated_user;
+            });
+        }
     }
 
     return {};
@@ -132,7 +155,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
 void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query)
 {
-    updateUserFromQueryImpl(user, query, {}, {}, {});
+    updateUserFromQueryImpl(user, query, {}, {}, {}, {});
 }
 
 }

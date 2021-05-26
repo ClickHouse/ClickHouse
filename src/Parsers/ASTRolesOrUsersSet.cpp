@@ -7,7 +7,7 @@ namespace DB
 {
 namespace
 {
-    void formatRoleNameOrID(const String & str, bool is_id, const IAST::FormatSettings & settings)
+    void formatNameOrID(const String & str, bool is_id, const IAST::FormatSettings & settings)
     {
         if (is_id)
         {
@@ -30,19 +30,21 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
     }
 
     bool need_comma = false;
+
     if (all)
     {
         if (std::exchange(need_comma, true))
             settings.ostr << ", ";
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ALL" << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_keyword_any ? "ANY" : "ALL")
+                      << (settings.hilite ? IAST::hilite_none : "");
     }
     else
     {
-        for (const auto & role : names)
+        for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            formatRoleNameOrID(role, id_mode, settings);
+            formatNameOrID(name, id_mode, settings);
         }
 
         if (current_user)
@@ -58,11 +60,11 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (settings.hilite ? IAST::hilite_none : "");
         need_comma = false;
 
-        for (const auto & except_role : except_names)
+        for (const auto & name : except_names)
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            formatRoleNameOrID(except_role, id_mode, settings);
+            formatNameOrID(name, id_mode, settings);
         }
 
         if (except_current_user)
@@ -75,7 +77,7 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
 }
 
 
-void ASTRolesOrUsersSet::replaceCurrentUserTagWithName(const String & current_user_name)
+void ASTRolesOrUsersSet::replaceCurrentUserTag(const String & current_user_name)
 {
     if (current_user)
     {

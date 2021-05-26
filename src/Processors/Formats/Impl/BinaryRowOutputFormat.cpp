@@ -41,9 +41,9 @@ void BinaryRowOutputFormat::writePrefix()
     }
 }
 
-void BinaryRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void BinaryRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    type.serializeBinary(column, row_num, out);
+    serialization.serializeBinary(column, row_num, out);
 }
 
 

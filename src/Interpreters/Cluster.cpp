@@ -5,8 +5,8 @@
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/Settings.h>
-#include <IO/HexWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -103,10 +103,14 @@ Cluster::Address::Address(
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    compression = config.getBool(config_prefix + ".compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     is_local = isLocal(config.getInt(port_type, 0));
+
+    /// By default compression is disabled if address looks like localhost.
+    /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
+    compression = config.getBool(config_prefix + ".compression", !is_local)
+        ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 }
 
 
@@ -116,7 +120,9 @@ Cluster::Address::Address(
         const String & password_,
         UInt16 clickhouse_port,
         bool secure_,
-        Int64 priority_)
+        Int64 priority_,
+        UInt32 shard_index_,
+        UInt32 replica_index_)
     : user(user_)
     , password(password_)
 {
@@ -126,6 +132,8 @@ Cluster::Address::Address(
     secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = priority_;
     is_local = isLocal(clickhouse_port);
+    shard_index = shard_index_;
+    replica_index = replica_index_;
 }
 
 
@@ -266,20 +274,45 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
 }
 
 
-void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix)
+void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
 {
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_prefix, config_keys);
+    Poco::Util::AbstractConfiguration::Keys new_config_keys;
+    new_config.keys(config_prefix, new_config_keys);
+
+    /// If old config is set, we will update only clusters with updated config.
+    /// In this case, we first need to find clusters that were deleted from config.
+    Poco::Util::AbstractConfiguration::Keys deleted_keys;
+    if (old_config)
+    {
+        std::sort(new_config_keys.begin(), new_config_keys.end());
+
+        Poco::Util::AbstractConfiguration::Keys old_config_keys;
+        old_config->keys(config_prefix, old_config_keys);
+        std::sort(old_config_keys.begin(), old_config_keys.end());
+
+        std::set_difference(
+            old_config_keys.begin(), old_config_keys.end(), new_config_keys.begin(), new_config_keys.end(), std::back_inserter(deleted_keys));
+    }
 
     std::lock_guard lock(mutex);
 
-    impl.clear();
-    for (const auto & key : config_keys)
+    /// If old config is set, remove deleted clusters from impl, otherwise just clear it.
+    if (old_config)
+    {
+        for (const auto & key : deleted_keys)
+            impl.erase(key);
+    }
+    else
+        impl.clear();
+
+    for (const auto & key : new_config_keys)
     {
         if (key.find('.') != String::npos)
             throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
 
-        impl.emplace(key, std::make_shared<Cluster>(config, settings, config_prefix, key));
+        /// If old config is set and cluster config wasn't changed, don't update this cluster.
+        if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
+            impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
     }
 }
 
@@ -466,7 +499,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (const auto & replica : shard)
-            current.emplace_back(replica, username, password, clickhouse_port, secure, priority);
+            current.emplace_back(replica, username, password, clickhouse_port, secure, priority, current_shard_num, current.size() + 1);
 
         addresses_with_failover.emplace_back(current);
 
@@ -508,7 +541,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 }
 
 
-Poco::Timespan Cluster::saturate(const Poco::Timespan & v, const Poco::Timespan & limit)
+Poco::Timespan Cluster::saturate(Poco::Timespan v, Poco::Timespan limit)
 {
     if (limit.totalMicroseconds() == 0)
         return v;
@@ -564,6 +597,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
     if (from.addresses_with_failover.empty())
         throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
 
+    UInt32 shard_num = 0;
     std::set<std::pair<String, int>> unique_hosts;
     for (size_t shard_index : ext::range(0, from.shards_info.size()))
     {
@@ -574,6 +608,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 continue;   /// Duplicate host, skip.
 
             ShardInfo info;
+            info.shard_num = ++shard_num;
+
             if (address.is_local)
                 info.local_addresses.push_back(address);
 

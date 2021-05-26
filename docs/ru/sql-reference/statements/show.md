@@ -362,4 +362,68 @@ SHOW [CURRENT] QUOTA
 SHOW ACCESS
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/show/) <!--hide-->
+## SHOW SETTINGS {#show-settings}
+
+Возвращает список системных настроек и их значений. Использует данные из таблицы [system.settings](../../operations/system-tables/settings.md).
+
+**Синтаксис**
+
+```sql
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
+```
+
+**Секции**
+
+При использовании `LIKE|ILIKE` можно задавать шаблон для имени настройки. Этот шаблон может содержать символы подстановки, такие как `%` или `_`. При использовании `LIKE` шаблон чувствителен к регистру, а при использовании `ILIKE` — не чувствителен.
+
+Если используется `CHANGED`, запрос вернет только те настройки, значения которых были изменены, т.е. отличны от значений по умолчанию.
+
+**Примеры**
+
+Запрос с использованием `LIKE`:
+
+```sql
+SHOW SETTINGS LIKE 'send_timeout';
+```
+Результат:
+
+```text
+┌─name─────────┬─type────┬─value─┐
+│ send_timeout │ Seconds │ 300   │
+└──────────────┴─────────┴───────┘
+```
+
+Запрос с использованием `ILIKE`:
+
+```sql
+SHOW SETTINGS ILIKE '%CONNECT_timeout%'
+```
+
+Результат:
+
+```text
+┌─name────────────────────────────────────┬─type─────────┬─value─┐
+│ connect_timeout                         │ Seconds      │ 10    │
+│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
+│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
+└─────────────────────────────────────────┴──────────────┴───────┘
+```
+
+Запрос с использованием `CHANGED`:
+
+```sql
+SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
+```
+
+Результат:
+
+```text
+┌─name─────────────┬─type───┬─value───────┐
+│ max_memory_usage │ UInt64 │ 10000000000 │
+└──────────────────┴────────┴─────────────┘
+```
+
+**См. также**
+
+-   Таблица [system.settings](../../operations/system-tables/settings.md)
+

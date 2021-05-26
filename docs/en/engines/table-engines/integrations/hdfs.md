@@ -1,11 +1,11 @@
 ---
-toc_priority: 4
+toc_priority: 6
 toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
 
-This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. This engine is similar
+This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar
 to the [File](../../../engines/table-engines/special/file.md#table_engines-file) and [URL](../../../engines/table-engines/special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
 
 ## Usage {#usage}
@@ -174,7 +174,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | dfs\_domain\_socket\_path                             | ""                      |
 
 
-[HDFS Configuration Reference ](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
+[HDFS Configuration Reference](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
 
 
 #### ClickHouse extras {#clickhouse-extras}
@@ -185,7 +185,6 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
 #### Limitations {#limitations}
-
   * hadoop\_security\_kerberos\_ticket\_cache\_path can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
@@ -207,4 +206,4 @@ If hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal or hadoop\_kerberos\_ki
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->

@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "\u0422\u0435\u0441\u0442\u043e\u0432\u044b\u0435\u0020\u043c\u0430\u0441\u0441\u0438\u0432\u044b\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+toc_folder_title: "Тестовые массивы данных"
 toc_priority: 14
-toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
+toc_title: "Введение"
 ---
 
 # Тестовые массивы данных {#testovye-massivy-dannykh}
@@ -16,5 +16,5 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435"
 -   [AMPLab Big Data Benchmark](amplab-benchmark.md)
 -   [Данные о такси в Нью-Йорке](nyc-taxi.md)
 -   [OnTime](ontime.md)
+-   [Вышки сотовой связи](../../getting-started/example-datasets/cell-towers.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->

@@ -14,7 +14,17 @@ Columns:
 
 -   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ZooKeeper.
 
--   `type` ([String](../../sql-reference/data-types/string.md)) — Type of the task in the queue: `GET_PARTS`, `MERGE_PARTS`, `DETACH_PARTS`, `DROP_PARTS`, or `MUTATE_PARTS`.
+-   `type` ([String](../../sql-reference/data-types/string.md)) — Type of the task in the queue, one of:
+
+    -   `GET_PART` — Get the part from another replica.
+    -   `ATTACH_PART` — Attach the part, possibly from our own replica (if found in the `detached` folder). You may think of it as a `GET_PART` with some optimizations as they're nearly identical.
+    -   `MERGE_PARTS` — Merge the parts.
+    -   `DROP_RANGE` — Delete the parts in the specified partition in the specified number range.
+    -   `CLEAR_COLUMN` — NOTE: Deprecated. Drop specific column from specified partition.
+    -   `CLEAR_INDEX` — NOTE: Deprecated. Drop specific index from specified partition.
+    -   `REPLACE_RANGE` — Drop a certain range of parts and replace them with new ones.
+    -   `MUTATE_PART` — Apply one or several mutations to the part.
+    -   `ALTER_METADATA` — Apply alter modification according to global /metadata and /columns paths.
 
 -   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was submitted for execution.
 
@@ -70,12 +80,12 @@ num_tries:              36
 last_exception:         Code: 226, e.displayText() = DB::Exception: Marks file '/opt/clickhouse/data/merge/visits_v2/tmp_fetch_20201130_121373_121384_2/CounterID.mrk' doesn't exist (version 20.8.7.15 (official build))
 last_attempt_time:      2020-12-08 17:35:54
 num_postponed:          0
-postpone_reason:        
+postpone_reason:
 last_postpone_time:     1970-01-01 03:00:00
 ```
 
 **See Also**
 
--   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md/#query-language-system-replicated)
+-   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md#query-language-system-replicated)
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/replication_queue) <!--hide-->

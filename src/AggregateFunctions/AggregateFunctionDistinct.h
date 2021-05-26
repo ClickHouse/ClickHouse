@@ -10,7 +10,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
 
-#include <Common/FieldVisitors.h>
 
 namespace DB
 {
@@ -234,6 +233,11 @@ public:
     bool allocatesMemoryInArena() const override
     {
         return true;
+    }
+
+    bool isState() const override
+    {
+        return nested_func->isState();
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }

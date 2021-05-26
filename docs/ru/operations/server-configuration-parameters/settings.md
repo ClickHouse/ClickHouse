@@ -1,6 +1,6 @@
 ---
 toc_priority: 57
-toc_title: "\u041a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0435\u0020\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b\u0020\u0441\u0435\u0440\u0432\u0435\u0440\u0430"
+toc_title: "Конфигурационные параметры сервера"
 ---
 
 # Конфигурационные параметры сервера {#server-configuration-parameters-reference}
@@ -100,6 +100,12 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
     <size_limit>1073741824</size_limit>
 </core_dump> 
 ```
+
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
+
+Устанавливает задержку перед удалением табличных данных, в секундах. Если запрос имеет идентификатор `SYNC`, эта настройка игнорируется.
+
+Значение по умолчанию: `480` (8 минут).
 
 ## default\_database {#default-database}
 
@@ -285,7 +291,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## interserver_http_host {#interserver-http-host}
 
-Имя хоста, которое могут использовать другие серверы для обращения к этому.
+Имя хоста, которое могут использовать другие серверы для обращения к этому хосту.
 
 Если не указано, то определяется аналогично команде `hostname -f`.
 
@@ -297,10 +303,35 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
+## interserver_https_port {#interserver-https-port}
+
+Порт для обмена данными между репликами ClickHouse по протоколу `HTTPS`.
+
+**Пример**
+
+``` xml
+<interserver_https_port>9010</interserver_https_port>
+```
+
+## interserver_https_host {#interserver-https-host}
+
+Имя хоста, которое могут использовать другие реплики для обращения к нему по протоколу `HTTPS`.
+
+**Пример**
+
+``` xml
+<interserver_https_host>example.yandex.ru</interserver_https_host>
+```
+
+
+
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
 Имя пользователя и пароль, использующиеся для аутентификации при [репликации](../../operations/server-configuration-parameters/settings.md) движками Replicated\*. Это имя пользователя и пароль используются только для взаимодействия между репликами кластера и никак не связаны с аутентификацией клиентов ClickHouse. Сервер проверяет совпадение имени и пароля для соединяющихся с ним реплик, а также использует это же имя и пароль для соединения с другими репликами. Соответственно, эти имя и пароль должны быть прописаны одинаковыми для всех реплик кластера.
 По умолчанию аутентификация не используется.
+
+!!! note "Примечание"
+    Эти учетные данные являются общими для обмена данными по протоколам `HTTP` и `HTTPS`.
 
 Раздел содержит следующие параметры:
 
@@ -384,7 +415,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
     Значения по умолчанию: при указанном `address` - `LOG_USER`, иначе - `LOG_DAEMON`
 -   format - формат сообщений. Возможные значения - `bsd` и `syslog`
 
-## send_crash_reports {#server_configuration_parameters-logger}
+## send_crash_reports {#server_configuration_parameters-send_crash_reports}
 
 Настройки для отправки сообщений о сбоях в команду разработчиков ядра ClickHouse через [Sentry](https://sentry.io).
 Включение этих настроек, особенно в pre-production среде, может дать очень ценную информацию и поможет развитию ClickHouse.
@@ -481,7 +512,15 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Максимальное количество одновременно обрабатываемых запросов.
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+
+!!! info "Примечание"
+	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений. 
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
 
 **Пример**
 
@@ -508,6 +547,21 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 **Смотрите также**
 
 -   [max_concurrent_queries](#max-concurrent-queries)
+
+## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+
+Определяет минимальное количество засечек, считываемых запросом для применения настройки [max_concurrent_queries](#max-concurrent-queries).
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
+
+**Пример**
+
+``` xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
 
 ## max_connections {#max-connections}
 
@@ -1159,5 +1213,3 @@ ClickHouse использует ZooKeeper для хранения метадан
         </roles>
 </ldap>
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->

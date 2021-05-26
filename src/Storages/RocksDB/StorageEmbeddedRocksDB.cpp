@@ -16,6 +16,7 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
@@ -198,7 +199,7 @@ public:
         while (it < end && rows_processed < max_block_size)
         {
             WriteBufferFromString wb(serialized_keys[rows_processed]);
-            key_column.type->serializeBinary(*it, wb);
+            key_column.type->getDefaultSerialization()->serializeBinary(*it, wb);
             wb.finalize();
             slices_keys[rows_processed] = std::move(serialized_keys[rows_processed]);
 
@@ -219,7 +220,7 @@ public:
                 size_t idx = 0;
                 for (const auto & elem : sample_block)
                 {
-                    elem.type->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
+                    elem.type->getDefaultSerialization()->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
                     ++idx;
                 }
             }
@@ -245,12 +246,12 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
         bool attach,
-        Context & context_,
+        ContextPtr context_,
         const String & primary_key_)
     : IStorage(table_id_), primary_key{primary_key_}
 {
     setInMemoryMetadata(metadata_);
-    rocksdb_dir = context_.getPath() + relative_data_path_;
+    rocksdb_dir = context_->getPath() + relative_data_path_;
     if (!attach)
     {
         Poco::File(rocksdb_dir).createDirectories();
@@ -258,7 +259,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     initDb();
 }
 
-void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , const Context &, TableExclusiveLockHolder &)
+void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &)
 {
     rocksdb_ptr->Close();
     Poco::File(rocksdb_dir).remove(true);
@@ -284,7 +285,7 @@ Pipe StorageEmbeddedRocksDB::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & /*context*/,
+        ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams)
@@ -331,7 +332,7 @@ Pipe StorageEmbeddedRocksDB::read(
 }
 
 BlockOutputStreamPtr StorageEmbeddedRocksDB::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<EmbeddedRocksDBBlockOutputStream>(*this, metadata_snapshot);
 }
@@ -352,13 +353,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
     {
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
     }
-    return StorageEmbeddedRocksDB::create(args.table_id, args.relative_data_path, metadata, args.attach, args.context, primary_key_names[0]);
+    return StorageEmbeddedRocksDB::create(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0]);
 }
 
 

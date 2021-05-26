@@ -11,7 +11,7 @@ namespace DB
 RabbitMQBlockOutputStream::RabbitMQBlockOutputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const Context & context_)
+    ContextPtr context_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
@@ -34,7 +34,7 @@ void RabbitMQBlockOutputStream::writePrefix()
     buffer->activateWriting();
 
     auto format_settings = getFormatSettings(context);
-    format_settings.protobuf.allow_many_rows_no_delimiters = true;
+    format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
     child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
         getHeader(), context,

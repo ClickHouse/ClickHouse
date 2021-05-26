@@ -8,7 +8,7 @@
 view(subquery)
 ```
 
-**Входные параметры**
+**Аргументы**
 
 -   `subquery` — запрос `SELECT`.
 
@@ -32,7 +32,7 @@ view(subquery)
 Запрос:
 
 ``` sql
-SELECT * FROM view(SELECT name FROM months)
+SELECT * FROM view(SELECT name FROM months);
 ```
 
 Результат:
@@ -49,14 +49,15 @@ SELECT * FROM view(SELECT name FROM months)
 Вы можете использовать функцию `view` как параметр табличных функций [remote](https://clickhouse.tech/docs/ru/sql-reference/table-functions/remote/#remote-remotesecure) и [cluster](https://clickhouse.tech/docs/ru/sql-reference/table-functions/cluster/#cluster-clusterallreplicas):
 
 ``` sql
-SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name))
+SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name));
 ```
 
 ``` sql
-SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name))
+SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 ```
 
 **Смотрите также**
 
 -   [view](https://clickhouse.tech/docs/ru/engines/table-engines/special/view/#table_engines-view)
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/view/) <!--hide-->
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/table-functions/view/) <!--hide-->

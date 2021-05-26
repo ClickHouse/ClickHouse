@@ -314,7 +314,7 @@ void DiskMemory::replaceFileImpl(const String & from_path, const String & to_pat
     files.insert(std::move(node));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t, MMappedFileCache *) const
 {
     std::lock_guard lock(mutex);
 
@@ -451,7 +451,7 @@ void registerDiskMemory(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & /*config*/,
                       const String & /*config_prefix*/,
-                      const Context & /*context*/) -> DiskPtr { return std::make_shared<DiskMemory>(name); };
+                      ContextConstPtr /*context*/) -> DiskPtr { return std::make_shared<DiskMemory>(name); };
     factory.registerDiskType("memory", creator);
 }
 

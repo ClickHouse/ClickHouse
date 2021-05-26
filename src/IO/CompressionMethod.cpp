@@ -15,6 +15,8 @@
 #    include <Common/config.h>
 #endif
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 
 namespace DB
 {
@@ -44,7 +46,6 @@ std::string toContentEncodingName(CompressionMethod method)
     __builtin_unreachable();
 }
 
-
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)
 {
     std::string file_extension;
@@ -55,23 +56,24 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
             file_extension = path.substr(pos + 1, std::string::npos);
     }
 
-    const std::string * method_str = file_extension.empty() ? &hint : &file_extension;
+    std::string method_str = file_extension.empty() ? hint : std::move(file_extension);
+    boost::algorithm::to_lower(method_str);
 
-    if (*method_str == "gzip" || *method_str == "gz")
+    if (method_str == "gzip" || method_str == "gz")
         return CompressionMethod::Gzip;
-    if (*method_str == "deflate")
+    if (method_str == "deflate")
         return CompressionMethod::Zlib;
-    if (*method_str == "brotli" || *method_str == "br")
+    if (method_str == "brotli" || method_str == "br")
         return CompressionMethod::Brotli;
-    if (*method_str == "LZMA" || *method_str == "xz")
+    if (method_str == "lzma" || method_str == "xz")
         return CompressionMethod::Xz;
-    if (*method_str == "zstd" || *method_str == "zst")
+    if (method_str == "zstd" || method_str == "zst")
         return CompressionMethod::Zstd;
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
     throw Exception(
-        "Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'br', 'xz', 'zstd' are supported as compression methods",
+        "Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd' are supported as compression methods",
         ErrorCodes::NOT_IMPLEMENTED);
 }
 

@@ -27,7 +27,7 @@ ConfigReloader::ConfigReloader(
     , updater(std::move(updater_))
 {
     if (!already_loaded)
-        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true);
+        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
 }
 
 
@@ -66,7 +66,7 @@ void ConfigReloader::run()
             if (quit)
                 return;
 
-            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false);
+            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false, /* initial_loading = */ false);
         }
         catch (...)
         {
@@ -76,7 +76,7 @@ void ConfigReloader::run()
     }
 }
 
-void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
+void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading)
 {
     std::lock_guard lock(reload_mutex);
 
@@ -131,7 +131,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
 
         try
         {
-            updater(loaded_config.configuration);
+            updater(loaded_config.configuration, initial_loading);
         }
         catch (...)
         {

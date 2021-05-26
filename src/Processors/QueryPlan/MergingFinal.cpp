@@ -9,6 +9,7 @@
 #include <Processors/Transforms/AddingSelectorTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -53,7 +54,7 @@ MergingFinal::MergingFinal(
 //    output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
-void MergingFinal::transformPipeline(QueryPipeline & pipeline)
+void MergingFinal::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto & header = pipeline.getHeader();
     size_t num_outputs = pipeline.getNumStreams();
@@ -159,6 +160,11 @@ void MergingFinal::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Sort description: ";
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);
     settings.out << '\n';
+}
+
+void MergingFinal::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Sort Description", explainSortDescription(sort_description, input_streams.front().header));
 }
 
 }

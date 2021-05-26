@@ -23,7 +23,7 @@ class ConstantExpressionTemplate : boost::noncopyable
     struct TemplateStructure : boost::noncopyable
     {
         TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                          ASTPtr & expr, const IDataType & result_type, bool null_as_default_, const Context & context);
+                          ASTPtr & expr, const IDataType & result_type, bool null_as_default_, ContextPtr context);
 
         static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default);
         static size_t getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
@@ -36,6 +36,7 @@ class ConstantExpressionTemplate : boost::noncopyable
 
         Block literals;
         ExpressionActionsPtr actions_on_literals;
+        Serializations serializations;
 
         std::vector<SpecialParserType> special_parser;
         bool null_as_default;
@@ -58,7 +59,7 @@ public:
                                                      TokenIterator expression_begin,
                                                      TokenIterator expression_end,
                                                      const ASTPtr & expression_,
-                                                     const Context & context,
+                                                     ContextPtr context,
                                                      bool * found_in_cache = nullptr,
                                                      const String & salt = {});
     };
@@ -72,7 +73,7 @@ public:
 
     /// Evaluate batch of expressions were parsed using template.
     /// If template was deduced with null_as_default == true, set bits in nulls for NULL values in column_idx, starting from offset.
-    ColumnPtr evaluateAll(BlockMissingValues & nulls, size_t column_idx, size_t offset = 0);
+    ColumnPtr evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset = 0);
 
     size_t rowsCount() const { return rows_count; }
 

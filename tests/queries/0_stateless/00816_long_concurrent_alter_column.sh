@@ -60,16 +60,10 @@ wait
 
 echo "DROP TABLE concurrent_alter_column NO DELAY" | ${CLICKHOUSE_CLIENT}   # NO DELAY has effect only for Atomic database
 
-db_engine=`$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name='$CLICKHOUSE_DATABASE'"`
-if [[ $db_engine == "Atomic" ]]; then
-    # DROP is non-blocking, so wait for alters
-    while true; do
-        $CLICKHOUSE_CLIENT -q "SELECT c = 0 FROM (SELECT count() as c FROM system.processes WHERE query_id LIKE 'alter_00816_%')" | grep 1 > /dev/null && break;
-        sleep 1;
-    done
-fi
-
-# Check for deadlocks
-echo "SELECT * FROM system.processes WHERE query_id LIKE 'alter_00816_%'" | ${CLICKHOUSE_CLIENT}
+# Wait for alters and check for deadlocks (in case of deadlock this loop will not finish)
+while true; do
+    echo "SELECT * FROM system.processes WHERE query_id LIKE 'alter\\_00816\\_%'" | ${CLICKHOUSE_CLIENT} | grep -q -F 'alter' || break
+    sleep 1;
+done
 
 echo 'did not crash'

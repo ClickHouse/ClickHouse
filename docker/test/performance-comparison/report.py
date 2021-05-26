@@ -446,6 +446,9 @@ if args.report == 'main':
                 attrs[3] = f'style="background: {color_bad}"'
             else:
                 attrs[3] = ''
+                # Just don't add the slightly unstable queries we don't consider
+                # errors. It's not clear what the user should do with them.
+                continue
 
             text += tableRow(r, attrs, anchor)
 
@@ -520,12 +523,13 @@ if args.report == 'main':
     for t in tables:
         print(t)
 
-    print("""
+    print(f"""
     </div>
     <p class="links">
     <a href="all-queries.html">All queries</a>
     <a href="compare.log">Log</a>
     <a href="output.7z">Test output</a>
+    {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
     </p>
     </body>
     </html>
@@ -552,12 +556,11 @@ if args.report == 'main':
         error_tests += unstable_partial_queries
         status = 'failure'
 
-    if unstable_queries:
-        message_array.append(str(unstable_queries) + ' unstable')
-
-#    Disabled before fix.
-#    if very_unstable_queries:
-#        status = 'failure'
+    # Don't show mildly unstable queries, only the very unstable ones we
+    # treat as errors.
+    if very_unstable_queries:
+        status = 'failure'
+        message_array.append(str(very_unstable_queries) + ' unstable')
 
     error_tests += slow_average_tests
     if error_tests:
@@ -638,12 +641,13 @@ elif args.report == 'all-queries':
     for t in tables:
         print(t)
 
-    print("""
+    print(f"""
     </div>
     <p class="links">
     <a href="report.html">Main report</a>
     <a href="compare.log">Log</a>
     <a href="output.7z">Test output</a>
+    {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
     </p>
     </body>
     </html>

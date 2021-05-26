@@ -13,9 +13,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
 #include <common/getThreadId.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -150,6 +152,7 @@ namespace
 
 StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     : IStorageSystemOneBlock<StorageSystemStackTrace>(table_id_)
+    , log(&Poco::Logger::get("StorageSystemStackTrace"))
 {
     notification_pipe.open();
 
@@ -174,6 +177,7 @@ NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 {
     return
     {
+        { "thread_name", std::make_shared<DataTypeString>() },
         { "thread_id", std::make_shared<DataTypeUInt64>() },
         { "query_id", std::make_shared<DataTypeString>() },
         { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) }
@@ -181,7 +185,7 @@ NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 }
 
 
-void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemStackTrace::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     /// It shouldn't be possible to do concurrent reads from this table.
     std::lock_guard lock(mutex);
@@ -211,6 +215,18 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             throwFromErrno("Cannot send signal with sigqueue", ErrorCodes::CANNOT_SIGQUEUE);
         }
 
+        std::filesystem::path thread_name_path = it->path();
+        thread_name_path.append("comm");
+
+        String thread_name;
+        if (std::filesystem::exists(thread_name_path))
+        {
+            constexpr size_t comm_buf_size = 32; /// More than enough for thread name
+            ReadBufferFromFile comm(thread_name_path.string(), comm_buf_size);
+            readStringUntilEOF(thread_name, comm);
+            comm.close();
+        }
+
         /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
 
         if (wait(100) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
@@ -223,17 +239,21 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
                 arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace.getFramePointers()[i]));
 
-            res_columns[0]->insert(tid);
-            res_columns[1]->insertData(query_id_data, query_id_size);
-            res_columns[2]->insert(arr);
+            res_columns[0]->insert(thread_name);
+            res_columns[1]->insert(tid);
+            res_columns[2]->insertData(query_id_data, query_id_size);
+            res_columns[3]->insert(arr);
         }
         else
         {
+            LOG_DEBUG(log, "Cannot obtain a stack trace for thread {}", tid);
+
             /// Cannot obtain a stack trace. But create a record in result nevertheless.
 
-            res_columns[0]->insert(tid);
-            res_columns[1]->insertDefault();
+            res_columns[0]->insert(thread_name);
+            res_columns[1]->insert(tid);
             res_columns[2]->insertDefault();
+            res_columns[3]->insertDefault();
         }
 
         /// Signed integer overflow is undefined behavior in both C and C++. However, according to

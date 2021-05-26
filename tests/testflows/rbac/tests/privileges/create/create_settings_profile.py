@@ -17,7 +17,7 @@ def privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=create_settings_profile, flags=TE,
+        Suite(run=create_settings_profile,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in create_settings_profile.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -38,13 +38,14 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=create_settings_profile, flags=TE,
+        Suite(run=create_settings_profile,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in create_settings_profile.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
+    ("ALL",),
     ("ACCESS MANAGEMENT",),
     ("CREATE SETTINGS PROFILE",),
     ("CREATE PROFILE",),
@@ -61,7 +62,13 @@ def create_settings_profile(self, privilege, grant_target_name, user_name, node=
         create_settings_profile_name = f"create_settings_profile_{getuid()}"
 
         try:
-            with When("I check the user can't create a settings_profile"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't create a settings_profile"):
                 node.query(f"CREATE SETTINGS PROFILE {create_settings_profile_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -119,6 +126,8 @@ def create_settings_profile(self, privilege, grant_target_name, user_name, node=
 @Name("create settings profile")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_CreateSettingsProfile("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of CREATE SETTINGS PROFILE.

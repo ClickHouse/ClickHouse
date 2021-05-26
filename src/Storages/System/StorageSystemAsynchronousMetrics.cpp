@@ -21,7 +21,7 @@ StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const Storage
 {
 }
 
-void StorageSystemAsynchronousMetrics::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemAsynchronousMetrics::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     auto async_metrics_values = async_metrics.getValues();
     for (const auto & name_value : async_metrics_values)

@@ -50,14 +50,14 @@ public:
             assert_cast<ColVecType &>(to).insertDefault();
     }
 
-    void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
+    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
     {
         writeBinary(has(), buf);
         if (has())
             writeBinary(value, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & /*data_type*/, Arena *)
+    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena *)
     {
         readBinary(has_value, buf);
         if (has())
@@ -181,7 +181,7 @@ public:
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString
+struct SingleValueDataString //-V730
 {
 private:
     using Self = SingleValueDataString;
@@ -221,14 +221,14 @@ public:
             assert_cast<ColumnString &>(to).insertDefault();
     }
 
-    void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
+    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
     {
         writeBinary(size, buf);
         if (has())
             buf.write(getData(), size);
     }
 
-    void read(ReadBuffer & buf, const IDataType & /*data_type*/, Arena * arena)
+    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
     {
         Int32 rhs_size;
         readBinary(rhs_size, buf);
@@ -427,24 +427,24 @@ public:
             to.insertDefault();
     }
 
-    void write(WriteBuffer & buf, const IDataType & data_type) const
+    void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            data_type.serializeBinary(value, buf);
+            serialization.serializeBinary(value, buf);
         }
         else
             writeBinary(false, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & data_type, Arena *)
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena *)
     {
         bool is_not_null;
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            data_type.deserializeBinary(value, buf);
+            serialization.deserializeBinary(value, buf);
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)
@@ -678,15 +678,15 @@ struct AggregateFunctionAnyHeavyData : Data
         return false;
     }
 
-    void write(WriteBuffer & buf, const IDataType & data_type) const
+    void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
-        Data::write(buf, data_type);
+        Data::write(buf, serialization);
         writeBinary(counter, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & data_type, Arena * arena)
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
     {
-        Data::read(buf, data_type, arena);
+        Data::read(buf, serialization, arena);
         readBinary(counter, buf);
     }
 
@@ -698,12 +698,14 @@ template <typename Data>
 class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
-    DataTypePtr & type;
+    DataTypePtr type;
+    SerializationPtr serialization;
 
 public:
     AggregateFunctionsSingleValue(const DataTypePtr & type_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type_}, {})
         , type(this->argument_types[0])
+        , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
             || StringRef(Data::name()) == StringRef("max"))
@@ -733,12 +735,12 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
-        this->data(place).write(buf, *type.get());
+        this->data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
-        this->data(place).read(buf, *type.get(), arena);
+        this->data(place).read(buf, *serialization, arena);
     }
 
     bool allocatesMemoryInArena() const override

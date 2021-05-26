@@ -82,7 +82,7 @@ def feature(self, node="clickhouse1"):
     Scenario(run=grant_privileges)
 
     # with nonexistant object name, GRANT assumes type role
-    with Scenario("I grant privilege to role that does not exist", flags=TE, requirements=[
+    with Scenario("I grant privilege to role that does not exist", requirements=[
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with Given("I ensure that role does not exist"):
             node.query("DROP ROLE IF EXISTS role0")
@@ -90,35 +90,35 @@ def feature(self, node="clickhouse1"):
             exitcode, message = errors.role_not_found_in_disk(name="role0")
             node.query("GRANT NONE TO role0", exitcode=exitcode, message=message)
 
-    with Scenario("I grant privilege ON CLUSTER", flags=TE, requirements=[
+    with Scenario("I grant privilege ON CLUSTER", requirements=[
             RQ_SRS_006_RBAC_Grant_Privilege_OnCluster("1.0"),
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
             with When("I grant privilege ON CLUSTER"):
                 node.query("GRANT ON CLUSTER sharded_cluster NONE TO user0")
 
-    with Scenario("I grant privilege on fake cluster, throws exception", flags=TE, requirements=[
+    with Scenario("I grant privilege on fake cluster, throws exception", requirements=[
             RQ_SRS_006_RBAC_Grant_Privilege_OnCluster("1.0")]):
         with setup(node):
             with When("I grant privilege ON CLUSTER"):
                 exitcode, message = errors.cluster_not_found("fake_cluster")
                 node.query("GRANT ON CLUSTER fake_cluster NONE TO user0", exitcode=exitcode, message=message)
 
-    with Scenario("I grant privilege to multiple users and roles", flags=TE, requirements=[
+    with Scenario("I grant privilege to multiple users and roles", requirements=[
             RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
             with When("I grant privilege to several users"):
                 node.query("GRANT NONE TO user0, user1, role1")
 
-    with Scenario("I grant privilege to current user", flags=TE, requirements=[
+    with Scenario("I grant privilege to current user", requirements=[
             RQ_SRS_006_RBAC_Grant_Privilege_ToCurrentUser("1.0"),
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
             with When("I grant privilege to current user"):
                 node.query("GRANT NONE TO CURRENT_USER", settings = [("user","user0")])
 
-    with Scenario("I grant privilege NONE to default user, throws exception", flags=TE, requirements=[
+    with Scenario("I grant privilege NONE to default user, throws exception", requirements=[
             RQ_SRS_006_RBAC_Grant_Privilege_ToCurrentUser("1.0"),
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
@@ -126,7 +126,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.cannot_update_default()
                 node.query("GRANT NONE TO CURRENT_USER", exitcode=exitcode, message=message)
 
-    with Scenario("I grant privilege with grant option", flags=TE, requirements=[
+    with Scenario("I grant privilege with grant option", requirements=[
             RQ_SRS_006_RBAC_Grant_Privilege_GrantOption("1.0"),
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):

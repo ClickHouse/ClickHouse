@@ -51,7 +51,7 @@ void EmbeddedRocksDBBlockOutputStream::write(const Block & block)
         size_t idx = 0;
         for (const auto & elem : block)
         {
-            elem.type->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value);
+            elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value);
             ++idx;
         }
         status = batch.Put(wb_key.str(), wb_value.str());

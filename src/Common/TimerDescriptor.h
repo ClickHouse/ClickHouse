@@ -12,19 +12,19 @@ private:
     int timer_fd;
 
 public:
-    explicit TimerDescriptor(int clockid, int flags);
+    explicit TimerDescriptor(int clockid = CLOCK_MONOTONIC, int flags = 0);
     ~TimerDescriptor();
 
     TimerDescriptor(const TimerDescriptor &) = delete;
     TimerDescriptor & operator=(const TimerDescriptor &) = delete;
-    TimerDescriptor(TimerDescriptor &&) = default;
+    TimerDescriptor(TimerDescriptor && other);
     TimerDescriptor & operator=(TimerDescriptor &&) = default;
 
     int getDescriptor() const { return timer_fd; }
 
     void reset() const;
     void drain() const;
-    void setRelative(const Poco::Timespan & timespan) const;
+    void setRelative(Poco::Timespan timespan) const;
 };
 
 }
