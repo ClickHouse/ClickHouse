@@ -27,8 +27,9 @@ sumCount(x)
 Запрос:
 
 ``` sql
-CREATE TABLE test (x Int8) Engine = Log;
+CREATE TABLE test (x Nullable(Int8)) Engine = Log;
 INSERT INTO test SELECT number FROM numbers(1, 20);
+INSERT INTO test VALUES (NULL);
 SELECT sumCount(x) from test;
 ```
 
