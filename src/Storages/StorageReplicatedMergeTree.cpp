@@ -2505,7 +2505,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(
-                metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
+                metadata_snapshot, getContext(), part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
@@ -2621,7 +2621,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                                 ErrorCodes::LOGICAL_ERROR);
 
             return fetcher.fetchPart(
-                metadata_snapshot, entry.new_part_name, source_replica_path,
+                metadata_snapshot, getContext(), entry.new_part_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, true);
         };
@@ -4021,6 +4021,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
             return fetcher.fetchPart(
                 metadata_snapshot,
+                getContext(),
                 part_name,
                 source_replica_path,
                 address.host,
@@ -4176,7 +4177,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
                 ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
         return fetcher.fetchPart(
-            metadata_snapshot, part_name, source_replica_path,
+            metadata_snapshot, getContext(), part_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, "", nullptr, true,
             replaced_disk);
@@ -5004,7 +5005,10 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
         auto zookeeper = getZooKeeper();
         delimiting_block_lock = allocateBlockNumber(partition_id, zookeeper);
         right = delimiting_block_lock->getNumber();
-        mutation_version = queue.getCurrentMutationVersion(partition_id, right);
+        /// Make sure we cover all parts in drop range.
+        /// There might be parts with mutation version greater than current block number
+        /// if some part mutation has been assigned after block number allocation, but before creation of DROP_RANGE entry.
+        mutation_version = MergeTreePartInfo::MAX_BLOCK_NUMBER;
     }
 
     if (for_replace_range)
