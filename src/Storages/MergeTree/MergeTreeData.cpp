@@ -2725,6 +2725,22 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
+            /// We do not check allow_s3_zero_copy_replication here because data may be shared
+            /// when allow_s3_zero_copy_replication turned on and off again
+
+            original_active_part->keep_s3_on_delete = false;
+
+            if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
+            {
+                if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
+                        && original_active_part->getUniqueId() == part_copy->getUniqueId())
+                {   /// May be when several volumes use the same S3 storage
+                    original_active_part->keep_s3_on_delete = true;
+                }
+                else
+                    original_active_part->keep_s3_on_delete = !unlockSharedData(*original_active_part);
+            }
+
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
             data_parts_indexes.erase(active_part_it);
 
