@@ -468,7 +468,7 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", "config.xml");
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     DB::ConfigProcessor config_processor(config_path, false, true);
     config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
@@ -514,6 +514,11 @@ void BaseDaemon::kill()
 std::string BaseDaemon::getDefaultCorePath() const
 {
     return "/opt/cores/";
+}
+
+std::string BaseDaemon::getDefaultConfigFileName() const
+{
+    return "config.xml";
 }
 
 void BaseDaemon::closeFDs()

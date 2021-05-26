@@ -96,6 +96,11 @@ struct ModuloByConstantImpl
     }
 };
 
+template <typename A, typename B>
+struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
+{
+    using Op = ModuloLegacyImpl<A, B>;
+};
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -132,6 +137,14 @@ void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
+}
+
+struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
+using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
+
+void registerFunctionModuloLegacy(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionModuloLegacy>();
 }
 
 }
