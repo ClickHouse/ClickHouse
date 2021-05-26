@@ -66,6 +66,7 @@
 #include "Parsers/ASTPartition.h"
 
 #include <ctime>
+#include <filesystem>
 #include <numeric>
 #include <thread>
 #include <future>
@@ -1471,7 +1472,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     {
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
         {
-            LOG_TRACE(log, "Found valid part to attach from local data, preparing the transaction");
+            LOG_TRACE(log, "Found valid local part for {}, preparing the transaction", part->name);
 
             Transaction transaction(*this);
 
@@ -1484,7 +1485,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             return true;
         }
 
-        LOG_TRACE(log, "Didn't find part with the correct checksums, will fetch it from other replica");
+        LOG_TRACE(log, "Didn't find valid local part for {} ({}), will fetch it from other replica",
+            entry.new_part_name,
+            entry.actual_new_part_name);
     }
 
     if (is_get_or_attach && entry.source_replica == replica_name)
@@ -4983,7 +4986,16 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
     removePartsFromWorkingSetImmediatelyAndSetTemporaryState(parts);
 
     for (const auto & part : parts)
+    {
+        const DiskPtr disk = part->volume->getDisk();
+
+        if (const String path = relative_data_path + "detached/" + part->getRelativePathForPrefix("");
+            disk->exists(path))
+            disk->removeRecursive(path);
+
+        // It may happen part with specified name was in detached, but we don't care about it
         part->makeCloneInDetached("", metadata_snapshot);
+    }
 
     const bool is_first_replica = createTableIfNotExists(metadata_snapshot);
 

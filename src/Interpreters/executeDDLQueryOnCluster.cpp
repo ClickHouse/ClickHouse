@@ -101,12 +101,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     /// The current database in a distributed query need to be replaced with either
     /// the local current database or a shard's default database.
-    bool need_replace_current_database
-        = (std::find_if(
-            query_requires_access.begin(),
-            query_requires_access.end(),
-            [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
-           != query_requires_access.end());
+    bool need_replace_current_database = std::any_of(
+        query_requires_access.begin(),
+        query_requires_access.end(),
+        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();

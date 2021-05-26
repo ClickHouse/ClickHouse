@@ -1,14 +1,11 @@
+#include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
-#include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Common/ShellCommand.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -36,29 +33,11 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
-#include "Core/QueryProcessingStage.h"
-#include "Interpreters/executeQuery.h"
-#include "Parsers/ParserAlterQuery.h"
-#include "Parsers/ParserDropQuery.h"
-#include "Parsers/ParserRenameQuery.h"
-#include "Parsers/ParserSelectQuery.h"
-#include "Parsers/ParserSystemQuery.h"
-#include "Processors/Executors/PullingPipelineExecutor.h"
-#include "Storages/System/StorageSystemParts.h"
-
-#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Poco/DirectoryIterator.h>
-
 #include <csignal>
 #include <algorithm>
-#include <memory>
-#include <filesystem>
-#include <system_error>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -317,8 +296,8 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError(
-                    [&] () { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
-                    [&] () { system_context->getEmbeddedDictionaries().reload(); }
+                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
+                [&] { system_context->getEmbeddedDictionaries().reload(); }
             );
             ExternalDictionariesLoader::resetAll();
             break;
@@ -460,7 +439,7 @@ void InterpreterSystemQuery::restoreReplica()
     const String& db_name = table_id.database_name;
     const String& table_name = table_id.table_name;
 
-    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable({db_name, table_name}, getContext());
+    const StoragePtr table_ptr = DatabaseCatalog::instance().tryGetTable({db_name, table_name}, getContext());
 
     if (!table_ptr)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no table \"{}.{}\"", db_name, table_name);

@@ -279,20 +279,25 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ### RESTORE REPLICA {#query_language-system-restore-replica}
 
 Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
-Works when ZooKeeper root `/` is removed. Replica attaches locally found parts and sends info about them to Zookeeper.
+Works when ZooKeeper root `/` is lost. 
+
+Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present in replica before metadata loss are not re-fetched from other replicas if not being outdated
 (so the replica restoration does not mean re-downloading all data over the network).
+
+Do not use this query if any replica path `/replicas/name` is present as in that case data will get duplicated.
 
 #### Syntax
 
 ``` sql
-SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 #### Example
 
 ```sql
 -- Creating table on multiple servers
+
 CREATE TABLE test(n UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
 ORDER BY n PARTITION BY n % 10;
@@ -304,11 +309,6 @@ INSERT INTO test SELECT * FROM numbers(1000);
 SYSTEM RESTART REPLICA test; -- Table will attach as readonly as metadata is missing.
 SYSTEM RESTORE REPLICA test;
 ```
-
-#### ON CLUSTER
-
-ClickHouse executed the query on all the servers of a specified cluster.
-More details in a [Distributed DDL](../../../sql-reference/distributed-ddl.md) article.
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 
