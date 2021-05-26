@@ -379,7 +379,7 @@ COMMENT 'Comment';
 Query:
 
 ``` sql
-CREATE TABLE table1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
 SELECT name,comment FROM system.tables WHERE name = 't1';
 ```
 
@@ -394,7 +394,7 @@ Result:
 Query:
 
 ``` sql
-CREATE TABLE t2 (x String) ENGINE = Memory COMMENT 'The MergeTree table';
+CREATE TABLE t2 (x String) ENGINE = MergeTree ORDER BY x COMMENT 'The MergeTree table';
 SELECT name,comment FROM system.tables WHERE name = 't2';
 ```
 
@@ -410,7 +410,7 @@ Result:
 Query:
 
 ``` sql
-CREATE TABLE t3 (x String) ENGINE = Memory COMMENT 'The Log table';
+CREATE TABLE t3 (x String) ENGINE = Log COMMENT 'The Log table';
 SELECT name,comment FROM system.tables WHERE name = 't3';
 ```
 
