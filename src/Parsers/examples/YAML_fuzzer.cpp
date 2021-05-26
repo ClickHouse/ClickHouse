@@ -26,7 +26,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     temp_file << input;
     temp_file.close();
 
-    DB::YAMLParser::parse(cur_file);
+    try
+    {
+        DB::YAMLParser::parse(cur_file);
+    }
+    catch (const DB::Exception&)
+    {
+        std::cout << "YAMLParser exception from bad file, etc. OK\n";
+    }
 
     remove(cur_file.c_str());
     return 0;
