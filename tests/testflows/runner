@@ -126,7 +126,7 @@ if __name__ == "__main__":
         move_from = os.path.join(args.clickhouse_root, 'tests/testflows')
         status = os.path.join(move_from, 'check_status.tsv')
         results = os.path.join(move_from, 'test_results.tsv')
-        clickhouse_logs = os.path.join(move_from, 'clickhouse_logs.tar')
+        clickhouse_logs = os.path.join(move_from, 'clickhouse_logs.tar.gz')
         subprocess.call("mv {} {}".format(status, result_path), shell=True)
         subprocess.call("mv {} {}".format(results, result_path), shell=True)
         subprocess.call("mv {} {}".format(clickhouse_logs, result_path), shell=True)
