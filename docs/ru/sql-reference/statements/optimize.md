@@ -131,7 +131,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-Дедупликация по всем столбцам, кроме `ALIAS` и `MATERIALIZED` (BY `*`), и с исключением столбца `value`: `primary_key`, `secondary_key` и `partition_key`.
+Дедупликация по всем столбцам, кроме `ALIAS` и `MATERIALIZED` (`BY *`), и с исключением столбца `value`: `primary_key`, `secondary_key` и `partition_key`.
 ``` sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
 ```
