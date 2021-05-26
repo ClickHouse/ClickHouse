@@ -200,7 +200,7 @@ Provides possibility to start background move data according to [TTL table expre
 Returns `Ok.` even if table doesn’t exist. Returns error when database doesn’t exist:
 
 ``` sql
-SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
+SYSTEM START MOVES [[db.]merge_tree_family_table_name]
 ```
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
