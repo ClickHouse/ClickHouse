@@ -58,7 +58,11 @@ public:
     {
         if (types.empty())
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " require at least one argument");
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " requires at least one argument");
+
+        if (types.size() > 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " requires only one map argument");
 
         const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
         if (!map_type)
@@ -103,7 +107,7 @@ public:
             if (it == merged_maps.end())
             {
                 // create a new place for each key
-                nested_place = arena->alloc(nested_func->sizeOfData());
+                nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
                 nested_func->create(nested_place);
                 merged_maps.emplace(key, nested_place);
             }
@@ -157,7 +161,7 @@ public:
             AggregateDataPtr nested_place;
 
             this->data(place).readKey(key, buf);
-            nested_place = arena->alloc(nested_func->sizeOfData());
+            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
             nested_func->create(nested_place);
             merged_maps.emplace(key, nested_place);
             nested_func->deserialize(nested_place, buf, arena);
@@ -175,8 +179,6 @@ public:
 
         auto & merged_maps = this->data(place).merged_maps;
 
-        size_t res_offset = 0;
-
         // sort the keys
         std::vector<KeyType> keys;
         keys.reserve(merged_maps.size());
@@ -189,14 +191,12 @@ public:
         // insert using sorted keys to result column
         for (auto & key : keys)
         {
-            res_offset++;
             key_column.insert(key);
             nested_func->insertResultInto(merged_maps[key], val_column, arena);
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
-        auto last_offset = res_offsets[res_offsets.size() - 1];
-        res_offsets.push_back(last_offset + res_offset);
+        res_offsets.push_back(val_column.size());
     }
 
     bool allocatesMemoryInArena() const override { return true; }
