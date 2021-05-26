@@ -99,7 +99,7 @@ SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 
 **Смотрите также**
 
--   [Функция dictionary](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+-   [Функция dictionary](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
 ## Исполняемый файл {#dicts-external_dicts_dict_sources-executable}
 

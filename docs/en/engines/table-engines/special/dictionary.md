@@ -96,4 +96,4 @@ select * from products limit 1;
 
 **See Also**
 
--   [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+-   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
