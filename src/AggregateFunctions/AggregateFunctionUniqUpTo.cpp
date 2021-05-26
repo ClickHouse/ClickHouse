@@ -45,6 +45,11 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
     if (argument_types.empty())
         throw Exception("Incorrect number of arguments for aggregate function " + name,
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    const WhichDataType t(argument_types[0]);
+    if (t.isAggregateFunction())
+        throw Exception(
+            "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
 
