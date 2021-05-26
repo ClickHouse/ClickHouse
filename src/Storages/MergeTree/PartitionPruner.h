@@ -21,7 +21,7 @@ private:
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
 public:
-    PartitionPruner(const KeyDescription & partition_key_, const SelectQueryInfo & query_info, ContextPtr context, bool strict)
+    PartitionPruner(const KeyDescription & partition_key_, const SelectQueryInfo & query_info, const Context & context, bool strict)
         : partition_key(partition_key_)
         , partition_condition(
               query_info, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict)
@@ -29,11 +29,9 @@ public:
     {
     }
 
-    bool canBePruned(const DataPart & part);
+    bool canBePruned(const DataPartPtr & part);
 
     bool isUseless() const { return useless; }
-
-    const KeyCondition & getKeyCondition() const { return partition_condition; }
 };
 
 }

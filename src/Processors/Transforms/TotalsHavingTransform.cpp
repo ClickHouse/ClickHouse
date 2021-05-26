@@ -28,13 +28,15 @@ void finalizeChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-Block TotalsHavingTransform::transformHeader(Block block, const ActionsDAG * expression, bool final)
+Block TotalsHavingTransform::transformHeader(Block block, const ExpressionActionsPtr & expression, bool final)
 {
     if (final)
         finalizeBlock(block);
 
+    size_t num_rows = block.rows();
+
     if (expression)
-        block = expression->updateHeader(std::move(block));
+        expression->execute(block, num_rows);
 
     return block;
 }
@@ -47,7 +49,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)

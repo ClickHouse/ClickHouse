@@ -47,7 +47,7 @@ done
 
 echo "$query_result"
 
-$CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id' and database='$CLICKHOUSE_DATABASE'"
+$CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id'"
 
 check_query="SELECT sum(parts_to_do) FROM system.mutations WHERE table='mutation_table' and database='$CLICKHOUSE_DATABASE'"
 

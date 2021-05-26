@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test max_ignored_relative_change="0.3">
     <create_query>
         CREATE TABLE simple_key_hashed_dictionary_source_table
         (
@@ -81,37 +81,35 @@
         <substitution>
             <name>elements_count</name>
             <values>
+                <value>2500000</value>
                 <value>5000000</value>
                 <value>7500000</value>
+                <value>10000000</value>
             </values>
         </substitution>
     </substitutions>
 
     <query>
-        WITH rand64() % toUInt64({elements_count}) as key
-        SELECT dictGet('default.simple_key_hashed_dictionary', {column_name}, key)
+        SELECT dictGet('default.simple_key_hashed_dictionary', {column_name}, number)
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
     </query>
     <query>
-        WITH rand64() % toUInt64({elements_count}) as key
-        SELECT dictHas('default.simple_key_hashed_dictionary', key)
+        SELECT dictHas('default.simple_key_hashed_dictionary', number)
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
     </query>
 
     <query>
-        WITH (rand64() % toUInt64({elements_count}), toString(rand64() % toUInt64({elements_count}))) as key
-        SELECT dictGet('default.complex_key_hashed_dictionary', {column_name}, key)
+        SELECT dictGet('default.complex_key_hashed_dictionary', {column_name}, (number, toString(number)))
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
     </query>
     <query>
-        WITH (rand64() % toUInt64({elements_count}), toString(rand64() % toUInt64({elements_count}))) as key
-        SELECT dictHas('default.complex_key_hashed_dictionary', key)
+        SELECT dictHas('default.complex_key_hashed_dictionary', (number, toString(number)))
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;

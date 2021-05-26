@@ -49,10 +49,11 @@ template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThrow(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr)
 {
     if (finished)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
+        throw Exception{"CacheDictionaryUpdateQueue finished", ErrorCodes::UNSUPPORTED_METHOD};
 
     if (!update_queue.tryPush(update_unit_ptr, configuration.update_queue_push_timeout_milliseconds))
-        throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+        throw DB::Exception(
+            ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
             "Cannot push to internal update queue in dictionary {}. "
             "Timelimit of {} ms. exceeded. Current queue size is {}",
             dictionary_name_for_logs,
@@ -64,7 +65,7 @@ template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const
 {
     if (finished)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
+        throw Exception{"CacheDictionaryUpdateQueue finished", ErrorCodes::UNSUPPORTED_METHOD};
 
     std::unique_lock<std::mutex> update_lock(update_mutex);
 

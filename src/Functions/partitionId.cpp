@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 
 
@@ -23,7 +23,7 @@ class FunctionPartitionId : public IFunction
 public:
     static constexpr auto name = "partitionId";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPartitionId>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPartitionId>(); }
 
     String getName() const override { return name; }
 

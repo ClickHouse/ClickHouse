@@ -196,19 +196,4 @@ void DiskDecorator::onFreeze(const String & path)
     delegate->onFreeze(path);
 }
 
-void DiskDecorator::shutdown()
-{
-    delegate->shutdown();
-}
-
-void DiskDecorator::startup()
-{
-    delegate->startup();
-}
-
-void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context)
-{
-    delegate->applyNewSettings(config, context);
-}
-
 }

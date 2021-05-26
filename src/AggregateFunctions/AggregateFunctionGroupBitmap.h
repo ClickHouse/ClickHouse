@@ -22,8 +22,6 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).rbs.add(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
@@ -57,8 +55,6 @@ public:
     String getName() const override { return Data::name(); }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

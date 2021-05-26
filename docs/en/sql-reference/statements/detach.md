@@ -10,7 +10,7 @@ Makes the server "forget" about the existence of the table or materialized view.
 Syntax:
 
 ``` sql
-DETACH TABLE|VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY]
+DETACH TABLE|VIEW [IF EXISTS] [db.]name [PERMANENTLY] [ON CLUSTER cluster]
 ```
 
 Detaching does not delete the data or metadata for the table or materialized view. If the table or view was not detached `PERMANENTLY`, on the next server launch the server will read the metadata and recall the table/view again. If the table or view was detached `PERMANENTLY`, there will be no automatic recall. 

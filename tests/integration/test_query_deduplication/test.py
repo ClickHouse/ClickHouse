@@ -11,18 +11,15 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     'node1',
-    main_configs=['configs/remote_servers.xml', 'configs/deduplication_settings.xml'],
-    user_configs=['configs/profiles.xml'])
+    main_configs=['configs/remote_servers.xml', 'configs/deduplication_settings.xml'])
 
 node2 = cluster.add_instance(
     'node2',
-    main_configs=['configs/remote_servers.xml', 'configs/deduplication_settings.xml'],
-    user_configs=['configs/profiles.xml'])
+    main_configs=['configs/remote_servers.xml', 'configs/deduplication_settings.xml'])
 
 node3 = cluster.add_instance(
     'node3',
-    main_configs=['configs/remote_servers.xml', 'configs/deduplication_settings.xml'],
-    user_configs=['configs/profiles.xml'])
+    main_configs=['configs/remote_servers.xml', 'configs/deduplication_settings.xml'])
 
 
 @pytest.fixture(scope="module")

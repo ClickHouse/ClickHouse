@@ -9,13 +9,13 @@ namespace DB
 BuildQueryPipelineSettings BuildQueryPipelineSettings::fromSettings(const Settings & from)
 {
     BuildQueryPipelineSettings settings;
-    settings.actions_settings = ExpressionActionsSettings::fromSettings(from, CompileExpressions::yes);
+    settings.actions_settings = ExpressionActionsSettings::fromSettings(from);
     return settings;
 }
 
-BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(ContextPtr from)
+BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(const Context & from)
 {
-    return fromSettings(from->getSettingsRef());
+    return fromSettings(from.getSettingsRef());
 }
 
 }

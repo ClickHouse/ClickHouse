@@ -388,7 +388,7 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
 {
     time_t current_time = time(nullptr);
 
-    if (last_decrease_time) //-V1051
+    if (last_decrease_time)
     {
         time_t delta = current_time - last_decrease_time;
 

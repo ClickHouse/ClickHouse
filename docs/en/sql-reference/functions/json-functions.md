@@ -16,60 +16,46 @@ The following assumptions are made:
 
 ## visitParamHas(params, name) {#visitparamhasparams-name}
 
-Checks whether there is a field with the `name` name.
-
-Alias: `simpleJSONHas`.
+Checks whether there is a field with the ‘name’ name.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
-Parses UInt64 from the value of the field named `name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field doesn’t exist, or it exists but doesn’t contain a number, it returns 0.
-
-Alias: `simpleJSONExtractUInt`.
+Parses UInt64 from the value of the field named ‘name’. If this is a string field, it tries to parse a number from the beginning of the string. If the field doesn’t exist, or it exists but doesn’t contain a number, it returns 0.
 
 ## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
 
 The same as for Int64.
 
-Alias: `simpleJSONExtractInt`.
-
 ## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
 
 The same as for Float64.
-
-Alias: `simpleJSONExtractFloat`.
 
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
 Parses a true/false value. The result is UInt8.
 
-Alias: `simpleJSONExtractBool`.
-
 ## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
 
 Returns the value of a field, including separators.
 
-Alias: `simpleJSONExtractRaw`.
-
 Examples:
 
 ``` sql
-visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"';
-visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
+visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
+visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
 
 ## visitParamExtractString(params, name) {#visitparamextractstringparams-name}
 
 Parses the string in double quotes. The value is unescaped. If unescaping failed, it returns an empty string.
 
-Alias: `simpleJSONExtractString`.
-
 Examples:
 
 ``` sql
-visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0';
-visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺';
-visitParamExtractString('{"abc":"\\u263"}', 'abc') = '';
-visitParamExtractString('{"abc":"hello}', 'abc') = '';
+visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
+visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
+visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
+visitParamExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
