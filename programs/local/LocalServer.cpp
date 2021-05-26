@@ -38,6 +38,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/StatusFile.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -428,9 +429,7 @@ try
 
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
 
-    server_display_name = config().getString("host", "localhost");
-
-    server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+    server_display_name = config().getString("display_name", getFQDNOrHostName());
 
     /// Prompt may contain the following substitutions in a form of {name}.
     std::map<String, String> prompt_substitutions{
