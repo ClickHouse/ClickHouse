@@ -26,6 +26,7 @@
 #include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
@@ -239,6 +240,16 @@ public:
     /// Get best replica having this partition on S3
     String getSharedDataReplica(const IMergeTreeDataPart & part) const;
 
+    ThrottlerPtr getFetchesThrottler() const
+    {
+        return replicated_fetches_throttler;
+    }
+
+    ThrottlerPtr getSendsThrottler() const
+    {
+        return replicated_sends_throttler;
+    }
+
 private:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
@@ -362,6 +373,9 @@ private:
     const bool allow_renaming;
 
     const size_t replicated_fetches_pool_size;
+
+    ThrottlerPtr replicated_fetches_throttler;
+    ThrottlerPtr replicated_sends_throttler;
 
     template <class Func>
     void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
