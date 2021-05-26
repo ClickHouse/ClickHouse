@@ -259,7 +259,7 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextPtr buffer_context;  /// Buffer context. Could be equal to this.
 
-    /// A flag, used to distinquish between user query and internal query to a database engine (MaterializePostgreSQL).
+    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
     bool is_internal_query = false;
 
 public:

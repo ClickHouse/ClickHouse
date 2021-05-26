@@ -78,7 +78,7 @@ private:
 
     void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
-    PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name);
+    PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
 
     Poco::Logger * log;
     ContextPtr context;
@@ -120,6 +120,8 @@ private:
 
     /// MaterializePostgreSQL tables. Used for managing all operations with its internal nested tables.
     MaterializedStorages materialized_storages;
+
+    UInt64 milliseconds_to_wait;
 };
 
 }

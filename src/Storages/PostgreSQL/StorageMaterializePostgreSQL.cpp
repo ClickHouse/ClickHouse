@@ -406,11 +406,11 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
     ordinary_columns_and_types.push_back({"_sign", std::make_shared<DataTypeInt8>()});
     ordinary_columns_and_types.push_back({"_version", std::make_shared<DataTypeUInt64>()});
 
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(ColumnsDescription(ordinary_columns_and_types));
-    metadata.setConstraints(metadata_snapshot->getConstraints());
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(ColumnsDescription(ordinary_columns_and_types));
+    storage_metadata.setConstraints(metadata_snapshot->getConstraints());
 
-    setInMemoryMetadata(metadata);
+    setInMemoryMetadata(storage_metadata);
 
     return create_table_query;
 }

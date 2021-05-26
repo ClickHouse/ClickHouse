@@ -14,11 +14,12 @@
 namespace DB
 {
 
-static const auto reschedule_ms = 500;
+static const auto RESCHEDULE_MS = 500;
+static const auto BACKOFF_TRESHOLD = 32000;
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TABLE;
+    extern const int LOGICAL_ERROR;
 }
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
@@ -41,6 +42,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , is_materialize_postgresql_database(is_materialize_postgresql_database_)
     , tables_list(tables_list_)
     , connection(std::make_shared<postgres::Connection>(connection_info_))
+    , milliseconds_to_wait(RESCHEDULE_MS)
 {
     replication_slot = fmt::format("{}_ch_replication_slot", replication_identifier);
     publication_name = fmt::format("{}_ch_publication", replication_identifier);
@@ -72,7 +74,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     catch (const pqxx::broken_connection & pqxx_error)
     {
         LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}", pqxx_error.what());
-        startup_task->scheduleAfter(reschedule_ms);
+        startup_task->scheduleAfter(RESCHEDULE_MS);
     }
     catch (...)
     {
@@ -256,9 +258,16 @@ void PostgreSQLReplicationHandler::consumerFunc()
         return;
 
     if (schedule_now)
+    {
         consumer_task->schedule();
+        milliseconds_to_wait = RESCHEDULE_MS;
+    }
     else
-        consumer_task->scheduleAfter(reschedule_ms);
+    {
+        consumer_task->scheduleAfter(milliseconds_to_wait);
+        if (milliseconds_to_wait < BACKOFF_TRESHOLD)
+            milliseconds_to_wait *= 2;
+    }
 }
 
 
@@ -448,7 +457,7 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx
 
 
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
-        pqxx::ReplicationTransaction & tx, const std::string & table_name)
+        pqxx::ReplicationTransaction & tx, const std::string & table_name) const
 {
     if (!is_materialize_postgresql_database)
         return nullptr;
