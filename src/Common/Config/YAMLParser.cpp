@@ -57,7 +57,15 @@ void processNode(const YAML::Node & node, Poco::XML::Element & parent_xml_elemen
     {
         case YAML::NodeType::Scalar:
         {
-            auto value = node.as<std::string>();
+            std::string value;
+            try
+            {
+                value = node.as<std::string>();
+            }
+            catch (const YAML::TypedBadConversion<std::string>&)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with value which cannot be represented as string and cannot continue parsing of the file");
+            }
             Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(value);
             parent_xml_element.appendChild(xml_value);
             break;
@@ -110,13 +118,29 @@ void processNode(const YAML::Node & node, Poco::XML::Element & parent_xml_elemen
             {
                 const auto & key_node = key_value_pair.first;
                 const auto & value_node = key_value_pair.second;
-                auto key = key_node.as<std::string>();
+                std::string key;
+                try
+                {
+                    key = key_node.as<std::string>();
+                }
+                catch (const YAML::TypedBadConversion<std::string>&)
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with key which cannot be represented as string and cannot continue parsing of the file");
+                }
                 bool is_attribute = (key.starts_with(YAML_ATTRIBUTE_PREFIX) && value_node.IsScalar());
                 if (is_attribute)
                 {
                     /// we use substr(1) here to remove YAML_ATTRIBUTE_PREFIX from key
                     auto attribute_name = key.substr(1);
-                    auto value = value_node.as<std::string>();
+                    std::string value;
+                    try
+                    {
+                        value = value_node.as<std::string>();
+                    }
+                    catch (const YAML::TypedBadConversion<std::string>&)
+                    {
+                        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with value which cannot be represented as string and cannot continue parsing of the file");
+                    }
                     parent_xml_element.setAttribute(attribute_name, value);
                 }
                 else

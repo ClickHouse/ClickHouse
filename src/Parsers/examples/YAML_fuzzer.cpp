@@ -25,7 +25,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     std::ofstream temp_file(cur_file);
     temp_file << input;
     temp_file.close();
-    
+
     DB::YAMLParser::parse(cur_file);
 
     remove(cur_file.c_str());

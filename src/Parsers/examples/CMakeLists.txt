@@ -18,4 +18,7 @@ if (ENABLE_FUZZING)
 
     add_executable(create_parser_fuzzer create_parser_fuzzer.cpp ${SRCS})
     target_link_libraries(create_parser_fuzzer PRIVATE clickhouse_parsers ${LIB_FUZZING_ENGINE})
+    
+    add_executable(YAML_fuzzer YAML_fuzzer.cpp ${SRCS})
+    target_link_libraries(YAML_fuzzer PRIVATE clickhouse_parsers ${LIB_FUZZING_ENGINE})
 endif ()
