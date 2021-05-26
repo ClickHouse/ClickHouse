@@ -272,6 +272,7 @@
         "01145_with_fill_const",
         "01149_zookeeper_mutation_stuck_after_replace_partition",
         "01150_ddl_guard_rwr",
+        "01155_old_mutation_parts_to_do",
         "01185_create_or_replace_table",
         "01187_set_profile_as_setting",
         "01188_attach_table_from_path",
