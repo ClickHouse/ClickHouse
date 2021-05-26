@@ -42,7 +42,7 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_fu
 Query:
 
 ``` sql
-SELECT * FROM dictionary('table_function_dictionary_test_dictionary');
+SELECT * FROM dictionary('new_dictionary');
 ```
 
 Result:
