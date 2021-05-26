@@ -449,7 +449,7 @@ void QueryPlan::explainEstimates(MutableColumns & columns)
     using CountersPtr = std::shared_ptr<EstimateCounters>;
     std::unordered_map<std::string, CountersPtr> counters;
     using processNodeFuncType = std::function<void(const Node * node)>;
-    processNodeFuncType processNode = [&counters, &processNode] (const Node * node)
+    processNodeFuncType process_node = [&counters, &process_node] (const Node * node)
     {
         if (!node)
             return;
@@ -467,9 +467,9 @@ void QueryPlan::explainEstimates(MutableColumns & columns)
             it->second->marks += step->getSelectedMarks();
         }
         for (const auto * child : node->children)
-            processNode(child);
+            process_node(child);
     };
-    processNode(root);
+    process_node(root);
 
     for (const auto & counter : counters)
     {
