@@ -122,7 +122,7 @@ struct MergeTreeDataSelectCache;
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
-    const ProjectionDescription * desc;
+    const ProjectionDescription * desc{};
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
     String where_column_name;
@@ -169,6 +169,9 @@ struct SelectQueryInfo
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
+
+    /// Cached value of ExpressionAnalysisResult::has_window
+    bool has_window = false;
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 

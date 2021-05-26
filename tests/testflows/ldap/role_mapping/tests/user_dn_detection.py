@@ -33,7 +33,7 @@ def check_config(self, entries, valid=True, ldap_server="openldap1", user="user1
 @TestScenario
 @Tags("config")
 @Requirements(
-    # FIXME
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_BaseDN("1.0")
 )
 def config_invalid_base_dn(self):
     """Check when invalid `base_dn` is specified in the user_dn_detection section.
@@ -62,7 +62,7 @@ def config_invalid_base_dn(self):
 @TestScenario
 @Tags("config")
 @Requirements(
-    # FIXME
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_BaseDN("1.0")
 )
 def config_empty_base_dn(self):
     """Check when empty `base_dn` is specified in the user_dn_detection section.
@@ -90,7 +90,7 @@ def config_empty_base_dn(self):
 @TestScenario
 @Tags("config")
 @Requirements(
-    # FIXME
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_BaseDN("1.0")
 )
 def config_missing_base_dn(self):
     """Check when missing `base_dn` is specified in the user_dn_detection section.
@@ -145,7 +145,7 @@ def config_invalid_search_filter(self):
 @TestScenario
 @Tags("config")
 @Requirements(
-    # FIXME
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_SearchFilter("1.0")
 )
 def config_missing_search_filter(self):
     """Check when missing `search_filter` is specified in the user_dn_detection section.
@@ -172,7 +172,7 @@ def config_missing_search_filter(self):
 @TestScenario
 @Tags("config")
 @Requirements(
-    # FIXME
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_SearchFilter("1.0")
 )
 def config_empty_search_filter(self):
     """Check when empty `search_filter` is specified in the user_dn_detection section.
@@ -200,7 +200,8 @@ def config_empty_search_filter(self):
 @TestScenario
 @Tags("config")
 @Requirements(
-    # FIXME
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_BaseDN("1.0"),
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_SearchFilter("1.0")
 )
 def config_valid(self):
     """Check valid config with valid user_dn_detection section.
@@ -228,7 +229,8 @@ def config_valid(self):
 @TestScenario
 @Tags("config")
 @Requirements(
-    # FIXME
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_BaseDN("1.0"),
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_SearchFilter("1.0")
 )
 def config_valid_tls_connection(self):
     """Check valid config with valid user_dn_detection section when
@@ -256,6 +258,9 @@ def config_valid_tls_connection(self):
     check_config(entries=entries, valid=True, ldap_server="openldap2", user="user2", password="user2")
 
 @TestOutline(Scenario)
+@Requirements(
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection_Scope("1.0")
+)
 @Examples("scope base_dn", [
     ("base", "cn=user1,ou=users,dc=company,dc=com"),
     ("one_level","ou=users,dc=company,dc=com"),
@@ -399,9 +404,6 @@ def setup_different_bind_dn_and_user_dn(self, uid, map_by, user_dn_detection):
             role_mappings=role_mappings, restart=True)
 
 @TestScenario
-@Requirements(
-    # FIXME:
-)
 def map_roles_by_user_dn_when_base_dn_and_user_dn_are_different(self):
     """Check the case when we map roles using user_dn then
     the first user has uid of second user and second user
@@ -429,9 +431,6 @@ def map_roles_by_user_dn_when_base_dn_and_user_dn_are_different(self):
         assert f"GRANT role0_{uid} TO second_user" in r.output, error()
 
 @TestScenario
-@Requirements(
-    # FIXME:
-)
 def map_roles_by_bind_dn_when_base_dn_and_user_dn_are_different(self):
     """Check the case when we map roles by bind_dn when bind_dn and user_dn
     are different.
@@ -457,7 +456,7 @@ def map_roles_by_bind_dn_when_base_dn_and_user_dn_are_different(self):
 @TestFeature
 @Name("user dn detection")
 @Requirements(
-    #RQ_SRS_014_LDAP_UserDNDetection("1.0")
+    RQ_SRS_014_LDAP_RoleMapping_Configuration_Server_UserDNDetection("1.0")
 )
 def feature(self):
     """Check LDAP user DN detection.

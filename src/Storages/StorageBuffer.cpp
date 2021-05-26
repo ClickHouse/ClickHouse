@@ -674,7 +674,7 @@ void StorageBuffer::startup()
 }
 
 
-void StorageBuffer::shutdown()
+void StorageBuffer::flush()
 {
     if (!flush_handle)
         return;
