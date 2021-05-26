@@ -348,7 +348,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
-Эта настройка используется для запросов `INSERT ... VALUES` для текстовых входных форматов.
+Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
 
 ## insert_null_as_default {#insert_null_as_default}
 
