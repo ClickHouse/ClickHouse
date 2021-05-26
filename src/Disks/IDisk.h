@@ -7,7 +7,6 @@
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
-#include "Disks/Executor.h"
 
 #include <memory>
 #include <mutex>
