@@ -3024,7 +3024,8 @@ Result:
 SELECT
     sum(a),
     sumCount(b).1,
-    sumCount(b).2
+    sumCount(b).2,
+    (sumCount(b).1) / (sumCount(b).2)    
 FROM fuse_tbl
 ```
 
