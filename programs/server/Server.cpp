@@ -189,16 +189,16 @@ void setupTmpPath(Poco::Logger * log, const std::string & path)
     fs::create_directories(path);
 
     /// Clearing old temporary files.
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        if (it->isFile() && startsWith(it.name(), "tmp"))
+        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
         {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path());
-            it->remove();
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+            fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path());
+            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
     }
 }
 
