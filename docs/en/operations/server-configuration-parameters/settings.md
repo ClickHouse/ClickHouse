@@ -502,12 +502,12 @@ The default `max_server_memory_usage` value is calculated as `memory_amount * ma
 
 ## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
 
-Defines the fraction of total physical RAM amount, available to the Clickhouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount. 
+Defines the fraction of total physical RAM amount, available to the ClickHouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount. 
 
 Possible values:
 
 -   Positive double.
--   0 — The Clickhouse server can use all available RAM.
+-   0 — The ClickHouse server can use all available RAM.
 
 Default value: `0`.
 
