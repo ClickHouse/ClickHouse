@@ -92,8 +92,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
-        // nullability themselves.
-        if (nested_function->asWindowFunction())
+        // nullability themselves. Another special case is functions from Nothing
+        // that are rewritten to AggregateFunctionNothing, in this case
+        // nested_function is nullptr.
+        if (nested_function && nested_function->asWindowFunction())
         {
             return nested_function;
         }
