@@ -21,6 +21,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Storages/KeyDescription.h>
 
 #include <cassert>
 #include <stack>
@@ -591,6 +592,30 @@ void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & 
     rpn.emplace_back(std::move(element));
 }
 
+bool KeyCondition::canConstantBeWrapped(const ASTPtr & node, const String & expr_name, String & result_expr_name)
+{
+    const auto & sample_block = key_expr->getSampleBlock();
+
+    /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
+    /// For partition key it is always moduloLegacy.
+    if (sample_block.has(expr_name))
+    {
+        result_expr_name = expr_name;
+    }
+    else
+    {
+        auto adjusted_ast = node->clone();
+        KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
+        String adjusted_expr_name = adjusted_ast->getColumnName();
+
+        if (!sample_block.has(adjusted_expr_name))
+            return false;
+
+        result_expr_name = adjusted_expr_name;
+    }
+
+    return true;
+}
 
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const ASTPtr & node,
@@ -600,10 +625,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     DataTypePtr & out_type)
 {
     // Constant expr should use alias names if any
-    String expr_name = node->getColumnName();
-    const auto & sample_block = key_expr->getSampleBlock();
-    if (!sample_block.has(expr_name))
+    String passed_expr_name = node->getColumnName();
+    String expr_name;
+    if (!canConstantBeWrapped(node, passed_expr_name, expr_name))
         return false;
+
+    const auto & sample_block = key_expr->getSampleBlock();
 
     /// TODO Nullable index is not yet landed.
     if (out_value.isNull())
@@ -668,10 +695,12 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
     // Constant expr should use alias names if any
-    String expr_name = ast->getColumnName();
-    const auto & sample_block = key_expr->getSampleBlock();
-    if (!sample_block.has(expr_name))
+    String passed_expr_name = ast->getColumnName();
+    String expr_name;
+    if (!canConstantBeWrapped(ast, passed_expr_name, expr_name))
         return false;
+
+    const auto & sample_block = key_expr->getSampleBlock();
 
     /// TODO Nullable index is not yet landed.
     if (out_value.isNull())
@@ -1232,8 +1261,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                     {
                         ColumnsWithTypeAndName arguments{
                             {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type->getName()), common_type, ""}};
-                        FunctionOverloadResolverPtr func_builder_cast
-                                = std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
+                        FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.

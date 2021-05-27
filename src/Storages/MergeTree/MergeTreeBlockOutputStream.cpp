@@ -23,12 +23,12 @@ void MergeTreeBlockOutputStream::writePrefix()
 
 void MergeTreeBlockOutputStream::write(const Block & block)
 {
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.

@@ -6,6 +6,7 @@
 #include <mysqlxx/Pool.h>
 
 #include <Core/MultiEnum.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/MySQL/ConnectionMySQLSettings.h>

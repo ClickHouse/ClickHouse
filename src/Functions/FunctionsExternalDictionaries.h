@@ -27,7 +27,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/castColumn.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <ext/range.h>
 
@@ -794,8 +794,11 @@ private:
         return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         /** We call dictHas function to get which map is key presented in dictionary.
             For key that presented in dictionary dict has result for that key index value will be 1. Otherwise 0.
             We invert result, and then for key that is not presented in dictionary value will be 1. Otherwise 0.
@@ -817,15 +820,15 @@ private:
         for (auto & key : is_key_in_dictionary_data)
             key = !key;
 
-        auto result_type = dictionary_get_func_impl.getReturnTypeImpl(arguments);
-        auto dictionary_get_result_column = dictionary_get_func_impl.executeImpl(arguments, result_type, input_rows_count);
+        auto dictionary_get_result_type = dictionary_get_func_impl.getReturnTypeImpl(arguments);
+        auto dictionary_get_result_column = dictionary_get_func_impl.executeImpl(arguments, dictionary_get_result_type, input_rows_count);
 
         ColumnPtr result;
 
-        WhichDataType result_data_type(result_type);
+        WhichDataType dictionary_get_result_data_type(dictionary_get_result_type);
         auto dictionary_get_result_column_mutable = dictionary_get_result_column->assumeMutable();
 
-        if (result_data_type.isTuple())
+        if (dictionary_get_result_data_type.isTuple())
         {
             ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*dictionary_get_result_column_mutable);
 

@@ -21,14 +21,13 @@ namespace ErrorCodes
 
 
 ODBCBlockInputStream::ODBCBlockInputStream(
-    nanodbc::connection & connection_, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
+    nanodbc::ConnectionHolderPtr connection, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
     : log(&Poco::Logger::get("ODBCBlockInputStream"))
     , max_block_size{max_block_size_}
-    , connection(connection_)
     , query(query_str)
 {
     description.init(sample_block);
-    result = execute(connection, NANODBC_TEXT(query));
+    result = execute(connection->get(), NANODBC_TEXT(query));
 }
 
 

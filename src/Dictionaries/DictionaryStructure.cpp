@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <ext/range.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -48,36 +49,39 @@ AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
 
     switch (type_index)
     {
-        case TypeIndex::UInt8:          return AttributeUnderlyingType::utUInt8;
-        case TypeIndex::UInt16:         return AttributeUnderlyingType::utUInt16;
-        case TypeIndex::UInt32:         return AttributeUnderlyingType::utUInt32;
-        case TypeIndex::UInt64:         return AttributeUnderlyingType::utUInt64;
-        case TypeIndex::UInt128:        return AttributeUnderlyingType::utUInt128;
+        case TypeIndex::UInt8:          return AttributeUnderlyingType::UInt8;
+        case TypeIndex::UInt16:         return AttributeUnderlyingType::UInt16;
+        case TypeIndex::UInt32:         return AttributeUnderlyingType::UInt32;
+        case TypeIndex::UInt64:         return AttributeUnderlyingType::UInt64;
+        case TypeIndex::UInt128:        return AttributeUnderlyingType::UInt128;
+        case TypeIndex::UInt256:        return AttributeUnderlyingType::UInt256;
 
-        case TypeIndex::Int8:           return AttributeUnderlyingType::utInt8;
-        case TypeIndex::Int16:          return AttributeUnderlyingType::utInt16;
-        case TypeIndex::Int32:          return AttributeUnderlyingType::utInt32;
-        case TypeIndex::Int64:          return AttributeUnderlyingType::utInt64;
+        case TypeIndex::Int8:           return AttributeUnderlyingType::Int8;
+        case TypeIndex::Int16:          return AttributeUnderlyingType::Int16;
+        case TypeIndex::Int32:          return AttributeUnderlyingType::Int32;
+        case TypeIndex::Int64:          return AttributeUnderlyingType::Int64;
+        case TypeIndex::Int128:         return AttributeUnderlyingType::Int128;
+        case TypeIndex::Int256:         return AttributeUnderlyingType::Int256;
 
-        case TypeIndex::Float32:        return AttributeUnderlyingType::utFloat32;
-        case TypeIndex::Float64:        return AttributeUnderlyingType::utFloat64;
+        case TypeIndex::Float32:        return AttributeUnderlyingType::Float32;
+        case TypeIndex::Float64:        return AttributeUnderlyingType::Float64;
 
-        case TypeIndex::Decimal32:      return AttributeUnderlyingType::utDecimal32;
-        case TypeIndex::Decimal64:      return AttributeUnderlyingType::utDecimal64;
-        case TypeIndex::Decimal128:     return AttributeUnderlyingType::utDecimal128;
-        case TypeIndex::Decimal256:     return AttributeUnderlyingType::utDecimal256;
+        case TypeIndex::Decimal32:      return AttributeUnderlyingType::Decimal32;
+        case TypeIndex::Decimal64:      return AttributeUnderlyingType::Decimal64;
+        case TypeIndex::Decimal128:     return AttributeUnderlyingType::Decimal128;
+        case TypeIndex::Decimal256:     return AttributeUnderlyingType::Decimal256;
 
-        case TypeIndex::Date:           return AttributeUnderlyingType::utUInt16;
-        case TypeIndex::DateTime:       return AttributeUnderlyingType::utUInt32;
-        case TypeIndex::DateTime64:     return AttributeUnderlyingType::utUInt64;
+        case TypeIndex::Date:           return AttributeUnderlyingType::UInt16;
+        case TypeIndex::DateTime:       return AttributeUnderlyingType::UInt32;
+        case TypeIndex::DateTime64:     return AttributeUnderlyingType::UInt64;
 
-        case TypeIndex::UUID:           return AttributeUnderlyingType::utUInt128;
+        case TypeIndex::UUID:           return AttributeUnderlyingType::UUID;
 
-        case TypeIndex::String:         return AttributeUnderlyingType::utString;
+        case TypeIndex::String:         return AttributeUnderlyingType::String;
 
         // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
         // TODO: This should be fixed by fully supporting arrays in dictionaries.
-        case TypeIndex::Array:          return AttributeUnderlyingType::utString;
+        case TypeIndex::Array:          return AttributeUnderlyingType::String;
 
         default: break;
     }
@@ -90,38 +94,9 @@ std::string toString(AttributeUnderlyingType type)
 {
     switch (type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            return "UInt8";
-        case AttributeUnderlyingType::utUInt16:
-            return "UInt16";
-        case AttributeUnderlyingType::utUInt32:
-            return "UInt32";
-        case AttributeUnderlyingType::utUInt64:
-            return "UInt64";
-        case AttributeUnderlyingType::utUInt128:
-            return "UUID";
-        case AttributeUnderlyingType::utInt8:
-            return "Int8";
-        case AttributeUnderlyingType::utInt16:
-            return "Int16";
-        case AttributeUnderlyingType::utInt32:
-            return "Int32";
-        case AttributeUnderlyingType::utInt64:
-            return "Int64";
-        case AttributeUnderlyingType::utFloat32:
-            return "Float32";
-        case AttributeUnderlyingType::utFloat64:
-            return "Float64";
-        case AttributeUnderlyingType::utDecimal32:
-            return "Decimal32";
-        case AttributeUnderlyingType::utDecimal64:
-            return "Decimal64";
-        case AttributeUnderlyingType::utDecimal128:
-            return "Decimal128";
-        case AttributeUnderlyingType::utDecimal256:
-            return "Decimal256";
-        case AttributeUnderlyingType::utString:
-            return "String";
+#define M(TYPE) case AttributeUnderlyingType::TYPE: return #TYPE;
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
     }
 
     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Unknown dictionary attribute type {}", toString(static_cast<int>(type)));
@@ -208,7 +183,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 
         if (attribute.hierarchical)
         {
-            if (id && attribute.underlying_type != AttributeUnderlyingType::utUInt64)
+            if (id && attribute.underlying_type != AttributeUnderlyingType::UInt64)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "Hierarchical attribute type for dictionary with simple key must be UInt64. Actual {}",
                     toString(attribute.underlying_type));
@@ -320,7 +295,7 @@ bool DictionaryStructure::isKeySizeFixed() const
         return true;
 
     for (const auto & key_i : *key)
-        if (key_i.underlying_type == AttributeUnderlyingType::utString)
+        if (key_i.underlying_type == AttributeUnderlyingType::String)
             return false;
 
     return true;

@@ -281,7 +281,7 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column)
+        if (!column.column) //-V1051
             column.column = column.type->createColumn();
     }
 }

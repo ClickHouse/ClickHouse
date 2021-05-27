@@ -365,16 +365,20 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
     }
 }
 
-static void transformUUID(const UInt128 & src, UInt128 & dst, UInt64 seed)
+static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
+    const UInt128 & src = src_uuid.toUnderType();
+    UInt128 & dst = dst_uuid.toUnderType();
+
     SipHash hash;
     hash.update(seed);
-    hash.update(reinterpret_cast<const char *>(&src), sizeof(UInt128));
+    hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
 
     /// Saving version and variant from an old UUID
     hash.get128(reinterpret_cast<char *>(&dst));
-    dst.high = (dst.high & 0x1fffffffffffffffull) | (src.high & 0xe000000000000000ull);
-    dst.low = (dst.low & 0xffffffffffff0fffull) | (src.low & 0x000000000000f000ull);
+
+    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
+    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
 }
 
 class FixedStringModel : public IModel
@@ -426,10 +430,10 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnUInt128 & src_column = assert_cast<const ColumnUInt128 &>(column);
+        const ColumnUUID & src_column = assert_cast<const ColumnUUID &>(column);
         const auto & src_data = src_column.getData();
 
-        auto res_column = ColumnUInt128::create();
+        auto res_column = ColumnUUID::create();
         auto & res_data = res_column->getData();
 
         res_data.resize(src_data.size());

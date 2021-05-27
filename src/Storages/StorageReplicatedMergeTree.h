@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/LeaderElection.h>
+#include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
@@ -183,6 +184,8 @@ public:
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getQueue(LogEntriesData & res, String & replica_name);
 
+    std::vector<PartMovesBetweenShardsOrchestrator::Entry> getPartMovesBetweenShardsEntries();
+
     /// Get replica delay relative to current time.
     time_t getAbsoluteDelay() const;
 
@@ -252,6 +255,7 @@ private:
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
     friend class ReplicatedMergeTreeQueue;
+    friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
@@ -305,7 +309,6 @@ private:
 
     DataPartsExchange::Fetcher fetcher;
 
-
     /// When activated, replica is initialized and startup() method could exit
     Poco::Event startup_event;
 
@@ -350,6 +353,8 @@ private:
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
 
+    PartMovesBetweenShardsOrchestrator part_moves_between_shards_orchestrator;
+
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
@@ -386,6 +391,10 @@ private:
       *  But if there are too many, throw an exception just in case - it's probably a configuration error.
       */
     void checkParts(bool skip_sanity_checks);
+
+    /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
+    /// to be used for deduplication.
+    void syncPinnedPartUUIDs();
 
     /** Check that the part's checksum is the same as the checksum of the same part on some other replica.
       * If no one has such a part, nothing checks.
@@ -457,6 +466,7 @@ private:
     bool executeFetch(LogEntry & entry);
 
     bool executeReplaceRange(const LogEntry & entry);
+    void executeClonePartFromShard(const LogEntry & entry);
 
     /** Updates the queue.
       */
@@ -468,6 +478,9 @@ private:
       * If replica can not be cloned throw Exception.
       */
     void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
+
+    /// Repairs metadata of staled replica. Called from cloneReplica(...)
+    void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
 
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
@@ -582,9 +595,11 @@ private:
     bool partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const;
 
     /// Creates new block number if block with such block_id does not exist
+    /// If zookeeper_path_prefix specified then allocate block number on this path
+    /// (can be used if we want to allocate blocks on other replicas)
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
-        const String & zookeeper_block_id_path = "") const;
+        const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
@@ -609,7 +624,10 @@ private:
 
     /// Produce an imaginary part info covering all parts in the specified partition (at the call moment).
     /// Returns false if the partition doesn't exist yet.
-    bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info, bool for_replace_partition = false);
+    /// Caller must hold delimiting_block_lock until creation of drop/replace entry in log.
+    /// Otherwise some replica may assign merge which intersects part_info.
+    bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info,
+                                                std::optional<EphemeralLockInZooKeeper> & delimiting_block_lock, bool for_replace_range = false);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     mutable std::unordered_set<std::string> existing_nodes_cache;
@@ -633,6 +651,7 @@ private:
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
+    void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
     void fetchPartition(
         const ASTPtr & partition,
         const StorageMetadataPtr & metadata_snapshot,
