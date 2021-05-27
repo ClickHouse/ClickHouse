@@ -11,6 +11,7 @@
 
 namespace DB
 {
+struct Settings;
 /// Counts bitmap operation on numbers.
 template <typename T, typename Data>
 class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>

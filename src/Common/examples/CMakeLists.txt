@@ -7,9 +7,6 @@ endif()
 add_executable (sip_hash_perf sip_hash_perf.cpp)
 target_link_libraries (sip_hash_perf PRIVATE clickhouse_common_io)
 
-add_executable (auto_array auto_array.cpp)
-target_link_libraries (auto_array PRIVATE clickhouse_common_io)
-
 add_executable (small_table small_table.cpp)
 target_link_libraries (small_table PRIVATE clickhouse_common_io)
 
@@ -36,7 +33,7 @@ add_executable (arena_with_free_lists arena_with_free_lists.cpp)
 target_link_libraries (arena_with_free_lists PRIVATE dbms)
 
 add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
-target_link_libraries (lru_hash_map_perf PRIVATE clickhouse_common_io)
+target_link_libraries (lru_hash_map_perf PRIVATE dbms)
 
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)

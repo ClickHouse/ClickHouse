@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
 
@@ -485,6 +486,9 @@ private:
     /// partition ID -> block numbers of the inserts and mutations that are about to commit
     /// (loaded at some later time than prev_virtual_parts).
     std::unordered_map<String, std::set<Int64>> committing_blocks;
+
+    /// List of UUIDs for parts that have their identity "pinned".
+    PinnedPartUUIDs pinned_part_uuids;
 
     /// Quorum state taken at some later time than prev_virtual_parts.
     String inprogress_quorum_part;

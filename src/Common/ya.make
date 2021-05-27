@@ -32,6 +32,7 @@ SRCS(
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
+    Config/YAMLParser.cpp
     Config/configReadClient.cpp
     CurrentMemoryTracker.cpp
     CurrentMetrics.cpp
