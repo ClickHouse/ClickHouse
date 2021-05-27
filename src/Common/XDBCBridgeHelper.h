@@ -85,8 +85,8 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
-    XDBCBridgeHelper(const Context & global_context_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
-        : http_timeout(http_timeout_), connection_string(connection_string_), context(global_context_), config(context.getConfigRef())
+    XDBCBridgeHelper(const Context & context_, const Poco::Timespan http_timeout_, const std::string & connection_string_)
+        : http_timeout(http_timeout_), connection_string(connection_string_), context(context_.getGlobalContext()), config(context.getConfigRef())
     {
         size_t bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
         std::string bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
@@ -271,7 +271,7 @@ struct JDBCBridgeMixin
         return AccessType::JDBC;
     }
 
-    static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration &, const Poco::Logger *, const Poco::Timespan &)
+    static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration &, const Poco::Logger *, Poco::Timespan)
     {
         throw Exception("jdbc-bridge is not running. Please, start it manually", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
     }
@@ -299,7 +299,7 @@ struct ODBCBridgeMixin
     }
 
     static std::unique_ptr<ShellCommand> startBridge(
-        const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
+        const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, Poco::Timespan http_timeout)
     {
         /// Path to executable folder
         Poco::Path path{config.getString("application.dir", "/usr/bin")};
