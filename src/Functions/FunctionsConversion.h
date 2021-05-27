@@ -2523,7 +2523,7 @@ private:
         if (!from_type)
         {
             throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "CAST AS Array can only be perforamed between same-dimensional Array or String types");
+                "CAST AS Array can only be performed between same-dimensional Array or String types");
         }
 
         DataTypePtr from_nested_type = from_type->getNestedType();
@@ -2533,7 +2533,7 @@ private:
 
         if (from_type->getNumberOfDimensions() != to_type.getNumberOfDimensions() && !from_empty_array)
             throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "CAST AS Array can only be perforamed between same-dimensional array types");
+                "CAST AS Array can only be performed between same-dimensional array types");
 
         const DataTypePtr & to_nested_type = to_type.getNestedType();
 
