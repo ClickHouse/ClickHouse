@@ -23,12 +23,13 @@ struct LanguageClassificationImpl
         {
             String ans(LanguageName(CLD2::DetectLanguage(str, strlen(str), true, &is_UTF8)));
             res = ans;
-        } else {
+        }
+        else
+        {
             CLD2::Language result_lang_top3[3];
             int pc[3];
             int bytes[3];
             CLD2::DetectLanguageSummary(str, strlen(str), true, result_lang_top3, pc, bytes, &is_UTF8);
-            
             String lang1(LanguageName(result_lang_top3[0]));
             String lang2(LanguageName(result_lang_top3[1]));
             String lang3(LanguageName(result_lang_top3[2]));

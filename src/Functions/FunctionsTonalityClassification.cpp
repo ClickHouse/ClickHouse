@@ -11,7 +11,7 @@
 namespace DB
 {
 /**
-  * Determines the sentiment of text data. 
+  * Determines the sentiment of text data.
   * Uses a marked-up sentiment dictionary, each word has a tonality ranging from -3 to 3.
   * For each text, calculate the average sentiment value of its words and return NEG, POS or NEUT
   */
