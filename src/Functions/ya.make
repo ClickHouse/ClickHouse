@@ -59,6 +59,7 @@ SRCS(
     FunctionsCharsetClassification.cpp
     FunctionsTonalityClassification.cpp
     FunctionsProgrammingClassification.cpp
+    FunctionsLanguageClassification.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
