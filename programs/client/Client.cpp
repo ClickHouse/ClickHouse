@@ -279,7 +279,7 @@ private:
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
-            context->setFormatSchemaPath(config().getString("format_schema_path"));
+            context->setFormatSchemaPath(fs::absolute(config().getString("format_schema_path")));
 
         /// Initialize query_id_formats if any
         if (config().has("query_id_formats"))
