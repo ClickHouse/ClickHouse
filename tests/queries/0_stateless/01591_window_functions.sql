@@ -422,3 +422,26 @@ select count() over (rows between 2147483648 preceding and 2147493648 following)
 select count() over () from (select 1 a) l inner join (select 2 a) r using a;
 -- This case works as expected, one empty input chunk marked as input end.
 select count() over () where null;
+
+-- Inheriting another window.
+select number, count() over (w1 rows unbounded preceding) from numbers(10)
+window
+    w0 as (partition by intDiv(number, 5) as p),
+    w1 as (w0 order by mod(number, 3) as o)
+order by p, o, number
+;
+
+-- can't redefine PARTITION BY
+select count() over (w partition by number) from numbers(1) window w as (partition by intDiv(number, 5)); -- { serverError 36 }
+
+-- can't redefine existing ORDER BY
+select count() over (w order by number) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3)); -- { serverError 36 }
+
+-- parent window can't have frame
+select count() over (w range unbounded preceding) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3) rows unbounded preceding); -- { serverError 36 }
+
+-- looks weird but probably should work -- this is a window that inherits and changes nothing
+select count() over (w) from numbers(1) window w as ();
+
+-- nonexistent parent window
+select count() over (w2 rows unbounded preceding); -- { serverError 36 }
