@@ -3818,7 +3818,7 @@ static void selectBestProjection(
     const Names & required_columns,
     ProjectionCandidate & candidate,
     ContextPtr query_context,
-    const PartitionIdToMaxBlock * max_added_blocks,
+    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks,
     const Settings & settings,
     const MergeTreeData::DataPartsVector & parts,
     ProjectionCandidate *& selected_candidate,
@@ -4097,11 +4097,11 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         // First build a MergeTreeDataSelectCache to check if a projection is indeed better than base
         // query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
 
-        std::unique_ptr<PartitionIdToMaxBlock> max_added_blocks;
+        std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
         if (settings.select_sequential_consistency)
         {
             if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
-                max_added_blocks = std::make_unique<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
+                max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
         }
 
         auto parts = getDataPartsVector();
@@ -4122,7 +4122,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     analysis_result.required_columns,
                     candidate,
                     query_context,
-                    max_added_blocks.get(),
+                    max_added_blocks,
                     settings,
                     parts,
                     selected_candidate,
@@ -4143,7 +4143,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                 query_info, // TODO syntax_analysis_result set in index
                 query_context,
                 settings.max_threads,
-                max_added_blocks.get());
+                max_added_blocks);
 
             // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
             // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
@@ -4160,7 +4160,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                         analysis_result.required_columns,
                         candidate,
                         query_context,
-                        max_added_blocks.get(),
+                        max_added_blocks,
                         settings,
                         parts,
                         selected_candidate,

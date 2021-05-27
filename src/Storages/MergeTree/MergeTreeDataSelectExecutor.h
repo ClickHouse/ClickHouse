@@ -53,7 +53,7 @@ public:
         UInt64 max_block_size,
         unsigned num_streams,
         QueryProcessingStage::Enum processed_stage,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
     size_t estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
@@ -63,7 +63,7 @@ public:
         const SelectQueryInfo & query_info,
         ContextPtr context,
         unsigned num_streams,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
     QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
@@ -74,7 +74,7 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         unsigned num_streams,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
 private:
     const MergeTreeData & data;
@@ -196,8 +196,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const SelectQueryInfo & query_info,
-        ContextPtr & context,
-        ContextPtr & query_context,
+        const ContextPtr & context,
+        const ContextPtr & query_context,
         MergeTreeData::DataPartsVector & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
@@ -208,7 +208,7 @@ public:
         MergeTreeData::DataPartsVector && parts,
         StorageMetadataPtr metadata_snapshot,
         const SelectQueryInfo & query_info,
-        ContextPtr & context,
+        const ContextPtr & context,
         KeyCondition & key_condition,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log,
@@ -227,7 +227,7 @@ public:
         NamesAndTypesList available_real_columns,
         ContextPtr context);
 
-    static String checkLimits(const MergeTreeData & data, const RangesInDataParts & parts_with_ranges, ContextPtr & context);
+    static String checkLimits(const MergeTreeData & data, const RangesInDataParts & parts_with_ranges, const ContextPtr & context);
 };
 
 }
