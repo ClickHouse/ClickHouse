@@ -56,8 +56,8 @@ def test_limited_fetch_single_table(start_cluster):
             print("Fetch speed OK")
 
     finally:
-        for i, node in enumerate([node1, node2]):
-            node.query(f"DROP TABLE IF EXISTS limited_fetch_table SYNC")
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS limited_fetch_table SYNC")
 
 def test_limited_send_single_table(start_cluster):
     try:
@@ -90,8 +90,8 @@ def test_limited_send_single_table(start_cluster):
             print("Send speed OK")
 
     finally:
-        for i, node in enumerate([node1, node2]):
-            node.query(f"DROP TABLE IF EXISTS limited_send_table SYNC")
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS limited_send_table SYNC")
 
 
 def test_limited_fetches_for_server(start_cluster):
@@ -128,9 +128,9 @@ def test_limited_fetches_for_server(start_cluster):
             print("Fetch speed OK")
 
     finally:
-        for i, node in enumerate([node1, node3]):
+        for node in [node1, node3]:
             for j in range(5):
-                node.query(f"DROP TABLE IF EXISTS limited_fetches{i} SYNC")
+                node.query(f"DROP TABLE IF EXISTS limited_fetches{j} SYNC")
 
 
 def test_limited_sends_for_server(start_cluster):
@@ -167,9 +167,9 @@ def test_limited_sends_for_server(start_cluster):
             print("Send speed OK")
 
     finally:
-        for i, node in enumerate([node1, node3]):
+        for node in [node1, node3]:
             for j in range(5):
-                node.query(f"DROP TABLE IF EXISTS limited_sends{i} SYNC")
+                node.query(f"DROP TABLE IF EXISTS limited_sends{j} SYNC")
 
 
 def test_should_execute_fetch(start_cluster):
@@ -210,5 +210,5 @@ def test_should_execute_fetch(start_cluster):
         assert any(int(f.strip()) != 0 for f in replication_queue_data)
         assert node2.query("SELECT COUNT() FROM should_execute_table") == "630\n"
     finally:
-        for i, node in enumerate([node1, node2]):
-            node.query(f"DROP TABLE IF EXISTS should_execute_table SYNC")
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS should_execute_table SYNC")
