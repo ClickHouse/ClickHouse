@@ -329,6 +329,8 @@
       -->
     <mmap_cache_size>1000</mmap_cache_size>
 
+    <!-- Cache size for compiled expressions.-->
+    <compiled_expression_cache_size>1073741824</compiled_expression_cache_size>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
@@ -360,6 +362,20 @@
                 bind_dn - template used to construct the DN to bind to.
                         The resulting DN will be constructed by replacing all '{user_name}' substrings of the template with the actual
                          user name during each authentication attempt.
+                user_dn_detection - section with LDAP search parameters for detecting the actual user DN of the bound user.
+                        This is mainly used in search filters for further role mapping when the server is Active Directory. The
+                         resulting user DN will be used when replacing '{user_dn}' substrings wherever they are allowed. By default,
+                         user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected
+                         user DN value.
+                    base_dn - template used to construct the base DN for the LDAP search.
+                            The resulting DN will be constructed by replacing all '{user_name}' and '{bind_dn}' substrings
+                             of the template with the actual user name and bind DN during the LDAP search.
+                    scope - scope of the LDAP search.
+                            Accepted values are: 'base', 'one_level', 'children', 'subtree' (the default).
+                    search_filter - template used to construct the search filter for the LDAP search.
+                            The resulting filter will be constructed by replacing all '{user_name}', '{bind_dn}', and '{base_dn}'
+                             substrings of the template with the actual user name, bind DN, and base DN during the LDAP search.
+                            Note, that the special characters must be escaped properly in XML.
                 verification_cooldown - a period of time, in seconds, after a successful bind attempt, during which a user will be assumed
                          to be successfully authenticated for all consecutive requests without contacting the LDAP server.
                         Specify 0 (the default) to disable caching and force contacting the LDAP server for each authentication request.
@@ -391,6 +407,17 @@
                     <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
                     <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
                 </my_ldap_server>
+             Example (typical Active Directory with configured user DN detection for further role mapping):
+                <my_ad_server>
+                    <host>localhost</host>
+                    <port>389</port>
+                    <bind_dn>EXAMPLE\{user_name}</bind_dn>
+                    <user_dn_detection>
+                        <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                        <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+                    </user_dn_detection>
+                    <enable_tls>no</enable_tls>
+                </my_ad_server>
         -->
     </ldap_servers>
 
@@ -442,15 +469,16 @@
                         There can be multiple 'role_mapping' sections defined inside the same 'ldap' section. All of them will be
                          applied.
                     base_dn - template used to construct the base DN for the LDAP search.
-                            The resulting DN will be constructed by replacing all '{user_name}' and '{bind_dn}' substrings
-                             of the template with the actual user name and bind DN during each LDAP search.
+                            The resulting DN will be constructed by replacing all '{user_name}', '{bind_dn}', and '{user_dn}'
+                             substrings of the template with the actual user name, bind DN, and user DN during each LDAP search.
                     scope - scope of the LDAP search.
                             Accepted values are: 'base', 'one_level', 'children', 'subtree' (the default).
                     search_filter - template used to construct the search filter for the LDAP search.
-                            The resulting filter will be constructed by replacing all '{user_name}', '{bind_dn}', and '{base_dn}'
-                             substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
+                            The resulting filter will be constructed by replacing all '{user_name}', '{bind_dn}', '{user_dn}', and
+                             '{base_dn}' substrings of the template with the actual user name, bind DN, user DN, and base DN during
+                             each LDAP search.
                             Note, that the special characters must be escaped properly in XML.
-                    attribute - attribute name whose values will be returned by the LDAP search.
+                    attribute - attribute name whose values will be returned by the LDAP search. 'cn', by default.
                     prefix - prefix, that will be expected to be in front of each string in the original list of strings returned by
                              the LDAP search. Prefix will be removed from the original strings and resulting strings will be treated
                              as local role names. Empty, by default.
@@ -466,6 +494,17 @@
                         <scope>subtree</scope>
                         <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
                         <attribute>cn</attribute>
+                        <prefix>clickhouse_</prefix>
+                    </role_mapping>
+                </ldap>
+             Example (typical Active Directory with role mapping that relies on the detected user DN):
+                <ldap>
+                    <server>my_ad_server</server>
+                    <role_mapping>
+                        <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                        <attribute>CN</attribute>
+                        <scope>subtree</scope>
+                        <search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
                         <prefix>clickhouse_</prefix>
                     </role_mapping>
                 </ldap>
@@ -518,6 +557,33 @@
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>
 
+    <![CDATA[
+         Uncomment below in order to use JDBC table engine and function.
+
+         To install and run JDBC bridge in background:
+         * [Debian/Ubuntu]
+           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
+           export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
+           wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
+           apt install --no-install-recommends -f ./clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
+           clickhouse-jdbc-bridge &
+
+         * [CentOS/RHEL]
+           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
+           export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
+           wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
+           yum localinstall -y clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
+           clickhouse-jdbc-bridge &
+
+         Please refer to https://github.com/ClickHouse/clickhouse-jdbc-bridge#usage for more information.
+    ]]>
+    <!--
+    <jdbc_bridge>
+        <host>127.0.0.1</host>
+        <port>9019</port>
+    </jdbc_bridge>
+    -->
+  
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
