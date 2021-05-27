@@ -6949,7 +6949,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     return true;
 }
 
-void StorageReplicatedMergeTree::dropPartImpl(
+bool StorageReplicatedMergeTree::dropPartImpl(
     zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop)
 {
     LOG_TRACE(log, "Will try to insert a log entry to DROP_RANGE for part: " + part_name);
@@ -6966,7 +6966,7 @@ void StorageReplicatedMergeTree::dropPartImpl(
         {
             if (throw_if_noop)
                 throw Exception("Part " + part_name + " not found locally, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
-            return;
+            return false;
         }
 
         /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already
@@ -6977,7 +6977,7 @@ void StorageReplicatedMergeTree::dropPartImpl(
                 throw Exception("Part " + part_name
                                 + " is currently participating in a background operation (mutation/merge)"
                                 + ", try again later", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
-            return;
+            return false;
         }
 
         if (partIsLastQuorumPart(part->info))
@@ -6985,7 +6985,7 @@ void StorageReplicatedMergeTree::dropPartImpl(
             if (throw_if_noop)
                 throw Exception("Part " + part_name + " is last inserted part with quorum in partition. Cannot drop",
                                 ErrorCodes::NOT_IMPLEMENTED);
-            return;
+            return false;
         }
 
         if (partIsInsertingWithParallelQuorum(part->info))
@@ -6993,7 +6993,7 @@ void StorageReplicatedMergeTree::dropPartImpl(
             if (throw_if_noop)
                 throw Exception("Part " + part_name + " is inserting with parallel quorum. Cannot drop",
                                 ErrorCodes::NOT_IMPLEMENTED);
-            return;
+            return false;
         }
 
         Coordination::Requests ops;
@@ -7035,7 +7035,7 @@ void StorageReplicatedMergeTree::dropPartImpl(
         String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size + 1]).path_created;
         entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-        return;
+        return true;
     }
 }
 
