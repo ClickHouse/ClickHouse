@@ -27,7 +27,7 @@ def started_cluster():
 
 
 def assert_objects_count(started_cluster, objects_count, path='data/'):
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
     hdfs_objects = fs.listdir('/clickhouse')
     assert objects_count == len(hdfs_objects)
 
