@@ -27,17 +27,17 @@ sumCount(x)
 Запрос:
 
 ``` sql
-CREATE TABLE test (x Nullable(Int8)) Engine = Log;
-INSERT INTO test SELECT number FROM numbers(1, 20);
-INSERT INTO test VALUES (NULL);
-SELECT sumCount(x) from test;
+CREATE TABLE s_table (x Nullable(Int8)) Engine = Log;
+INSERT INTO s_table SELECT number FROM numbers(0, 20);
+INSERT INTO s_table VALUES (NULL);
+SELECT sumCount(x) from s_table;
 ```
 
 Результат:
 
 ``` text
-┌─sumCount(a)─┐
-│ (210,20)    │
+┌─sumCount(x)─┐
+│ (190,20)    │
 └─────────────┘
 ```
 
