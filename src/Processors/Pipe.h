@@ -5,7 +5,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <common/logger_useful.h>
-
+#include <Access/EnabledQuota.h>
+#include <DataStreams/SizeLimits.h>
+#include <Storages/TableLockHolder.h>
 
 namespace DB
 {
