@@ -52,7 +52,7 @@ namespace
             const auto * parent_key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*parent_key_column);
             if (!parent_key_column_typed)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Parent key column should be UInt64. Actual {}",
+                    "Parent key column should be UInt64. Actual ({})",
                     hierarchical_attribute.type->getName());
 
             const auto & parent_keys = parent_key_column_typed->getData();
@@ -84,14 +84,8 @@ namespace
     }
 }
 
-ColumnPtr getKeysHierarchyDefaultImplementation(
-    const IDictionary * dictionary,
-    ColumnPtr key_column,
-    const DataTypePtr & key_type,
-    size_t & valid_keys)
+ColumnPtr getKeysHierarchyDefaultImplementation(const IDictionary * dictionary, ColumnPtr key_column, const DataTypePtr & key_type)
 {
-    valid_keys = 0;
-
     key_column = key_column->convertToFullColumnIfConst();
     const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*key_column);
     if (!key_column_typed)
@@ -110,7 +104,6 @@ ColumnPtr getKeysHierarchyDefaultImplementation(
     {
         auto it = key_to_parent_key.find(key);
         std::optional<UInt64> result = (it != nullptr ? std::make_optional(it->getMapped()) : std::nullopt);
-        valid_keys += result.has_value();
         return result;
     };
 
@@ -124,11 +117,8 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     const IDictionary * dictionary,
     ColumnPtr key_column,
     ColumnPtr in_key_column,
-    const DataTypePtr & key_type,
-    size_t & valid_keys)
+    const DataTypePtr & key_type)
 {
-    valid_keys = 0;
-
     key_column = key_column->convertToFullColumnIfConst();
     in_key_column = in_key_column->convertToFullColumnIfConst();
 
@@ -153,7 +143,6 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     {
         auto it = key_to_parent_key.find(key);
         std::optional<UInt64> result = (it != nullptr ? std::make_optional(it->getMapped()) : std::nullopt);
-        valid_keys += result.has_value();
         return result;
     };
 

@@ -1320,12 +1320,16 @@ def cluster_tests(self, cluster, node=None):
     self.context.cluster_name = cluster
 
     tasks = []
-    with Pool(3) as pool:
+    pool = Pool(3)
+
+    try:
         try:
             for suite in loads(current_module(), Suite):
                 run_scenario(pool, tasks, Suite(test=suite))
         finally:
             join(tasks)
+    finally:
+        pool.close()
 
 @TestFeature
 @Requirements(
@@ -1341,7 +1345,9 @@ def feature(self, node="clickhouse1"):
     self.context.node3 = self.context.cluster.node("clickhouse3")
 
     tasks = []
-    with Pool(3) as pool:
+    pool = Pool(3)
+
+    try:
         try:
             run_scenario(pool, tasks, Feature(test=cluster_tests))
             run_scenario(pool, tasks, Scenario(test=local_user))
@@ -1349,4 +1355,6 @@ def feature(self, node="clickhouse1"):
 
         finally:
             join(tasks)
+    finally:
+        pool.close()
 

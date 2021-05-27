@@ -30,6 +30,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
 ///
@@ -57,7 +58,6 @@ public:
         size_t result_position;
 
         std::string toString() const;
-        JSONBuilder::ItemPtr toTree() const;
     };
 
     using Actions = std::vector<Action>;
@@ -108,7 +108,6 @@ public:
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
-    JSONBuilder::ItemPtr toTree() const;
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
@@ -134,9 +133,9 @@ private:
   *     2) calculate the expression in the SELECT section,
   * and between the two steps do the filtering by value in the WHERE clause.
   */
-struct ExpressionActionsChain : WithContext
+struct ExpressionActionsChain
 {
-    explicit ExpressionActionsChain(ContextPtr context_) : WithContext(context_) {}
+    explicit ExpressionActionsChain(const Context & context_) : context(context_) {}
 
 
     struct Step
@@ -242,6 +241,7 @@ struct ExpressionActionsChain : WithContext
     using StepPtr = std::unique_ptr<Step>;
     using Steps = std::vector<StepPtr>;
 
+    const Context & context;
     Steps steps;
 
     void addStep(NameSet non_constant_inputs = {});

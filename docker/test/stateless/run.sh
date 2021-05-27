@@ -44,7 +44,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
     --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
-    --mysql_port 19004 --postgresql_port 19005 \
+    --mysql_port 19004 \
     --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
     --macros.replica r2   # It doesn't work :(
 
@@ -52,7 +52,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
     --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
-    --mysql_port 29004 --postgresql_port 29005 \
+    --mysql_port 29004 \
     --keeper_server.tcp_port 29181 --keeper_server.server_id 3 \
     --macros.shard s2   # It doesn't work :(
 
@@ -74,17 +74,12 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--order=random')
         ADDITIONAL_OPTIONS+=('--skip')
         ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
-        # Note that flaky check must be ran in parallel, but for now we run
-        # everything in parallel except DatabaseReplicated. See below.
+        ADDITIONAL_OPTIONS+=('--jobs')
+        ADDITIONAL_OPTIONS+=('4')
     fi
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
-    else
-        # Too many tests fail for DatabaseReplicated in parallel. All other
-        # configurations are OK.
-        ADDITIONAL_OPTIONS+=('--jobs')
-        ADDITIONAL_OPTIONS+=('8')
     fi
 
     clickhouse-test --testname --shard --zookeeper --hung-check --print-time \
@@ -104,29 +99,6 @@ clickhouse-client -q "system flush logs" ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
 clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
 clickhouse-client -q "select * from system.query_thread_log format TSVWithNamesAndTypes" | pigz > /test_output/query-thread-log.tsv.gz &
-clickhouse-client --allow_introspection_functions=1 -q "
-    WITH
-        arrayMap(x -> concat(demangle(addressToSymbol(x)), ':', addressToLine(x)), trace) AS trace_array,
-        arrayStringConcat(trace_array, '\n') AS trace_string
-    SELECT * EXCEPT(trace), trace_string FROM system.trace_log FORMAT TSVWithNamesAndTypes
-" | pigz > /test_output/trace-log.tsv.gz &
-
-# Also export trace log in flamegraph-friendly format.
-for trace_type in CPU Memory Real
-do
-    clickhouse-client -q "
-            select
-                arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
-                count(*) AS samples
-            from system.trace_log
-            where trace_type = '$trace_type'
-            group by trace
-            order by samples desc
-            settings allow_introspection_functions = 1
-            format TabSeparated" \
-        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
-done
-
 wait ||:
 
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
@@ -135,13 +107,10 @@ if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
 fi
 tar -chf /test_output/text_log_dump.tar /var/lib/clickhouse/data/system/text_log ||:
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
-tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
     pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
-    tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
-    tar -chf /test_output/coordination2.tar /var/lib/clickhouse2/coordination ||:
 fi

@@ -3,7 +3,6 @@
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/NumberTraits.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -223,7 +222,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (strcasecmp(name.c_str(), func[0]) != 0)
+                if (strcmp(name.c_str(), func[0]) != 0)
                 {
                     continue;
                 }
@@ -235,11 +234,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                  * interpreted as a comment. Instead, negate the literal
                  * in place. Another possible solution is to use parentheses,
                  * but the old comment said it is impossible, without mentioning
-                 * the reason. We should also negate the nonnegative literals,
-                 * for symmetry. We print the negated value without parentheses,
-                 * because they are not needed around a single literal. Also we
-                 * use formatting from FieldVisitorToString, so that the type is
-                 * preserved (e.g. -0. is printed with trailing period).
+                 * the reason.
                  */
                 if (literal && name == "negate")
                 {
@@ -256,18 +251,26 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                             {
                                 // The parser doesn't create decimal literals, but
                                 // they can be produced by constant folding or the
-                                // fuzzer. Decimals are always signed, so no need
-                                // to deduce the result type like we do for ints.
+                                // fuzzer.
                                 const auto int_value = value.getValue().value;
-                                settings.ostr << FieldVisitorToString{}(ValueType{
-                                    -int_value,
-                                    value.getScale()});
+                                // We compare to zero so we don't care about scale.
+                                if (int_value >= 0)
+                                {
+                                    return false;
+                                }
+
+                                settings.ostr << ValueType{-int_value,
+                                    value.getScale()};
                             }
                             else if constexpr (std::is_arithmetic_v<ValueType>)
                             {
-                                using ResultType = typename NumberTraits::ResultOfNegate<ValueType>::Type;
-                                settings.ostr << FieldVisitorToString{}(
-                                    -static_cast<ResultType>(value));
+                                if (value >= 0)
+                                {
+                                    return false;
+                                }
+                                // We don't need parentheses around a single
+                                // literal.
+                                settings.ostr << -value;
                                 return true;
                             }
 
@@ -383,40 +386,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                // fuzzer sometimes may inserts tupleElement() created from ASTLiteral:
-                //
-                //     Function_tupleElement, 0xx
-                //     -ExpressionList_, 0xx
-                //     --Literal_Int64_255, 0xx
-                //     --Literal_Int64_100, 0xx
-                //
-                // And in this case it will be printed as "255.100", which
-                // later will be parsed as float, and formatting will be
-                // inconsistent.
-                //
-                // So instead of printing it as regular tuple,
-                // let's print it as ExpressionList instead (i.e. with ", " delimiter).
-                bool tuple_arguments_valid = true;
-                const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
-                const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
-
-                if (lit_left)
-                {
-                    Field::Types::Which type = lit_left->value.getType();
-                    if (type != Field::Types::Tuple && type != Field::Types::Array)
-                    {
-                        tuple_arguments_valid = false;
-                    }
-                }
-
                 // It can be printed in a form of 'x.1' only if right hand side
                 // is an unsigned integer lineral. We also allow nonnegative
                 // signed integer literals, because the fuzzer sometimes inserts
                 // them, and we want to have consistent formatting.
-                if (tuple_arguments_valid && lit_right)
+                if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
                 {
-                    if (isInt64OrUInt64FieldType(lit_right->value.getType())
-                        && lit_right->value.get<Int64>() >= 0)
+                    if (isInt64FieldType(lit->value.getType())
+                        && lit->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';

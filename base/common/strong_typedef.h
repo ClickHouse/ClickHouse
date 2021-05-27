@@ -4,8 +4,7 @@
 #include <type_traits>
 #include <utility>
 
-
-template <typename T, typename Tag>
+template <class T, class Tag>
 struct StrongTypedef
 {
 private:
@@ -39,16 +38,14 @@ public:
 
     bool operator==(const Self & rhs) const { return t == rhs.t; }
     bool operator<(const Self & rhs) const { return t < rhs.t; }
-    bool operator>(const Self & rhs) const { return t > rhs.t; }
 
     T & toUnderType() { return t; }
     const T & toUnderType() const { return t; }
 };
 
-
 namespace std
 {
-    template <typename T, typename Tag>
+    template <class T, class Tag>
     struct hash<StrongTypedef<T, Tag>>
     {
         size_t operator()(const StrongTypedef<T, Tag> & x) const

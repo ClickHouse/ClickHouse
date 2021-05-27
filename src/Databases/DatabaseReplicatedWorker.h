@@ -21,11 +21,11 @@ class DatabaseReplicated;
 class DatabaseReplicatedDDLWorker : public DDLWorker
 {
 public:
-    DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_);
+    DatabaseReplicatedDDLWorker(DatabaseReplicated * db, const Context & context_);
 
     String enqueueQuery(DDLLogEntry & entry) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, const Context & query_context);
 
     void shutdown() override;
 

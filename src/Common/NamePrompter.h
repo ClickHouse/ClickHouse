@@ -90,16 +90,17 @@ private:
     }
 };
 
-
-template <size_t MaxNumHints, typename Self>
+template <size_t MaxNumHints, class Self>
 class IHints
 {
 public:
+
     virtual std::vector<String> getAllRegisteredNames() const = 0;
 
     std::vector<String> getHints(const String & name) const
     {
-        return prompter.getHints(name, getAllRegisteredNames());
+        static const auto registered_names = getAllRegisteredNames();
+        return prompter.getHints(name, registered_names);
     }
 
     virtual ~IHints() = default;

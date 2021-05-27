@@ -39,8 +39,6 @@ public:
         const ClientInfo & client_info,
         bool with_pending_data) override;
 
-    void sendReadTaskResponse(const String &) override;
-
     Packet receivePacket() override;
 
     void disconnect() override;

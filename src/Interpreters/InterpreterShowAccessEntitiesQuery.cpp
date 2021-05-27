@@ -17,27 +17,25 @@ namespace ErrorCodes
 using EntityType = IAccessEntity::Type;
 
 
-InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-    : WithContext(context_), query_ptr(query_ptr_)
+InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, Context & context_)
+    : query_ptr(query_ptr_), context(context_)
 {
 }
 
 
 BlockIO InterpreterShowAccessEntitiesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true);
+    return executeQuery(getRewrittenQuery(), context, true);
 }
 
 
 String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
 {
     auto & query = query_ptr->as<ASTShowAccessEntitiesQuery &>();
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
-
+    query.replaceEmptyDatabase(context.getCurrentDatabase());
     String origin;
     String expr = "*";
-    String filter;
-    String order;
+    String filter, order;
 
     switch (query.type)
     {
@@ -45,10 +43,8 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
         {
             origin = "row_policies";
             expr = "name";
-
             if (!query.short_name.empty())
-                filter = "short_name = " + quoteString(query.short_name);
-
+                filter += String{filter.empty() ? "" : " AND "} + "short_name = " + quoteString(query.short_name);
             if (query.database_and_table_name)
             {
                 const String & database = query.database_and_table_name->first;

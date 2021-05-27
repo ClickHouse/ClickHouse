@@ -63,11 +63,7 @@ private:
 class DictionaryStorageFetchRequest
 {
 public:
-    DictionaryStorageFetchRequest(
-        const DictionaryStructure & structure,
-        const Strings & attributes_names_to_fetch,
-        DataTypes attributes_to_fetch_result_types,
-        Columns attributes_default_values_columns)
+    DictionaryStorageFetchRequest(const DictionaryStructure & structure, const Strings & attributes_names_to_fetch, Columns attributes_default_values_columns)
         : attributes_to_fetch_names_set(attributes_names_to_fetch.begin(), attributes_names_to_fetch.end())
         , attributes_to_fetch_filter(structure.attributes.size(), false)
     {
@@ -80,7 +76,7 @@ public:
         dictionary_attributes_types.reserve(attributes_size);
         attributes_default_value_providers.reserve(attributes_to_fetch_names_set.size());
 
-        size_t attributes_to_fetch_index = 0;
+        size_t default_values_column_index = 0;
         for (size_t i = 0; i < attributes_size; ++i)
         {
             const auto & dictionary_attribute = structure.attributes[i];
@@ -91,16 +87,8 @@ public:
             if (attributes_to_fetch_names_set.find(name) != attributes_to_fetch_names_set.end())
             {
                 attributes_to_fetch_filter[i] = true;
-                auto & attribute_to_fetch_result_type = attributes_to_fetch_result_types[attributes_to_fetch_index];
-
-                if (!attribute_to_fetch_result_type->equals(*type))
-                    throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Attribute type does not match, expected ({}), found ({})",
-                    attribute_to_fetch_result_type->getName(),
-                    type->getName());
-
-                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attributes_default_values_columns[attributes_to_fetch_index]);
-                ++attributes_to_fetch_index;
+                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attributes_default_values_columns[default_values_column_index]);
+                ++default_values_column_index;
             }
             else
                 attributes_default_value_providers.emplace_back(dictionary_attribute.null_value);
@@ -243,21 +231,15 @@ public:
         {
             return ColumnType::create();
         }
-        else if constexpr (std::is_same_v<DictionaryAttributeType, UUID>)
-        {
-            return ColumnType::create(size);
-        }
-        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
+        if constexpr (IsDecimalNumber<DictionaryAttributeType>)
         {
             auto scale = getDecimalScale(*dictionary_attribute.nested_type);
             return ColumnType::create(size, scale);
         }
-        else if constexpr (is_arithmetic_v<DictionaryAttributeType>)
-        {
+        else if constexpr (IsNumber<DictionaryAttributeType>)
             return ColumnType::create(size);
-        }
         else
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+            throw Exception{"Unsupported attribute type.", ErrorCodes::TYPE_MISMATCH};
     }
 };
 
@@ -294,7 +276,7 @@ public:
                 use_default_value_from_column = false;
             }
             else
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type of default column is not the same as dictionary attribute type.");
+                throw Exception{"Type of default column is not the same as dictionary attribute type.", ErrorCodes::TYPE_MISMATCH};
         }
     }
 
@@ -437,6 +419,7 @@ private:
     Arena * complex_key_arena;
 };
 
+
 /** Merge block with blocks from stream. If there are duplicate keys in block they are filtered out.
   * In result block_to_update will be merged with blocks from stream.
   * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
@@ -566,10 +549,10 @@ static const PaddedPODArray<T> & getColumnVectorData(
 
     if (!vector_col)
     {
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
+        throw Exception{ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
-            TypeName<T>);
+            TypeName<T>::get()};
     }
 
     if (is_const_column)
