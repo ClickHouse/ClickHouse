@@ -109,6 +109,7 @@ static bool fixupACL(
         }
         else if (request_acl.scheme == "world" && request_acl.id == "anyone")
         {
+            /// We don't need to save default ACLs
             valid_found = true;
         }
         else if (request_acl.scheme == "digest")
@@ -226,6 +227,9 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
             return true;
 
         const auto & node_acls = it->value.acls;
+        if (node_acls.empty())
+            return true;
+
         const auto & session_auths = storage.session_and_auth[session_id];
         return checkACL(Coordination::ACL::Create, node_acls, session_auths);
     }
@@ -342,6 +346,9 @@ struct KeeperStorageGetRequest final : public KeeperStorageRequest
             return true;
 
         const auto & node_acls = it->value.acls;
+        if (node_acls.empty())
+            return true;
+
         const auto & session_auths = storage.session_and_auth[session_id];
         return checkACL(Coordination::ACL::Read, node_acls, session_auths);
     }
@@ -380,6 +387,9 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
             return true;
 
         const auto & node_acls = it->value.acls;
+        if (node_acls.empty())
+            return true;
+
         const auto & session_auths = storage.session_and_auth[session_id];
         return checkACL(Coordination::ACL::Delete, node_acls, session_auths);
     }
@@ -491,6 +501,9 @@ struct KeeperStorageSetRequest final : public KeeperStorageRequest
             return true;
 
         const auto & node_acls = it->value.acls;
+        if (node_acls.empty())
+            return true;
+
         const auto & session_auths = storage.session_and_auth[session_id];
         return checkACL(Coordination::ACL::Write, node_acls, session_auths);
     }
@@ -565,6 +578,9 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
             return true;
 
         const auto & node_acls = it->value.acls;
+        if (node_acls.empty())
+            return true;
+
         const auto & session_auths = storage.session_and_auth[session_id];
         return checkACL(Coordination::ACL::Read, node_acls, session_auths);
     }
@@ -607,6 +623,9 @@ struct KeeperStorageCheckRequest final : public KeeperStorageRequest
             return true;
 
         const auto & node_acls = it->value.acls;
+        if (node_acls.empty())
+            return true;
+
         const auto & session_auths = storage.session_and_auth[session_id];
         return checkACL(Coordination::ACL::Read, node_acls, session_auths);
     }
@@ -898,6 +917,9 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
             ephemerals.erase(it);
         }
         clearDeadWatches(session_id);
+        auto auth_it = session_and_auth.find(session_id);
+        if (auth_it != session_and_auth.end())
+            session_and_auth.erase(auth_it);
 
         /// Finish connection
         auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
