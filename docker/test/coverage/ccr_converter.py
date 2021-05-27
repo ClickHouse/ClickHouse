@@ -4,7 +4,6 @@ from time import time
 from collections import Counter
 import argparse
 
-abs_path_to_src = ""
 files = []
 tests = []
 tests_names = []
@@ -25,8 +24,8 @@ def convert_to_slim_genhtml_report(file_name: str):
                     funcs_hit.update(test_funcs_hit)
                     lines_hit.update(test_lines_hit)
 
-        for i, (rel_path, funcs_instrumented, lines_instrumented) in enumerate(files):
-            f.write("SF:{}\n".format(abs_path_to_src + "/" + rel_path))
+        for i, (path, funcs_instrumented, lines_instrumented) in enumerate(files):
+            f.write(f"SF:{path}\n")
 
             funcs_hit, lines_hit = data[i] if i in data else (set(), set())
 
@@ -49,8 +48,6 @@ def read_report(f: TextIO):
     global files
     global tests
     global tests_names
-
-    abs_path_to_src = f.readline().strip()
 
     elapsed = time()
 
@@ -110,4 +107,5 @@ def main():
     if args.genhtml_slim_report is not None:
         convert_to_slim_genhtml_report(args.genhtml_slim_report[0])
 
-main()
+if __name__ == '__main__':
+    main()

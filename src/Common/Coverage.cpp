@@ -313,6 +313,12 @@ void Writer::symbolizeInstrumentedData()
 
     mergeDataToCaches<false, AddrSym>(addr_caches);
 
+    if (const size_t sf_count = source_files_cache.size(); sf_count < 100)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR,
+            "Not enough source files ({} < 100), must be a symbolizer bug", sf_count);
+    else
+        LOG_INFO(base_log, "Found {} source files", sf_count);
+
     writeCCRHeader();
 
     // Testing script in docker (/docker/test/coverage/run.sh) waits for this message and starts tests afterwards.
@@ -377,18 +383,15 @@ void Writer::prepareDataAndDump(TestData& test_data, const EdgesHit& hits)
 void Writer::writeCCRHeader()
 {
     /**
-     * /absolute/path/to/ch/src/directory  (note no / in the end)
      * FILES <source files count>
-     * <source file 1 relative path from src/> <functions> <lines>
+     * <source file 1 absolute path> <functions> <lines>
      * <sf 1 function 1 mangled name> <function start line> <function edge index>
      * <sf 1 function 2 mangled name> <function start line> <function edge index>
      * <sf 1 instrumented line 1>
      * <sf 1 instrumented line 2>
-     * <source file 2 relative path from src/> <functions> <lines>
+     * <source file 2 path> <functions> <lines>
      */
-    fmt::print(report_file.file(), "{}\nFILES {}\n",
-        clickhouse_src_dir_abs_path.string(),
-        source_files_cache.size());
+    fmt::print(report_file.file(), "FILES {}\n", source_files_cache.size());
 
     for (const SourceFileInfo& file : source_files_cache)
     {
@@ -483,24 +486,21 @@ Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, 
 
             for (size_t i = start_index; i < end_index; ++i)
             {
-                if (i % 2048 == 0)
-                    LOG_INFO(log, "{}/{}", i - start_index, count);
-
                 const EdgeIndex edge_index = data[i];
 
                 const auto loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs[edge_index]));
-                const String file = loc.file.toString();
+                SourceRelativePath src_path = std::filesystem::path(loc.file.toString()).string();
 
-                if (file.empty())
+                if (src_path.empty())
                     throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Internal symbolizer error");
 
-                SourceRelativePath source_rel_path = std::filesystem::path(file)
-                    .lexically_relative(clickhouse_src_dir_abs_path)
-                    .string();
+                if (i % 2048 == 0)
+                    LOG_INFO(log, "{}/{}, file: {}",
+                        i - start_index, count, src_path);
 
                 const int line = static_cast<int>(loc.line);
 
-                auto cache_it = cache.find(source_rel_path);
+                auto cache_it = cache.find(src_path);
 
                 if constexpr (is_func_cache)
                 {
@@ -509,14 +509,14 @@ Threads Writer::scheduleSymbolizationJobs(LocalCaches<CacheItem>& local_caches, 
                     if (cache_it != cache.end())
                         cache_it->second.emplace_back(line, edge_index, name);
                     else
-                        cache[std::move(source_rel_path)] = {{line, edge_index, name}};
+                        cache[std::move(src_path)] = {{line, edge_index, name}};
                 }
                 else
                 {
                     if (cache_it != cache.end())
                         cache_it->second.emplace(line, edge_index);
                     else
-                        cache[std::move(source_rel_path)] = {{line, edge_index}};
+                        cache[std::move(src_path)] = {{line, edge_index}};
                 }
             }
         });

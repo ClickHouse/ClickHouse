@@ -149,8 +149,7 @@ public:
 private:
     Writer();
 
-    /// If you want to test this runtime outside of Docker, change these two variables.
-    static constexpr std::string_view docker_clickhouse_src_dir_abs_path = "/build/src";
+    /// If you want to test runtime outside of Docker, change this variable.
     static constexpr std::string_view docker_report_path = "/report.ccr";
 
     static constexpr size_t total_source_files_hint {5000}; // each LocalCache pre-allocates this / pool_size.
@@ -163,7 +162,6 @@ private:
     const SymbolIndexInstance symbol_index;
     const Dwarf dwarf;
 
-    const std::filesystem::path clickhouse_src_dir_abs_path { docker_clickhouse_src_dir_abs_path };
     const std::string report_path { docker_report_path };
 
     // CH client is usually located inside main CH binary, but we don't need to instrument client code.

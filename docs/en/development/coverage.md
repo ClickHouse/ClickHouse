@@ -1,5 +1,5 @@
 ---
-toc_priority: 61
+toc_priority: 58
 toc_title: Working with code coverage
 ---
 
@@ -14,9 +14,8 @@ CCR consists of 3 sections:
 Header:
 
 ```
-/absolute/path/to/ch/src/directory
 FILES <source files count>
-<source file 1 relative path from src/> <functions> <lines>
+<source file 1 absolute path> <functions> <lines>
 <sf 1 function 1 mangled name> <function start line> <function edge index>
 <sf 1 function 2 mangled name> <function start line> <function edge index>
 <sf 1 instrumented line 1>
