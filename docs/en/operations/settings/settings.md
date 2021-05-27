@@ -3008,6 +3008,8 @@ Possible values:
 -   0 — Functions with identical argument are not fused.
 -   1 — Functions with identical argument are fused.
 
+Default value: `0`.
+
 **Example**
 
 Query:

@@ -1,4 +1,4 @@
-## rankCorr {#agg_function-rankcorr}
+# rankCorr {#agg_function-rankcorr}
 
 Computes a rank correlation coefficient.
 
