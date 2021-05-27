@@ -192,7 +192,6 @@ def test_should_execute_fetch(start_cluster):
             n2_fetch_speed.append(n2_in)
             time.sleep(0.5)
 
-        print(node2.query("SELECT * FROM system.replicated_fetches FORMAT Vertical"))
         node2.query("SYSTEM SYNC REPLICA should_execute_table")
         assert any(int(f.strip()) != 0 for f in replication_queue_data)
         assert node2.query("SELECT COUNT() FROM should_execute_table") == "630\n"
