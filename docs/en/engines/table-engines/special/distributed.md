@@ -25,7 +25,7 @@ The Distributed engine accepts parameters:
     -   [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
     -   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
-Also it accept the following settings:
+Also, it accepts the following settings:
 
 - `fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
 
