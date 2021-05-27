@@ -18,7 +18,7 @@ sumCount(x)
 
 **Возвращаемое значение**
 
--   Кортеж из элементов `(sum, count)`, где `sum` — это сумма чисел и `count` — количество строк или не-нулевых значений.
+-   Кортеж из элементов `(sum, count)`, где `sum` — это сумма чисел и `count` — количество строк со значениями, отличными от `NULL`.
 
 Тип: [Tuple](../../../sql-reference/data-types/tuple.md).
 
@@ -27,8 +27,9 @@ sumCount(x)
 Запрос:
 
 ``` sql
-CREATE TABLE test (x Int8) Engine = Log;
+CREATE TABLE test (x Nullable(Int8)) Engine = Log;
 INSERT INTO test SELECT number FROM numbers(1, 20);
+INSERT INTO test VALUES (NULL);
 SELECT sumCount(x) from test;
 ```
 
