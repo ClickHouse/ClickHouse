@@ -117,6 +117,9 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
     auto & key_column = nested_tuple.getColumn(0);
     auto & value_column = nested_tuple.getColumn(1);
 
+    WhichDataType which(key_column.getDataType());
+    bool is_integer_key = which.isInt() || which.isUInt();
+
     size_t size = 0;
     assertChar('{', istr);
 
@@ -140,14 +143,27 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
             if (*istr.position() == '}')
                 break;
 
-            reader(key, key_column);
-            skipWhitespaceIfAny(istr);
-            assertChar(':', istr);
+            /// For int keys replace ':' to space, because serialization of numbers
+            /// uses unsafe version of reading from text, which consumes ':' symbol
+            /// and has UB in that case.
+            if (is_integer_key)
+            {
+                auto * colon_pos = find_first_symbols<':'>(istr.position(), istr.buffer().end());
+                if (!colon_pos)
+                    throw Exception("Cannot read Map from text", ErrorCodes::CANNOT_READ_MAP_FROM_TEXT);
+                *colon_pos = ' ';
+                reader(key, key_column);
+            }
+            else
+            {
+                reader(key, key_column);
+                skipWhitespaceIfAny(istr);
+                assertChar(':', istr);
+            }
 
             ++size;
             skipWhitespaceIfAny(istr);
             reader(value, value_column);
-
             skipWhitespaceIfAny(istr);
         }
 

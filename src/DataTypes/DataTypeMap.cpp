@@ -68,7 +68,7 @@ void DataTypeMap::assertKeyType() const
 std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getName() << "," << value_type->getName() << ")";
+    s << "Map(" << key_type->getName() << ", " << value_type->getName() << ")";
 
     return s.str();
 }
