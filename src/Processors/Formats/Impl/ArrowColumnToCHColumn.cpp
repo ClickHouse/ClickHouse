@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <common/DateLUTImpl.h>
 #include <common/types.h>
 #include <Core/Block.h>
@@ -18,6 +19,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnUnique.h>
+#include <Columns/ColumnMap.h>
 #include <Interpreters/castColumn.h>
 #include <algorithm>
 
@@ -293,14 +295,15 @@ namespace DB
     {
         if (internal_column.isNullable())
         {
-            ColumnNullable & column_nullable = typeid_cast<ColumnNullable &>(internal_column);
+            ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(internal_column);
             readColumnFromArrowColumn(arrow_column, column_nullable.getNestedColumn(), column_name, format_name, true, dictionary_values);
             fillByteMapFromArrowColumn(arrow_column, column_nullable.getNullMapColumn());
             return;
         }
 
-        // TODO: check if a column is const?
-        if (!is_nullable && !checkColumn<ColumnArray>(internal_column) && arrow_column->null_count())
+        /// TODO: check if a column is const?
+        if (!is_nullable && arrow_column->null_count() && arrow_column->type()->id() != arrow::Type::LIST
+            && arrow_column->type()->id() != arrow::Type::MAP && arrow_column->type()->id() != arrow::Type::STRUCT)
         {
             throw Exception
                 {
@@ -332,6 +335,7 @@ namespace DB
                 //fillColumnWithNumericData<Decimal128, ColumnDecimal<Decimal128>>(arrow_column, read_column); // Have problems with trash values under NULL, but faster
                 fillColumnWithDecimalData(arrow_column, internal_column /*, internal_nested_type*/);
                 break;
+            case arrow::Type::MAP: [[fallthrough]];
             case arrow::Type::LIST:
             {
                 arrow::ArrayVector array_vector;
@@ -344,14 +348,17 @@ namespace DB
                 }
                 auto arrow_nested_column = std::make_shared<arrow::ChunkedArray>(array_vector);
 
-                ColumnArray & column_array = typeid_cast<ColumnArray &>(internal_column);
+                ColumnArray & column_array = arrow_column->type()->id() == arrow::Type::MAP
+                    ? assert_cast<ColumnMap &>(internal_column).getNestedColumn()
+                    : assert_cast<ColumnArray &>(internal_column);
+
                 readColumnFromArrowColumn(arrow_nested_column, column_array.getData(), column_name, format_name, false, dictionary_values);
                 fillOffsetsFromArrowListColumn(arrow_column, column_array.getOffsetsColumn());
                 break;
             }
             case arrow::Type::STRUCT:
             {
-                ColumnTuple & column_tuple = typeid_cast<ColumnTuple &>(internal_column);
+                ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(internal_column);
                 int fields_count = column_tuple.tupleSize();
                 std::vector<arrow::ArrayVector> nested_arrow_columns(fields_count);
                 for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
@@ -370,7 +377,7 @@ namespace DB
             }
             case arrow::Type::DICTIONARY:
             {
-                ColumnLowCardinality & column_lc = typeid_cast<ColumnLowCardinality &>(internal_column);
+                ColumnLowCardinality & column_lc = assert_cast<ColumnLowCardinality &>(internal_column);
                 auto & dict_values = dictionary_values[column_name];
                 /// Load dictionary values only once and reuse it.
                 if (!dict_values)
@@ -430,7 +437,7 @@ namespace DB
     {
         if (column_type->isNullable())
         {
-            DataTypePtr nested_type = typeid_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
+            DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
             return makeNullable(getInternalType(arrow_type, nested_type, column_name, format_name));
         }
 
@@ -447,7 +454,7 @@ namespace DB
 
             const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
             if (!array_type)
-                throw Exception{"Cannot convert arrow LIST type to a not Array ClickHouse type " + column_type->getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception{"Cannot convert arrow LIST type to a not Array/Map ClickHouse type " + column_type->getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return std::make_shared<DataTypeArray>(getInternalType(list_nested_type, array_type->getNestedType(), column_name, format_name));
         }
@@ -478,7 +485,23 @@ namespace DB
         if (arrow_type->id() == arrow::Type::DICTIONARY)
         {
             const auto * arrow_dict_type = static_cast<arrow::DictionaryType *>(arrow_type.get());
-            return std::make_shared<DataTypeLowCardinality>(getInternalType(arrow_dict_type->value_type(), column_type, column_name, format_name));
+            const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
+            /// We allow to insert arrow dictionary into a non-LowCardinality column.
+            const auto & dict_type = lc_type ? lc_type->getDictionaryType() : column_type;
+            return std::make_shared<DataTypeLowCardinality>(getInternalType(arrow_dict_type->value_type(), dict_type, column_name, format_name));
+        }
+
+        if (arrow_type->id() == arrow::Type::MAP)
+        {
+            const auto * arrow_map_type = typeid_cast<arrow::MapType *>(arrow_type.get());
+            const auto * map_type = typeid_cast<const DataTypeMap *>(column_type.get());
+            if (!map_type)
+                throw Exception{"Cannot convert arrow MAP type to a not Map ClickHouse type " + column_type->getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
+
+            return std::make_shared<DataTypeMap>(
+                getInternalType(arrow_map_type->key_type(), map_type->getKeyType(), column_name, format_name),
+                getInternalType(arrow_map_type->item_type(), map_type->getValueType(), column_name, format_name)
+                );
         }
 
         if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),

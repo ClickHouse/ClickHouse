@@ -11,6 +11,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMap.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -18,6 +19,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 
 namespace DB
 {
@@ -102,27 +104,27 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         }
         case TypeIndex::Array:
         {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+            const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
             return orc::createListType(getORCType(array_type->getNestedType(), column_name));
         }
         case TypeIndex::Decimal32:
         {
-            const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal32> *>(type.get());
+            const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal32> *>(type.get());
             return orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
         }
         case TypeIndex::Decimal64:
         {
-            const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal64> *>(type.get());
+            const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal64> *>(type.get());
             return orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
         }
         case TypeIndex::Decimal128:
         {
-            const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal128> *>(type.get());
+            const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal128> *>(type.get());
             return orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
         }
         case TypeIndex::Tuple:
         {
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
             const auto & nested_types = tuple_type->getElements();
             auto struct_type = orc::createStructType();
             for (size_t i = 0; i < nested_types.size(); ++i)
@@ -131,6 +133,14 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
                 struct_type->addStructField(name, getORCType(nested_types[i], name));
             }
             return struct_type;
+        }
+        case TypeIndex::Map:
+        {
+            const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
+            return orc::createMapType(
+                getORCType(map_type->getKeyType(), column_name),
+                getORCType(map_type->getValueType(), column_name)
+                );
         }
         default:
         {
@@ -174,7 +184,7 @@ void ORCBlockOutputFormat::writeDecimals(
 {
     DecimalVectorBatch & decimal_orc_column = dynamic_cast<DecimalVectorBatch &>(orc_column);
     const auto & decimal_column = assert_cast<const ColumnDecimal<Decimal> &>(column);
-    const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal> *>(type.get());
+    const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal> *>(type.get());
     decimal_orc_column.precision = decimal_type->getPrecision();
     decimal_orc_column.scale = decimal_type->getScale();
     decimal_orc_column.resize(decimal_column.size());
@@ -400,13 +410,40 @@ void ORCBlockOutputFormat::writeColumn(
         {
             orc::StructVectorBatch & struct_orc_column = dynamic_cast<orc::StructVectorBatch &>(orc_column);
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
-            auto nested_types = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
+            auto nested_types = assert_cast<const DataTypeTuple *>(type.get())->getElements();
             for (size_t i = 0; i != tuple_column.size(); ++i)
                 struct_orc_column.notNull[i] = 1;
             for (size_t i = 0; i != tuple_column.tupleSize(); ++i)
                 writeColumn(*struct_orc_column.fields[i], tuple_column.getColumn(i), nested_types[i], null_bytemap);
             break;
+        }
+        case TypeIndex::Map:
+        {
+            orc::MapVectorBatch & map_orc_column = dynamic_cast<orc::MapVectorBatch &>(orc_column);
+            const auto & list_column = assert_cast<const ColumnMap &>(column).getNestedColumn();
+            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
+            const ColumnArray::Offsets & offsets = list_column.getOffsets();
 
+            map_orc_column.resize(list_column.size());
+            /// The length of list i in ListVectorBatch is offsets[i+1] - offsets[i].
+            map_orc_column.offsets[0] = 0;
+            for (size_t i = 0; i != list_column.size(); ++i)
+            {
+                map_orc_column.offsets[i + 1] = offsets[i];
+                map_orc_column.notNull[i] = 1;
+            }
+            const auto nested_columns = assert_cast<const ColumnTuple *>(list_column.getDataPtr().get())->getColumns();
+
+            orc::ColumnVectorBatch & keys_orc_column = *map_orc_column.keys;
+            auto key_type = map_type.getKeyType();
+            writeColumn(keys_orc_column, *nested_columns[0], key_type, null_bytemap);
+
+            orc::ColumnVectorBatch & values_orc_column = *map_orc_column.elements;
+            auto value_type = map_type.getValueType();
+            writeColumn(values_orc_column, *nested_columns[1], value_type, null_bytemap);
+
+            map_orc_column.numElements = list_column.size();
+            break;
         }
         default:
             throw Exception("Type " + type->getName() + " is not supported for ORC output format", ErrorCodes::ILLEGAL_COLUMN);
