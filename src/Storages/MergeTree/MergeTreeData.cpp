@@ -3839,21 +3839,18 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    candidate.merge_tree_data_select_base_cache = std::make_unique<MergeTreeDataSelectCache>();
-    candidate.merge_tree_data_select_projection_cache = std::make_unique<MergeTreeDataSelectCache>();
-    reader.readFromParts(
+    //candidate.merge_tree_data_select_base_cache = std::make_unique<MergeTreeDataSelectCache>();
+    //candidate.merge_tree_data_select_projection_cache = std::make_unique<MergeTreeDataSelectCache>();
+    auto sum_marks = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
         metadata_snapshot,
         candidate.desc->metadata,
         query_info, // TODO syntax_analysis_result set in index
         query_context,
-        0, // max_block_size is unused when getting cache
         settings.max_threads,
-        max_added_blocks,
-        candidate.merge_tree_data_select_projection_cache.get());
+        max_added_blocks);
 
-    size_t sum_marks = candidate.merge_tree_data_select_projection_cache->sum_marks;
     if (normal_parts.empty())
     {
         // All parts are projection parts which allows us to use in_order_optimization.
@@ -3862,18 +3859,15 @@ static void selectBestProjection(
     }
     else
     {
-        reader.readFromParts(
+        sum_marks += reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
             metadata_snapshot,
             metadata_snapshot,
             query_info, // TODO syntax_analysis_result set in index
             query_context,
-            0, // max_block_size is unused when getting cache
             settings.max_threads,
-            max_added_blocks,
-            candidate.merge_tree_data_select_base_cache.get());
-        sum_marks += candidate.merge_tree_data_select_base_cache->sum_marks;
+            max_added_blocks);
     }
 
     // We choose the projection with least sum_marks to read.
@@ -4101,7 +4095,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     if (!candidates.empty())
     {
         // First build a MergeTreeDataSelectCache to check if a projection is indeed better than base
-        query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
+        // query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
 
         std::unique_ptr<PartitionIdToMaxBlock> max_added_blocks;
         if (settings.select_sequential_consistency)
@@ -4112,21 +4106,10 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         auto parts = getDataPartsVector();
         MergeTreeDataSelectExecutor reader(*this);
-        reader.readFromParts(
-            parts,
-            analysis_result.required_columns,
-            metadata_snapshot,
-            metadata_snapshot,
-            query_info, // TODO syntax_analysis_result set in index
-            query_context,
-            0, // max_block_size is unused when getting cache
-            settings.max_threads,
-            max_added_blocks.get(),
-            query_info.merge_tree_data_select_cache.get());
 
-        // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
-        size_t min_sum_marks = query_info.merge_tree_data_select_cache->sum_marks + 1;
         ProjectionCandidate * selected_candidate = nullptr;
+        size_t min_sum_marks = std::numeric_limits<size_t>::max();
+        bool has_ordinary_projection = false;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
         {
@@ -4145,11 +4128,27 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     selected_candidate,
                     min_sum_marks);
             }
+            else
+                has_ordinary_projection = true;
         }
 
         /// Select the best normal projection if no aggregate projection is available
-        if (!selected_candidate)
+        if (!selected_candidate && has_ordinary_projection)
         {
+            min_sum_marks = reader.estimateNumMarksToRead(
+                parts,
+                analysis_result.required_columns,
+                metadata_snapshot,
+                metadata_snapshot,
+                query_info, // TODO syntax_analysis_result set in index
+                query_context,
+                settings.max_threads,
+                max_added_blocks.get());
+
+            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
+            min_sum_marks += 1;
+
             for (auto & candidate : candidates)
             {
                 if (candidate.desc->type == ProjectionDescription::Type::Normal)

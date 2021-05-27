@@ -17,19 +17,22 @@ struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;
     bool read_nothing = false;
+    Float64 used_sample_factor = 1.0;
     std::shared_ptr<ASTFunction> filter_function;
     ActionsDAGPtr filter_expression;
 };
 
-struct MergeTreeDataSelectCache
-{
-    RangesInDataParts parts_with_ranges;
-    MergeTreeDataSelectSamplingData sampling;
-    std::unique_ptr<ReadFromMergeTree::IndexStats> index_stats;
-    size_t sum_marks = 0;
-    size_t sum_ranges = 0;
-    bool use_cache = false;
-};
+// struct MergeTreeDataSelectCache
+// {
+//     RangesInDataParts parts_with_ranges;
+//     MergeTreeDataSelectSamplingData sampling;
+//     std::unique_ptr<ReadFromMergeTree::IndexStats> index_stats;
+//     size_t sum_marks = 0;
+//     size_t sum_ranges = 0;
+//     bool use_cache = false;
+// };
+
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 /** Executes SELECT queries on data from the merge tree.
   */
@@ -41,7 +44,6 @@ public:
     /** When reading, selects a set of parts that covers the desired range of the index.
       * max_blocks_number_to_read - if not nullptr, do not read all the parts whose right border is greater than max_block in partition.
       */
-    using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
     QueryPlanPtr read(
         const Names & column_names,
@@ -53,6 +55,16 @@ public:
         QueryProcessingStage::Enum processed_stage,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
+    size_t estimateNumMarksToRead(
+        MergeTreeData::DataPartsVector parts,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot_base,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr context,
+        unsigned num_streams,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
+
     QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
@@ -62,57 +74,56 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         unsigned num_streams,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr,
-        MergeTreeDataSelectCache * cache = nullptr) const;
+        const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
 private:
     const MergeTreeData & data;
 
     Poco::Logger * log;
 
-    QueryPlanPtr spreadMarkRangesAmongStreams(
-        RangesInDataParts && parts,
-        size_t num_streams,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        UInt64 max_block_size,
-        bool use_uncompressed_cache,
-        const SelectQueryInfo & query_info,
-        const Names & virt_columns,
-        const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        const String & query_id) const;
+    // QueryPlanPtr spreadMarkRangesAmongStreams(
+    //     RangesInDataParts && parts,
+    //     size_t num_streams,
+    //     const Names & column_names,
+    //     const StorageMetadataPtr & metadata_snapshot,
+    //     UInt64 max_block_size,
+    //     bool use_uncompressed_cache,
+    //     const SelectQueryInfo & query_info,
+    //     const Names & virt_columns,
+    //     const Settings & settings,
+    //     const MergeTreeReaderSettings & reader_settings,
+    //     const String & query_id) const;
 
-    /// out_projection - save projection only with columns, requested to read
-    QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
-        RangesInDataParts && parts,
-        size_t num_streams,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        UInt64 max_block_size,
-        bool use_uncompressed_cache,
-        const SelectQueryInfo & query_info,
-        const ActionsDAGPtr & sorting_key_prefix_expr,
-        const Names & virt_columns,
-        const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        ActionsDAGPtr & out_projection,
-        const String & query_id,
-        const InputOrderInfoPtr & input_order_info) const;
+    // /// out_projection - save projection only with columns, requested to read
+    // QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
+    //     RangesInDataParts && parts,
+    //     size_t num_streams,
+    //     const Names & column_names,
+    //     const StorageMetadataPtr & metadata_snapshot,
+    //     UInt64 max_block_size,
+    //     bool use_uncompressed_cache,
+    //     const SelectQueryInfo & query_info,
+    //     const ActionsDAGPtr & sorting_key_prefix_expr,
+    //     const Names & virt_columns,
+    //     const Settings & settings,
+    //     const MergeTreeReaderSettings & reader_settings,
+    //     ActionsDAGPtr & out_projection,
+    //     const String & query_id,
+    //     const InputOrderInfoPtr & input_order_info) const;
 
-    QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts,
-        size_t num_streams,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        UInt64 max_block_size,
-        bool use_uncompressed_cache,
-        const SelectQueryInfo & query_info,
-        const Names & virt_columns,
-        const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        ActionsDAGPtr & out_projection,
-        const String & query_id) const;
+    // QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
+    //     RangesInDataParts && parts,
+    //     size_t num_streams,
+    //     const Names & column_names,
+    //     const StorageMetadataPtr & metadata_snapshot,
+    //     UInt64 max_block_size,
+    //     bool use_uncompressed_cache,
+    //     const SelectQueryInfo & query_info,
+    //     const Names & virt_columns,
+    //     const Settings & settings,
+    //     const MergeTreeReaderSettings & reader_settings,
+    //     ActionsDAGPtr & out_projection,
+    //     const String & query_id) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     static size_t getApproximateTotalRowsToRead(
@@ -140,7 +151,6 @@ private:
         size_t & granules_dropped,
         Poco::Logger * log);
 
-public:
     struct PartFilterCounters
     {
         size_t num_initial_selected_parts = 0;
@@ -175,16 +185,36 @@ public:
         PartFilterCounters & counters,
         Poco::Logger * log);
 
-    static RangesInDataParts filterParts(
+public:
+    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+        const MergeTreeData & data,
         MergeTreeData::DataPartsVector & parts,
+        const ASTPtr & query,
+        ContextPtr context);
+
+    static void filterPartsByPartition(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeData & data,
+        const SelectQueryInfo & query_info,
+        ContextPtr & context,
+        ContextPtr & query_context,
+        MergeTreeData::DataPartsVector & parts,
+        const std::optional<std::unordered_set<String>> & part_values,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        Poco::Logger * log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
+    static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
+        MergeTreeData::DataPartsVector && parts,
         StorageMetadataPtr metadata_snapshot,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         ContextPtr & context,
         KeyCondition & key_condition,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log,
         size_t num_streams,
-        ReadFromMergeTree::IndexStats & index_stats);
+        ReadFromMergeTree::IndexStats & index_stats,
+        bool use_skip_indexes);
 
     static MergeTreeDataSelectSamplingData getSampling(
         const ASTSelectQuery & select,
@@ -197,7 +227,7 @@ public:
         NamesAndTypesList available_real_columns,
         ContextPtr context);
 
-    static String checkLimits(MergeTreeData & data, const RangesInDataParts & parts_with_ranges, ContextPtr & context);
+    static String checkLimits(const MergeTreeData & data, const RangesInDataParts & parts_with_ranges, ContextPtr & context);
 };
 
 }

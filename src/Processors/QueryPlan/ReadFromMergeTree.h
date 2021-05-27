@@ -3,10 +3,12 @@
 #include <Processors/Pipe.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+//#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
 namespace DB
 {
+
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -42,9 +44,10 @@ public:
     struct Settings
     {
         UInt64 max_block_size;
+        size_t num_streams;
         size_t preferred_block_size_bytes;
         size_t preferred_max_column_in_block_size_bytes;
-        size_t min_marks_for_concurrent_read;
+        //size_t min_marks_for_concurrent_read;
         bool use_uncompressed_cache;
         bool force_primary_key;
 
@@ -68,21 +71,18 @@ public:
     };
 
     ReadFromMergeTree(
-        SelectQueryInfo query_info_,
-        const MergeTreeDataSelectExecutor::PartitionIdToMaxBlock * max_block_numbers_to_read_,
+        const SelectQueryInfo & query_info_,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read_,
         ContextPtr context_,
         const MergeTreeData & data_,
-        const MergeTreeData & storage_,
         StorageMetadataPtr metadata_snapshot_,
         StorageMetadataPtr metadata_snapshot_base_,
         Names real_column_names_,
         MergeTreeData::DataPartsVector parts_,
-        //IndexStatPtr index_stats_,
         PrewhereInfoPtr prewhere_info_,
         Names virt_column_names_,
         Settings settings_,
-        size_t num_streams_,
-        //ReadType read_type_
+        Poco::Logger * log_
     );
 
     String getName() const override { return "ReadFromMergeTree"; }
@@ -97,22 +97,18 @@ public:
 
 private:
     SelectQueryInfo query_info;
-    const MergeTreeDataSelectExecutor::PartitionIdToMaxBlock * max_block_numbers_to_read;
+    const PartitionIdToMaxBlock * max_block_numbers_to_read;
     ContextPtr context;
     const MergeTreeData & data;
-    const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
     StorageMetadataPtr metadata_snapshot_base;
 
     Names real_column_names;
-    MergeTreeData::DataPartsVector parts;
-    IndexStats index_stats;
+    MergeTreeData::DataPartsVector prepared_parts;
     PrewhereInfoPtr prewhere_info;
+    IndexStats index_stats;
     Names virt_column_names;
     Settings settings;
-
-    size_t num_streams;
-    //ReadType read_type;
 
     Poco::Logger * log;
 
