@@ -485,7 +485,7 @@ void makeWindowDescriptionFromAST(const WindowDescriptions & existing_descriptio
         if (it == existing_descriptions.end())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Window '{}' references unknown window '{}'",
+                "Window definition '{}' references an unknown window '{}'",
                 definition.formatForErrorMessage(),
                 definition.parent_window_name);
         }
@@ -506,21 +506,21 @@ void makeWindowDescriptionFromAST(const WindowDescriptions & existing_descriptio
         if (definition.partition_by)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Derived window '{}' is not allowed to override PARTITION BY",
+                "Derived window definition '{}' is not allowed to override PARTITION BY",
                 definition.formatForErrorMessage());
         }
 
         if (definition.order_by && !parent.order_by.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Derived window '{}' is not allowed to override a non-empty ORDER BY",
+                "Derived window definition '{}' is not allowed to override a non-empty ORDER BY",
                 definition.formatForErrorMessage());
         }
 
         if (!parent.frame.is_default)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Parent window '{}' is not allowed to define a frame: while processing derived window '{}'",
+                "Parent window '{}' is not allowed to define a frame: while processing derived window definition '{}'",
                 definition.parent_window_name,
                 definition.formatForErrorMessage());
         }

@@ -12,6 +12,8 @@ ASTPtr ASTWindowDefinition::clone() const
 {
     auto result = std::make_shared<ASTWindowDefinition>();
 
+    result->parent_window_name = parent_window_name;
+
     if (partition_by)
     {
         result->partition_by = partition_by->clone();

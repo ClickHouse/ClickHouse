@@ -715,23 +715,28 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     // both ways.
     if (parseWindowDefinitionParts(pos, *result, expected))
     {
-        // Successfully parsed without parent window specifier.
+        // Successfully parsed without parent window specifier. It can be empty,
+        // so check that it is followed by the closing bracket.
+        ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
+        if (parser_closing_bracket.ignore(pos, expected))
+        {
+            node = result;
+            return true;
+        }
     }
-    else
-    {
-        // Try to parse with parent window specifier.
-        ParserIdentifier parser_parent_window;
-        ASTPtr window_name_identifier;
-        if (!parser_parent_window.parse(pos, window_name_identifier, expected))
-        {
-            return false;
-        }
-        result->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
 
-        if (!parseWindowDefinitionParts(pos, *result, expected))
-        {
-            return false;
-        }
+    // Try to parse with parent window specifier.
+    ParserIdentifier parser_parent_window;
+    ASTPtr window_name_identifier;
+    if (!parser_parent_window.parse(pos, window_name_identifier, expected))
+    {
+        return false;
+    }
+    result->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
+
+    if (!parseWindowDefinitionParts(pos, *result, expected))
+    {
+        return false;
     }
 
     ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
