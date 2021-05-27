@@ -257,7 +257,7 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
-    /** [Replicated][|Summing|Versioned|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
+    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
         * The argument for the engine should be:
         *  - (for Replicated) The path to the table in ZooKeeper
         *  - (for Replicated) Replica name in ZooKeeper

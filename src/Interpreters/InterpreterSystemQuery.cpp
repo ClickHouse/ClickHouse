@@ -55,7 +55,6 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int NO_ZOOKEEPER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -130,6 +129,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
     else
         throw Exception("Unknown action type: " + std::to_string(action_type), ErrorCodes::LOGICAL_ERROR);
 }
+
+constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
 
 }
 
@@ -392,8 +393,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RESTART_REPLICA:
             if (!tryRestartReplica(table_id, system_context))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no replicated table {}.{}",
-                    query.database, query.table);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
             break;
         case Type::RESTORE_REPLICA:
             restoreReplica();
@@ -436,23 +436,20 @@ void InterpreterSystemQuery::restoreReplica()
         throw Exception(ErrorCodes::NO_ZOOKEEPER,
             "Cannot restore table metadata because ZooKeeper session has expired");
 
-    const String& db_name = table_id.database_name;
-    const String& table_name = table_id.table_name;
-
-    const StoragePtr table_ptr = DatabaseCatalog::instance().tryGetTable({db_name, table_name}, getContext());
-
-    if (!table_ptr)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no table \"{}.{}\"", db_name, table_name);
+    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
 
     if (table_replicated_ptr == nullptr)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no replicated table \"{}.{}\"", db_name, table_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 
-    auto& table_replicated = *table_replicated_ptr;
+    auto & table_replicated = *table_replicated_ptr;
 
     StorageReplicatedMergeTree::Status status;
     table_replicated.getStatus(status);
+
+    if (!status.is_readonly)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Replica must be readonly");
 
     const String replica_name = table_replicated.getReplicaName();
     const String& zk_root_path = status.zookeeper_path;
@@ -554,7 +551,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
         if (!dropReplicaImpl(query, table))
-            throw Exception("Table " + table_id.getNameForLogs() + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
     }
     else if (!query.database.empty())
     {
@@ -666,7 +663,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
     }
     else
-        throw Exception("Table " + table_id.getNameForLogs() + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
 
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)

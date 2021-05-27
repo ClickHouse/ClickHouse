@@ -290,7 +290,7 @@ Do not use this query if any replica path `/replicas/name` is present as in that
 #### Syntax
 
 ``` sql
-SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
 ```
 
 #### Example

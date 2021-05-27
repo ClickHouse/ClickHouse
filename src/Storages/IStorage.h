@@ -190,9 +190,10 @@ protected:
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
+private:
+
     StorageID storage_id;
 
-private:
     mutable std::mutex id_mutex;
 
     /// Multiversion storage metadata. Allows to read/write storage metadata

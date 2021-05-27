@@ -35,23 +35,30 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+def check_data(_sum: int, count: int) -> None:
+    res: str = node_1.query("SELECT sum(n), count() FROM test")
+
+    test_sum, test_count = map(int, res.split()) # integrity
+    assert test_count == count
+    assert test_sum == _sum
+
+    assert_eq_with_retry(node_2, "SELECT sum(n), count() FROM test", res) # consistency
+    assert_eq_with_retry(node_3, "SELECT sum(n), count() FROM test", res)
+
+def check_after_restoration():
+    check_data(1999000, 2000)
+
+    for node in [node_1, node_2, node_3]:
+        node.query_and_get_error("SYSTEM RESTORE REPLICA test")
+
+
 def test_restore_replica_invalid_tables(start_cluster):
     print("Checking the invocation on non-existent and non-replicated tables")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA i_dont_exist_42")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA no_db.i_dont_exist_42")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA system.numbers")
 
-def check_data(_sum: int, count: int):
-    res: str = node_1.query("SELECT sum(n), count() FROM test")
-
-    test_sum, test_count = map(int, res.split())
-    assert test_count == count
-    assert test_sum == _sum
-
-    assert_eq_with_retry(node_2, "SELECT sum(n), count() FROM test", res)
-    assert_eq_with_retry(node_3, "SELECT sum(n), count() FROM test", res)
-
-def test_restore_replica(start_cluster):
+def test_restore_replica_sequential(start_cluster):
     zk = cluster.get_kazoo_client('zoo1')
 
     check_data(0, 0)
@@ -59,7 +66,6 @@ def test_restore_replica(start_cluster):
     check_data(499500, 1000)
 
     print("Deleting root ZK path metadata")
-
     zk.delete("/clickhouse/tables/test", recursive=True)
     assert zk.exists("/clickhouse/tables/test") is None
 
@@ -85,7 +91,60 @@ def test_restore_replica(start_cluster):
     node_2.query("SYSTEM SYNC REPLICA test")
     node_3.query("SYSTEM SYNC REPLICA test")
 
-    check_data(1999000, 2000)
+    check_after_restoration()
 
-    for node in [node_1, node_2, node_3]:
-        node.query_and_get_error("SYSTEM RESTORE REPLICA test")
+def test_restore_replica_parallel(start_cluster):
+    zk = cluster.get_kazoo_client('zoo1')
+
+    check_data(0, 0)
+    node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
+    check_data(499500, 1000)
+
+    print("Deleting root ZK path metadata")
+    zk.delete("/clickhouse/tables/test", recursive=True)
+    assert zk.exists("/clickhouse/tables/test") is None
+
+    node_1.query("SYSTEM RESTART REPLICA test")
+    node_1.query_and_get_error("INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0")
+
+    print("Restoring replicas in parallel")
+
+    node_1.query("SYSTEM RESTORE REPLICA test ON CLUSTER test_cluster")
+
+    assert zk.exists("/clickhouse/tables/test")
+    check_data(499500, 1000)
+
+    node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)")
+
+    check_after_restoration()
+
+# def test_restore_replica_alive_replicas(start_cluster):
+#     zk = cluster.get_kazoo_client('zoo1')
+#
+#     check_data(0, 0)
+#     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
+#     check_data(499500, 1000)
+#
+#     # 1. Delete individual replicas paths in ZK and check the invocation
+#     print("Deleting replica2 path, trying to restore replica1")
+#     zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
+#     assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
+#     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
+#
+#     print("Deleting replica1 path, trying to restore replica1")
+#     zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
+#     assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
+#
+#     node_1.query("SYSTEM RESTART REPLICA test")
+#     node_1.query("SYSTEM RESTORE REPLICA test")
+#
+#     node_2.query("SYSTEM RESTART REPLICA test")
+#     node_2.query("SYSTEM RESTORE REPLICA test")
+#
+#     check_data(499500, 1000)
+#
+#     node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)") # assert all the tables are working
+#
+#     node_2.query("SYSTEM SYNC REPLICA test")
+#     node_3.query("SYSTEM SYNC REPLICA test")
+#     check_data(1999000, 2000)

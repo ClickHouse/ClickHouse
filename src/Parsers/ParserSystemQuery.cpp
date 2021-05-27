@@ -129,11 +129,26 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
 
         case Type::RESTART_REPLICA:
-        case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
                 return false;
             break;
+
+        case Type::RESTORE_REPLICA:
+        {
+            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
+                return false;
+
+            String cluster;
+
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+                if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+                    return false;
+
+            res->cluster = cluster;
+
+            break;
+        }
 
         case Type::RESTART_DISK:
         {

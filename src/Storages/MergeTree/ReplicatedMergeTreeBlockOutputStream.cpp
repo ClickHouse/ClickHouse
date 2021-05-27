@@ -524,8 +524,6 @@ void ReplicatedMergeTreeBlockOutputStream::waitForQuorum(
     /// We are waiting for quorum to be satisfied.
     LOG_TRACE(log, "Waiting for quorum");
 
-
-
     try
     {
         while (true)

@@ -137,6 +137,7 @@ namespace ErrorCodes
     extern const int INTERSERVER_SCHEME_DOESNT_MATCH;
     extern const int DUPLICATE_DATA_PART;
     extern const int BAD_ARGUMENTS;
+    extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
 namespace ActionLocks
@@ -435,6 +436,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     } else
     {
+        /// In old tables this node may missing or be empty
         String replica_metadata;
         const bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
 
@@ -5073,6 +5075,9 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 
 void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
 {
+    if (are_restoring_replica.exchange(true))
+        throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");
+
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     const DataPartsVector parts = getDataPartsVector();
@@ -5085,7 +5090,12 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
 
         if (const String path = relative_data_path + "detached/" + part->getRelativePathForPrefix("");
             disk->exists(path))
+        {
+            LOG_WARNING(log, "Part {} already exists in {}, removing it and placing currently active part there",
+                part->name, path);
+
             disk->removeRecursive(path);
+        }
 
         // It may happen part with specified name was in detached, but we don't care about it
         part->makeCloneInDetached("", metadata_snapshot);
@@ -5105,11 +5115,9 @@ void StorageReplicatedMergeTree::restoreMetadataOnReadonlyTable()
         for (const auto& part : parts)
             attachPartition(std::make_shared<ASTLiteral>(part->name), metadata_snapshot, true, getContext());
 
-    are_restoring_replica = true;
-
     startup();
 
-    are_restoring_replica = false;
+    are_restoring_replica.store(false);
 }
 
 void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr query_context, bool throw_if_noop)
