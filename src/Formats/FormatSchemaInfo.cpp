@@ -89,7 +89,7 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
         schema_path = path.filename();
         schema_directory = path.parent_path() / "";
     }
-    else if (!path_is_subdirectory_of(path, default_schema_directory_path))
+    else if (path.has_parent_path() && !path_is_subdirectory_of(path, default_schema_directory_path))
     {
         if (is_server)
             throw Exception(
