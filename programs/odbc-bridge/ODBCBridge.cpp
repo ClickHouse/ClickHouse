@@ -166,9 +166,9 @@ void ODBCBridge::initialize(Application & self)
     if (port > 0xFFFF)
         throw Exception("Out of range 'http-port': " + std::to_string(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    http_timeout = config().getUInt("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
+    http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);
-    keep_alive_timeout = config().getUInt("keep-alive-timeout", 10);
+    keep_alive_timeout = config().getUInt64("keep-alive-timeout", 10);
 
     initializeTerminationAndSignalProcessing();
 
