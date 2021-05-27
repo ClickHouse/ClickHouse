@@ -3,7 +3,9 @@
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Access/EnabledQuota.h>
+#include <DataStreams/SizeLimits.h>
+#include <Storages/TableLockHolder.h>
 
 namespace DB
 {
