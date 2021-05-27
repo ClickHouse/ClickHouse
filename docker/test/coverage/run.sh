@@ -96,7 +96,7 @@ clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
 # Skip tests that invoke clickhouse-server or any of other ClickHouse modes
-# as in coverage mode only one instance is allowed to run.
+# as only one binary instance (excluding clickhouse-client instances) is allowed to run.
 clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --coverage \
     --skip 01737_clickhouse_server_wait_server_pool_long \
         01801_s3_cluster \
@@ -108,16 +108,6 @@ clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --co
 
 kill_clickhouse
 
-# no support for failed tests
-
 cp /report.ccr "${OUTPUT_DIR}"/report.ccr
-python3 ccr_converter.py /report.ccr --genhtml-slim-report report.info
 
-# Demangling names by c++filt here is cheaper than demangling names in binary
-time genhtml \
-  --ignore-errors source \
-  --output-directory "${GENHTML_REPORT_DIR}" \
-  --num-spaces 4 \
-  --legend \
-  --demangle-cpp \
-  report.info
+python3 ccr_converter.py /report.ccr --html ${GENHTML_REPORT_DIR}

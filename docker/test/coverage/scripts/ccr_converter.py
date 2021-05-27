@@ -4,11 +4,14 @@ from time import time
 from collections import Counter
 import argparse
 
-files = []
-tests = []
-tests_names = []
+from defs import *
+from ccr_genhtml import generate_html
 
-def convert_to_slim_genhtml_report(file_name: str):
+files: list[SourceFile] = []
+tests: list[Test] = []
+tests_names: list[str] = []
+
+def convert_to_slim_genhtml_report(file_name: str) -> None:
     elapsed = time()
     data = {}
 
@@ -44,7 +47,6 @@ def convert_to_slim_genhtml_report(file_name: str):
     print("Wrote the report, took {}s.".format(int(time() - elapsed)))
 
 def read_report(f: TextIO):
-    global abs_path_to_src
     global files
     global tests
     global tests_names
@@ -62,7 +64,7 @@ def read_report(f: TextIO):
 
         lines = [int(f.readline()) for j in range(int(lines_count))]
 
-        files.append([rel_path, funcs, lines])
+        files.append((rel_path, funcs, lines))
 
     tests_sources = {}
 
@@ -97,12 +99,17 @@ def main():
     parser.add_argument('ccr_report_file')
 
     parser.add_argument('--genhtml-slim-report', nargs=1,
-        help="Merges all tests data into a single .info report. Per-test data is not preserved")
+        help="Merges all tests data into a single .info report for genhtml. Per-test data is not preserved")
+
+    parser.add_argument('--html', nargs=1, metavar='dir' help="Render data to HTML")
 
     args = parser.parse_args()
 
     with open(args.ccr_report_file, "r") as f:
         read_report(f)
+
+    if args.html is not None:
+        generate_html(args.html[1], files, tests, tests_names)
 
     if args.genhtml_slim_report is not None:
         convert_to_slim_genhtml_report(args.genhtml_slim_report[0])

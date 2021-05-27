@@ -5,11 +5,12 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             clang-tools-11 \
             cmake \
-            c++filt
+            c++filt \
+    && pip3 install jinja2 cxxfilt
 
 COPY s3downloader /s3downloader
+COPY scripts/ /scripts/
 
-COPY ccr_converter.py /ccr_converter.py
 COPY run.sh /run.sh
 
 ENV DATASETS="hits visits"

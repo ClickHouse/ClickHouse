@@ -764,7 +764,7 @@ def coverage_run_header(base_dir: str) -> None:
         return
 
     subitems = os.walk(base_dir)
-    subdirs_sizes: List[int] = [os.path.getsize(os.path.join(base_dir, subdir)) for subdir in next(subitems)[1]]
+    subdirs_sizes: list[int] = [len(os.listdir(os.path.join(base_dir, subdir))) for subdir in next(subitems)[1]]
     tests_count: int = sum(subdirs_sizes)
 
     print("Pre-allocating space for {} tests".format(tests_count))
