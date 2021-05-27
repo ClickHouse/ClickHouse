@@ -363,7 +363,8 @@ def add_flamegraphs():
             columns[i] += """<div class="flamegraph-column">"""
 
         for i in range(COLUMNS_COUNT):
-            columns[i] += pattern.format(name=group[i])
+            link = "output/images/svg/{}"
+            columns[i] += pattern.format(name=link.format(group[i]))
 
         for i in range(COLUMNS_COUNT):
             columns[i] += """</div>"""
@@ -372,7 +373,7 @@ def add_flamegraphs():
         columns_html += "<br>"
         columns_html += """<div class="flamegraph-columns-container">{}</div>""".format("".join(columns))
 
-        
+
     result += """<div class="content">{}</div>""".format(columns_html)
     result += """
     <script>
@@ -386,7 +387,7 @@ def add_flamegraphs():
             content.style.maxHeight = null;
         } else {
             content.style.maxHeight = content.scrollHeight + "px";
-        } 
+        }
     });
     }
     </script>"""
