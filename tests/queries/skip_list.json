@@ -702,6 +702,7 @@
         "01760_system_dictionaries",
         "01760_polygon_dictionaries",
         "01778_hierarchical_dictionaries",
+        "01870_modulo_partition_key",
         "01850_dist_INSERT_preserve_error" // uses cluster with different static databases shard_0/shard_1
     ]
 }
