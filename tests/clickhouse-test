@@ -31,7 +31,7 @@ import string
 import multiprocessing
 from contextlib import closing
 
-from typing import Tuple, Union, List
+from typing import Tuple, Union, Optional, TextIO
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
@@ -155,7 +155,7 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
             clickhouse_proc_create = open_client_process(
                 universal_newlines=True,
                 client_args=testcase_args.testcase_client,
-                no_stderr_redirect=True)
+                stderr_file=stderr)
 
             try:
                 clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(testcase_args, database)), timeout=testcase_args.timeout)
@@ -217,7 +217,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     if need_drop_database:
 
         with open(stderr_file, 'a') as stderr:
-            clickhouse_proc_create = open_client_process(universal_newlines=True, no_stderr_redirect=True)
+            clickhouse_proc_create = open_client_process(client, universal_newlines=True, stderr_file=stderr)
 
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
 
@@ -751,14 +751,12 @@ def tests_in_suite_key_func(item: str) -> int:
     except ValueError:
         return 99997
 
-
 def extract_key(key: str) -> str:
-    _, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + key)
-    return out
+    return subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + key)[1]
 
-def open_client_process(client_args: str, universal_newlines: bool = False, no_stderr_redirect: bool = False):
+def open_client_process(client_args: str, universal_newlines: bool = False, stderr_file: Optional[TextIO] = None):
     return Popen(shlex.split(client_args), stdin=PIPE, stdout=PIPE,
-        stderr=stderr if no_stderr_redirect else PIPE,
+        stderr=stderr_file if stderr_file is not None else PIPE,
         universal_newlines=True if universal_newlines else None)
 
 def coverage_run_header(base_dir: str) -> None:
@@ -774,7 +772,7 @@ def coverage_run_header(base_dir: str) -> None:
 
 def coverage_run_item(test_name: str, failures: int = 0) -> Tuple[bool, int]:
     if not args.coverage:
-        return
+        return True, failures
 
     return run_query("SET coverage_test_name='{}';".format(test_name), failures)
 

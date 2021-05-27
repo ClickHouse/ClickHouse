@@ -103,13 +103,12 @@ clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --co
         01526_max_untracked_memory \
         01507_clickhouse_server_start_with_embedded_config \
         01086_odbc_roundtrip \
+        00157_cache_dictionary \
     2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
 kill_clickhouse
 
 # no support for failed tests
-# TODO use baseline for incremental coverage
-# --baseline, --highlight, --diff
 
 cp /report.ccr "${OUTPUT_DIR}"/report.ccr
 python3 ccr_converter.py /report.ccr --genhtml-slim-report report.info
