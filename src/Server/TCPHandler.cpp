@@ -745,7 +745,7 @@ void TCPHandler::processTablesStatusRequest()
             status.absolute_delay = replicated_table->getAbsoluteDelay();
         }
         else
-            status.is_replicated = false;
+            status.is_replicated = false; //-V1048
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }

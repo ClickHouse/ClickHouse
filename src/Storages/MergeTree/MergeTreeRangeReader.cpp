@@ -637,17 +637,14 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             return read_result;
 
         bool has_columns = false;
-        for (auto & column : columns)
-        {
-            if (column)
-                has_columns = true;
-        }
-
         size_t total_bytes = 0;
         for (auto & column : columns)
         {
             if (column)
+            {
                 total_bytes += column->byteSize();
+                has_columns = true;
+            }
         }
 
         read_result.addNumBytesRead(total_bytes);

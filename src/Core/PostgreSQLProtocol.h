@@ -257,6 +257,7 @@ class FirstMessage : public FrontMessage
 {
 public:
     Int32 payload_size;
+
     FirstMessage() = delete;
     FirstMessage(int payload_size_) : payload_size(payload_size_) {}
 };
@@ -264,8 +265,9 @@ public:
 class CancelRequest : public FirstMessage
 {
 public:
-    Int32 process_id;
-    Int32 secret_key;
+    Int32 process_id = 0;
+    Int32 secret_key = 0;
+
     CancelRequest(int payload_size_) : FirstMessage(payload_size_) {}
 
     void deserialize(ReadBuffer & in) override

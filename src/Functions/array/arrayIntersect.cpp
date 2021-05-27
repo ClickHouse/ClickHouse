@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -518,7 +518,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     typename Map::mapped_type * value = nullptr;
 
                     if constexpr (is_numeric_column)
+                    {
                         value = &map[columns[arg_num]->getElement(i)];
+                    }
                     else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
                         value = &map[columns[arg_num]->getDataAt(i)];
                     else

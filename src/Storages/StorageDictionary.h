@@ -82,6 +82,7 @@ private:
         const StorageID & table_id_,
         const String & dictionary_name_,
         const ColumnsDescription & columns_,
+        const String & comment,
         Location location_,
         ContextPtr context_);
 

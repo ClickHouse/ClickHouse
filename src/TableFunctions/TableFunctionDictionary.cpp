@@ -54,11 +54,7 @@ StoragePtr TableFunctionDictionary::executeImpl(
     auto dictionary_table_structure = getActualTableStructure(context);
 
     auto result = StorageDictionary::create(
-        dict_id,
-        dictionary_name,
-        std::move(dictionary_table_structure),
-        StorageDictionary::Location::Custom,
-        context);
+        dict_id, dictionary_name, std::move(dictionary_table_structure), String{}, StorageDictionary::Location::Custom, context);
 
     return result;
 }

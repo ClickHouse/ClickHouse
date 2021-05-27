@@ -7,9 +7,6 @@ endif()
 add_executable (sip_hash_perf sip_hash_perf.cpp)
 target_link_libraries (sip_hash_perf PRIVATE clickhouse_common_io)
 
-add_executable (auto_array auto_array.cpp)
-target_link_libraries (auto_array PRIVATE clickhouse_common_io)
-
 add_executable (small_table small_table.cpp)
 target_link_libraries (small_table PRIVATE clickhouse_common_io)
 
@@ -36,7 +33,7 @@ add_executable (arena_with_free_lists arena_with_free_lists.cpp)
 target_link_libraries (arena_with_free_lists PRIVATE dbms)
 
 add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
-target_link_libraries (lru_hash_map_perf PRIVATE clickhouse_common_io)
+target_link_libraries (lru_hash_map_perf PRIVATE dbms)
 
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
@@ -49,7 +46,11 @@ target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
 target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
-target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms)
+target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms abseil_swiss_tables)
+
+add_executable (integer_hash_tables_benchmark integer_hash_tables_benchmark.cpp)
+target_include_directories (integer_hash_tables_benchmark SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
+target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms abseil_swiss_tables)
 
 add_executable (cow_columns cow_columns.cpp)
 target_link_libraries (cow_columns PRIVATE clickhouse_common_io)

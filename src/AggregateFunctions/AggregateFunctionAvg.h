@@ -7,11 +7,12 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include "Core/DecimalFunctions.h"
+#include <Core/DecimalFunctions.h>
 
 
 namespace DB
 {
+struct Settings;
 template <typename T>
 using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 

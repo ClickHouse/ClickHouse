@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <DataTypes/NumberTraits.h>
-#include <Common/FieldVisitors.h>
+
 
 namespace DB
 {
