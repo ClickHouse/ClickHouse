@@ -489,7 +489,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     in.setNextCallback(ReplicatedFetchReadCallback(*entry));
 
-    return part_type == "InMemory" ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, std::move(reservation), in)
+    return part_type == "InMemory" ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, std::move(reservation), in)
                                    : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
 }
 
