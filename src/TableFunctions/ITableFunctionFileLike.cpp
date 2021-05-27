@@ -60,7 +60,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
     if (structure.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table structure is empty for table function '{}'",
-            ast_function.formatForErrorMessage());
+            ast_function->formatForErrorMessage());
 
     if (args.size() == 4)
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
