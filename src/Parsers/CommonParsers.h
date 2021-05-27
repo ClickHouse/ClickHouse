@@ -5,23 +5,22 @@
 namespace DB
 {
 
-/** Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
-  * All case insensitive. Requires word boundary.
-  * For compound keywords, any whitespace characters and comments could be in the middle.
-  */
-/// Example: ORDER/* Hello */BY
+/// Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
+/// All case insensitive. Requires word boundary.
+/// For compound keywords, any whitespace characters and comments could be in the middle.
+/// Example: ORDER/* HELLO */BY
 class ParserKeyword : public IParserBase
 {
 private:
-    const char * s;
+    std::string_view s;
 
 public:
-    ParserKeyword(const char * s_);
+    constexpr ParserKeyword(std::string_view s_); //NOLINT
 
 protected:
-    const char * getName() const override;
+    constexpr const char * getName() const final;
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) final;
 };
 
 
@@ -51,9 +50,9 @@ protected:
 class ParserNothing : public IParserBase
 {
 public:
-    const char * getName() const override { return "nothing"; }
+    constexpr const char * getName() const final { return "nothing"; }
 
-    bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override { return true; }
+    bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) final { return true; }
 };
 
 }

@@ -14,15 +14,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+constexpr ParserKeyword::ParserKeyword(std::string_view s_) : s(s_) { }
 
-ParserKeyword::ParserKeyword(const char * s_) : s(s_)
+constexpr const char * ParserKeyword::getName() const
 {
-}
-
-
-const char * ParserKeyword::getName() const
-{
-    return s;
+    return s.data();
 }
 
 
@@ -31,17 +27,16 @@ bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
     if (pos->type != TokenType::BareWord)
         return false;
 
-    const char * current_word = s;
+    if (s.empty())
+        throw Exception("Keyword cannot be an empty string", ErrorCodes::LOGICAL_ERROR);
 
-    size_t s_length = strlen(s);
-    if (!s_length)
-        throw Exception("Logical error: keyword cannot be empty string", ErrorCodes::LOGICAL_ERROR);
-
-    const char * s_end = s + s_length;
+    const char * current_word = s.data();
+    const char * const s_end = s.end();
 
     while (true)
     {
         expected.add(pos, current_word);
+
         if (pos->type != TokenType::BareWord)
             return false;
 
@@ -64,5 +59,4 @@ bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
 
     return true;
 }
-
 }
