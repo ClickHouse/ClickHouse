@@ -254,6 +254,7 @@ class ClickHouseCluster:
 
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
+        self.hdfs_ip = None
         self.hdfs_name_port = get_free_port()
         self.hdfs_data_port = get_free_port()
         self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
@@ -1108,6 +1109,7 @@ class ClickHouseCluster:
 
 
     def wait_hdfs_to_start(self, hdfs_api, timeout=300):
+        self.hdfs_ip = self.get_instance_ip(self.hdfs_host)
         start = time.time()
         while time.time() - start < timeout:
             try:
