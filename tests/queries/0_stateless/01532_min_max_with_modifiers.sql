@@ -11,7 +11,7 @@ SELECT
     min(x) AS lower,
     max(x) + 1 AS upper,
     upper - lower AS range
-FROM 
+FROM
 (
     SELECT arrayJoin([1, 2]) AS x
 ) 

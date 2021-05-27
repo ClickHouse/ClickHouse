@@ -1,7 +1,7 @@
 #pragma once
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
