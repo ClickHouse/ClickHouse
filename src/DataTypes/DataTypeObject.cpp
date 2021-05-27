@@ -58,6 +58,9 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeObject(DataTypeFactory & factory)
 {
     factory.registerDataType("Object", create);
+    factory.registerSimpleDataType("JSON",
+        [] { return std::make_shared<DataTypeObject>("JSON"); },
+        DataTypeFactory::CaseInsensitive);
 }
 
 }

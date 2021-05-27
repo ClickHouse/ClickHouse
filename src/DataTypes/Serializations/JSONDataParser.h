@@ -21,6 +21,7 @@ Field getValueAsField(const Element & element)
     if (element.isUInt64()) return element.getUInt64();
     if (element.isDouble()) return element.getDouble();
     if (element.isString()) return element.getString();
+    if (element.isNull())   return Field();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type of JSON field");
 }
@@ -122,13 +123,21 @@ private:
                 ++current_size;
             }
 
-            result.paths.reserve(result.paths.size() + arrays_by_path.size());
-            result.values.reserve(result.paths.size() + arrays_by_path.size());
-
-            for (const auto & [path, path_array] : arrays_by_path)
+            if (arrays_by_path.empty())
             {
-                result.paths.push_back(getNextPath(current_path, path));
-                result.values.push_back(path_array);
+                result.paths.push_back(current_path);
+                result.values.push_back(Array());
+            }
+            else
+            {
+                result.paths.reserve(result.paths.size() + arrays_by_path.size());
+                result.values.reserve(result.paths.size() + arrays_by_path.size());
+
+                for (const auto & [path, path_array] : arrays_by_path)
+                {
+                    result.paths.push_back(getNextPath(current_path, path));
+                    result.values.push_back(path_array);
+                }
             }
         }
         else
