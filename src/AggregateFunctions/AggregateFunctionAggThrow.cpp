@@ -11,6 +11,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -105,7 +106,7 @@ public:
 
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters)
+    factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         Float64 throw_probability = 1.0;
         if (parameters.size() == 1)
