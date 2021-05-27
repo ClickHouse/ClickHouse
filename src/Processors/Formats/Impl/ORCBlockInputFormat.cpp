@@ -72,15 +72,25 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
     if (type->id() == arrow::Type::LIST)
         return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type()) + 1;
 
-    int indices = 1;
     if (type->id() == arrow::Type::STRUCT)
     {
+        int indices = 1;
         auto * struct_type = static_cast<arrow::StructType *>(type.get());
         for (int i = 0; i != struct_type->num_fields(); ++i)
             indices += countIndicesForType(struct_type->field(i)->type());
+        return indices;
     }
 
-    return indices;
+    if (type->id() == arrow::Type::MAP)
+    {
+        int indices = 0;
+        auto * map_type = static_cast<arrow::MapType *>(type.get());
+        indices += countIndicesForType(map_type->key_type());
+        indices += countIndicesForType(map_type->item_type());
+        return indices;
+    }
+
+    return 1;
 }
 
 void ORCBlockInputFormat::prepareReader()

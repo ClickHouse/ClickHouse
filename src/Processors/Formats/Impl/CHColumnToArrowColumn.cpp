@@ -8,6 +8,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -15,6 +16,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <arrow/api.h>
 #include <arrow/builder.h>
@@ -107,6 +109,7 @@ namespace DB
         size_t end,
         std::unordered_map<String, std::shared_ptr<arrow::Array>> & dictionary_values);
 
+    template <typename Builder>
     static void fillArrowArrayWithArrayColumnData(
         const String & column_name,
         ColumnPtr & column,
@@ -118,12 +121,12 @@ namespace DB
         size_t end,
         std::unordered_map<String, std::shared_ptr<arrow::Array>> & dictionary_values)
     {
-        const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
+        const auto * column_array = assert_cast<const ColumnArray *>(column.get());
         ColumnPtr nested_column = column_array->getDataPtr();
-        DataTypePtr nested_type = typeid_cast<const DataTypeArray *>(column_type.get())->getNestedType();
+        DataTypePtr nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
         const auto & offsets = column_array->getOffsets();
 
-        arrow::ListBuilder & builder = assert_cast<arrow::ListBuilder &>(*array_builder);
+        Builder & builder = assert_cast<Builder &>(*array_builder);
         arrow::ArrayBuilder * value_builder = builder.value_builder();
         arrow::Status components_status;
 
@@ -147,8 +150,8 @@ namespace DB
         size_t end,
         std::unordered_map<String, std::shared_ptr<arrow::Array>> & dictionary_values)
     {
-        const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
-        const auto & nested_types =  typeid_cast<const DataTypeTuple *>(column_type.get())->getElements();
+        const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
+        const auto & nested_types =  assert_cast<const DataTypeTuple *>(column_type.get())->getElements();
 
         arrow::StructBuilder & builder = assert_cast<arrow::StructBuilder &>(*array_builder);
 
@@ -168,7 +171,7 @@ namespace DB
     template<typename T>
     static PaddedPODArray<Int64> extractIndexesImpl(ColumnPtr column, size_t start, size_t end)
     {
-        const PaddedPODArray<T> & data = checkAndGetColumn<ColumnVector<T>>(*column)->getData();
+        const PaddedPODArray<T> & data = assert_cast<const ColumnVector<T> *>(column.get())->getData();
         PaddedPODArray<Int64> result;
         result.reserve(end - start);
         std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](T value) { return Int64(value); });
@@ -205,21 +208,21 @@ namespace DB
         size_t end,
         std::unordered_map<String, std::shared_ptr<arrow::Array>> & dictionary_values)
     {
-        const auto * column_lc = typeid_cast<const ColumnLowCardinality *>(column.get());
-        arrow::DictionaryBuilder<ValueType> * builder = typeid_cast<arrow::DictionaryBuilder<ValueType> *>(array_builder);
+        const auto * column_lc = assert_cast<const ColumnLowCardinality *>(column.get());
+        arrow::DictionaryBuilder<ValueType> * builder = assert_cast<arrow::DictionaryBuilder<ValueType> *>(array_builder);
         auto & dict_values = dictionary_values[column_name];
 
         /// Convert dictionary from LowCardinality to Arrow dictionary only once and then reuse it.
         if (!dict_values)
         {
-            auto value_type = typeid_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
+            const auto & value_type = assert_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
             std::unique_ptr<arrow::ArrayBuilder> values_builder;
             arrow::MemoryPool* pool = arrow::default_memory_pool();
             arrow::Status status = MakeBuilder(pool, value_type, &values_builder);
             checkStatus(status, column->getName(), format_name);
 
             auto dict_column = column_lc->getDictionary().getNestedColumn();
-            const auto & dict_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
+            const auto & dict_type = assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
             fillArrowArray(column_name, dict_column, dict_type, nullptr, values_builder.get(), format_name, 0, dict_column->size(), dictionary_values);
             status = values_builder->Finish(&dict_values);
             checkStatus(status, column->getName(), format_name);
@@ -259,8 +262,7 @@ namespace DB
         size_t end,
         std::unordered_map<String, std::shared_ptr<arrow::Array>> & dictionary_values)
     {
-        auto * dict_type = typeid_cast<arrow::DictionaryType *>(array_builder->type().get());
-        auto value_type = dict_type->value_type();
+        auto value_type = assert_cast<arrow::DictionaryType *>(array_builder->type().get())->value_type();
 
 #define DISPATCH(ARROW_TYPE_ID, ARROW_TYPE) \
                 if (arrow::Type::ARROW_TYPE_ID == value_type->id()) \
@@ -367,9 +369,9 @@ namespace DB
 
         if ("Nullable" == column_type_name)
         {
-            const ColumnNullable * column_nullable = checkAndGetColumn<ColumnNullable>(column.get());
+            const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
             ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
-            DataTypePtr nested_type = typeid_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
+            DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
             const ColumnPtr & null_column = column_nullable->getNullMapColumnPtr();
             const PaddedPODArray<UInt8> & bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
             fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end, dictionary_values);
@@ -392,7 +394,7 @@ namespace DB
         }
         else if ("Array" == column_type_name)
         {
-            fillArrowArrayWithArrayColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
+            fillArrowArrayWithArrayColumnData<arrow::ListBuilder>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
         }
         else if ("Tuple" == column_type_name)
         {
@@ -401,6 +403,12 @@ namespace DB
         else if ("LowCardinality" == column_type_name)
         {
             fillArrowArrayWithLowCardinalityColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
+        }
+        else if ("Map" == column_type_name)
+        {
+            ColumnPtr column_array = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
+            DataTypePtr array_type = assert_cast<const DataTypeMap *>(column_type.get())->getNestedType();
+            fillArrowArrayWithArrayColumnData<arrow::MapBuilder>(column_name, column_array, array_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
         }
         else if (isDecimal(column_type))
         {
@@ -446,7 +454,7 @@ namespace DB
         size_t start,
         size_t end)
     {
-        const auto & column = static_cast<const typename DataType::ColumnType &>(*write_column);
+        const auto & column = assert_cast<const typename DataType::ColumnType &>(*write_column);
         arrow::DecimalBuilder & builder = assert_cast<arrow::DecimalBuilder &>(*array_builder);
         arrow::Status status;
 
@@ -487,8 +495,8 @@ namespace DB
     {
         if (column_type->isNullable())
         {
-            DataTypePtr nested_type = typeid_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
-            ColumnPtr nested_column = checkAndGetColumn<ColumnNullable>(*column)->getNestedColumnPtr();
+            DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
+            ColumnPtr nested_column = assert_cast<const ColumnNullable *>(column.get())->getNestedColumnPtr();
             auto arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, is_column_nullable);
             *is_column_nullable = true;
             return arrow_type;
@@ -506,7 +514,7 @@ namespace DB
                     || std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>
                     || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
                 {
-                    const auto & decimal_type = static_cast<const ToDataType *>(column_type.get());
+                    const auto & decimal_type = assert_cast<const ToDataType *>(column_type.get());
                     arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());
                 }
 
@@ -518,16 +526,16 @@ namespace DB
 
         if (isArray(column_type))
         {
-            auto nested_type = typeid_cast<const DataTypeArray *>(column_type.get())->getNestedType();
-            auto nested_column = checkAndGetColumn<ColumnArray>(*column)->getDataPtr();
+            auto nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
+            auto nested_column = assert_cast<const ColumnArray *>(column.get())->getDataPtr();
             auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, is_column_nullable);
             return arrow::list(nested_arrow_type);
         }
 
         if (isTuple(column_type))
         {
-            const auto & nested_types = typeid_cast<const DataTypeTuple *>(column_type.get())->getElements();
-            const auto * tuple_column = checkAndGetColumn<ColumnTuple>(*column);
+            const auto & nested_types = assert_cast<const DataTypeTuple *>(column_type.get())->getElements();
+            const auto * tuple_column = assert_cast<const ColumnTuple *>(column.get());
             std::vector<std::shared_ptr<arrow::Field>> nested_fields;
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
@@ -540,13 +548,26 @@ namespace DB
 
         if (column_type->lowCardinality())
         {
-            auto nested_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
-            const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(*column);
-            auto nested_column = lc_column->getDictionaryPtr();
-            auto indexes_column = lc_column->getIndexesPtr();
+            auto nested_type = assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
+            const auto * lc_column = assert_cast<const ColumnLowCardinality *>(column.get());
+            ColumnPtr nested_column = lc_column->getDictionaryPtr();
+            ColumnPtr indexes_column = lc_column->getIndexesPtr();
             return arrow::dictionary(
                 getArrowTypeForLowCardinalityIndexes(indexes_column),
                 getArrowType(nested_type, nested_column, column_name, format_name, is_column_nullable));
+        }
+
+        if (isMap(column_type))
+        {
+            const auto * map_type = assert_cast<const DataTypeMap *>(column_type.get());
+            const auto & key_type = map_type->getKeyType();
+            const auto & val_type = map_type->getValueType();
+
+            const auto & columns =  assert_cast<const ColumnMap *>(column.get())->getNestedData().getColumns();
+            return arrow::map(
+                getArrowType(key_type, columns[0], column_name, format_name, is_column_nullable),
+                getArrowType(val_type, columns[1], column_name, format_name, is_column_nullable)
+            );
         }
 
         const std::string type_name = column_type->getFamilyName();
@@ -559,7 +580,7 @@ namespace DB
             return arrow_type_it->second;
         }
 
-        throw Exception{"The type \"" + column_name + "\" of a column \"" + column_name + "\""
+        throw Exception{"The type \"" + column_type->getName() + "\" of a column \"" + column_name + "\""
                              " is not supported for conversion into a " + format_name + " data format",
                              ErrorCodes::UNKNOWN_TYPE};
     }
