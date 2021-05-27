@@ -59,19 +59,10 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
 
     if (!params.keys_vector.empty())
     {
-        /// GROUPING SETS presents
-        /** List of thing to do
-         * + 1. add ForkProcessor
-         * + 2. add AggregatingTransform for each output of ForkProcessor
-         * - 3. add ExpressionTransform for each output of AggregationTransform
-         * + 4. union outputs with ResizeProcessor
-         */
-
         /// ensure we have one input stream into fork processor
         size_t grouping_sets_number = params.keys_vector.size();
         pipeline.resize(1);
         pipeline.addTransform(std::make_shared<ForkProcessor>(pipeline.getHeader(), grouping_sets_number));
-
 
         Processors aggregating_transforms;
         AggregatingTransformParamsPtr transform_params_ptr;
@@ -82,8 +73,12 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
             params.keys = params.keys_vector[i];
             params.keys_size = params.keys.size();
             transform_params_ptr = std::make_shared<AggregatingTransformParams>(params, final);
-            LOG_DEBUG(log, "header structure: {}", pipeline.getHeader().dumpStructure());
+
             aggregating_transforms.push_back(std::make_shared<AggregatingTransform>(pipeline.getHeader(), transform_params_ptr));
+
+            if (grouping_sets_number == 1)
+                break;
+
             size_t first_column_to_add = (i == 0 ? 1 : 0);
             auto adding_column_action = ActionsDAG::makeAddingColumnActions(pipeline.getHeader().getByPosition(params.keys_vector[first_column_to_add][0]));
 
@@ -99,7 +94,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
         }
         pipeline.addParallelTransforms(std::move(aggregating_transforms));
 
-        pipeline.addParallelTransforms(std::move(expression_transforms));
+        if (!expression_transforms.empty())
+            pipeline.addParallelTransforms(std::move(expression_transforms));
         /// merge all aggregating transforms outputs with ResizeProcessor
         // pipeline.resize(1);
     }
