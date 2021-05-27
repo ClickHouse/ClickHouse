@@ -72,7 +72,7 @@ public:
 
     ReadFromMergeTree(
         const SelectQueryInfo & query_info_,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read_,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         ContextPtr context_,
         const MergeTreeData & data_,
         StorageMetadataPtr metadata_snapshot_,
@@ -97,7 +97,7 @@ public:
 
 private:
     SelectQueryInfo query_info;
-    const PartitionIdToMaxBlock * max_block_numbers_to_read;
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
     ContextPtr context;
     const MergeTreeData & data;
     StorageMetadataPtr metadata_snapshot;
@@ -106,7 +106,6 @@ private:
     Names real_column_names;
     MergeTreeData::DataPartsVector prepared_parts;
     PrewhereInfoPtr prewhere_info;
-    IndexStats index_stats;
     Names virt_column_names;
     Settings settings;
 
@@ -134,6 +133,9 @@ private:
         RangesInDataParts && parts,
         const Names & column_names,
         ActionsDAGPtr & out_projection);
+
+    struct AnalysisResult;
+    AnalysisResult selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
 };
 
 }

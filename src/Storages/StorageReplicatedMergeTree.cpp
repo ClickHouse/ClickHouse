@@ -4377,9 +4377,9 @@ void StorageReplicatedMergeTree::read(
     */
     if (local_context->getSettingsRef().select_sequential_consistency)
     {
-        auto max_added_blocks = getMaxAddedBlocks();
+        auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
         if (auto plan = reader.read(
-                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, &max_added_blocks))
+                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, std::move(max_added_blocks)))
             query_plan = std::move(*plan);
         return;
     }

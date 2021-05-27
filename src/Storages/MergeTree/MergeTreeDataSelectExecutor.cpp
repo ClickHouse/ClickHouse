@@ -139,7 +139,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const UInt64 max_block_size,
     const unsigned num_streams,
     QueryProcessingStage::Enum processed_stage,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     const auto & settings = context->getSettingsRef();
     auto parts = data.getDataPartsVector();
@@ -670,8 +670,8 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const SelectQueryInfo & query_info,
-    ContextPtr & context,
-    ContextPtr & query_context,
+    const ContextPtr & context,
+    const ContextPtr & query_context,
     MergeTreeData::DataPartsVector & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
@@ -766,7 +766,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     MergeTreeData::DataPartsVector && parts,
     StorageMetadataPtr metadata_snapshot,
     const SelectQueryInfo & query_info,
-    ContextPtr & context,
+    const ContextPtr & context,
     KeyCondition & key_condition,
     const MergeTreeReaderSettings & reader_settings,
     Poco::Logger * log,
@@ -993,7 +993,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
-String MergeTreeDataSelectExecutor::checkLimits(const MergeTreeData & data, const RangesInDataParts & parts_with_ranges, ContextPtr & context)
+String MergeTreeDataSelectExecutor::checkLimits(
+    const MergeTreeData & data,
+    const RangesInDataParts & parts_with_ranges,
+    const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     // Check limitations. query_id is used as the quota RAII's resource key.
@@ -1092,7 +1095,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     const SelectQueryInfo & query_info,
     ContextPtr context,
     unsigned num_streams,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
@@ -1137,7 +1140,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     ReadFromMergeTree::IndexStats index_stats;
 
     filterPartsByPartition(
-        metadata_snapshot_base, data, query_info, context, query_context, parts, part_values, max_block_numbers_to_read, log, index_stats);
+        metadata_snapshot_base, data, query_info, context, query_context, parts, part_values, max_block_numbers_to_read.get(), log, index_stats);
 
     auto sampling = MergeTreeDataSelectExecutor::getSampling(
         select, parts, metadata_snapshot, key_condition,
@@ -1173,7 +1176,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     ContextPtr context,
     const UInt64 max_block_size,
     const unsigned num_streams,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
@@ -1207,6 +1210,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
         //.min_marks_for_concurrent_read = settings.min_marks_for_concurrent_read,
         .use_uncompressed_cache = settings.use_uncompressed_cache,
+        .force_primary_key = settings.force_primary_key,
         .reader_settings = reader_settings,
         .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
     };
