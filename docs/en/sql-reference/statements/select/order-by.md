@@ -254,7 +254,7 @@ External sorting works much less effectively than sorting in RAM.
  
  When the `optimize_read_in_order` setting is enabled, the Clickhouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](../../../sql-reference/statements/select/limit.md). So queries on big data with small limit are processed faster.
 
-Optimization works with both `ASC` and `DESC` and doesn't work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
+Optimization works with both `ASC` and `DESC` and does not work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 When the `optimize_read_in_order` setting is disabled, the Clickhouse server does not use the table index while processing `SELECT` queries.
 
@@ -265,7 +265,7 @@ Optimization is supported in the following table engines:
 - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
 - [Merge](../../../engines/table-engines/special/merge.md), [Buffer](../../../engines/table-engines/special/buffer.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) table engines over `MergeTree`-engine tables
 
-In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query doesn't have the `ORDER BY` clause.
+In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query does not have the `ORDER BY` clause.
 
 ## ORDER BY Expr WITH FILL Modifier {#orderby-with-fill}
 
@@ -364,7 +364,7 @@ returns
 └────────────┴────────────┴──────────┘
 ```
 
-Field `d1` doesn’t fill and use default value cause we don’t have repeated values for `d2` value, and sequence for `d1` can’t be properly calculated.
+Field `d1` does not fill and use default value cause we do not have repeated values for `d2` value, and sequence for `d1` can’t be properly calculated.
 
 The following query with a changed field in `ORDER BY`
 

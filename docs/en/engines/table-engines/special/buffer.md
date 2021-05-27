@@ -49,10 +49,10 @@ You can set empty strings in single quotation marks for the database and table n
 When reading from a Buffer table, data is processed both from the buffer and from the destination table (if there is one).
 Note that the Buffer tables does not support an index. In other words, data in the buffer is fully scanned, which might be slow for large buffers. (For data in a subordinate table, the index that it supports will be used.)
 
-If the set of columns in the Buffer table doesn’t match the set of columns in a subordinate table, a subset of columns that exist in both tables is inserted.
+If the set of columns in the Buffer table does not match the set of columns in a subordinate table, a subset of columns that exist in both tables is inserted.
 
-If the types don’t match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log and the buffer is cleared.
-The same thing happens if the subordinate table doesn’t exist when the buffer is flushed.
+If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log and the buffer is cleared.
+The same thing happens if the subordinate table does not exist when the buffer is flushed.
 
 If you need to run ALTER for a subordinate table and the Buffer table, we recommend first deleting the Buffer table, running ALTER for the subordinate table, then creating the Buffer table again.
 
@@ -70,6 +70,6 @@ Due to these disadvantages, we can only recommend using a Buffer table in rare c
 
 A Buffer table is used when too many INSERTs are received from a large number of servers over a unit of time and data can’t be buffered before insertion, which means the INSERTs can’t run fast enough.
 
-Note that it doesn’t make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second, while inserting larger blocks of data can produce over a million rows per second (see the section “Performance”).
+Note that it does not make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second, while inserting larger blocks of data can produce over a million rows per second (see the section “Performance”).
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/buffer/) <!--hide-->

@@ -371,7 +371,7 @@ Enables or disables using default values if input data contain `NULL`, but the d
 
 Enables or disables skipping insertion of extra data.
 
-When writing data, ClickHouse throws an exception if input data contain columns that do not exist in the target table. If skipping is enabled, ClickHouse doesn’t insert extra data and doesn’t throw an exception.
+When writing data, ClickHouse throws an exception if input data contain columns that do not exist in the target table. If skipping is enabled, ClickHouse does not insert extra data and does not throw an exception.
 
 Supported formats:
 
@@ -428,7 +428,7 @@ Default value: 1.
 
 Allows choosing a parser of the text representation of date and time.
 
-The setting doesn’t apply to [date and time functions](../../sql-reference/functions/date-time-functions.md).
+The setting does not apply to [date and time functions](../../sql-reference/functions/date-time-functions.md).
 
 Possible values:
 
@@ -662,7 +662,7 @@ Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge-tree-max-rows-to-use-cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn’t use the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 
 The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
@@ -674,7 +674,7 @@ Default value: 128 ✕ 8192.
 
 ## merge_tree_max_bytes_to_use_cache {#setting-merge-tree-max-bytes-to-use-cache}
 
-If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it doesn’t use the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks.
 
 The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
@@ -816,8 +816,8 @@ Result:
 The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
-But when using clickhouse-client, the client parses the data itself, and the ‘max_insert_block_size’ setting on the server doesn’t affect the size of the inserted blocks.
-The setting also doesn’t have a purpose when using INSERT SELECT, since data is inserted using the same blocks that are formed after SELECT.
+But when using clickhouse-client, the client parses the data itself, and the ‘max_insert_block_size’ setting on the server does not affect the size of the inserted blocks.
+The setting also does not have a purpose when using INSERT SELECT, since data is inserted using the same blocks that are formed after SELECT.
 
 Default value: 1,048,576.
 
@@ -1018,7 +1018,7 @@ For queries that read at least a somewhat large volume of data (one million rows
 When using the HTTP interface, the ‘query_id’ parameter can be passed. This is any string that serves as the query identifier.
 If a query from the same user with the same ‘query_id’ already exists at this time, the behaviour depends on the ‘replace_running_query’ parameter.
 
-`0` (default) – Throw an exception (don’t allow the query to run if a query with the same ‘query_id’ is already running).
+`0` (default) – Throw an exception (do not allow the query to run if a query with the same ‘query_id’ is already running).
 
 `1` – Cancel the old query and start running the new one.
 
@@ -1077,7 +1077,7 @@ load_balancing = nearest_hostname
 The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
 For instance, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
-This method might seem primitive, but it doesn’t require external data about network topology, and it doesn’t compare IP addresses, which would be complicated for our IPv6 addresses.
+This method might seem primitive, but it does not require external data about network topology, and it does not compare IP addresses, which would be complicated for our IPv6 addresses.
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
 We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
@@ -1149,7 +1149,7 @@ Default value: `1`.
 
 This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
-- The position of the sampling key in the partitioning key doesn't allow efficient range scans.
+- The position of the sampling key in the partitioning key does not allow efficient range scans.
 - Adding a sampling key to the table makes filtering by other columns less efficient.
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
@@ -1171,7 +1171,7 @@ For testing, the value can be set to 0: compilation runs synchronously and the q
 If the value is 1 or more, compilation occurs asynchronously in a separate thread. The result will be used as soon as it is ready, including queries that are currently running.
 
 Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don’t use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they do not use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
@@ -1505,7 +1505,7 @@ Possible values:
 
 -   1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn’t report node availability issues.
+    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues.
 
 -   0 — skipping disabled.
 
@@ -1613,7 +1613,7 @@ Enables or disables query execution if [optimize_skip_unused_shards](#optimize-s
 
 Possible values:
 
--   0 — Disabled. ClickHouse doesn’t throw an exception.
+-   0 — Disabled. ClickHouse does not throw an exception.
 -   1 — Enabled. Query execution is disabled only if the table has a sharding key.
 -   2 — Enabled. Query execution is disabled regardless of whether a sharding key is defined for the table.
 
@@ -1758,7 +1758,7 @@ Default value: 0.
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
 !!! warning "Warning"
-    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments don’t allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
 
 Possible values:
 
@@ -2053,7 +2053,7 @@ When merging is prohibited, the replica never merges parts and always downloads 
 Possible values:
 
 -   0 — `Replicated*MergeTree`-engine tables merge data parts at the replica.
--   1 — `Replicated*MergeTree`-engine tables don’t merge data parts at the replica. The tables download merged data parts from other replicas.
+-   1 — `Replicated*MergeTree`-engine tables do not merge data parts at the replica. The tables download merged data parts from other replicas.
 
 Default value: 0.
 
@@ -2184,7 +2184,7 @@ Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lo
 
 If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary ones for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
 
-This setting is required mainly for third-party clients which don’t support `LowCardinality` data type.
+This setting is required mainly for third-party clients which do not support `LowCardinality` data type.
 
 Possible values:
 
