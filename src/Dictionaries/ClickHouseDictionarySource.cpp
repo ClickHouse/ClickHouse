@@ -211,7 +211,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr context,
                                  const std::string & default_database [[maybe_unused]],
-                                 bool /* check_config */) -> DictionarySourcePtr
+                                 bool /* created_from_ddl */) -> DictionarySourcePtr
     {
         bool secure = config.getBool(config_prefix + ".secure", false);
         auto context_copy = Context::createCopy(context);
