@@ -4,7 +4,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnsNumber.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <ext/map.h>
 

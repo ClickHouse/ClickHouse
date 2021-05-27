@@ -10,7 +10,7 @@ select max(identity(dummy + 1)) over () from remote('127.0.0.{1,2}', system, one
 1
 1
 drop table if exists t_01568;
-create table t_01568 engine Log as select intDiv(number, 3) p, number from numbers(9);
+create table t_01568 engine Memory as select intDiv(number, 3) p, number from numbers(9);
 select sum(number) over w, max(number) over w from t_01568 window w as (partition by p);
 3	2
 3	2
@@ -49,4 +49,12 @@ select groupArray(groupArray(number)) over (rows unbounded preceding) from remot
 [[0,3,6,0,3,6]]
 [[0,3,6,0,3,6],[1,4,7,1,4,7]]
 [[0,3,6,0,3,6],[1,4,7,1,4,7],[2,5,8,2,5,8]]
+select groupArray(groupArray(number)) over (rows unbounded preceding) from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3) settings distributed_group_by_no_merge=1;
+[[0,3,6]]
+[[0,3,6],[1,4,7]]
+[[0,3,6],[1,4,7],[2,5,8]]
+[[0,3,6]]
+[[0,3,6],[1,4,7]]
+[[0,3,6],[1,4,7],[2,5,8]]
+select groupArray(groupArray(number)) over (rows unbounded preceding) from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3) settings distributed_group_by_no_merge=2; -- { serverError 48 }
 drop table t_01568;

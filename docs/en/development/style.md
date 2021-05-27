@@ -195,7 +195,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 The same is true for small methods in any classes or structs.
 
-For templated classes and structs, don’t separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+For templated classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
 
 **31.** You can wrap lines at 140 characters, instead of 80.
 
@@ -442,7 +442,7 @@ Use `RAII` and see above.
 
 **3.** Error handling.
 
-Use exceptions. In most cases, you only need to throw an exception, and don’t need to catch it (because of `RAII`).
+Use exceptions. In most cases, you only need to throw an exception, and do not need to catch it (because of `RAII`).
 
 In offline data processing applications, it’s often acceptable to not catch exceptions.
 
@@ -599,7 +599,7 @@ public:
 
 There is no need to use a separate `namespace` for application code.
 
-Small libraries don’t need this, either.
+Small libraries do not need this, either.
 
 For medium to large libraries, put everything in a `namespace`.
 
@@ -755,9 +755,9 @@ If there is a good solution already available, then use it, even if it means you
 
 (But be prepared to remove bad libraries from code.)
 
-**3.** You can install a library that isn’t in the packages, if the packages don’t have what you need or have an outdated version or the wrong type of compilation.
+**3.** You can install a library that isn’t in the packages, if the packages do not have what you need or have an outdated version or the wrong type of compilation.
 
-**4.** If the library is small and doesn’t have its own complex build system, put the source files in the `contrib` folder.
+**4.** If the library is small and does not have its own complex build system, put the source files in the `contrib` folder.
 
 **5.** Preference is always given to libraries that are already in use.
 

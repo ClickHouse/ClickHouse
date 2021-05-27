@@ -199,7 +199,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     buildSets(expression_ast, analyzer);
-    ExpressionActionsPtr actions = analyzer.getActions(false);
+    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);
