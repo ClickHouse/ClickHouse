@@ -293,7 +293,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     else
         selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read);
 
-
     /// Sampling.
     Names column_names_to_read = real_column_names;
     std::shared_ptr<ASTFunction> filter_function;
