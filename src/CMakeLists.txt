@@ -101,6 +101,7 @@ endif()
 
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
+    add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
@@ -187,6 +188,7 @@ add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProx
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
+add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)

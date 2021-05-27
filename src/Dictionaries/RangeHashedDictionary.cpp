@@ -636,7 +636,9 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+                             DictionarySourcePtr source_ptr,
+                             ContextPtr /* context */,
+                             bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");

@@ -45,6 +45,10 @@ add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
 
+if (USE_YAML_CPP)
+    add_subdirectory (yaml-cpp-cmake)
+endif()
+
 if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz)
 endif()
@@ -200,11 +204,12 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
+if (USE_EMBEDDED_COMPILER)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
+
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
@@ -219,8 +224,6 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
 
     set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
     unset (CMAKE_CXX_STANDARD_bak)
-
-    target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)

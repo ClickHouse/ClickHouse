@@ -36,7 +36,7 @@ option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
-    set(RECONFIGURE_MESSAGE_LEVEL STATUS)
+    set(RECONFIGURE_MESSAGE_LEVEL WARNING)
 endif()
 
 enable_language(C CXX ASM)
@@ -530,7 +530,6 @@ include (cmake/find/libuv.cmake) # for amqpcpp and cassandra
 include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
-include (cmake/find/termcap.cmake) # for external static llvm
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
@@ -553,6 +552,7 @@ include (cmake/find/nanodbc.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
 include (cmake/find/nuraft.cmake)
+include (cmake/find/yaml-cpp.cmake)
 
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
