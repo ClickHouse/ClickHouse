@@ -1,17 +1,6 @@
 #!/bin/bash
 set -e
 
-mkdir -p /etc/docker/
-cat > /etc/docker/daemon.json << EOF
-{
-    "ipv6": true,
-    "fixed-cidr-v6": "fd00::/8",
-    "ip-forward": true,
-    "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
-    "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
-}
-EOF
-
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &>/var/log/somefile &
 
 set +e
@@ -26,10 +15,6 @@ while true; do
     sleep 0.1
 done
 set -e
-
-# cleanup for retry run if volume is not recreated
-docker kill "$(docker ps -aq)" || true
-docker rm "$(docker ps -aq)" || true
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse

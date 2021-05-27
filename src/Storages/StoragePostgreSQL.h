@@ -9,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
 
 
 namespace DB
@@ -22,11 +22,10 @@ class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,
-        postgres::PoolWithFailoverPtr pool_,
+        const postgres::PoolWithFailover & pool_,
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
         ContextPtr context_,
         const std::string & remote_table_schema_ = "");
 

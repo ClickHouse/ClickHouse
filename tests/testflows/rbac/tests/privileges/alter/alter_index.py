@@ -469,10 +469,13 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
             continue
 
         with Example(str(example)):
-            with Pool(5) as pool:
+            pool = Pool(5)
+            try:
                 tasks = []
                 try:
                     for scenario in loads(current_module(), Scenario):
                         run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
                 finally:
                     join(tasks)
+            finally:
+                pool.close()

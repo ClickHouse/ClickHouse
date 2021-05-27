@@ -10,7 +10,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -29,7 +28,6 @@
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
-#include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
@@ -288,7 +286,6 @@ BlockIO InterpreterSystemQuery::execute()
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
             external_dictionaries_loader.reloadDictionary(query.target_dictionary, getContext());
 
-
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -300,22 +297,6 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { system_context->getEmbeddedDictionaries().reload(); }
             );
             ExternalDictionariesLoader::resetAll();
-            break;
-        }
-        case Type::RELOAD_MODEL:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-
-            auto & external_models_loader = system_context->getExternalModelsLoader();
-            external_models_loader.reloadModel(query.target_model);
-            break;
-        }
-        case Type::RELOAD_MODELS:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-
-            auto & external_models_loader = system_context->getExternalModelsLoader();
-            external_models_loader.reloadAllTriedToLoad();
             break;
         }
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
@@ -395,9 +376,6 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception("There is no " + query.database + "." + query.table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
-        case Type::RESTART_DISK:
-            restartDisk(query.disk);
-            break;
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -436,7 +414,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
 
-    table->flushAndShutdown();
+    table->shutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
@@ -641,18 +619,6 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
-void InterpreterSystemQuery::restartDisk(String & name)
-{
-    getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
-
-    auto disk = getContext()->getDisk(name);
-
-    if (DiskRestartProxy * restart_proxy = dynamic_cast<DiskRestartProxy*>(disk.get()))
-        restart_proxy->restart();
-    else
-        throw Exception("Disk " + name + " doesn't have possibility to restart", ErrorCodes::BAD_ARGUMENTS);
-}
-
 
 AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
 {
@@ -684,12 +650,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            break;
-        }
-        case Type::RELOAD_MODEL: [[fallthrough]];
-        case Type::RELOAD_MODELS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
         case Type::RELOAD_CONFIG:
@@ -793,11 +753,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
-            break;
-        }
-        case Type::RESTART_DISK:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
             break;
         }
         case Type::STOP_LISTEN_QUERIES: break;

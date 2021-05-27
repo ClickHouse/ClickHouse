@@ -58,7 +58,6 @@ public:
     void tryRemoveSymlink(const String & table_name);
 
     void waitDetachedTableNotInUse(const UUID & uuid) override;
-    void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid);
 
 protected:
@@ -71,6 +70,8 @@ protected:
     [[nodiscard]] DetachedTables cleanupDetachedTables();
 
     void tryCreateMetadataSymlink();
+
+    void renameDictionaryInMemoryUnlocked(const StorageID & old_name, const StorageID & new_name);
 
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;

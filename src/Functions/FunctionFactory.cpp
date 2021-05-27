@@ -50,7 +50,7 @@ void FunctionFactory::registerFunction(const
 }
 
 
-FunctionOverloadResolverPtr FunctionFactory::getImpl(
+FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
     const std::string & name,
     ContextPtr context) const
 {
@@ -84,15 +84,15 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
     ContextPtr context) const
 {
-    return getImpl(name, context);
+    return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
 }
 
-FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
+FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
     ContextPtr context) const
 {
     String name = getAliasToOrName(name_param);
-    FunctionOverloadResolverPtr res;
+    FunctionOverloadResolverImplPtr res;
 
     auto it = functions.find(name);
     if (functions.end() != it)
@@ -123,7 +123,8 @@ FunctionOverloadResolverPtr FunctionFactory::tryGet(
         ContextPtr context) const
 {
     auto impl = tryGetImpl(name, context);
-    return impl ? std::move(impl) : nullptr;
+    return impl ? std::make_shared<FunctionOverloadResolverAdaptor>(std::move(impl))
+                : nullptr;
 }
 
 FunctionFactory & FunctionFactory::instance()

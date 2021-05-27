@@ -844,8 +844,8 @@ namespace
                 fmt::print("The pidof command returned unusual output.\n");
             }
 
-            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
-            copyData(sh->err, std_err);
+            WriteBufferFromFileDescriptor stderr(STDERR_FILENO);
+            copyData(sh->err, stderr);
 
             sh->tryWait();
         }
@@ -983,7 +983,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     desc.add_options()
         ("help,h", "produce help message")
         ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
-        ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
+        ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
     ;
 
     po::variables_map options;

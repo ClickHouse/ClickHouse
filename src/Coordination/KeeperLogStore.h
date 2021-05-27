@@ -42,12 +42,11 @@ public:
 
     uint64_t size() const;
 
-    void end_of_append_batch(uint64_t start_index, uint64_t count) override;
-
 private:
     mutable std::mutex changelog_lock;
     Poco::Logger * log;
     Changelog changelog;
+    bool force_sync;
 };
 
 }

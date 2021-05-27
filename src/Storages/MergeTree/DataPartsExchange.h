@@ -36,17 +36,8 @@ public:
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
-    void sendPartFromMemory(
-        const MergeTreeData::DataPartPtr & part,
-        WriteBuffer & out,
-        const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections = {});
-
-    MergeTreeData::DataPart::Checksums sendPartFromDisk(
-        const MergeTreeData::DataPartPtr & part,
-        WriteBuffer & out,
-        int client_protocol_version,
-        const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections = {});
-
+    void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
+    void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, int client_protocol_version);
     void sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
@@ -84,24 +75,14 @@ public:
     ActionBlocker blocker;
 
 private:
-    void downloadBaseOrProjectionPartToDisk(
-            const String & replica_path,
-            const String & part_download_path,
-            bool sync,
-            DiskPtr disk,
-            PooledReadWriteBufferFromHTTP & in,
-            MergeTreeData::DataPart::Checksums & checksums) const;
-
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
             const String & part_name,
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
             bool sync,
-            DiskPtr disk,
-            PooledReadWriteBufferFromHTTP & in,
-            size_t projections,
-            MergeTreeData::DataPart::Checksums & checksums);
+            ReservationPtr reservation,
+            PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
             const String & part_name,
@@ -109,8 +90,7 @@ private:
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context,
             ReservationPtr reservation,
-            PooledReadWriteBufferFromHTTP & in,
-            size_t projections);
+            PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData::MutableDataPartPtr downloadPartToS3(
             const String & part_name,

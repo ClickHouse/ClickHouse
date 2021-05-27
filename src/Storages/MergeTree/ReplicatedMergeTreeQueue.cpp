@@ -268,7 +268,8 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 
     bool some_mutations_are_probably_done = false;
 
-    for (auto it = in_partition->second.begin(); it != in_partition->second.end(); ++it)
+    auto from_it = in_partition->second.lower_bound(part_info.getDataVersion());
+    for (auto it = from_it; it != in_partition->second.end(); ++it)
     {
         MutationStatus & status = *it->second;
 
@@ -1803,17 +1804,6 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
     merges_version = queue_.pullLogsToQueue(zookeeper);
 
-    {
-        /// We avoid returning here a version to be used in a lightweight transaction.
-        ///
-        /// When pinned parts set is changed a log entry is added to the queue in the same transaction.
-        /// The log entry serves as a synchronization point, and it also increments `merges_version`.
-        ///
-        /// If pinned parts are fetched after logs are pulled then we can safely say that it contains all locks up to `merges_version`.
-        String s = zookeeper->get(queue.zookeeper_path + "/pinned_part_uuids");
-        pinned_part_uuids.fromString(s);
-    }
-
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (quorum_status_response.error == Coordination::Error::ZOK)
     {
@@ -1882,13 +1872,6 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
-        if (pinned_part_uuids.part_uuids.contains(part->uuid))
-        {
-            if (out_reason)
-                *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
-            return false;
-        }
-
         if (part->name == inprogress_quorum_part)
         {
             if (out_reason)
@@ -1977,20 +1960,13 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
         return false;
     }
 
-    return MergeTreeData::partsContainSameProjections(left, right);
+    return true;
 }
 
 bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
-    if (pinned_part_uuids.part_uuids.contains(part->uuid))
-    {
-        if (out_reason)
-            *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
-        return false;
-    }
-
     if (part->name == inprogress_quorum_part)
     {
         if (out_reason)

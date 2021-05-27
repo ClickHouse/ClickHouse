@@ -25,8 +25,6 @@
 
 #include <cassert>
 #include <stack>
-#include <limits>
-
 
 namespace DB
 {
@@ -94,7 +92,7 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
   */
 static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix)
 {
-    /** Increment the last byte of the prefix by one. But if it is max (255), then remove it and increase the previous one.
+    /** Increment the last byte of the prefix by one. But if it is 255, then remove it and increase the previous one.
       * Example (for convenience, suppose that the maximum value of byte is `z`)
       * abcx -> abcy
       * abcz -> abd
@@ -104,7 +102,7 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
 
     String res = prefix;
 
-    while (!res.empty() && static_cast<UInt8>(res.back()) == std::numeric_limits<UInt8>::max())
+    while (!res.empty() && static_cast<UInt8>(res.back()) == 255)
         res.pop_back();
 
     if (res.empty())
@@ -312,11 +310,11 @@ static const std::map<std::string, std::string> inverse_relations = {
 
 bool isLogicalOperator(const String & func_name)
 {
-    return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
+    return (func_name == "and" || func_name == "or" || func_name == "not");
 }
 
 /// The node can be one of:
-///   - Logical operator (AND, OR, NOT and indexHint() - logical NOOP)
+///   - Logical operator (AND, OR, NOT)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
@@ -333,8 +331,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
 
         const auto result_node = makeASTFunction(func->name);
 
-        /// indexHint() is a special case - logical NOOP function
-        if (result_node->name != "indexHint" && need_inversion)
+        if (need_inversion)
         {
             result_node->name = (result_node->name == "and") ? "or" : "and";
         }
@@ -957,9 +954,6 @@ public:
         return func->getMonotonicityForRange(type, left, right);
     }
 
-    Kind getKind() const { return kind; }
-    const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
-
 private:
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
@@ -984,8 +978,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     {
         const auto & args = (*it)->arguments->children;
         auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
-        if (!func_builder)
-            return false;
         ColumnsWithTypeAndName arguments;
         ColumnWithTypeAndName const_arg;
         FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
@@ -1261,7 +1253,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                     {
                         ColumnsWithTypeAndName arguments{
                             {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type->getName()), common_type, ""}};
-                        FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
+                        FunctionOverloadResolverPtr func_builder_cast
+                                = std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
@@ -1318,8 +1311,6 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
 bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out)
 {
     /// Functions AND, OR, NOT.
-    /// Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-    /// (or, the same thing - calling the function `and` from one argument).
     const ASTs & args = func->arguments->children;
 
     if (func->name == "not")
@@ -1331,7 +1322,7 @@ bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNE
     }
     else
     {
-        if (func->name == "and" || func->name == "indexHint")
+        if (func->name == "and")
             out.function = RPNElement::FUNCTION_AND;
         else if (func->name == "or")
             out.function = RPNElement::FUNCTION_OR;
@@ -1354,235 +1345,6 @@ String KeyCondition::toString() const
     return res;
 }
 
-KeyCondition::Description KeyCondition::getDescription() const
-{
-    /// This code may seem to be too difficult.
-    /// Here we want to convert RPN back to tree, and also simplify some logical expressions like `and(x, true) -> x`.
-    Description description;
-
-    /// That's a binary tree. Explicit.
-    /// Build and optimize it simultaneously.
-    struct Node
-    {
-        enum class Type
-        {
-            /// Leaf, which is RPNElement.
-            Leaf,
-            /// Leafs, which are logical constants.
-            True,
-            False,
-            /// Binary operators.
-            And,
-            Or,
-        };
-
-        Type type{};
-
-        /// Only for Leaf
-        const RPNElement * element = nullptr;
-        /// This means that logical NOT is applied to leaf.
-        bool negate = false;
-
-        std::unique_ptr<Node> left = nullptr;
-        std::unique_ptr<Node> right = nullptr;
-    };
-
-    /// The algorithm is the same as in KeyCondition::checkInHyperrectangle
-    /// We build a pair of trees on stack. For checking if key condition may be true, and if it may be false.
-    /// We need only `can_be_true` in result.
-    struct Frame
-    {
-        std::unique_ptr<Node> can_be_true;
-        std::unique_ptr<Node> can_be_false;
-    };
-
-    /// Combine two subtrees using logical operator.
-    auto combine = [](std::unique_ptr<Node> left, std::unique_ptr<Node> right, Node::Type type)
-    {
-        /// Simplify operators with for one constant condition.
-
-        if (type == Node::Type::And)
-        {
-            /// false AND right
-            if (left->type == Node::Type::False)
-                return left;
-
-            /// left AND false
-            if (right->type == Node::Type::False)
-                return right;
-
-            /// true AND right
-            if (left->type == Node::Type::True)
-                return right;
-
-            /// left AND true
-            if (right->type == Node::Type::True)
-                return left;
-        }
-
-        if (type == Node::Type::Or)
-        {
-            /// false OR right
-            if (left->type == Node::Type::False)
-                return right;
-
-            /// left OR false
-            if (right->type == Node::Type::False)
-                return left;
-
-            /// true OR right
-            if (left->type == Node::Type::True)
-                return left;
-
-            /// left OR true
-            if (right->type == Node::Type::True)
-                return right;
-        }
-
-        return std::make_unique<Node>(Node{
-                .type = type,
-                .left = std::move(left),
-                .right = std::move(right)
-            });
-    };
-
-    std::vector<Frame> rpn_stack;
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else if (
-               element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            assert(!rpn_stack.empty());
-
-            std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
-        }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            assert(!rpn_stack.empty());
-            auto arg1 = std::move(rpn_stack.back());
-
-            rpn_stack.pop_back();
-
-            assert(!rpn_stack.empty());
-            auto arg2 = std::move(rpn_stack.back());
-
-            Frame frame;
-            frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::And);
-            frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::Or);
-
-            rpn_stack.back() = std::move(frame);
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            assert(!rpn_stack.empty());
-            auto arg1 = std::move(rpn_stack.back());
-
-            rpn_stack.pop_back();
-
-            assert(!rpn_stack.empty());
-            auto arg2 = std::move(rpn_stack.back());
-
-            Frame frame;
-            frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::Or);
-            frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::And);
-
-            rpn_stack.back() = std::move(frame);
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::False});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
-
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else if (element.function == RPNElement::ALWAYS_TRUE)
-        {
-            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
-            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::False});
-            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
-        }
-        else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
-
-    std::vector<std::string_view> key_names(key_columns.size());
-    std::vector<bool> is_key_used(key_columns.size(), false);
-
-    for (const auto & key : key_columns)
-        key_names[key.second] = key.first;
-
-    WriteBufferFromOwnString buf;
-
-    std::function<void(const Node *)> describe;
-    describe = [&describe, &key_names, &is_key_used, &buf](const Node * node)
-    {
-        switch (node->type)
-        {
-            case Node::Type::Leaf:
-            {
-                is_key_used[node->element->key_column] = true;
-
-                /// Note: for condition with double negation, like `not(x not in set)`,
-                /// we can replace it to `x in set` here.
-                /// But I won't do it, because `cloneASTWithInversionPushDown` already push down `not`.
-                /// So, this seem to be impossible for `can_be_true` tree.
-                if (node->negate)
-                    buf << "not(";
-                buf << node->element->toString(key_names[node->element->key_column], true);
-                if (node->negate)
-                    buf << ")";
-                break;
-            }
-            case Node::Type::True:
-                buf << "true";
-                break;
-            case Node::Type::False:
-                buf << "false";
-                break;
-            case Node::Type::And:
-                buf << "and(";
-                describe(node->left.get());
-                buf << ", ";
-                describe(node->right.get());
-                buf << ")";
-                break;
-            case Node::Type::Or:
-                buf << "or(";
-                describe(node->left.get());
-                buf << ", ";
-                describe(node->right.get());
-                buf << ")";
-                break;
-        }
-    };
-
-    describe(rpn_stack.front().can_be_true.get());
-    description.condition = std::move(buf.str());
-
-    for (size_t i = 0; i < key_names.size(); ++i)
-        if (is_key_used[i])
-            description.used_keys.emplace_back(key_names[i]);
-
-    return description;
-}
 
 /** Index is the value of key every `index_granularity` rows.
   * This value is called a "mark". That is, the index consists of marks.
@@ -2008,38 +1770,18 @@ bool KeyCondition::mayBeTrueAfter(
     return checkInRange(used_key_size, left_key, nullptr, data_types, false, BoolMask::consider_only_can_be_true).can_be_true;
 }
 
-String KeyCondition::RPNElement::toString() const { return toString("column " + std::to_string(key_column), false); }
-String KeyCondition::RPNElement::toString(const std::string_view & column_name, bool print_constants) const
+
+String KeyCondition::RPNElement::toString() const
 {
-    auto print_wrapped_column = [this, &column_name, print_constants](WriteBuffer & buf)
+    auto print_wrapped_column = [this](WriteBuffer & buf)
     {
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
-        {
             buf << (*it)->getName() << "(";
-            if (print_constants)
-            {
-                if (const auto * func = typeid_cast<const FunctionWithOptionalConstArg *>(it->get()))
-                {
-                    if (func->getKind() == FunctionWithOptionalConstArg::Kind::LEFT_CONST)
-                        buf << applyVisitor(FieldVisitorToString(), (*func->getConstArg().column)[0]) << ", ";
-                }
-            }
-        }
 
-        buf << column_name;
+        buf << "column " << key_column;
 
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
-        {
-            if (print_constants)
-            {
-                if (const auto * func = typeid_cast<const FunctionWithOptionalConstArg *>(it->get()))
-                {
-                    if (func->getKind() == FunctionWithOptionalConstArg::Kind::RIGHT_CONST)
-                        buf << ", " << applyVisitor(FieldVisitorToString(), (*func->getConstArg().column)[0]);
-                }
-            }
             buf << ")";
-        }
     };
 
     WriteBufferFromOwnString buf;

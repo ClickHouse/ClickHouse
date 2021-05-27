@@ -75,20 +75,9 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
-    double getFoundRate() const override
-    {
-        size_t queries = query_count.load(std::memory_order_relaxed);
-        if (!queries)
-            return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
-    }
-
     double getHitRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
-        if (!queries)
-            return 0;
-        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / queries;
+        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / query_count.load(std::memory_order_relaxed);
     }
 
     bool supportUpdates() const override { return false; }
@@ -215,7 +204,6 @@ private:
 
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
-    mutable std::atomic<size_t> found_count{0};
 
 };
 

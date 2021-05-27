@@ -93,8 +93,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
-    UInt64 insert_timeout_,
-    StorageID main_table_)
+    UInt64 insert_timeout_)
     : context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -103,7 +102,6 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , insert_timeout(insert_timeout_)
-    , main_table(main_table_)
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
@@ -328,11 +326,11 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                         throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
-                    if (results.empty() || results.front().entry.isNull())
+                    auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
+                    if (connections.empty() || connections.front().isNull())
                         throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
 
-                    job.connection_entry = std::move(results.front().entry);
+                    job.connection_entry = std::move(connections.front());
                 }
                 else
                 {

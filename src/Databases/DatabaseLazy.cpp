@@ -203,7 +203,7 @@ void DatabaseLazy::shutdown()
     for (const auto & kv : tables_snapshot)
     {
         if (kv.second.table)
-            kv.second.table->flushAndShutdown();
+            kv.second.table->shutdown();
     }
 
     std::lock_guard lock(mutex);

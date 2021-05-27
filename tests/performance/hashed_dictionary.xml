@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test max_ignored_relative_change="0.3">
     <create_query>
         CREATE TABLE simple_key_hashed_dictionary_source_table
         (
