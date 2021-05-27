@@ -12,11 +12,12 @@ extern const int NOT_IMPLEMENTED;
 
 namespace DB
 {
+struct Settings;
 
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionRankCorrelation(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionRankCorrelation(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertBinary(name, argument_types);
     assertNoParameters(name, parameters);

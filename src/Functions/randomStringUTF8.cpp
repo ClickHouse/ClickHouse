@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <pcg_random.hpp>
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
