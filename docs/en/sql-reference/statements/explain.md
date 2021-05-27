@@ -113,7 +113,7 @@ Settings:
 
 -   `header` — Prints output header for step. Default: 0.
 -   `description` — Prints step description. Default: 1.
--   `indexes` — Shows used indexes, the number of filtered parts, and granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+-   `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 -   `actions` — Prints detailed information about step actions. Default: 0.
 -   `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
