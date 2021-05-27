@@ -1,7 +1,3 @@
----
-toc_priority: 142
----
-
 # sumCount {#agg_function-sumCount}
 
 Calculates the sum of the numbers and counts the number of rows at the same time.
