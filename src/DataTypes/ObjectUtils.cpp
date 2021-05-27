@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -142,6 +143,8 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
     for (const auto & [name, subtypes] : subcolumns_types)
     {
         assert(!subtypes.empty());
+        if (name == ColumnObject::COLUMN_NAME_DUMMY)
+            continue;
 
         size_t first_dim = getNumberOfDimensions(*subtypes[0]);
         for (size_t i = 1; i < subtypes.size(); ++i)
@@ -152,6 +155,9 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
 
         tuple_elements.emplace_back(name, getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
     }
+
+    if (tuple_elements.empty())
+        tuple_elements.emplace_back(ColumnObject::COLUMN_NAME_DUMMY, std::make_shared<DataTypeUInt8>());
 
     std::sort(tuple_elements.begin(), tuple_elements.end(),
         [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); } );

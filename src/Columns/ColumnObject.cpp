@@ -4,6 +4,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
 
 #include <Common/FieldVisitors.h>
@@ -90,6 +91,12 @@ size_t ColumnObject::allocatedBytes() const
     return res;
 }
 
+void ColumnObject::forEachSubcolumn(ColumnCallback callback)
+{
+    for (auto & [_, column] : subcolumns)
+        callback(column.data);
+}
+
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const String & key) const
 {
     auto it = subcolumns.find(key);
@@ -159,16 +166,26 @@ void ColumnObject::optimizeTypesOfSubcolumns()
     if (optimized_types_of_subcolumns)
         return;
 
-    for (auto & [_, subcolumn] : subcolumns)
+    size_t old_size = size();
+    SubcolumnsMap new_subcolumns;
+    for (auto && [name, subcolumn] : subcolumns)
     {
         auto from_type = getDataTypeByColumn(*subcolumn.data);
-        if (subcolumn.least_common_type->equals(*from_type))
+        auto to_type = subcolumn.least_common_type;
+
+        if (isNothing(getBaseTypeOfArray(to_type)))
             continue;
+
+        if (to_type->equals(*from_type))
+        {
+            new_subcolumns[name] = std::move(subcolumn);
+            continue;
+        }
 
         size_t subcolumn_size = subcolumn.size();
         if (subcolumn.data->getNumberOfDefaultRows(/*step=*/ 1) == 0)
         {
-            subcolumn.data = castColumn({subcolumn.data, from_type, ""}, subcolumn.least_common_type);
+            subcolumn.data = castColumn({subcolumn.data, from_type, ""}, to_type);
         }
         else
         {
@@ -176,15 +193,19 @@ void ColumnObject::optimizeTypesOfSubcolumns()
             auto & offsets_data = offsets->getData();
 
             subcolumn.data->getIndicesOfNonDefaultValues(offsets_data, 0, subcolumn_size);
-
             auto values = subcolumn.data->index(*offsets, offsets->size());
-            values = castColumn({values, from_type, ""}, subcolumn.least_common_type);
 
-            subcolumn.data = values->createWithOffsets(
-                offsets_data, subcolumn.least_common_type->getDefault(), subcolumn_size, /*shift=*/ 0);
+            values = castColumn({values, from_type, ""}, to_type);
+            subcolumn.data = values->createWithOffsets(offsets_data, to_type->getDefault(), subcolumn_size, /*shift=*/ 0);
         }
+
+        new_subcolumns[name] = std::move(subcolumn);
     }
 
+    if (new_subcolumns.empty())
+        new_subcolumns[COLUMN_NAME_DUMMY] = Subcolumn{ColumnUInt8::create(old_size)};
+
+    std::swap(subcolumns, new_subcolumns);
     optimized_types_of_subcolumns = true;
 }
 

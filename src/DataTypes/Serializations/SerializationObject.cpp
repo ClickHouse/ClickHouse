@@ -92,12 +92,15 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
         if (base_type->isNullable())
         {
             base_type = removeNullable(base_type);
-            value = applyVisitor(FieldVisitorReplaceNull(base_type->getDefault()), value);
+            auto default_field = isNothing(base_type) ? Field(String()) : base_type->getDefault();
+            value = applyVisitor(FieldVisitorReplaceNull(default_field), value);
             value_type = createArrayOfType(base_type, value_dim);
         }
 
         auto array_type = createArrayOfType(std::make_shared<DataTypeString>(), value_dim);
-        auto converted_value = convertFieldToTypeOrThrow(value, *array_type);
+        auto converted_value = isNothing(base_type)
+            ? std::move(value)
+            : convertFieldToTypeOrThrow(value, *array_type);
 
         if (!column_object.hasSubcolumn(paths[i]))
             column_object.addSubcolumn(paths[i], array_type->createColumn(), column_size);
