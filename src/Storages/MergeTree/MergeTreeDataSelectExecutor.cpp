@@ -503,7 +503,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
             minmax_idx_condition.emplace(
                 query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
-            partition_pruner.emplace(metadata_snapshot_base->getPartitionKey(), query_info, context, false /* strict */);
+            partition_pruner.emplace(metadata_snapshot_base, query_info, context, false /* strict */);
 
             if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
             {
@@ -578,6 +578,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeDataSelectSamplingData sampling = use_cache ? std::move(cache->sampling) : MergeTreeDataSelectSamplingData{};
     if (!use_cache)
     {
+        assert(key_condition.has_value());
+
         RelativeSize relative_sample_size = 0;
         RelativeSize relative_sample_offset = 0;
 
@@ -606,7 +608,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             /// read) into the relative `SAMPLE 0.1` (how much data to read).
             size_t approx_total_rows = 0;
             if (relative_sample_size > 1 || relative_sample_offset > 1)
-                approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, *key_condition, settings);
+                approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, *key_condition, settings); //-V1007
 
             if (relative_sample_size > 1)
             {
@@ -765,7 +767,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
                 if (has_lower_limit)
                 {
-                    if (!key_condition->addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true)))
+                    if (!key_condition->addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true))) //-V1007
                         throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                     ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -782,7 +784,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
                 if (has_upper_limit)
                 {
-                    if (!key_condition->addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false)))
+                    if (!key_condition->addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false))) //-V1007
                         throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                     ASTPtr args = std::make_shared<ASTExpressionList>();
