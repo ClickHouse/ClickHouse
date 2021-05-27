@@ -1,5 +1,5 @@
 ---
-toc_priority: 142
+toc_priority: 144
 ---
 
 # sumCount {#agg_function-sumCount}
