@@ -474,9 +474,57 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     return !aggregates().empty();
 }
 
-void makeWindowDescriptionFromAST(WindowDescription & desc, const IAST * ast)
+void makeWindowDescriptionFromAST(const WindowDescriptions & existing_descriptions,
+    WindowDescription & desc, const IAST * ast)
 {
     const auto & definition = ast->as<const ASTWindowDefinition &>();
+
+    if (!definition.parent_window_name.empty())
+    {
+        auto it = existing_descriptions.find(definition.parent_window_name);
+        if (it == existing_descriptions.end())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window '{}' references unknown window '{}'",
+                definition.formatForErrorMessage(),
+                definition.parent_window_name);
+        }
+
+        auto & parent = it->second;
+        desc.partition_by = parent.partition_by;
+        desc.order_by = parent.order_by;
+        desc.frame = parent.frame;
+
+        // If an existing_window_name is specified it must refer to an earlier
+        // entry in the WINDOW list; the new window copies its partitioning clause
+        // from that entry, as well as its ordering clause if any. In this case
+        // the new window cannot specify its own PARTITION BY clause, and it can
+        // specify ORDER BY only if the copied window does not have one. The new
+        // window always uses its own frame clause; the copied window must not
+        // specify a frame clause.
+        // -- https://www.postgresql.org/docs/current/sql-select.html
+        if (definition.partition_by)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Derived window '{}' is not allowed to override PARTITION BY",
+                definition.formatForErrorMessage());
+        }
+
+        if (definition.order_by && !parent.order_by.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Derived window '{}' is not allowed to override a non-empty ORDER BY",
+                definition.formatForErrorMessage());
+        }
+
+        if (!parent.frame.is_default)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Parent window '{}' is not allowed to define a frame: while processing derived window '{}'",
+                definition.parent_window_name,
+                definition.formatForErrorMessage());
+        }
+    }
 
     if (definition.partition_by)
     {
@@ -557,7 +605,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
             const auto & elem = ptr->as<const ASTWindowListElement &>();
             WindowDescription desc;
             desc.window_name = elem.name;
-            makeWindowDescriptionFromAST(desc, elem.definition.get());
+            makeWindowDescriptionFromAST(window_descriptions, desc, elem.definition.get());
 
             auto [it, inserted] = window_descriptions.insert(
                 {desc.window_name, desc});
@@ -642,7 +690,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                 const ASTWindowDefinition &>();
             WindowDescription desc;
             desc.window_name = definition.getDefaultWindowName();
-            makeWindowDescriptionFromAST(desc, &definition);
+            makeWindowDescriptionFromAST(window_descriptions, desc, &definition);
 
             auto [it, inserted] = window_descriptions.insert(
                 {desc.window_name, desc});
