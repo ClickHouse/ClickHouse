@@ -9,7 +9,6 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 
@@ -34,8 +33,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_,
-        const MySQLSettings & mysql_settings_);
+        ContextPtr context_);
 
     std::string getName() const override { return "MySQL"; }
 
@@ -57,8 +55,6 @@ private:
     std::string remote_table_name;
     bool replace_query;
     std::string on_duplicate_clause;
-
-    MySQLSettings mysql_settings;
 
     mysqlxx::PoolWithFailoverPtr pool;
 };

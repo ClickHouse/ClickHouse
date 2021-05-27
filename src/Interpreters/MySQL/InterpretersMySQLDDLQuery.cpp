@@ -124,8 +124,8 @@ static NamesAndTypesList getNames(const ASTFunction & expr, ContextPtr context, 
 
     ASTPtr temp_ast = expr.clone();
     auto syntax = TreeRewriter(context).analyze(temp_ast, columns);
-    auto required_columns = ExpressionAnalyzer(temp_ast, syntax, context).getActionsDAG(false)->getRequiredColumns();
-    return required_columns;
+    auto expression = ExpressionAnalyzer(temp_ast, syntax, context).getActions(false);
+    return expression->getRequiredColumnsWithTypes();
 }
 
 static NamesAndTypesList modifyPrimaryKeysToNonNullable(const NamesAndTypesList & primary_keys, NamesAndTypesList & columns)

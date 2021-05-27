@@ -429,9 +429,9 @@ void IMergeTreeDataPart::removeIfNeeded()
             }
 
             if (parent_part)
-                projectionRemove(parent_part->getFullRelativePath(), keep_s3_on_delete);
+                projectionRemove(parent_part->getFullRelativePath());
             else
-                remove(keep_s3_on_delete);
+                remove(false);
 
             if (state == State::DeleteOnDestroy)
             {
@@ -1108,7 +1108,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (isProjectionPart())
     {
         LOG_WARNING(storage.log, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
-        projectionRemove(parent_part->getFullRelativePath(), keep_s3);
+        projectionRemove(parent_part->getFullRelativePath());
         return;
     }
 
@@ -1158,7 +1158,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     std::unordered_set<String> projection_directories;
     for (const auto & [p_name, projection_part] : projection_parts)
     {
-        projection_part->projectionRemove(to, keep_s3);
+        projection_part->projectionRemove(to);
         projection_directories.emplace(p_name + ".proj");
     }
 
@@ -1207,7 +1207,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 }
 
 
-void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3) const
+void IMergeTreeDataPart::projectionRemove(const String & parent_to) const
 {
     String to = parent_to + "/" + relative_path;
     auto disk = volume->getDisk();
@@ -1219,7 +1219,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
             "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
             fullPath(disk, to));
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(to + "/", keep_s3);
+        disk->removeRecursive(to + "/");
     }
     else
     {
@@ -1232,17 +1232,17 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                disk->removeSharedFile(to + "/" + file, keep_s3);
+                disk->removeFile(to + "/" + file);
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(to + "/" + file, keep_s3);
-            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+                disk->removeFile(to + "/" + file);
+            disk->removeFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+            disk->removeFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
-            disk->removeSharedRecursive(to, keep_s3);
+            disk->removeDirectory(to);
         }
         catch (...)
         {
@@ -1250,7 +1250,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(to + "/", keep_s3);
+            disk->removeRecursive(to + "/");
          }
      }
  }

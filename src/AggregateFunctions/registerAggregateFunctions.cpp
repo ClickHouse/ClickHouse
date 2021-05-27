@@ -62,7 +62,6 @@ void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFact
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
-void registerAggregateFunctionSegmentLengthSum(AggregateFunctionFactory &);
 
 void registerAggregateFunctions()
 {
@@ -112,8 +111,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionStudentTTest(factory);
 
         registerWindowFunctions(factory);
-
-        registerAggregateFunctionSegmentLengthSum(factory);
     }
 
     {

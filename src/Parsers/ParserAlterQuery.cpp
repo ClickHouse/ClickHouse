@@ -84,7 +84,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_to_disk("TO DISK");
     ParserKeyword s_to_volume("TO VOLUME");
     ParserKeyword s_to_table("TO TABLE");
-    ParserKeyword s_to_shard("TO SHARD");
 
     ParserKeyword s_delete("DELETE");
     ParserKeyword s_update("UPDATE");
@@ -366,10 +365,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                     return false;
                 command->move_destination_type = DataDestinationType::TABLE;
-            }
-            else if (s_to_shard.ignore(pos))
-            {
-                command->move_destination_type = DataDestinationType::SHARD;
             }
             else
                 return false;

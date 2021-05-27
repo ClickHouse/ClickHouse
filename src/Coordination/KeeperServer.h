@@ -55,8 +55,7 @@ public:
         const CoordinationSettingsPtr & coordination_settings_,
         const Poco::Util::AbstractConfiguration & config,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_,
-        bool standalone_keeper);
+        SnapshotsQueue & snapshots_queue_);
 
     void startup();
 

@@ -16,4 +16,3 @@
 #cmakedefine01 USE_STATS
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
 #cmakedefine01 USE_DATASKETCHES
-#cmakedefine01 USE_YAML_CPP

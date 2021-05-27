@@ -114,24 +114,6 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
     return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
-static IAggregateFunction * createWithBasicNumberOrDateOrDateTime(const IDataType & argument_type, TArgs &&... args)
-{
-    WhichDataType which(argument_type);
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) \
-        return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...);
-    FOR_BASIC_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
-
-    if (which.idx == TypeIndex::Date)
-        return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
-
-    return nullptr;
-}
-
 template <template <typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithNumericBasedType(const IDataType & argument_type, TArgs && ... args)
 {

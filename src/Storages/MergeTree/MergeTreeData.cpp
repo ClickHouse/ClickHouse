@@ -152,7 +152,6 @@ MergeTreeData::MergeTreeData(
     , log_name(table_id_.getNameForLogs())
     , log(&Poco::Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
-    , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
@@ -2726,22 +2725,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
-            /// We do not check allow_s3_zero_copy_replication here because data may be shared
-            /// when allow_s3_zero_copy_replication turned on and off again
-
-            original_active_part->keep_s3_on_delete = false;
-
-            if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
-            {
-                if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
-                        && original_active_part->getUniqueId() == part_copy->getUniqueId())
-                {   /// May be when several volumes use the same S3 storage
-                    original_active_part->keep_s3_on_delete = true;
-                }
-                else
-                    original_active_part->keep_s3_on_delete = !unlockSharedData(*original_active_part);
-            }
-
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
             data_parts_indexes.erase(active_part_it);
 
@@ -3014,11 +2997,6 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
-void MergeTreeData::movePartitionToShard(const ASTPtr & /*partition*/, bool /*move_part*/, const String & /*to*/, ContextPtr /*query_context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MOVE PARTITION TO SHARD is not supported by storage {}", getName());
-}
-
 void MergeTreeData::fetchPartition(
     const ASTPtr & /*partition*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
@@ -3068,23 +3046,11 @@ Pipe MergeTreeData::alterPartition(
                         break;
 
                     case PartitionCommand::MoveDestinationType::TABLE:
-                    {
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = query_context->resolveDatabase(command.to_database);
                         auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
-                    }
-                    break;
-
-                    case PartitionCommand::MoveDestinationType::SHARD:
-                    {
-                        if (!getSettings()->part_moves_between_shards_enable)
-                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                            "Moving parts between shards is experimental and work in progress"
-                                            ", see part_moves_between_shards_enable setting");
-                        movePartitionToShard(command.partition, command.part, command.move_destination_name, query_context);
-                    }
-                    break;
+                        break;
                 }
             }
             break;
@@ -4613,12 +4579,6 @@ try
 catch (...)
 {
     tryLogCurrentException(log, __PRETTY_FUNCTION__);
-}
-
-StorageMergeTree::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
-{
-    std::lock_guard lock(pinned_part_uuids_mutex);
-    return pinned_part_uuids;
 }
 
 MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeMovingParts && moving_parts_, MergeTreeData & data_)

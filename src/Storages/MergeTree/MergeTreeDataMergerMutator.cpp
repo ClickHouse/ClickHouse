@@ -1268,7 +1268,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
-    /// TODO We can materialize compact part without copying data
     if (!isWidePart(source_part)
         || (mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && interpreter && interpreter->isAffectingAllColumns()))
     {
@@ -1387,7 +1386,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 metadata_snapshot,
                 indices_to_recalc,
                 projections_to_recalc,
-                // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
                 mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : updated_header,
                 new_data_part,
                 in,
