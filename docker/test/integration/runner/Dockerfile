@@ -79,7 +79,8 @@ RUN python3 -m pip install \
     redis \
     tzlocal \
     urllib3 \
-    requests-kerberos
+    requests-kerberos \
+    pyhdfs
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
