@@ -98,6 +98,8 @@
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
+#define KEEPER_DEFAULT_PATH "/var/lib/clickhouse-keeper/"
+
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 
 /// Marks that extra information is sent to a shard. It could be any magic numbers.

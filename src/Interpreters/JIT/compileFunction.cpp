@@ -56,7 +56,7 @@ ColumnData getColumnData(const IColumn * column)
     return result;
 }
 
-static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & function)
+static void compileFunction(llvm::Module & module, const IFunctionBase & function)
 {
     /** Algorithm is to create a loop that iterate over ColumnDataRowsSize size_t argument and
      * over ColumnData data and null_data. On each step compiled expression from function
@@ -87,7 +87,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & fun
     for (size_t i = 0; i <= arg_types.size(); ++i)
     {
         const auto & type = i == arg_types.size() ? function.getResultType() : arg_types[i];
-        auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
+        auto * data = b.CreateLoad(data_type, b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(type))->getPointerTo());
         columns[i].null_init = type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
     }
@@ -122,14 +122,14 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & fun
         auto & column = columns[i];
         auto type = arg_types[i];
 
-        auto * value = b.CreateLoad(column.data);
-        if (!column.null)
+        auto * value = b.CreateLoad(toNativeType(b, removeNullable(type)), column.data);
+        if (!type->isNullable())
         {
             arguments.emplace_back(value);
             continue;
         }
 
-        auto * is_null = b.CreateICmpNE(b.CreateLoad(column.null), b.getInt8(0));
+        auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), column.null), b.getInt8(0));
         auto * nullable_unitilized = llvm::Constant::getNullValue(toNativeType(b, type));
         auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitilized, value, {0}), is_null, {1});
         arguments.emplace_back(nullable_value);
@@ -166,7 +166,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & fun
     b.CreateRetVoid();
 }
 
-CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBaseImpl & function)
+CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBase & function)
 {
     Stopwatch watch;
 
