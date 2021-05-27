@@ -455,15 +455,15 @@ Possible values:
 
 -   `simple` - Simple output format.
 
-    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `2019-08-20 10:18:56`. The calculation is performed according to the data type's time zone (if present) or server time zone.
+    ClickHouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `2019-08-20 10:18:56`. The calculation is performed according to the data type's time zone (if present) or server time zone.
 
 -   `iso` - ISO output format.
 
-    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `2019-08-20T10:18:56Z`. Note that output is in UTC (`Z` means UTC).
+    ClickHouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `2019-08-20T10:18:56Z`. Note that output is in UTC (`Z` means UTC).
 
 -   `unix_timestamp` - Unix timestamp output format.
 
-    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `1566285536`.
+    ClickHouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `1566285536`.
 
 Default value: `simple`.
 
@@ -887,7 +887,7 @@ Higher values will lead to higher memory usage.
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
 !!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with Clickhouse.
+    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 
 Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
@@ -904,7 +904,7 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
 !!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with Clickhouse.
+    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 
 ## max_query_size {#settings-max_query_size}
 
@@ -2672,7 +2672,7 @@ Possible values:
 
 -   `'DISTINCT'` — ClickHouse outputs rows as a result of combining queries removing duplicate rows.
 -   `'ALL'` — ClickHouse outputs all rows as a result of combining queries including duplicate rows.
--   `''` — Clickhouse generates an exception when used with `UNION`.
+-   `''` — ClickHouse generates an exception when used with `UNION`.
 
 Default value: `''`.
 
