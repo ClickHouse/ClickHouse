@@ -16,10 +16,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+struct Settings;
+
 namespace
 {
     template <template <typename> class Data>
-    AggregateFunctionPtr createAggregateFunctionSegmentLengthSum(const std::string & name, const DataTypes & arguments, const Array &)
+    AggregateFunctionPtr
+    createAggregateFunctionSegmentLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
     {
         if (arguments.size() != 2)
             throw Exception(

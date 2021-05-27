@@ -40,7 +40,7 @@ public:
         const std::string & config_prefix_,
         Block & sample_block_,
         ContextPtr context_,
-        bool check_config);
+        bool created_from_ddl);
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
     LibraryDictionarySource & operator=(const LibraryDictionarySource &) = delete;
