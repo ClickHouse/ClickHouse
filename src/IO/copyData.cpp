@@ -93,7 +93,7 @@ void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::function<v
 
 void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, const std::atomic<int> & is_cancelled, ThrottlerPtr throttler)
 {
-    copyDataImpl(from, to, true, std::numeric_limits<size_t>::max(), &is_cancelled, throttler);
+    copyDataImpl(from, to, false, std::numeric_limits<size_t>::max(), &is_cancelled, throttler);
 }
 
 void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, size_t bytes, const std::atomic<int> & is_cancelled, ThrottlerPtr throttler)

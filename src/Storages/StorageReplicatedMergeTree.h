@@ -240,11 +240,13 @@ public:
     /// Get best replica having this partition on S3
     String getSharedDataReplica(const IMergeTreeDataPart & part) const;
 
+    /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const
     {
         return replicated_fetches_throttler;
     }
 
+    /// Get throttler for replicated sends
     ThrottlerPtr getSendsThrottler() const
     {
         return replicated_sends_throttler;
@@ -374,6 +376,8 @@ private:
 
     const size_t replicated_fetches_pool_size;
 
+    /// Throttlers used in DataPartsExchange to lower maximum fetch/sends
+    /// speed.
     ThrottlerPtr replicated_fetches_throttler;
     ThrottlerPtr replicated_sends_throttler;
 
