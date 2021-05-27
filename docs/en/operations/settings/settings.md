@@ -365,7 +365,31 @@ throws an exception.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
-Enables or disables using default values if input data contain `NULL`, but the data type of the corresponding column in not `Nullable(T)` (for text input formats).
+Enables or disables the initialization of [NULL](../../sql-reference/syntax.md#null-literal) fields with [default values](../../sql-reference/statements/create/table.md#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
+If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
+
+This setting is applicable to [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) queries for text input formats.
+
+Possible values:
+
+-   0 — Inserting `NULL` into a not nullable column causes an exception.
+-   1 — `NULL` fields are initialized with default column values.
+
+Default value: `1`.
+
+## insert_null_as_default {#insert_null_as_default}
+
+Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md#create-default-values) instead of [NULL](../../sql-reference/syntax.md#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) data type. 
+If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
+
+This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
+
+Possible values:
+
+-   0 — Inserting `NULL` into a not nullable column causes an exception.
+-   1 — Default column value is inserted instead of `NULL`.
+
+Default value: `1`.
 
 ## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
