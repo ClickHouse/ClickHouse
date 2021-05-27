@@ -477,7 +477,7 @@ static inline void fillSignAndVersionColumnsData(Block & data, Int8 sign_value, 
 
 template <bool assert_nullable = false>
 static void writeFieldsToColumn(
-    IColumn & column_to, const std::vector<Field> & rows_data, size_t column_index, const std::vector<bool> & mask, ColumnUInt8 * null_map_column = nullptr)
+    IColumn & column_to, const Row & rows_data, size_t column_index, const std::vector<bool> & mask, ColumnUInt8 * null_map_column = nullptr)
 {
     if (ColumnNullable * column_nullable = typeid_cast<ColumnNullable *>(&column_to))
         writeFieldsToColumn<true>(column_nullable->getNestedColumn(), rows_data, column_index, mask, &column_nullable->getNullMapColumn());
@@ -599,7 +599,7 @@ static void writeFieldsToColumn(
 }
 
 template <Int8 sign>
-static size_t onWriteOrDeleteData(const std::vector<Field> & rows_data, Block & buffer, size_t version)
+static size_t onWriteOrDeleteData(const Row & rows_data, Block & buffer, size_t version)
 {
     size_t prev_bytes = buffer.bytes();
     for (size_t column = 0; column < buffer.columns() - 2; ++column)
@@ -623,7 +623,7 @@ static inline bool differenceSortingKeys(const Tuple & row_old_data, const Tuple
     return false;
 }
 
-static inline size_t onUpdateData(const std::vector<Field> & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
+static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
 {
     if (rows_data.size() % 2 != 0)
         throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);

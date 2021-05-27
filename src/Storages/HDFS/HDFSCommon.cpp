@@ -145,6 +145,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
         hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
+
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
     if (port != 0)
     {

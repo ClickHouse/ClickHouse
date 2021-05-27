@@ -281,13 +281,15 @@ void replaceConstantExpressions(
     visitor.visit(node);
 }
 
-/// Returns one of the following:
+/// This is the implementation of optimize_distributed_group_by_sharding_key.
+/// It returns up to which stage the query can be processed on a shard, which
+/// is one of the following:
 /// - QueryProcessingStage::Complete
 /// - QueryProcessingStage::WithMergeableStateAfterAggregation
 /// - none (in this case regular WithMergeableState should be used)
-std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const ASTPtr & query_ptr, bool extremes, const Block & sharding_key_block)
+std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Block & sharding_key_block)
 {
-    const auto & select = query_ptr->as<ASTSelectQuery &>();
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
 
     auto sharding_block_has = [&](const auto & exprs, size_t limit = SIZE_MAX) -> bool
     {
@@ -312,6 +314,10 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
     // - TODO: WITH TOTALS can be implemented
     // - TODO: WITH ROLLUP can be implemented (I guess)
     if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
+        return {};
+
+    // Window functions are not supported.
+    if (query_info.has_window)
         return {};
 
     // TODO: extremes support can be implemented
@@ -527,7 +533,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
     {
         Block sharding_key_block = sharding_key_expr->getSampleBlock();
-        auto stage = getOptimizedQueryProcessingStage(query_info.query, settings.extremes, sharding_key_block);
+        auto stage = getOptimizedQueryProcessingStage(query_info, settings.extremes, sharding_key_block);
         if (stage)
         {
             LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
