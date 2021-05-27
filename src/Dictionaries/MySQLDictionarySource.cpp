@@ -26,7 +26,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                    [[maybe_unused]] Block & sample_block,
                                    [[maybe_unused]] ContextPtr context,
                                  const std::string & /* default_database */,
-                                 bool /* check_config */) -> DictionarySourcePtr {
+                                 bool /* created_from_ddl */) -> DictionarySourcePtr {
 #if USE_MYSQL
         StreamSettings mysql_input_stream_settings(context->getSettingsRef()
             , config.getBool(config_prefix + ".mysql.close_connection", false) || config.getBool(config_prefix + ".mysql.share_connection", false)
