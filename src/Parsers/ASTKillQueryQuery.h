@@ -13,6 +13,11 @@ public:
     {
         Query,      /// KILL QUERY
         Mutation,   /// KILL MUTATION
+        // TODO(nv): THIS_KILL_TASK_TYPE naming is ugly.
+        //   Can we do better? Shouldn't this be PARTITION MOVE?
+        //   Should we think about a generalization for killing all type of moves?
+        //   TO DISK, TO VOLUME, ...
+        PartMoveToShard, /// KILL PART_MOVE_TO_SHARD
     };
 
     Type type = Type::Query;

@@ -24,6 +24,9 @@ class PartMovesBetweenShardsOrchestrator
 public:
     struct EntryState
     {
+        // This fragile. If you change the states please add entry to
+        // changelog about forward/backward compatibility. Better not to have
+        // any active move tasks while doing upgrade/downgrade operations.
         enum Value
         {
             TODO,
@@ -31,6 +34,7 @@ public:
             SYNC_DESTINATION,
             DESTINATION_FETCH,
             DESTINATION_ATTACH,
+            DESTINATION_DROP, // For rollback.
             SOURCE_DROP_PRE_DELAY,
             SOURCE_DROP,
             SOURCE_DROP_POST_DELAY,
@@ -53,6 +57,7 @@ public:
                 case SYNC_DESTINATION: return "SYNC_DESTINATION";
                 case DESTINATION_FETCH: return "DESTINATION_FETCH";
                 case DESTINATION_ATTACH: return "DESTINATION_ATTACH";
+                case DESTINATION_DROP: return "DESTINATION_DROP";
                 case SOURCE_DROP_PRE_DELAY: return "SOURCE_DROP_PRE_DELAY";
                 case SOURCE_DROP: return "SOURCE_DROP";
                 case SOURCE_DROP_POST_DELAY: return "SOURCE_DROP_POST_DELAY";
@@ -71,6 +76,7 @@ public:
             else if (in == "SYNC_DESTINATION") return SYNC_DESTINATION;
             else if (in == "DESTINATION_FETCH") return DESTINATION_FETCH;
             else if (in == "DESTINATION_ATTACH") return DESTINATION_ATTACH;
+            else if (in == "DESTINATION_DROP") return DESTINATION_DROP;
             else if (in == "SOURCE_DROP_PRE_DELAY") return SOURCE_DROP_PRE_DELAY;
             else if (in == "SOURCE_DROP") return SOURCE_DROP;
             else if (in == "SOURCE_DROP_POST_DELAY") return SOURCE_DROP_POST_DELAY;
@@ -97,12 +103,16 @@ public:
         String to_shard;
 
         EntryState state;
+        bool rollback = false;
 
+        /// Reset on succesful transitions.
         String last_exception_msg;
+        UInt64 num_tries;
 
         String znode_name;
 
-    private:
+    // TODO(nv): Encapsulate the code that uses this state and make it private again.
+    // private:
         /// Transient value for CAS.
         uint32_t version = 0;
 
@@ -121,7 +131,9 @@ private:
     static constexpr auto JSON_KEY_PART_UUID = "part_uuid";
     static constexpr auto JSON_KEY_TO_SHARD = "to_shard";
     static constexpr auto JSON_KEY_STATE = "state";
+    static constexpr auto JSON_KEY_ROLLBACK = "rollback";
     static constexpr auto JSON_KEY_LAST_EX_MSG = "last_exception";
+    static constexpr auto JSON_KEY_NUM_TRIES = "num_tries";
 
 public:
     PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_);

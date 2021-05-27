@@ -6812,6 +6812,55 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     // TODO: Add support for `replication_alter_partitions_sync`.
 }
 
+CancellationCode StorageReplicatedMergeTree::killPartMoveToShard(const UUID & task_uuid)
+{
+    // TODO(nv): Needs cleanup, better methods and maybe some encapsulation.
+    // TODO(nv): Do we need SYNC/ASYNC handling? What does it mean?
+
+    using TaskEntry = PartMovesBetweenShardsOrchestrator::Entry;
+    using TaskState = PartMovesBetweenShardsOrchestrator::EntryState;
+
+    auto entries = part_moves_between_shards_orchestrator.getEntries();
+    auto entry_it = std::find_if(entries.begin(), entries.end(),
+                                 [&task_uuid](const TaskEntry & entry)
+                                 {
+                                     return entry.task_uuid == task_uuid;
+                                 });
+
+    /// Opt for CancelCannotBeSent because the main use-case for this method
+    /// is for it to be called from a KILL query. KILL interpreter calls this
+    /// method only with tasks that exist but we don't want to crash when task
+    /// is suddenly removed.
+    if (entry_it == entries.end())
+        return CancellationCode::CancelCannotBeSent;
+
+    const TaskEntry & entry = *entry_it;
+
+    // If the task is in this state or any that follows it is too late to rollback
+    // since we can't be sure if the source data still exists.
+    auto not_possible_to_rollback_after_state = TaskState(TaskState::SOURCE_DROP);
+    if (entry.state.value >= not_possible_to_rollback_after_state.value)
+    {
+        LOG_DEBUG(log, "Can't kill move part between shards entry {} ({}) after state {}. Current state: {}.",
+                  toString(entry.task_uuid), entry.znode_name, not_possible_to_rollback_after_state.toString(), entry.state.toString());
+        return CancellationCode::CancelCannotBeSent;
+    }
+
+    LOG_TRACE(log, "Will try to mark move part between shards entry {} ({}) for rollback.",
+              toString(entry.task_uuid), entry.znode_name);
+
+    auto zk = getZooKeeper();
+
+    // State transition with CAS.
+    TaskEntry entry_copy = entry;
+    entry_copy.rollback = true;
+    entry_copy.update_time = std::time(nullptr);
+    zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+
+    // Orchestrator will process it in background.
+    return CancellationCode::CancelSent;
+}
+
 void StorageReplicatedMergeTree::getCommitPartOps(
     Coordination::Requests & ops,
     MutableDataPartPtr & part,

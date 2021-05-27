@@ -434,6 +434,12 @@ public:
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Cancel a part move to shard.
+    virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/)
+    {
+        throw Exception("Part moves between shards are supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /** If the table have to do some complicated work on startup,
       *  that must be postponed after creation of table object
       *  (like launching some background threads),

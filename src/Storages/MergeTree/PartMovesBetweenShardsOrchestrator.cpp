@@ -8,6 +8,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , zookeeper_path(storage.zookeeper_path)
@@ -139,7 +145,9 @@ bool PartMovesBetweenShardsOrchestrator::step()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         Entry entry_copy = entry_to_process.value();
+        // TODO(nv): Clear these up on successful transitions.
         entry_copy.last_exception_msg = getCurrentExceptionMessage(false);
+        entry_copy.num_tries += 1;
         entry_copy.update_time = std::time(nullptr);
         zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
 
@@ -153,14 +161,22 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
 {
     switch (entry.state.value)
     {
-        case EntryState::DONE:
-            break;
-
+        case EntryState::DONE: [[fallthrough]];
         case EntryState::CANCELLED:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stepEntry after terminal state, bug in code.");
             break;
 
         case EntryState::TODO:
         {
+            if (entry.rollback)
+            {
+                Entry entry_copy = entry;
+                entry_copy.state = EntryState::REMOVE_UUID_PIN;
+                entry_copy.update_time = std::time(nullptr);
+                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return;
+            }
+
             /// State transition.
             Entry entry_copy = entry;
             entry_copy.state = EntryState::SYNC_SOURCE;
@@ -171,6 +187,15 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
 
         case EntryState::SYNC_SOURCE:
         {
+            if (entry.rollback)
+            {
+                Entry entry_copy = entry;
+                entry_copy.state = EntryState::REMOVE_UUID_PIN;
+                entry_copy.update_time = std::time(nullptr);
+                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return;
+            }
+
             {
                 /// Log entry.
                 Coordination::Requests ops;
@@ -209,6 +234,15 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
 
         case EntryState::SYNC_DESTINATION:
         {
+            if (entry.rollback)
+            {
+                Entry entry_copy = entry;
+                entry_copy.state = EntryState::REMOVE_UUID_PIN;
+                entry_copy.update_time = std::time(nullptr);
+                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return;
+            }
+
             {
                 /// Log entry.
                 Coordination::Requests ops;
@@ -246,6 +280,15 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
 
         case EntryState::DESTINATION_FETCH:
         {
+            if (entry.rollback)
+            {
+                Entry entry_copy = entry;
+                entry_copy.state = EntryState::REMOVE_UUID_PIN;
+                entry_copy.update_time = std::time(nullptr);
+                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return;
+            }
+
             /// Make sure table structure doesn't change when there are part movements in progress.
             {
                 Coordination::Requests ops;
@@ -284,6 +327,18 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
 
         case EntryState::DESTINATION_ATTACH:
         {
+            if (entry.rollback)
+            {
+                Entry entry_copy = entry;
+                // TODO(nv): Do we want to cleanup fetched data on the destination?
+                //   Maybe leave it there and make sure a background cleanup will take
+                //   care of it sometime later.
+                entry_copy.state = EntryState::REMOVE_UUID_PIN;
+                entry_copy.update_time = std::time(nullptr);
+                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return;
+            }
+
             /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
             {
                 Coordination::Requests ops;
@@ -331,13 +386,40 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
         }
         break;
 
+        case EntryState::DESTINATION_DROP:
+        {
+            // TODO(nv): Move validation outside of the transitions. This is needed for all of them.
+            if (!entry.rollback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected entry state DESTINATION_DROP and no rollback set.");
+
+            // TODO(nv): Implement DROP.
+
+            {
+                /// State transition.
+                Entry entry_copy = entry;
+
+                // TODO(nv): We abuse REMOVE_UUID_PIN state, it makes sense on one hand
+                //   but on the other the "flow" isn't linear at all.
+                entry_copy.state = EntryState::REMOVE_UUID_PIN;
+                entry_copy.update_time = std::time(nullptr);
+                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            }
+        }
+        break;
+
         case EntryState::SOURCE_DROP_PRE_DELAY:
         {
-            std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
-
-            /// State transition.
             Entry entry_copy = entry;
-            entry_copy.state = EntryState::SOURCE_DROP;
+
+            if (entry.rollback)
+            {
+                entry_copy.state = EntryState::DESTINATION_DROP;
+            } else
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
+                entry_copy.state = EntryState::SOURCE_DROP;
+            }
+
             entry_copy.update_time = std::time(nullptr);
             zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
         }
@@ -401,7 +483,9 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
 
             /// State transition.
             Entry entry_copy = entry;
-            entry_copy.state = EntryState::DONE;
+
+            // TOOD(nv): Very confusing.
+            entry_copy.state = entry.rollback ? EntryState::CANCELLED : EntryState::DONE;
             entry_copy.update_time = std::time(nullptr);
             zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
         }
@@ -432,7 +516,9 @@ String PartMovesBetweenShardsOrchestrator::Entry::toString() const
     json.set(JSON_KEY_PART_UUID, DB::toString(part_uuid));
     json.set(JSON_KEY_TO_SHARD, to_shard);
     json.set(JSON_KEY_STATE, state.toString());
+    json.set(JSON_KEY_ROLLBACK, DB::toString(rollback));
     json.set(JSON_KEY_LAST_EX_MSG, last_exception_msg);
+    json.set(JSON_KEY_NUM_TRIES, DB::toString(num_tries));
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -453,7 +539,9 @@ void PartMovesBetweenShardsOrchestrator::Entry::fromString(const String & buf)
     part_uuid = parseFromString<UUID>(json->getValue<std::string>(JSON_KEY_PART_UUID));
     to_shard = json->getValue<std::string>(JSON_KEY_TO_SHARD);
     state.value = EntryState::fromString(json->getValue<std::string>(JSON_KEY_STATE));
+    rollback = json->getValue<bool>(JSON_KEY_ROLLBACK);
     last_exception_msg = json->getValue<std::string>(JSON_KEY_LAST_EX_MSG);
+    num_tries = json->getValue<UInt64>(JSON_KEY_NUM_TRIES);
 }
 
 }

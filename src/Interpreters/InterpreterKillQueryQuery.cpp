@@ -290,6 +290,69 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         break;
     }
+    case ASTKillQueryQuery::Type::PartMoveToShard:
+    {
+        Block moves_block = getSelectResult(
+            "database, table, task_name, task_uuid, part_name, to_shard, state",
+            "system.part_moves_between_shards");
+
+        if (!moves_block)
+            return res_io;
+
+        const ColumnString & database_col = typeid_cast<const ColumnString &>(*moves_block.getByName("database").column);
+        const ColumnString & table_col = typeid_cast<const ColumnString &>(*moves_block.getByName("table").column);
+        const ColumnUUID & task_uuid_col = typeid_cast<const ColumnUUID &>(*moves_block.getByName("task_uuid").column);
+
+        auto header = moves_block.cloneEmpty();
+        header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
+
+        MutableColumns res_columns = header.cloneEmptyColumns();
+        auto table_id = StorageID::createEmpty();
+        AccessRightsElements required_access_rights;
+//        TODO(nv): Implement ACLs.
+//        auto access = getContext()->getAccess();
+        bool access_denied = false;
+
+        for (size_t i = 0; i < moves_block.rows(); ++i)
+        {
+            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
+            auto task_uuid = get<UUID>(task_uuid_col[i]);
+
+            CancellationCode code = CancellationCode::Unknown;
+            if (!query.test)
+            {
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+                if (!storage)
+                    code = CancellationCode::NotFound;
+                else
+                {
+//                    ParserAlterCommand parser;
+//                    auto command_ast
+//                        = parseQuery(parser, command_col.getDataAt(i).toString(), 0, getContext()->getSettingsRef().max_parser_depth);
+//                    required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
+//                        command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
+//                    if (!access->isGranted(required_access_rights))
+//                    {
+//                        access_denied = true;
+//                        continue;
+//                    }
+                    code = storage->killPartMoveToShard(task_uuid);
+                }
+            }
+
+            insertResultRow(i, code, moves_block, header, res_columns);
+        }
+
+        if (res_columns[0]->empty() && access_denied)
+            throw Exception(
+                "Not allowed to kill mutation. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
+                ErrorCodes::ACCESS_DENIED);
+
+
+        res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
+
+        break;
+    }
     }
 
     return res_io;

@@ -34,6 +34,7 @@ NamesAndTypesList StorageSystemPartMovesBetweenShards::getNamesAndTypes()
         /// Processing status of item.
         { "update_time",             std::make_shared<DataTypeDateTime>() },
         { "state",                   std::make_shared<DataTypeString>() },
+        { "rollback",                   std::make_shared<DataTypeUInt8>() },
         { "num_tries",               std::make_shared<DataTypeUInt32>() },
         { "last_exception",          std::make_shared<DataTypeString>() },
     };
@@ -126,7 +127,8 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
             /// Processing status of item.
             res_columns[col_num++]->insert(entry.update_time);
             res_columns[col_num++]->insert(entry.state.toString());
-            res_columns[col_num++]->insert(0);
+            res_columns[col_num++]->insert(entry.rollback);
+            res_columns[col_num++]->insert(entry.num_tries);
             res_columns[col_num++]->insert(entry.last_exception_msg);
         }
     }
