@@ -1637,7 +1637,7 @@ ThrottlerPtr Context::getReplicatedFetchesThrottler() const
         shared->replicated_fetches_throttler = std::make_shared<Throttler>(
             settings.max_replicated_fetches_network_bandwidth_for_server);
 
-    return  shared->replicated_fetches_throttler;
+    return shared->replicated_fetches_throttler;
 }
 
 ThrottlerPtr Context::getReplicatedSendsThrottler() const
@@ -1647,7 +1647,7 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
         shared->replicated_sends_throttler = std::make_shared<Throttler>(
             settings.max_replicated_sends_network_bandwidth_for_server);
 
-    return  shared->replicated_fetches_throttler;
+    return shared->replicated_sends_throttler;
 }
 
 bool Context::hasDistributedDDL() const

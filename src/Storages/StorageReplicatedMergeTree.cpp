@@ -3161,6 +3161,13 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
         return false;
     }
 
+    if (replicated_fetches_throttler->isThrottling())
+    {
+        disable_reason = fmt::format("Not executing fetch of part {} because fetches have already throttled by network settings "
+                                     "<max_replicated_fetches_network_bandwidth> or <max_replicated_fetches_network_bandwidth_for_server>.", entry.new_part_name);
+        return false;
+    }
+
     return true;
 }
 

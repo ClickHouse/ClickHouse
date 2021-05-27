@@ -75,7 +75,12 @@ public:
             if (desired_ns > elapsed_ns)
             {
                 UInt64 sleep_ns = desired_ns - elapsed_ns;
+
+                accumulated_sleep += sleep_ns;
+
                 sleepForNanoseconds(sleep_ns);
+
+                accumulated_sleep -= sleep_ns;
 
                 ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_ns / 1000UL);
             }
@@ -97,6 +102,19 @@ public:
 
         count = 0;
         watch.reset();
+        accumulated_sleep = 0;
+    }
+
+    /// Is throttler already accumulated some sleep time and throttling.
+    bool isThrottling() const
+    {
+        if (accumulated_sleep != 0)
+            return true;
+
+        if (parent)
+            return parent->isThrottling();
+
+        return false;
     }
 
 private:
@@ -106,6 +124,7 @@ private:
     const char * limit_exceeded_exception_message = nullptr;
     Stopwatch watch {CLOCK_MONOTONIC_COARSE};
     std::mutex mutex;
+    std::atomic<UInt64> accumulated_sleep{0};
 
     /// Used to implement a hierarchy of throttlers
     std::shared_ptr<Throttler> parent;
