@@ -83,11 +83,8 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
     if (type->id() == arrow::Type::MAP)
     {
-        int indices = 0;
         auto * map_type = static_cast<arrow::MapType *>(type.get());
-        indices += countIndicesForType(map_type->key_type());
-        indices += countIndicesForType(map_type->item_type());
-        return indices;
+        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
     }
 
     return 1;

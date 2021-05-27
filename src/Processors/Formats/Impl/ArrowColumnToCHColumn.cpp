@@ -454,7 +454,7 @@ namespace DB
 
             const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
             if (!array_type)
-                throw Exception{"Cannot convert arrow LIST type to a not Array/Map ClickHouse type " + column_type->getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception{"Cannot convert arrow LIST type to a not Array ClickHouse type " + column_type->getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return std::make_shared<DataTypeArray>(getInternalType(list_nested_type, array_type->getNestedType(), column_name, format_name));
         }

@@ -72,23 +72,22 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
     if (type->id() == arrow::Type::LIST)
         return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type());
 
-    int indices = 0;
     if (type->id() == arrow::Type::STRUCT)
     {
+        int indices = 0;
         auto * struct_type = static_cast<arrow::StructType *>(type.get());
         for (int i = 0; i != struct_type->num_fields(); ++i)
             indices += countIndicesForType(struct_type->field(i)->type());
+        return indices;
     }
-    else if (type->id() == arrow::Type::MAP)
+
+    if (type->id() == arrow::Type::MAP)
     {
         auto * map_type = static_cast<arrow::MapType *>(type.get());
-        indices += countIndicesForType(map_type->key_type());
-        indices += countIndicesForType(map_type->item_type());
+        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
     }
-    else
-        indices = 1;
 
-    return indices;
+    return 1;
 }
 
 void ParquetBlockInputFormat::prepareReader()
