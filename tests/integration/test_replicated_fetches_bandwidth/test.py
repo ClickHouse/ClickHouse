@@ -6,6 +6,7 @@ import string
 from helpers.network import NetThroughput
 import subprocess
 import time
+import statistics
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
@@ -42,18 +43,14 @@ def test_limited_fetch_single_table(start_cluster):
         for i in range(10):
             n1_in, n1_out = n1_net.measure_speed('megabytes')
             n2_in, n2_out = n2_net.measure_speed('megabytes')
-            print(node2.query("SELECT * FROM system.replication_queue FORMAT Vertical"))
             print("[N1] input:", n1_in, 'MB/s', "output:", n1_out, "MB/s")
             print("[N2] input:", n2_in, 'MB/s', "output:", n2_out, "MB/s")
             n2_fetch_speed.append(n2_in)
             time.sleep(0.5)
 
-        for s in n2_fetch_speed:
-            if s > 20: # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-                assert False, "We exceeded max fetch speed for more than 10MB/s. Must be around 10 (+- 5), got " + str(s)
-            # cannot check lower bound because it can vary depending on host/build etc.
-        else:
-            print("Fetch speed OK")
+        mean_speed = statistics.mean(n2_fetch_speed)
+        # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
+        assert mean_speed <= 15, "We exceeded max fetch speed for more than 10MB/s. Must be around 10 (+- 5), got " + str(mean_speed)
 
     finally:
         for node in [node1, node2]:
@@ -82,12 +79,9 @@ def test_limited_send_single_table(start_cluster):
             n1_sends_speed.append(n1_out)
             time.sleep(0.5)
 
-        for s in n1_sends_speed:
-            if s > 10: # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-                assert False, "We exceeded max send speed for more than 5MB/s. Must be around 5 (+- 5), got " + str(s)
-            # cannot check lower bound because it can vary depending on host/build etc.
-        else:
-            print("Send speed OK")
+        mean_speed = statistics.mean(n1_sends_speed)
+        # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
+        assert mean_speed <= 10, "We exceeded max send speed for more than 5MB/s. Must be around 5 (+- 5), got " + str(mean_speed)
 
     finally:
         for node in [node1, node2]:
@@ -120,12 +114,9 @@ def test_limited_fetches_for_server(start_cluster):
             n3_fetches_speed.append(n3_in)
             time.sleep(0.5)
 
-        for s in n3_fetches_speed:
-            if s > 20: # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-                assert False, "We exceeded max fetch speed for more than 20MB/s. Must be around 5 (+- 10), got " + str(s)
-            # cannot check lower bound because it can vary depending on host/build etc.
-        else:
-            print("Fetch speed OK")
+        mean_speed = statistics.mean(n3_fetches_speed)
+        # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
+        assert mean_speed <= 15, "We exceeded max fetch speed for more than 15MB/s. Must be around 5 (+- 10), got " + str(mean_speed)
 
     finally:
         for node in [node1, node3]:
@@ -159,12 +150,9 @@ def test_limited_sends_for_server(start_cluster):
             n3_sends_speed.append(n3_out)
             time.sleep(0.5)
 
-        for s in n3_sends_speed:
-            if s > 30: # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-                assert False, "We exceeded max send speed for more than 20MB/s. Must be around 5 (+- 10), got " + str(s)
-            # cannot check lower bound because it can vary depending on host/build etc.
-        else:
-            print("Send speed OK")
+        mean_speed = statistics.mean(n3_sends_speed)
+        # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
+        assert mean_speed <= 20, "We exceeded max send speed for more than 20MB/s. Must be around 5 (+- 10), got " + str(mean_speed)
 
     finally:
         for node in [node1, node3]:
@@ -199,7 +187,6 @@ def test_should_execute_fetch(start_cluster):
             if fetches_count == "0\n":
                 break
 
-            print(node2.query("SELECT * FROM system.replication_queue FORMAT Vertical"))
             print("Fetches count", fetches_count)
             replication_queue_data.append(node2.query("SELECT count() FROM system.replication_queue WHERE postpone_reason like '%fetches have already throttled%'"))
             n2_fetch_speed.append(n2_in)
