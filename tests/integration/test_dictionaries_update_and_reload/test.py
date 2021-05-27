@@ -125,9 +125,6 @@ def test_reload_after_loading(started_cluster):
     # for mtime, and clickhouse will miss the update if we change the file too
     # soon. Should probably be fixed by switching to use std::filesystem.
     time.sleep(1)
-    # Reload dictionaries to update lifetime.
-    query("SYSTEM RELOAD DICTIONARY 'file'")
-    query("SYSTEM RELOAD DICTIONARY 'executable'")
     replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '8', '81')
     replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '10', '101')
 
