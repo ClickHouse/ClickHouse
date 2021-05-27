@@ -95,9 +95,10 @@ LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
-If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make dictionary load faster). But note that you should use it only if:
-- the source support approximate number of elements (for now it is supported only by the `ClickHouse` source)
-- there is no duplicates in the data (otherwise it may increase memory usage for the hashtable)
+If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make the dictionary load faster). But note that you should use it only if:
+
+- The source support an approximate number of elements (for now it is supported only by the `ClickHouse` source).
+- There are no duplicates in the data (otherwise it may increase memory usage for the hashtable).
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
@@ -337,7 +338,7 @@ or
 
 ``` sql
 LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
+    PATH ./user_files/test_dict))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}

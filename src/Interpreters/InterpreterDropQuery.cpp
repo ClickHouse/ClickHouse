@@ -171,7 +171,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
             else
                 table->checkTableCanBeDetached();
 
-            table->shutdown();
+            table->flushAndShutdown();
             TableExclusiveLockHolder table_lock;
 
             if (database->getUUID() == UUIDHelpers::Nil)
@@ -215,7 +215,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
             else
                 table->checkTableCanBeDropped();
 
-            table->shutdown();
+            table->flushAndShutdown();
 
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)
@@ -253,7 +253,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             else if (kind == ASTDropQuery::Kind::Drop)
             {
                 context_handle->removeExternalTable(table_name);
-                table->shutdown();
+                table->flushAndShutdown();
                 auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
                 /// Delete table data
                 table->drop();
@@ -327,6 +327,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.if_exists = true;
                 query_for_table.database = database_name;
                 query_for_table.no_delay = query.no_delay;
+
+                /// Flush should not be done if shouldBeEmptyOnDetach() == false,
+                /// since in this case getTablesIterator() may do some additional work,
+                /// see DatabaseMaterializeMySQL<>::getTablesIterator()
+                for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+                {
+                    iterator->table()->flush();
+                }
 
                 for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
                 {

@@ -102,6 +102,7 @@ StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_,
     size_t num_shards_,
     const Thresholds & min_thresholds_,
@@ -111,7 +112,8 @@ StorageBuffer::StorageBuffer(
     bool allow_materialized_)
     : IStorage(table_id_)
     , WithContext(context_->getBufferContext())
-    , num_shards(num_shards_), buffers(num_shards_)
+    , num_shards(num_shards_)
+    , buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
     , flush_thresholds(flush_thresholds_)
@@ -123,6 +125,7 @@ StorageBuffer::StorageBuffer(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -671,7 +674,7 @@ void StorageBuffer::startup()
 }
 
 
-void StorageBuffer::shutdown()
+void StorageBuffer::flush()
 {
     if (!flush_handle)
         return;
@@ -1142,9 +1145,12 @@ void registerStorageBuffer(StorageFactory & factory)
             args.table_id,
             args.columns,
             args.constraints,
+            args.comment,
             args.getContext(),
             num_buckets,
-            min, max, flush,
+            min,
+            max,
+            flush,
             destination_id,
             static_cast<bool>(args.getLocalContext()->getSettingsRef().insert_allow_materialized_columns));
     },
