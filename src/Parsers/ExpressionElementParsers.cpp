@@ -846,34 +846,48 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     /// Parse numbers (including decimals), strings and arrays of them.
 
     const char * data_begin = pos->begin;
+    const char * data_end = pos->end;
     bool is_string_literal = pos->type == TokenType::StringLiteral;
     if (pos->type == TokenType::Number || is_string_literal)
     {
         ++pos;
     }
-    else if (pos->type == TokenType::OpeningSquareBracket)
+    else if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
     {
         TokenType last_token = TokenType::OpeningSquareBracket;
+        std::vector<TokenType> stack;
         while (pos.isValid())
         {
-            if (pos->type == TokenType::OpeningSquareBracket)
+            if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
             {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
+                stack.push_back(pos->type);
+                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
                     return false;
             }
             else if (pos->type == TokenType::ClosingSquareBracket)
             {
-                if (last_token == TokenType::Comma)
+                if (isOneOf<TokenType::Comma, TokenType::OpeningRoundBracket>(last_token))
                     return false;
+                if (stack.empty() || stack.back() != TokenType::OpeningSquareBracket)
+                    return false;
+                stack.pop_back();
+            }
+            else if (pos->type == TokenType::ClosingRoundBracket)
+            {
+                if (isOneOf<TokenType::Comma, TokenType::OpeningSquareBracket>(last_token))
+                    return false;
+                if (stack.empty() || stack.back() != TokenType::OpeningRoundBracket)
+                    return false;
+                stack.pop_back();
             }
             else if (pos->type == TokenType::Comma)
             {
-                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
+                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
                     return false;
             }
             else if (isOneOf<TokenType::Number, TokenType::StringLiteral>(pos->type))
             {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::Comma>(last_token))
+                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
                     return false;
             }
             else
@@ -881,14 +895,18 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 break;
             }
 
+            /// Update data_end on every iteration to avoid appearances of extra trailing
+            /// whitespaces into data. Whitespaces are skipped at operator '++' of Pos.
+            data_end = pos->end;
             last_token = pos->type;
             ++pos;
         }
+
+        if (!stack.empty())
+            return false;
     }
 
     ASTPtr type_ast;
-    const char * data_end = pos->begin;
-
     if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
         && ParserDataType().parse(pos, type_ast, expected))
     {
