@@ -47,6 +47,12 @@ void registerFunctionRadiansToS2(FunctionFactory &);
 void registerFunctionS2GetNeighbors(FunctionFactory &);
 void registerFunctionS2ToGeo(FunctionFactory &);
 void registerFunctionS2CellsIntersect(FunctionFactory &);
+void registerFunctionS2CapContains(FunctionFactory &);
+void registerFunctionS2CapUnion(FunctionFactory &);
+void registerFunctionS2RectAdd(FunctionFactory &);
+void registerFunctionS2RectContains(FunctionFactory &);
+void registerFunctionS2RectUnion(FunctionFactory &);
+void registerFunctionS2RectIntersection(FunctionFactory &);
 
 
 void registerFunctionsGeo(FunctionFactory & factory)
@@ -91,6 +97,12 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionS2GetNeighbors(factory);
     registerFunctionS2ToGeo(factory);
     registerFunctionS2CellsIntersect(factory);
+    registerFunctionS2CapContains(factory);
+    registerFunctionS2CapUnion(factory);
+    registerFunctionS2RectAdd(factory);
+    registerFunctionS2RectContains(factory);
+    registerFunctionS2RectUnion(factory);
+    registerFunctionS2RectIntersection(factory);
 }
 
 }

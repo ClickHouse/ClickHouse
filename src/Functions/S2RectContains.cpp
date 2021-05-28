@@ -11,6 +11,8 @@
 
 #include "../contrib/s2geometry/src/s2/s2latlng.h"
 #include "../contrib/s2geometry/src/s2/s2cell_id.h"
+#include "../contrib/s2geometry/src/s2/s2point.h"
+#include "../contrib/s2geometry/src/s2/s2latlng_rect.h"
 
 class S2CellId;
 
@@ -27,14 +29,14 @@ namespace
 {
 
 /// TODO: Comment this
-class FunctionS2CellsIntersect : public IFunction
+class FunctionS2RectContains : public IFunction
 {
 public:
-    static constexpr auto name = "S2CellsIntersect";
+    static constexpr auto name = "S2RectContains";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionS2CellsIntersect>();
+        return std::make_shared<FunctionS2RectContains>();
     }
 
     std::string getName() const override
@@ -42,7 +44,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 4; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -50,9 +52,9 @@ public:
     {
         size_t number_of_arguments = arguments.size();
 
-        if (number_of_arguments != 2) {
+        if (number_of_arguments != 3) {
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(number_of_arguments) + ", should be 2",
+                + toString(number_of_arguments) + ", should be 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
@@ -72,13 +74,22 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
+        arg = arguments[2].get();
+
+        if (!WhichDataType(arg).isUInt64()) {
+            throw Exception(
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(3) + " of function " + getName() + ". Must be UInt64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
         return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_id_first = arguments[0].column.get();
-        const auto * col_id_second = arguments[1].column.get();
+        const auto * col_lo = arguments[0].column.get();
+        const auto * col_hi = arguments[1].column.get();
+        const auto * col_point = arguments[2].column.get();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
@@ -86,10 +97,17 @@ public:
 
         for (const auto row : ext::range(0, input_rows_count))
         {
-            const UInt64 id_first = col_id_first->getInt(row);
-            const UInt64 id_second = col_id_second->getInt(row);
-        
-            dst_data[row] = S2CellId(id_first).intersects(S2CellId(id_second));
+            const UInt64 lo = col_lo->getUInt(row);
+            const UInt64 hi = col_hi->getUInt(row);
+            const UInt64 point = col_point->getUInt(row);
+
+            S2CellId id_lo(lo);
+            S2CellId id_hi(hi);
+            S2CellId id_point(point);
+
+            S2LatLngRect rect(id_lo.ToLatLng(), id_hi.ToLatLng());
+
+            dst_data[row] = rect.Contains(id_point.ToLatLng());
         }
 
         return dst;
@@ -99,9 +117,9 @@ public:
 
 }
 
-void registerFunctionS2CellsIntersect(FunctionFactory & factory)
+void registerFunctionS2RectContains(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionS2CellsIntersect>();
+    factory.registerFunction<FunctionS2RectContains>();
 }
 
 
