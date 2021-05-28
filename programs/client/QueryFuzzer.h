@@ -4,10 +4,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include <pcg-random/pcg_random.hpp>
+
 #include <Common/randomSeed.h>
 #include <Common/Stopwatch.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
+
 
 namespace DB
 {

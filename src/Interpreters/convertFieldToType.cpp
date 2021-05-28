@@ -14,14 +14,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Core/AccurateComparison.h>
-#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <common/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -67,6 +66,14 @@ static Field convertNumericType(const Field & from, const IDataType & type)
         return convertNumericTypeImpl<Int64, To>(from);
     if (from.getType() == Field::Types::Float64)
         return convertNumericTypeImpl<Float64, To>(from);
+    if (from.getType() == Field::Types::UInt128)
+        return convertNumericTypeImpl<UInt128, To>(from);
+    if (from.getType() == Field::Types::Int128)
+        return convertNumericTypeImpl<Int128, To>(from);
+    if (from.getType() == Field::Types::UInt256)
+        return convertNumericTypeImpl<UInt256, To>(from);
+    if (from.getType() == Field::Types::Int256)
+        return convertNumericTypeImpl<Int256, To>(from);
 
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
@@ -78,9 +85,9 @@ static Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T
 {
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
-        throw Exception("Number is too much to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    T scaled_value = type.getScaleMultiplier() * value;
+    T scaled_value = type.getScaleMultiplier() * static_cast<T>(value);
     return DecimalField<T>(scaled_value, type.getScale());
 }
 
@@ -108,6 +115,15 @@ static Field convertDecimalType(const Field & from, const To & type)
         return convertIntToDecimalType<UInt64>(from, type);
     if (from.getType() == Field::Types::Int64)
         return convertIntToDecimalType<Int64>(from, type);
+    if (from.getType() == Field::Types::UInt128)
+        return convertIntToDecimalType<UInt128>(from, type);
+    if (from.getType() == Field::Types::Int128)
+        return convertIntToDecimalType<Int128>(from, type);
+    if (from.getType() == Field::Types::UInt256)
+        return convertIntToDecimalType<UInt256>(from, type);
+    if (from.getType() == Field::Types::Int256)
+        return convertIntToDecimalType<Int256>(from, type);
+
     if (from.getType() == Field::Types::String)
         return convertStringToDecimalType(from, type);
 
@@ -125,7 +141,6 @@ static Field convertDecimalType(const Field & from, const To & type)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
-    // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatible type.
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;
@@ -133,6 +148,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
     WhichDataType which_type(type);
     WhichDataType which_from_type;
+
     if (from_type_hint)
     {
         which_from_type = WhichDataType(*from_type_hint);
@@ -179,19 +195,24 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
-        if (which_type.isUUID() && src.getType() == Field::Types::UInt128)
-        {
-            /// Already in needed type.
-            return src;
-        }
-
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
             /// Already in needed type.
             return src;
         }
 
-        /// TODO Conversion from integers to DateTime64
+        if (which_type.isDateTime64()
+            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDateOrDateTime()))
+        {
+            const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
+            const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(src.reinterpret<Int64>(), 0, scale);
+            return Field(DecimalField<DateTime64>(decimal_value, scale));
+        }
+    }
+    else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
+    {
+        /// Already in needed type.
+        return src;
     }
     else if (which_type.isStringOrFixedString())
     {
@@ -364,6 +385,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
 }
 
+
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     if (from_value.isNull())
@@ -390,18 +412,22 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
 }
 
+
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     bool is_null = from_value.isNull();
     if (is_null && !to_type.isNullable())
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
+
     Field converted = convertFieldToType(from_value, to_type, from_type_hint);
+
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Cannot convert value '{}'{}: it cannot be represented as {}",
             toString(from_value),
             from_type_hint ? " from " + from_type_hint->getName() : "",
             to_type.getName());
+
     return converted;
 }
 

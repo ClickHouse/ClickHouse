@@ -80,7 +80,7 @@ void ThreadStatus::attachQueryContext(ContextPtr query_context_)
     // on OpenTelemetrySpanHolder due to link order issues.
     // FIXME why and how is this different from setupState()?
     thread_trace_context = query_context_->query_trace_context;
-    if (thread_trace_context.trace_id)
+    if (thread_trace_context.trace_id != UUID())
     {
         thread_trace_context.span_id = thread_local_rng();
     }
@@ -126,7 +126,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         // Generate new span for thread manually here, because we can't depend
         // on OpenTelemetrySpanHolder due to link order issues.
         thread_trace_context = query_context_ptr->query_trace_context;
-        if (thread_trace_context.trace_id)
+        if (thread_trace_context.trace_id != UUID())
         {
             thread_trace_context.span_id = thread_local_rng();
         }
@@ -335,7 +335,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
     auto query_context_ptr = query_context.lock();
-    if (thread_trace_context.trace_id && query_context_ptr)
+    if (thread_trace_context.trace_id != UUID() && query_context_ptr)
     {
         opentelemetry_span_log = query_context_ptr->getOpenTelemetrySpanLog();
     }

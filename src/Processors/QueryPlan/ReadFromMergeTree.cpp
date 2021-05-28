@@ -26,6 +26,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
         metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
         prewhere_info_,
+        storage_.getPartitionValueType(),
         virt_column_names_)})
     , storage(storage_)
     , metadata_snapshot(std::move(metadata_snapshot_))

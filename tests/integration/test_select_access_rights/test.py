@@ -96,7 +96,7 @@ def test_alias_columns():
 
     select_query = "SELECT s FROM table1"
     assert "it's necessary to have grant SELECT(s) ON default.table1" in instance.query_and_get_error(select_query, user = 'A')
-    
+
     instance.query("GRANT SELECT(s) ON default.table1 TO A")
     assert instance.query(select_query, user = 'A') == ""
 
