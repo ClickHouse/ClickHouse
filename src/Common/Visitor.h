@@ -66,8 +66,7 @@ class Visitor<>
 public:
     using List = TypeList<>;
 
-protected:
-    ~Visitor() = default;
+    virtual ~Visitor() = default;
 };
 
 template <typename Type>
@@ -77,9 +76,6 @@ public:
     using List = TypeList<Type>;
 
     virtual void visit(Type &) = 0;
-
-protected:
-    ~Visitor() = default;
 };
 
 template <typename Type, typename ... Types>
@@ -90,9 +86,6 @@ public:
     using Visitor<Types ...>::visit;
 
     virtual void visit(Type &) = 0;
-
-protected:
-    ~Visitor() = default;
 };
 
 
@@ -102,8 +95,6 @@ class VisitorImplHelper;
 template <typename Derived, typename VisitorBase>
 class VisitorImplHelper<Derived, VisitorBase> : public VisitorBase
 {
-protected:
-    ~VisitorImplHelper() = default;
 };
 
 template <typename Derived, typename VisitorBase, typename Type>
@@ -120,8 +111,6 @@ protected:
         throw Exception("visitImpl(" + demangle(typeid(T).name()) + " &)" + " is not implemented for class"
                         + demangle(typeid(Derived).name()), ErrorCodes::LOGICAL_ERROR);
     }
-
-    ~VisitorImplHelper() = default;
 };
 
 template <typename Derived, typename VisitorBase, typename Type, typename ... Types>
@@ -139,8 +128,6 @@ protected:
         throw Exception("visitImpl(" + demangle(typeid(T).name()) + " &)" + " is not implemented for class"
                         + demangle(typeid(Derived).name()), ErrorCodes::LOGICAL_ERROR);
     }
-
-    ~VisitorImplHelper() = default;
 };
 
 template <typename Derived, typename VisitorBase>
@@ -153,8 +140,6 @@ class VisitorImpl : public
                 >::Type
         >::Type
 {
-protected:
-    ~VisitorImpl() = default;
 };
 
 template <typename Derived, typename Base, typename Visitor>

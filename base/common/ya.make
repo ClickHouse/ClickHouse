@@ -1,10 +1,9 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 ADDINCL(
     GLOBAL clickhouse/base
+    GLOBAL contrib/libs/cctz/include
 )
 
 CFLAGS (GLOBAL -DARCADIA_BUILD)
@@ -23,7 +22,7 @@ ELSEIF (OS_LINUX)
 ENDIF ()
 
 PEERDIR(
-    contrib/libs/cctz
+    contrib/libs/cctz/src
     contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
@@ -33,23 +32,19 @@ PEERDIR(
     contrib/restricted/cityhash-1.0.2
 )
 
-CFLAGS(-g0)
-
 SRCS(
-    DateLUT.cpp
-    DateLUTImpl.cpp
-    JSON.cpp
-    LineReader.cpp
-    StringRef.cpp
     argsToConfig.cpp
     coverage.cpp
+    DateLUT.cpp
+    DateLUTImpl.cpp
     demangle.cpp
     errnoToString.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
-    getPageSize.cpp
     getResource.cpp
     getThreadId.cpp
+    JSON.cpp
+    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp

@@ -8,10 +8,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_CREATE_IO_BUFFER;
+}
+
+
 RabbitMQBlockOutputStream::RabbitMQBlockOutputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    ContextPtr context_)
+    const Context & context_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
@@ -27,22 +33,17 @@ Block RabbitMQBlockOutputStream::getHeader() const
 
 void RabbitMQBlockOutputStream::writePrefix()
 {
-    if (!storage.exchangeRemoved())
-        storage.unbindExchange();
-
     buffer = storage.createWriteBuffer();
+    if (!buffer)
+        throw Exception("Failed to create RabbitMQ producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
+
     buffer->activateWriting();
 
-    auto format_settings = getFormatSettings(context);
-    format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
-
-    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
-        getHeader(), context,
-        [this](const Columns & /* columns */, size_t /* rows */)
-        {
-            buffer->countRow();
-        },
-        format_settings);
+    child = FormatFactory::instance().getOutput(
+            storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & /* columns */, size_t /* rows */)
+            {
+                buffer->countRow();
+            });
 }
 
 
@@ -55,9 +56,6 @@ void RabbitMQBlockOutputStream::write(const Block & block)
 void RabbitMQBlockOutputStream::writeSuffix()
 {
     child->writeSuffix();
-
-    if (buffer)
-        buffer->updateMaxWait();
 }
 
 }

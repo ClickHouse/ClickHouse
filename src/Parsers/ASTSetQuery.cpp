@@ -1,7 +1,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/SipHash.h>
-#include <IO/Operators.h>
 
 
 namespace DB

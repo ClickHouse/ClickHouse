@@ -6,9 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypesNumber.h>
 #include "registerTableFunctions.h"
 
 
@@ -18,19 +16,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-
-template <bool multithreaded>
-ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(ContextPtr /*context*/) const
-{
-    /// NOTE: https://bugs.llvm.org/show_bug.cgi?id=47418
-    return ColumnsDescription{{{"number", std::make_shared<DataTypeUInt64>()}}};
 }
 
 template <bool multithreaded>
-StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {
@@ -38,6 +27,7 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
 
         if (arguments.size() != 1 && arguments.size() != 2)
             throw Exception("Table function '" + getName() + "' requires 'length' or 'offset, length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
 
         UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments[0]) : 0;
         UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
@@ -56,18 +46,9 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
 }
 
 template <bool multithreaded>
-UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
+UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(const Context & context, ASTPtr & argument) const
 {
-    const auto & [field, type] = evaluateConstantExpression(argument, context);
-
-    if (!isNativeNumber(type))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
-
-    Field converted = convertFieldToType(field, DataTypeUInt64());
-    if (converted.isNull())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The value {} is not representable as UInt64", applyVisitor(FieldVisitorToString(), field));
-
-    return converted.safeGet<UInt64>();
+    return evaluateConstantExpressionOrIdentifierAsLiteral(argument, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
 }
 
 }

@@ -8,8 +8,7 @@
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Common/Stopwatch.h>
@@ -72,7 +71,6 @@ class TraceLog;
 class CrashLog;
 class MetricLog;
 class AsynchronousMetricLog;
-class OpenTelemetrySpanLog;
 
 
 class ISystemLog
@@ -93,7 +91,7 @@ public:
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
 {
-    SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
+    SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config);
     ~SystemLogs();
 
     void shutdown();
@@ -107,15 +105,13 @@ struct SystemLogs
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
-    /// OpenTelemetry trace spans.
-    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
 
     std::vector<ISystemLog *> logs;
 };
 
 
 template <typename LogElement>
-class SystemLog : public ISystemLog, private boost::noncopyable, WithContext
+class SystemLog : public ISystemLog, private boost::noncopyable
 {
 public:
     using Self = SystemLog;
@@ -129,7 +125,7 @@ public:
       *   and new table get created - as if previous table was not exist.
       */
     SystemLog(
-        ContextPtr context_,
+        Context & context_,
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,
@@ -152,8 +148,6 @@ public:
     void shutdown() override
     {
         stopFlushThread();
-        if (table)
-            table->shutdown();
     }
 
     String getName() override
@@ -168,6 +162,7 @@ protected:
 
 private:
     /* Saving thread data */
+    Context & context;
     const StorageID table_id;
     const String storage_def;
     StoragePtr table;
@@ -185,13 +180,12 @@ private:
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     uint64_t queue_front_index = 0;
     bool is_shutdown = false;
-    // A flag that says we must create the tables even if the queue is empty.
     bool is_force_prepare_tables = false;
     std::condition_variable flush_event;
     // Requested to flush logs up to this index, exclusive
-    uint64_t requested_flush_up_to = 0;
+    uint64_t requested_flush_before = 0;
     // Flushed log up to this index, exclusive
-    uint64_t flushed_up_to = 0;
+    uint64_t flushed_before = 0;
     // Logged overflow message at this queue front index
     uint64_t logged_queue_full_at_index = -1;
 
@@ -209,13 +203,12 @@ private:
 
 
 template <typename LogElement>
-SystemLog<LogElement>::SystemLog(
-    ContextPtr context_,
+SystemLog<LogElement>::SystemLog(Context & context_,
     const String & database_name_,
     const String & table_name_,
     const String & storage_def_,
     size_t flush_interval_milliseconds_)
-    : WithContext(context_)
+    : context(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
     , flush_interval_milliseconds(flush_interval_milliseconds_)
@@ -233,23 +226,14 @@ void SystemLog<LogElement>::startup()
 }
 
 
-static thread_local bool recursive_add_call = false;
-
 template <typename LogElement>
 void SystemLog<LogElement>::add(const LogElement & element)
 {
-    /// It is possible that the method will be called recursively.
-    /// Better to drop these events to avoid complications.
-    if (recursive_add_call)
-        return;
-    recursive_add_call = true;
-    SCOPE_EXIT({ recursive_add_call = false; });
-
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
     bool queue_is_half_full = false;
@@ -270,8 +254,8 @@ void SystemLog<LogElement>::add(const LogElement & element)
             // It is enough to only wake the flushing thread once, after the message
             // count increases past half available size.
             const uint64_t queue_end = queue_front_index + queue.size();
-            if (requested_flush_up_to < queue_end)
-                requested_flush_up_to = queue_end;
+            if (requested_flush_before < queue_end)
+                requested_flush_before = queue_end;
 
             flush_event.notify_all();
         }
@@ -307,36 +291,24 @@ void SystemLog<LogElement>::add(const LogElement & element)
 template <typename LogElement>
 void SystemLog<LogElement>::flush(bool force)
 {
-    uint64_t this_thread_requested_offset;
+    std::unique_lock lock(mutex);
 
+    if (is_shutdown)
+        return;
+
+    const uint64_t queue_end = queue_front_index + queue.size();
+
+    is_force_prepare_tables = force;
+    if (requested_flush_before < queue_end || force)
     {
-        std::unique_lock lock(mutex);
-
-        if (is_shutdown)
-            return;
-
-        this_thread_requested_offset = queue_front_index + queue.size();
-
-        // Publish our flush request, taking care not to overwrite the requests
-        // made by other threads.
-        is_force_prepare_tables |= force;
-        requested_flush_up_to = std::max(requested_flush_up_to,
-            this_thread_requested_offset);
-
+        requested_flush_before = queue_end;
         flush_event.notify_all();
     }
 
-    LOG_DEBUG(log, "Requested flush up to offset {}",
-        this_thread_requested_offset);
-
-    // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
-    // too fast for our parallel functional tests, probably because they
-    // heavily load the disk.
-    const int timeout_seconds = 180;
-    std::unique_lock lock(mutex);
+    // Use an arbitrary timeout to avoid endless waiting.
+    const int timeout_seconds = 60;
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
-        [&] { return flushed_up_to >= this_thread_requested_offset
-                && !is_force_prepare_tables; });
+        [&] { return flushed_before >= queue_end && !is_force_prepare_tables; });
 
     if (!result)
     {
@@ -386,8 +358,6 @@ void SystemLog<LogElement>::savingThreadFunction()
             // The end index (exclusive, like std end()) of the messages we are
             // going to flush.
             uint64_t to_flush_end = 0;
-            // Should we prepare table even if there are no new messages.
-            bool should_prepare_tables_anyway = false;
 
             {
                 std::unique_lock lock(mutex);
@@ -395,7 +365,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
-                        return requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
+                        return requested_flush_before > flushed_before || is_shutdown || is_force_prepare_tables;
                     }
                 );
 
@@ -406,14 +376,18 @@ void SystemLog<LogElement>::savingThreadFunction()
                 to_flush.resize(0);
                 queue.swap(to_flush);
 
-                should_prepare_tables_anyway = is_force_prepare_tables;
-
                 exit_this_thread = is_shutdown;
             }
 
             if (to_flush.empty())
             {
-                if (should_prepare_tables_anyway)
+                bool force;
+                {
+                    std::lock_guard lock(mutex);
+                    force = is_force_prepare_tables;
+                }
+
+                if (force)
                 {
                     prepareTable();
                     LOG_TRACE(log, "Table created (force)");
@@ -442,8 +416,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     try
     {
-        LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
-            to_flush.size(), to_flush_end);
+        LOG_TRACE(log, "Flushing system log, {} entries to flush", to_flush.size());
 
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
@@ -465,8 +438,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context::createCopy(context);
-        insert_context->makeQueryContext();
+        Context insert_context(context);
+        insert_context.makeQueryContext();
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -482,12 +455,12 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
     {
         std::lock_guard lock(mutex);
-        flushed_up_to = to_flush_end;
+        flushed_before = to_flush_end;
         is_force_prepare_tables = false;
         flush_event.notify_all();
     }
 
-    LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
+    LOG_TRACE(log, "Flushed system log");
 }
 
 
@@ -496,7 +469,7 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    table = DatabaseCatalog::instance().tryGetTable(table_id, context);
 
     if (table)
     {
@@ -508,8 +481,7 @@ void SystemLog<LogElement>::prepareTable()
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist(
-                {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
+            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}, context))
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
@@ -528,15 +500,9 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(
-                log,
-                "Existing table {} for system log has obsolete or different structure. Renaming it to {}",
-                description,
-                backQuoteIfNeed(to.table));
+            LOG_DEBUG(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
 
-            auto query_context = Context::createCopy(context);
-            query_context->makeQueryContext();
-            InterpreterRenameQuery(rename, query_context).execute();
+            InterpreterRenameQuery(rename, context).execute();
 
             /// The required table will be created.
             table = nullptr;
@@ -552,15 +518,11 @@ void SystemLog<LogElement>::prepareTable()
 
         auto create = getCreateTableQuery();
 
-
-        auto query_context = Context::createCopy(context);
-        query_context->makeQueryContext();
-
-        InterpreterCreateQuery interpreter(create, query_context);
+        InterpreterCreateQuery interpreter(create, context);
         interpreter.setInternal(true);
         interpreter.execute();
 
-        table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        table = DatabaseCatalog::instance().getTable(table_id, context);
     }
 
     is_prepared = true;

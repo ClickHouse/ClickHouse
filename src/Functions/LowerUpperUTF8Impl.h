@@ -1,4 +1,3 @@
-#pragma once
 #include <Columns/ColumnString.h>
 #include <Poco/UTF8Encoding.h>
 #include <Common/UTF8Helpers.h>
@@ -135,16 +134,15 @@ struct LowerUpperUTF8Impl
         {
             static const Poco::UTF8Encoding utf8;
 
-            size_t src_sequence_length = UTF8::seqLength(*src);
+            int src_sequence_length = UTF8::seqLength(*src);
 
-            auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_end - src);
-            if (src_code_point)
+            int src_code_point = UTF8::queryConvert(src, src_end - src);
+            if (src_code_point > 0)
             {
-                int dst_code_point = to_case(*src_code_point);
+                int dst_code_point = to_case(src_code_point);
                 if (dst_code_point > 0)
                 {
-                    size_t dst_sequence_length = UTF8::convertCodePointToUTF8(dst_code_point, dst, src_end - src);
-                    assert(dst_sequence_length <= 4);
+                    int dst_sequence_length = UTF8::convert(dst_code_point, dst, src_end - src);
 
                     /// We don't support cases when lowercase and uppercase characters occupy different number of bytes in UTF-8.
                     /// As an example, this happens for ß and ẞ.
@@ -157,9 +155,7 @@ struct LowerUpperUTF8Impl
                 }
             }
 
-            *dst = *src;
-            ++dst;
-            ++src;
+            *dst++ = *src++;
         }
     }
 

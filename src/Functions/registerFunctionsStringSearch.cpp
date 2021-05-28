@@ -31,10 +31,6 @@ void registerFunctionMultiSearchAllPositionsCaseInsensitiveUTF8(FunctionFactory 
 void registerFunctionHasToken(FunctionFactory &);
 void registerFunctionHasTokenCaseInsensitive(FunctionFactory &);
 
-void registerFunctionCountSubstrings(FunctionFactory &);
-void registerFunctionCountSubstringsCaseInsensitive(FunctionFactory &);
-void registerFunctionCountSubstringsCaseInsensitiveUTF8(FunctionFactory &);
-
 
 void registerFunctionsStringSearch(FunctionFactory & factory)
 {
@@ -65,10 +61,6 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
 
     registerFunctionHasToken(factory);
     registerFunctionHasTokenCaseInsensitive(factory);
-
-    registerFunctionCountSubstrings(factory);
-    registerFunctionCountSubstringsCaseInsensitive(factory);
-    registerFunctionCountSubstringsCaseInsensitiveUTF8(factory);
 }
 
 }

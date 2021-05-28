@@ -7,9 +7,9 @@ toc_title: Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed), which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex\_key\_hashed](#complex-key-hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section [cache](#cache).
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section “[cache](#cache)”.
 
 There are several ways to improve dictionary performance:
 
@@ -52,25 +52,24 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
--   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
--   [ssd_cache](#ssd-cache)
+-   [ssd\_cache](#ssd-cache)
 -   [direct](#direct)
--   [range_hashed](#range-hashed)
--   [complex_key_hashed](#complex-key-hashed)
--   [complex_key_cache](#complex-key-cache)
--   [ssd_cache](#ssd-cache)
--   [ssd_complex_key_cache](#complex-key-ssd-cache)
--   [complex_key_direct](#complex-key-direct)
--   [ip_trie](#ip-trie)
+-   [range\_hashed](#range-hashed)
+-   [complex\_key\_hashed](#complex-key-hashed)
+-   [complex\_key\_cache](#complex-key-cache)
+-   [ssd\_complex\_key\_cache](#ssd-cache)
+-   [complex\_key\_direct](#complex-key-direct)
+-   [ip\_trie](#ip-trie)
 
 ### flat {#flat}
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
 
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type and the value is limited to `max_array_size` (by default — 500,000). If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary. Dictionary flat arrays initial size is controlled by `initial_array_size` setting (by default — 1024).
+The dictionary key has the `UInt64` type and the value is limited to 500,000. If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in it entirety.
+All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 This method provides the best performance among all available methods of storing the dictionary.
 
@@ -78,24 +77,19 @@ Configuration example:
 
 ``` xml
 <layout>
-  <flat>
-    <initial_array_size>50000</initial_array_size>
-    <max_array_size>5000000</max_array_size>
-  </flat>
+  <flat />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+LAYOUT(FLAT())
 ```
 
 ### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
-
-The hash table will be preallocated (this will make dictionary load faster), if the is approx number of total rows is known, this is supported only if the source is `clickhouse` without any `<where>` (since in case of `<where>` you can filter out too much rows and the dictionary will allocate too much memory, that will not be used eventually).
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
@@ -113,11 +107,9 @@ or
 LAYOUT(HASHED())
 ```
 
-### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
-
-It will be also preallocated so as `hashed`, note that it is even more significant for `sparse_hashed`.
 
 Configuration example:
 
@@ -131,7 +123,7 @@ Configuration example:
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex_key_hashed {#complex-key-hashed}
+### complex\_key\_hashed {#complex-key-hashed}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `hashed`.
 
@@ -147,7 +139,7 @@ Configuration example:
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range_hashed {#range-hashed}
+### range\_hashed {#range-hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
@@ -211,8 +203,8 @@ This function returns the value for the specified `id`s and the date range that 
 Details of the algorithm:
 
 -   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, it returns value for any (random) range.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01), the range is open. The range can be open on both sides.
+-   If there are overlapping ranges, you can use any.
+-   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
 
 Configuration example:
 
@@ -302,11 +294,11 @@ Set a large enough cache size. You need to experiment to select the number of ce
 !!! warning "Warning"
     Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
-### complex_key_cache {#complex-key-cache}
+### complex\_key\_cache {#complex-key-cache}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `cache`.
 
-### ssd_cache {#ssd-cache}
+### ssd\_cache {#ssd-cache}
 
 Similar to `cache`, but stores data on SSD and index in RAM.
 
@@ -323,6 +315,8 @@ Similar to `cache`, but stores data on SSD and index in RAM.
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
         <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
+        <max_stored_keys>1048576</max_stored_keys>
     </ssd_cache>
 </layout>
 ```
@@ -330,13 +324,13 @@ Similar to `cache`, but stores data on SSD and index in RAM.
 or
 
 ``` sql
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
+LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
 ```
 
-### complex_key_ssd_cache {#complex-key-ssd-cache}
+### complex\_key\_ssd\_cache {#complex-key-ssd-cache}
 
-This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `ssd_cache`.
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `ssd\_cache`.
 
 ### direct {#direct}
 
@@ -360,11 +354,11 @@ or
 LAYOUT(DIRECT())
 ```
 
-### complex_key_direct {#complex-key-direct}
+### complex\_key\_direct {#complex-key-direct}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `direct`.
 
-### ip_trie {#ip-trie}
+### ip\_trie {#ip-trie}
 
 This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 
@@ -407,14 +401,6 @@ Example:
             <null_value>??</null_value>
     </attribute>
     ...
-</structure>
-<layout>
-    <ip_trie>
-        <!-- Key attribute `prefix` can be retrieved via dictGetString. -->
-        <!-- This option increases memory usage. -->
-        <access_to_key_from_attributes>true</access_to_key_from_attributes>
-    </ip_trie>
-</layout>
 ```
 
 or
@@ -444,5 +430,6 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
-Data must completely fit into RAM.
+Data is stored in a `trie`. It must completely fit into RAM.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

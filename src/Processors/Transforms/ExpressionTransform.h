@@ -17,7 +17,8 @@ class ExpressionTransform : public ISimpleTransform
 public:
     ExpressionTransform(
             const Block & header_,
-            ExpressionActionsPtr expression_);
+            ExpressionActionsPtr expression_,
+            bool on_totals_ = false);
 
     String getName() const override { return "ExpressionTransform"; }
 
@@ -28,6 +29,8 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+    bool on_totals;
+    bool initialized = false;
 };
 
 }

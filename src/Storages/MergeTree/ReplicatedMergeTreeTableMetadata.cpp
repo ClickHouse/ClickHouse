@@ -18,18 +18,15 @@ static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, false, true);
-    return buf.str();
+    std::stringstream ss;
+    formatAST(*ast, ss, false, true);
+    return ss.str();
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        auto minmax_idx_column_names = data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
-        date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
-    }
+        date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
     const auto data_settings = data.getSettings();
     sampling_expression = formattedAST(metadata_snapshot->getSamplingKeyAST());
@@ -205,7 +202,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
 
 }
 
-void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
+void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, const Context & context) const
 {
 
     checkImmutableFieldsEquals(from_zk);

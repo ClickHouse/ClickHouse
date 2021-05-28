@@ -22,7 +22,7 @@ GROUP BY loyalty
 ORDER BY loyalty ASC;
 
 DETACH TABLE join;
-ATTACH TABLE join;
+ATTACH TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(SEMI, LEFT, UserID);
 
 SELECT
     loyalty,

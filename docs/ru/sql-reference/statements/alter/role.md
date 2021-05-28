@@ -5,13 +5,14 @@ toc_title: ROLE
 
 # ALTER ROLE {#alter-role-statement}
 
-Изменяет роли.
+Изменяет роль.
 
-Синтаксис:
+## Синтаксис {#alter-role-syntax}
 
 ``` sql
-ALTER ROLE [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1] 
-        [, name2 [ON CLUSTER cluster_name2] [RENAME TO new_name2] ...]
+ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/role/) <!--hide-->

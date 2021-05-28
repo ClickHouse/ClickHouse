@@ -1,4 +1,0 @@
-simple key
-example_simple_key_dictionary	UInt64
-complex key
-example_complex_key_dictionary	(UInt64, String)

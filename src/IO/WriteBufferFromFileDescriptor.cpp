@@ -8,7 +8,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -91,15 +90,17 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
-    if (fd < 0)
+    try
     {
-        assert(!offset() && "attempt to write after close");
-        return;
+        if (fd >= 0)
+            next();
+        else
+            assert(!offset() && "attempt to write after close");
     }
-
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    next();
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 

@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class MergeTreeIndexConditionBloomFilter final : public IMergeTreeIndexCondition, WithContext
+class MergeTreeIndexConditionBloomFilter : public IMergeTreeIndexCondition
 {
 public:
     struct RPNElement
@@ -42,7 +42,7 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(const SelectQueryInfo & info_, const Context & context_, const Block & header_, size_t hash_functions_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -56,6 +56,7 @@ public:
 
 private:
     const Block & header;
+    const Context & context;
     const SelectQueryInfo & query_info;
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
@@ -66,15 +67,13 @@ private:
 
     bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out, const ASTPtr & parent);
-
     bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out);
 
     bool traverseASTIn(
         const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out);
 
     bool traverseASTEquals(
-        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out, const ASTPtr & parent);
+        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out);
 };
 
 }

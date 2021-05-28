@@ -61,7 +61,7 @@ private:
             position() = nullptr;
         }
 
-        return !buffer().empty();
+        return buffer().size() != 0;
     }
 
     using Container = std::forward_list<BufferBase::Buffer>;

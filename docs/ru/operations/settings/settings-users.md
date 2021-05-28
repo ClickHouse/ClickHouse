@@ -1,8 +1,3 @@
----
-toc_priority: 63
-toc_title: "Настройки пользователей"
----
-
 # Настройки пользователей {#nastroiki-polzovatelei}
 
 Раздел `users` конфигурационного файла `user.xml` содержит настройки для пользователей.
@@ -41,7 +36,7 @@ toc_title: "Настройки пользователей"
 </users>
 ```
 
-### user_name/password {#user-namepassword}
+### user\_name/password {#user-namepassword}
 
 Пароль можно указать в текстовом виде или в виде SHA256 (шестнадцатеричный формат).
 
@@ -88,7 +83,7 @@ toc_title: "Настройки пользователей"
 
 Значение по умолчанию: 0.
 
-### user_name/networks {#user-namenetworks}
+### user\_name/networks {#user-namenetworks}
 
 Список сетей, из которых пользователь может подключиться к серверу ClickHouse.
 
@@ -130,17 +125,17 @@ toc_title: "Настройки пользователей"
 <ip>127.0.0.1</ip>
 ```
 
-### user_name/profile {#user-nameprofile}
+### user\_name/profile {#user-nameprofile}
 
 Пользователю можно назначить профиль настроек. Профили настроек конфигурируются в отдельной секции файла `users.xml`. Подробнее читайте в разделе [Профили настроек](settings-profiles.md).
 
-### user_name/quota {#user-namequota}
+### user\_name/quota {#user-namequota}
 
 Квотирование позволяет отслеживать или ограничивать использование ресурсов в течение определённого периода времени. Квоты настраиваются в разделе `quotas` конфигурационного файла `users.xml`.
 
 Пользователю можно назначить квоты. Подробное описание настройки квот смотрите в разделе [Квоты](../quotas.md#quotas).
 
-### user_name/databases {#user-namedatabases}
+### user\_name/databases {#user-namedatabases}
 
 В этом разделе вы можете ограничить выдачу ClickHouse запросами `SELECT` для конкретного пользователя, таким образом реализуя базовую защиту на уровне строк.
 
@@ -162,3 +157,4 @@ toc_title: "Настройки пользователей"
 
 Элемент `filter` содержать любое выражение, возвращающее значение типа [UInt8](../../sql-reference/data-types/int-uint.md). Обычно он содержит сравнения и логические операторы. Строки `database_name.table1`, для которых фильтр возвращает 0 не выдаются пользователю. Фильтрация несовместима с операциями `PREWHERE` и отключает оптимизацию `WHERE→PREWHERE`.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings_users/) <!--hide-->

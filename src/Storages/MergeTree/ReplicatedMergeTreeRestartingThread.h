@@ -3,7 +3,7 @@
 #include <Poco/Event.h>
 #include <common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <thread>
 #include <atomic>
 
@@ -36,7 +36,7 @@ private:
     Poco::Logger * log;
     std::atomic<bool> need_stop {false};
 
-    // We need it besides `storage.is_readonly`, because `shutdown()` may be called many times, that way `storage.is_readonly` will not change.
+    // We need it besides `storage.is_readonly`, bacause `shutdown()` may be called many times, that way `storage.is_readonly` will not change.
     bool incr_readonly = false;
 
     /// The random data we wrote into `/replicas/me/is_active`.

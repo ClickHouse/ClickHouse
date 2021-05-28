@@ -2,8 +2,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -88,7 +86,8 @@ struct PartialSortingLessWithCollation
             }
             else if (isCollationRequired(elem.description))
             {
-                res = elem.column->compareAtWithCollation(a, b, *elem.column, elem.description.nulls_direction, *elem.description.collator);
+                const ColumnString & column_string = assert_cast<const ColumnString &>(*elem.column);
+                res = column_string.compareAtWithCollation(a, b, *elem.column, *elem.description.collator);
             }
             else
                 res = elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
@@ -101,6 +100,7 @@ struct PartialSortingLessWithCollation
         return false;
     }
 };
+
 
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
@@ -120,18 +120,24 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         bool is_column_const = false;
         if (isCollationRequired(description[0]))
         {
-            if (!column->isCollationSupported())
-                throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
-
-            if (isColumnConst(*column))
+            /// it it's real string column, than we need sort
+            if (const ColumnString * column_string = checkAndGetColumn<ColumnString>(column))
+                column_string->getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
+            else if (checkAndGetColumnConstData<ColumnString>(column))
                 is_column_const = true;
             else
-                column->getPermutationWithCollation(*description[0].collator, reverse, limit, description[0].nulls_direction, perm);
+                throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+
         }
         else if (!isColumnConst(*column))
         {
             int nan_direction_hint = description[0].nulls_direction;
-            column->getPermutation(reverse, limit, nan_direction_hint, perm);
+            auto special_sort = description[0].special_sort;
+
+            if (special_sort == SpecialSort::OPENCL_BITONIC)
+                column->getSpecialPermutation(reverse, limit, nan_direction_hint, perm, IColumn::SpecialSort::OPENCL_BITONIC);
+            else
+                column->getPermutation(reverse, limit, nan_direction_hint, perm);
         }
         else
             /// we don't need to do anything with const column
@@ -162,8 +168,8 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             const IColumn * column = columns_with_sort_desc[i].column;
             if (isCollationRequired(description[i]))
             {
-                if (!column->isCollationSupported())
-                    throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+                if (!checkAndGetColumn<ColumnString>(column) && !checkAndGetColumnConstData<ColumnString>(column))
+                    throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
 
                 need_collation = true;
             }
@@ -186,8 +192,10 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 
                 if (isCollationRequired(column.description))
                 {
-                    column.column->updatePermutationWithCollation(
-                        *column.description.collator, column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+                    const ColumnString & column_string = assert_cast<const ColumnString &>(*column.column);
+                    column_string.updatePermutationWithCollation(
+                        *column.description.collator,
+                        column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
                 }
                 else
                 {

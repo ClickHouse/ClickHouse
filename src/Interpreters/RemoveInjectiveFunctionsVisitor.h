@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
 {
@@ -13,9 +12,9 @@ class ASTFunction;
 class RemoveInjectiveFunctionsMatcher
 {
 public:
-    struct Data : public WithContext
+    struct Data
     {
-        explicit Data(ContextPtr context_) : WithContext(context_) {}
+        const Context & context;
     };
 
     static void visit(ASTPtr & ast, const Data & data);

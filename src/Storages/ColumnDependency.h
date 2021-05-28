@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SipHash.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <unordered_set>
 
 namespace DB

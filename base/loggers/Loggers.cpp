@@ -69,7 +69,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
         log_file->open();
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
         split->addChannel(log);
@@ -90,7 +90,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
         errorlog->setLevel(Poco::Message::PRIO_NOTICE);
@@ -98,7 +98,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(errorlog);
     }
 
-    if (config.getBool("logger.use_syslog", false))
+    /// "dynamic_layer_selection" is needed only for Yandex.Metrika, that share part of ClickHouse code.
+    /// We don't need this configuration parameter.
+
+    if (config.getBool("logger.use_syslog", false) || config.getBool("dynamic_layer_selection", false))
     {
         //const std::string & cmd_name = commandName();
 
@@ -124,7 +127,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
         syslog_channel->open();
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
         split->addChannel(log);
@@ -138,7 +141,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     {
         bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(color_enabled);
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_NOTHING, color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
         logger.warning("Logging " + log_level + " to console");
         split->addChannel(log);

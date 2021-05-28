@@ -28,22 +28,21 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
+        const SelectQueryInfo & query_info,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) override;
+    CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
-    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder&) override;
 
 protected:
     StorageStripeLog(
@@ -68,7 +67,7 @@ private:
     size_t max_compress_block_size;
 
     FileChecker file_checker;
-    std::shared_timed_mutex rwlock;
+    mutable std::shared_mutex rwlock;
 
     Poco::Logger * log;
 };

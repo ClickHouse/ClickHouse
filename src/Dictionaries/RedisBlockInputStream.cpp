@@ -26,7 +26,6 @@ namespace DB
         extern const int LOGICAL_ERROR;
         extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
         extern const int INTERNAL_REDIS_ERROR;
-        extern const int UNKNOWN_TYPE;
     }
 
 
@@ -57,7 +56,7 @@ namespace DB
         void insertValue(IColumn & column, const ValueType type, const Poco::Redis::BulkString & bulk_string)
         {
             if (bulk_string.isNull())
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected not Null String");
+                throw Exception{"Type mismatch, expected not Null String", ErrorCodes::TYPE_MISMATCH};
 
             const String & string_value = bulk_string.value();
             switch (type)
@@ -99,22 +98,11 @@ namespace DB
                     assert_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(string_value).getDayNum());
                     break;
                 case ValueType::vtDateTime:
-                {
-                    ReadBufferFromString in(string_value);
-                    time_t time = 0;
-                    readDateTimeText(time, in);
-                    if (time < 0)
-                        time = 0;
-                    assert_cast<ColumnUInt32 &>(column).insertValue(time);
+                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(string_value)));
                     break;
-                }
                 case ValueType::vtUUID:
                     assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
                     break;
-                default:
-                    throw Exception(ErrorCodes::UNKNOWN_TYPE,
-                        "Value of unsupported type: {}",
-                        column.getName());
             }
         }
     }
@@ -154,9 +142,8 @@ namespace DB
                 const auto & keys_array = keys.get<RedisArray>(cursor);
                 if (keys_array.size() < 2)
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Too low keys in request to source: {}, expected 2 or more",
-                        DB::toString(keys_array.size()));
+                    throw Exception{"Too low keys in request to source: " + DB::toString(keys_array.size())
+                                    + ", expected 2 or more", ErrorCodes::LOGICAL_ERROR};
                 }
 
                 if (num_rows + keys_array.size() - 1 > max_block_size)
@@ -169,8 +156,8 @@ namespace DB
                 auto values = client->execute<RedisArray>(command_for_values);
 
                 if (keys_array.size() != values.size() + 1) // 'HMGET' primary_key secondary_keys
-                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                        "Inconsistent sizes of keys and values in Redis request");
+                    throw Exception{"Inconsistent sizes of keys and values in Redis request",
+                                    ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
                 const auto & primary_key = keys_array.get<RedisBulkString>(0);
                 for (size_t i = 0; i < values.size(); ++i)
@@ -199,8 +186,7 @@ namespace DB
 
             auto values = client->execute<RedisArray>(command_for_values);
             if (values.size() != need_values)
-                throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
-                    "Inconsistent sizes of keys and values in Redis request");
+                throw Exception{"Inconsistent sizes of keys and values in Redis request", ErrorCodes::INTERNAL_REDIS_ERROR};
 
             for (size_t i = 0; i < values.size(); ++i)
             {

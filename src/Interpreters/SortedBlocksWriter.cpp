@@ -3,8 +3,7 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/TemporaryFileStream.h>
-#include <DataStreams/materializeBlock.h>
-#include <Disks/IVolume.h>
+#include <Disks/StoragePolicy.h>
 
 namespace DB
 {
@@ -199,7 +198,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 
 BlockInputStreamPtr SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
 {
-    return std::make_shared<TemporaryFileLazyInputStream>(file->path(), materializeBlock(sample_block));
+    return std::make_shared<TemporaryFileLazyInputStream>(file->path(), sample_block);
 }
 
 String SortedBlocksWriter::getPath() const

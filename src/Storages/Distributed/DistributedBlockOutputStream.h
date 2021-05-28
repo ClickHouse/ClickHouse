@@ -38,14 +38,13 @@ class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
     DistributedBlockOutputStream(
-        ContextPtr context_,
+        const Context & context_,
         StorageDistributed & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const ASTPtr & query_ast_,
         const ClusterPtr & cluster_,
         bool insert_sync_,
-        UInt64 insert_timeout_,
-        StorageID main_table_);
+        UInt64 insert_timeout_);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -63,10 +62,10 @@ private:
 
     void writeSplitAsync(const Block & block);
 
-    void writeAsyncImpl(const Block & block, size_t shard_id = 0);
+    void writeAsyncImpl(const Block & block, const size_t shard_id = 0);
 
     /// Increments finished_writings_count after each repeat.
-    void writeToLocal(const Block & block, size_t repeats);
+    void writeToLocal(const Block & block, const size_t repeats);
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
@@ -74,17 +73,18 @@ private:
     /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
     void writeSync(const Block & block);
 
-    void initWritingJobs(const Block & first_block, size_t start, size_t end);
+    void initWritingJobs(const Block & first_block);
 
     struct JobReplica;
-    ThreadPool::Job runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards);
+    ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block);
 
     void waitForJobs();
 
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
-    ContextPtr context;
+private:
+    const Context & context;
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
@@ -97,7 +97,6 @@ private:
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
-    StorageID main_table;
     Stopwatch watch;
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
@@ -116,7 +115,7 @@ private:
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        ContextPtr local_context;
+        std::unique_ptr<Context> local_context;
         BlockOutputStreamPtr stream;
 
         UInt64 blocks_written = 0;
