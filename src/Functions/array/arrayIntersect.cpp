@@ -217,7 +217,9 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
     auto type_not_nullable_nested = removeNullable(type_nested);
 
     const bool is_numeric_or_string = isNativeNumber(type_not_nullable_nested)
-                                      || isDateOrDateTime(type_not_nullable_nested)
+                                      || isDate(type_not_nullable_nested)
+                                      || isDateTime(type_not_nullable_nested)
+                                      || isDateTime64(type_not_nullable_nested)
                                       || isStringOrFixedString(type_not_nullable_nested);
 
     DataTypePtr nullable_return_type;
@@ -334,7 +336,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                 const auto & nested_init_type = typeid_cast<const DataTypeArray *>(removeNullable(initial_columns[i].type).get())->getNestedType();
                 const auto & nested_cast_type = typeid_cast<const DataTypeArray *>(removeNullable(columns[i].type).get())->getNestedType();
 
-                if (isInteger(nested_init_type) || isDateOrDateTime(nested_init_type))
+                if (isInteger(nested_init_type) || isDate(nested_init_type) || isDateTime(nested_init_type) || isDateTime64(nested_init_type))
                 {
                     /// Compare original and casted columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
