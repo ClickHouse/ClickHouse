@@ -233,4 +233,4 @@
 	url = https://github.com/azadkuh/sqlite-amalgamation
 [submodule "contrib/s2geometry"]
 	path = contrib/s2geometry
-	url = https://github.com/google/s2geometry
+	url = https://github.com/Andr0901/s2geometry
