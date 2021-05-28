@@ -1100,6 +1100,20 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
         });
     }
 
+    if (!isCompatibleHeader(pipe.getHeader(), getOutputStream().header))
+    {
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            pipe.getHeader().getColumnsWithTypeAndName(),
+            getOutputStream().header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+
+        auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+        pipe.addSimpleTransform([&](const Block & cur_header)
+        {
+            return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
+        });
+    }
+
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
