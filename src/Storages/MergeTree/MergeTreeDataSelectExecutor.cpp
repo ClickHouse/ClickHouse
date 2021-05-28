@@ -1208,25 +1208,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         .num_streams = num_streams,
         .preferred_block_size_bytes = settings.preferred_block_size_bytes,
         .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
-        //.min_marks_for_concurrent_read = settings.min_marks_for_concurrent_read,
         .use_uncompressed_cache = settings.use_uncompressed_cache,
         .force_primary_key = settings.force_primary_key,
+        .sample_factor_column_queried = sample_factor_column_queried,
         .reader_settings = reader_settings,
         .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
     };
-
-        // const SelectQueryInfo & query_info_,
-        // const MergeTreeDataSelectExecutor::PartitionIdToMaxBlock * max_block_numbers_to_read_,
-        // ContextPtr context_,
-        // const MergeTreeData & data_,
-        // StorageMetadataPtr metadata_snapshot_,
-        // StorageMetadataPtr metadata_snapshot_base_,
-        // Names real_column_names_,
-        // MergeTreeData::DataPartsVector parts_,
-        // PrewhereInfoPtr prewhere_info_,
-        // Names virt_column_names_,
-        // Settings settings_,
-        // Poco::Logger * log_
 
     auto read_from_merge_tree = std::make_unique<ReadFromMergeTree>(
         query_info,

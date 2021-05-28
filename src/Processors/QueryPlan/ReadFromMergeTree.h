@@ -50,6 +50,7 @@ public:
         //size_t min_marks_for_concurrent_read;
         bool use_uncompressed_cache;
         bool force_primary_key;
+        bool sample_factor_column_queried;
 
         MergeTreeReaderSettings reader_settings;
         MergeTreeReadPool::BackoffSettings backoff_settings;
