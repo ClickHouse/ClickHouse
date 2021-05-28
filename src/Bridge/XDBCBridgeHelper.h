@@ -62,7 +62,7 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
 
     XDBCBridgeHelper(
-        ContextPtr context_,
+        ContextConstPtr context_,
         Poco::Timespan http_timeout_,
         const std::string & connection_string_)
     : IXDBCBridgeHelper(context_->getGlobalContext())
