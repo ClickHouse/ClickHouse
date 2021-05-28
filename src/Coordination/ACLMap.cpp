@@ -47,7 +47,6 @@ uint64_t ACLMap::convertACLs(const Coordination::ACLs & acls)
 
     /// Start from one
     auto index = acl_to_num.size() + 1;
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ALLOCATING {} FOR ACL", index);
 
     acl_to_num[acls] = index;
     num_to_acl[index] = acls;
