@@ -1,6 +1,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -126,7 +126,7 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
         {
-            const ColumnConst * len_column = checkAndGetColumnConst<ColumnUInt32>(arguments[1].column.get());
+            const ColumnConst * len_column = checkAndGetColumnConst<ColumnDecimal<Decimal32>>(arguments[1].column.get());
             if (!len_column)
                 throw Exception(
                     "Illegal column " + arguments[1].column->getName() + " of first ('len') argument of function " + getName()
