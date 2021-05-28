@@ -14,17 +14,18 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/IColumn.h>
 
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DictionaryReader.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/HashJoin.h>
+#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/JoinSwitcher.h>
-#include <Interpreters/HashJoin.h>
-#include <Interpreters/MergeJoin.h>
-#include <Interpreters/DictionaryReader.h>
-#include <Interpreters/Context.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 
@@ -474,7 +475,8 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     return !aggregates().empty();
 }
 
-void makeWindowDescriptionFromAST(const WindowDescriptions & existing_descriptions,
+void makeWindowDescriptionFromAST(const Context & context,
+    const WindowDescriptions & existing_descriptions,
     WindowDescription & desc, const IAST * ast)
 {
     const auto & definition = ast->as<const ASTWindowDefinition &>();
@@ -580,6 +582,22 @@ void makeWindowDescriptionFromAST(const WindowDescriptions & existing_descriptio
     }
 
     desc.frame = definition.frame;
+
+    if (definition.frame.end_type == WindowFrame::BoundaryType::Offset)
+    {
+        auto [value, _] = evaluateConstantExpression(
+            definition.frame_end_offset,
+            const_pointer_cast<Context>(context.shared_from_this()));
+        desc.frame.end_offset = value;
+    }
+
+    if (definition.frame.begin_type == WindowFrame::BoundaryType::Offset)
+    {
+        auto [value, _] = evaluateConstantExpression(
+            definition.frame_begin_offset,
+            const_pointer_cast<Context>(context.shared_from_this()));
+        desc.frame.begin_offset = value;
+    }
 }
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
@@ -605,7 +623,8 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
             const auto & elem = ptr->as<const ASTWindowListElement &>();
             WindowDescription desc;
             desc.window_name = elem.name;
-            makeWindowDescriptionFromAST(window_descriptions, desc, elem.definition.get());
+            makeWindowDescriptionFromAST(*getContext(), window_descriptions,
+                desc, elem.definition.get());
 
             auto [it, inserted] = window_descriptions.insert(
                 {desc.window_name, desc});
@@ -690,7 +709,8 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                 const ASTWindowDefinition &>();
             WindowDescription desc;
             desc.window_name = definition.getDefaultWindowName();
-            makeWindowDescriptionFromAST(window_descriptions, desc, &definition);
+            makeWindowDescriptionFromAST(*getContext(), window_descriptions,
+                desc, &definition);
 
             auto [it, inserted] = window_descriptions.insert(
                 {desc.window_name, desc});
