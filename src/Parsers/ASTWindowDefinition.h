@@ -16,8 +16,12 @@ struct ASTWindowDefinition : public IAST
 
     ASTPtr order_by;
 
+    // Be careful: offsets can contain constant expressions such as INTERVAL 1 DAY,
+    // that are evaluated later by ExpressionAnalyzer. The WindowFrame struct
+    // can be incomplete after parsing.
     WindowFrame frame;
-
+    ASTPtr frame_begin_offset;
+    ASTPtr frame_end_offset;
 
     ASTPtr clone() const override;
 

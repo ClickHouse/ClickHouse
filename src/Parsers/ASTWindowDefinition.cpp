@@ -28,6 +28,18 @@ ASTPtr ASTWindowDefinition::clone() const
 
     result->frame = frame;
 
+    if (frame_begin_offset)
+    {
+        result->frame_begin_offset = frame_begin_offset->clone();
+        result->children.push_back(result->frame_begin_offset);
+    }
+
+    if (frame_end_offset)
+    {
+        result->frame_end_offset = frame_end_offset->clone();
+        result->children.push_back(result->frame_end_offset);
+    }
+
     return result;
 }
 
@@ -93,8 +105,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else
         {
-            settings.ostr << applyVisitor(FieldVisitorToString(),
-                frame.begin_offset);
+            frame_begin_offset->formatImpl(settings, state, format_frame);
             settings.ostr << " "
                 << (!frame.begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -109,8 +120,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else
         {
-            settings.ostr << applyVisitor(FieldVisitorToString(),
-                frame.end_offset);
+            frame_end_offset->formatImpl(settings, state, format_frame);
             settings.ostr << " "
                 << (!frame.end_preceding ? "FOLLOWING" : "PRECEDING");
         }

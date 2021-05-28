@@ -569,16 +569,14 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     }
     else
     {
-        ParserLiteral parser_literal;
-        ASTPtr ast_literal;
+        ParserExpression parser_expression;
         if (keyword_unbounded.ignore(pos, expected))
         {
             node->frame.begin_type = WindowFrame::BoundaryType::Unbounded;
         }
-        else if (parser_literal.parse(pos, ast_literal, expected))
+        else if (parser_expression.parse(pos, node->frame_begin_offset, expected))
         {
-            const Field & value = ast_literal->as<ASTLiteral &>().value;
-            node->frame.begin_offset = value;
+            // We will evaluate the expression for offset expression later.
             node->frame.begin_type = WindowFrame::BoundaryType::Offset;
         }
         else
@@ -618,16 +616,14 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
         else
         {
-            ParserLiteral parser_literal;
-            ASTPtr ast_literal;
+            ParserExpression parser_expression;
             if (keyword_unbounded.ignore(pos, expected))
             {
                 node->frame.end_type = WindowFrame::BoundaryType::Unbounded;
             }
-            else if (parser_literal.parse(pos, ast_literal, expected))
+            else if (parser_expression.parse(pos, node->frame_end_offset, expected))
             {
-                const Field & value = ast_literal->as<ASTLiteral &>().value;
-                node->frame.end_offset = value;
+                // We will evaluate the expression for offset expression later.
                 node->frame.end_type = WindowFrame::BoundaryType::Offset;
             }
             else
