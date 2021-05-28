@@ -22,16 +22,6 @@ struct MergeTreeDataSelectSamplingData
     ActionsDAGPtr filter_expression;
 };
 
-// struct MergeTreeDataSelectCache
-// {
-//     RangesInDataParts parts_with_ranges;
-//     MergeTreeDataSelectSamplingData sampling;
-//     std::unique_ptr<ReadFromMergeTree::IndexStats> index_stats;
-//     size_t sum_marks = 0;
-//     size_t sum_ranges = 0;
-//     bool use_cache = false;
-// };
-
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 /** Executes SELECT queries on data from the merge tree.
@@ -78,52 +68,7 @@ public:
 
 private:
     const MergeTreeData & data;
-
     Poco::Logger * log;
-
-    // QueryPlanPtr spreadMarkRangesAmongStreams(
-    //     RangesInDataParts && parts,
-    //     size_t num_streams,
-    //     const Names & column_names,
-    //     const StorageMetadataPtr & metadata_snapshot,
-    //     UInt64 max_block_size,
-    //     bool use_uncompressed_cache,
-    //     const SelectQueryInfo & query_info,
-    //     const Names & virt_columns,
-    //     const Settings & settings,
-    //     const MergeTreeReaderSettings & reader_settings,
-    //     const String & query_id) const;
-
-    // /// out_projection - save projection only with columns, requested to read
-    // QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
-    //     RangesInDataParts && parts,
-    //     size_t num_streams,
-    //     const Names & column_names,
-    //     const StorageMetadataPtr & metadata_snapshot,
-    //     UInt64 max_block_size,
-    //     bool use_uncompressed_cache,
-    //     const SelectQueryInfo & query_info,
-    //     const ActionsDAGPtr & sorting_key_prefix_expr,
-    //     const Names & virt_columns,
-    //     const Settings & settings,
-    //     const MergeTreeReaderSettings & reader_settings,
-    //     ActionsDAGPtr & out_projection,
-    //     const String & query_id,
-    //     const InputOrderInfoPtr & input_order_info) const;
-
-    // QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
-    //     RangesInDataParts && parts,
-    //     size_t num_streams,
-    //     const Names & column_names,
-    //     const StorageMetadataPtr & metadata_snapshot,
-    //     UInt64 max_block_size,
-    //     bool use_uncompressed_cache,
-    //     const SelectQueryInfo & query_info,
-    //     const Names & virt_columns,
-    //     const Settings & settings,
-    //     const MergeTreeReaderSettings & reader_settings,
-    //     ActionsDAGPtr & out_projection,
-    //     const String & query_id) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     static size_t getApproximateTotalRowsToRead(
@@ -186,6 +131,19 @@ private:
         Poco::Logger * log);
 
 public:
+    static size_t roundRowsOrBytesToMarks(
+        size_t rows_setting,
+        size_t bytes_setting,
+        size_t rows_granularity,
+        size_t bytes_granularity);
+
+    static size_t minMarksForConcurrentRead(
+        size_t rows_setting,
+        size_t bytes_setting,
+        size_t rows_granularity,
+        size_t bytes_granularity,
+        size_t max_marks);
+
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
         const MergeTreeData & data,
         MergeTreeData::DataPartsVector & parts,
@@ -227,7 +185,10 @@ public:
         NamesAndTypesList available_real_columns,
         ContextPtr context);
 
-    static String checkLimits(const MergeTreeData & data, const RangesInDataParts & parts_with_ranges, const ContextPtr & context);
+    static String checkLimits(
+        const MergeTreeData & data,
+        const RangesInDataParts & parts_with_ranges,
+        const ContextPtr & context);
 };
 
 }

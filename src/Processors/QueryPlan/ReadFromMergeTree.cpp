@@ -39,55 +39,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-/// Marks are placed whenever threshold on rows or bytes is met.
-/// So we have to return the number of marks on whatever estimate is higher - by rows or by bytes.
-size_t roundRowsOrBytesToMarks(
-    size_t rows_setting,
-    size_t bytes_setting,
-    size_t rows_granularity,
-    size_t bytes_granularity)
-{
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
-
-    if (bytes_granularity == 0)
-        return res;
-    else
-        return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
-}
-/// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
-size_t minMarksForConcurrentRead(
-    size_t rows_setting,
-    size_t bytes_setting,
-    size_t rows_granularity,
-    size_t bytes_granularity,
-    size_t max_marks)
-{
-    size_t marks = 1;
-
-    if (rows_setting + rows_granularity <= rows_setting) /// overflow
-        marks = max_marks;
-    else if (rows_setting)
-        marks = (rows_setting + rows_granularity - 1) / rows_granularity;
-
-    if (bytes_granularity == 0)
-        return marks;
-    else
-    {
-        /// Overflow
-        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
-            return max_marks;
-        if (bytes_setting)
-            return std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
-        else
-            return marks;
-    }
-}
-
-}
-
 struct ReadFromMergeTree::AnalysisResult
 {
     RangesInDataParts parts_with_ranges;
@@ -267,13 +218,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (adaptive_parts > parts_with_ranges.size() / 2)
         index_granularity_bytes = data_settings->index_granularity_bytes;
 
-    const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
+    const size_t max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
         q_settings.merge_tree_max_rows_to_use_cache,
         q_settings.merge_tree_max_bytes_to_use_cache,
         data_settings->index_granularity,
         index_granularity_bytes);
 
-    const size_t min_marks_for_concurrent_read = minMarksForConcurrentRead(
+    const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
         q_settings.merge_tree_min_rows_for_concurrent_read,
         q_settings.merge_tree_min_bytes_for_concurrent_read,
         data_settings->index_granularity,
@@ -333,13 +284,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (adaptive_parts > parts_with_ranges.size() / 2)
         index_granularity_bytes = data_settings->index_granularity_bytes;
 
-    const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
+    const size_t max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
         q_settings.merge_tree_max_rows_to_use_cache,
         q_settings.merge_tree_max_bytes_to_use_cache,
         data_settings->index_granularity,
         index_granularity_bytes);
 
-    const size_t min_marks_for_concurrent_read = minMarksForConcurrentRead(
+    const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
         q_settings.merge_tree_min_rows_for_concurrent_read,
         q_settings.merge_tree_min_bytes_for_concurrent_read,
         data_settings->index_granularity,
@@ -496,7 +447,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             if (pipe.numOutputPorts() > 1)
             {
-
                 auto transform = std::make_shared<MergingSortedTransform>(
                         pipe.getHeader(),
                         pipe.numOutputPorts(),
@@ -640,7 +590,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     if (adaptive_parts >= parts_with_range.size() / 2)
         index_granularity_bytes = data_settings->index_granularity_bytes;
 
-    const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
+    const size_t max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
         q_settings.merge_tree_max_rows_to_use_cache,
         q_settings.merge_tree_max_bytes_to_use_cache,
         data_settings->index_granularity,
@@ -773,17 +723,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             std::min<size_t>(used_num_streams, q_settings.max_final_threads),
             sort_description, data.merging_params, partition_key_columns, settings.max_block_size);
 
-        // auto final_step = std::make_unique<MergingFinal>(
-        //     plan->getCurrentDataStream(),
-        //     std::min<size_t>(used_num_streams, settings.max_final_threads),
-        //     sort_description,
-        //     data.merging_params,
-        //     partition_key_columns,
-        //     max_block_size);
-
-        // final_step->setStepDescription("Merge rows for FINAL");
-        // plan->addStep(std::move(final_step));
-
         partition_pipes.emplace_back(std::move(pipe));
     }
 
@@ -793,7 +732,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         size_t num_streams_for_lonely_parts = used_num_streams * lonely_parts.size();
 
-        const size_t min_marks_for_concurrent_read = minMarksForConcurrentRead(
+        const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             q_settings.merge_tree_min_rows_for_concurrent_read,
             q_settings.merge_tree_min_bytes_for_concurrent_read,
             data_settings->index_granularity,
@@ -803,33 +742,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// Reduce the number of num_streams_for_lonely_parts if the data is small.
         if (sum_marks_in_lonely_parts < num_streams_for_lonely_parts * min_marks_for_concurrent_read && lonely_parts.size() < num_streams_for_lonely_parts)
             num_streams_for_lonely_parts = std::max((sum_marks_in_lonely_parts + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, lonely_parts.size());
-
-        // ReadFromMergeTree::Settings step_settings
-        // {
-        //     .max_block_size = max_block_size,
-        //     .preferred_block_size_bytes = settings.preferred_block_size_bytes,
-        //     .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
-        //     .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
-        //     .use_uncompressed_cache = use_uncompressed_cache,
-        //     .reader_settings = reader_settings,
-        //     .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
-        // };
-
-        // auto plan = std::make_unique<QueryPlan>();
-        // auto step = std::make_unique<ReadFromMergeTree>(
-        //     data,
-        //     metadata_snapshot,
-        //     query_id,
-        //     column_names,
-        //     std::move(lonely_parts),
-        //     // std::move(index_stats),
-        //     query_info.projection ? query_info.projection->prewhere_info : query_info.prewhere_info,
-        //     virt_columns,
-        //     step_settings,
-        //     num_streams_for_lonely_parts,
-        //     ReadFromMergeTree::ReadType::Default);
-
-        // plan->addStep(std::move(step));
 
         auto pipe = read(std::move(lonely_parts), column_names, ReadFromMergeTree::ReadType::Default,
                 num_streams_for_lonely_parts, min_marks_for_concurrent_read, use_uncompressed_cache);
@@ -845,13 +757,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         {
             return std::make_shared<ExpressionTransform>(header, sorting_expr);
         });
-
-        // auto expression_step = std::make_unique<ExpressionStep>(
-        //     plan->getCurrentDataStream(),
-        //     metadata_snapshot->getSortingKey().expression->getActionsDAG().clone());
-
-        // expression_step->setStepDescription("Calculate sorting key expression");
-        // plan->addStep(std::move(expression_step));
 
         partition_pipes.emplace_back(std::move(pipe));
     }
