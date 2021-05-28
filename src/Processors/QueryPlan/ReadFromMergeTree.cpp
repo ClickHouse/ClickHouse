@@ -6,7 +6,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/AddingSelectorTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
-#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -37,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INDEX_NOT_USED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
