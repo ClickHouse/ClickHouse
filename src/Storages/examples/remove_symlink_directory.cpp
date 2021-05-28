@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <Common/Exception.h>
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

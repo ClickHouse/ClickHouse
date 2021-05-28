@@ -3,7 +3,7 @@
 #include <Poco/Timestamp.h>
 #include <string>
 #include <filesystem>
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 namespace fs = std::filesystem;
 

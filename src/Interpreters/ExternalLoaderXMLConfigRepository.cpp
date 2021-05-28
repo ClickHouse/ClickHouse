@@ -4,7 +4,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Poco/Glob.h>
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 
 

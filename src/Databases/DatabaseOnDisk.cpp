@@ -19,7 +19,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
 #include <filesystem>
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 namespace fs = std::filesystem;
 

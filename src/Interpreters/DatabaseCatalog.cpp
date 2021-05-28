@@ -17,7 +17,7 @@
 #include <common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"

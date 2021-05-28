@@ -11,7 +11,7 @@
 #include <common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace DB

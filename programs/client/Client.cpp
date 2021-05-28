@@ -87,7 +87,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/ProgressBar.h>
 #include <filesystem>
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>

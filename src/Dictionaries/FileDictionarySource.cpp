@@ -10,7 +10,7 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace fs = std::filesystem;
