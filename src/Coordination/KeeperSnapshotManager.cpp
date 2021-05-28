@@ -292,7 +292,7 @@ SnapshotMetadataPtr KeeperStorageSnapshot::deserialize(KeeperStorage & storage, 
 
                 session_auth_counter++;
             }
-            if (ids.size() > 0)
+            if (!ids.empty())
                 storage.session_and_auth[active_session_id] = ids;
         }
         current_session_size++;
