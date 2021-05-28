@@ -64,16 +64,11 @@ std::unordered_set<std::string> DatabaseSQLite::fetchTablesList() const
 
     int status = sqlite3_exec(db_ptr.get(), query.c_str(), callback_get_data, &tables, &err_message);
 
-    LOG_INFO(log, "GOT HERE");
-    for (const auto & name : tables)
-    {
-        LOG_INFO(log, "AND FOUND: {}", name);
-    }
-
     if (status != SQLITE_OK)
     {
-        LOG_INFO(log, "SQLITE_ERR {}: {}", status, err_message);
+        String err_msg(err_message);
         sqlite3_free(err_message);
+        throw Exception(status, "SQLITE_ERR {}: {}", status, err_msg);
     }
 
     return tables;
@@ -91,16 +86,15 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 
     int count = 0;
 
-    LOG_INFO(log, "GOT HERE2");
-
     char * err_message = nullptr;
 
     int status = sqlite3_exec(db_ptr.get(), query.c_str(), callback_get_data, &count, &err_message);
 
     if (status != SQLITE_OK)
     {
-        LOG_INFO(log, "SQLITE_ERR {}: {}", status, err_message);
+        String err_msg(err_message);
         sqlite3_free(err_message);
+        throw Exception(status, "SQLITE_ERR {}: {}", status, err_msg);
     }
 
     return (count != 0);
@@ -126,7 +120,6 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
     if (!table_checked && !checkSQLiteTable(table_name))
         return StoragePtr{};
 
-    //    auto use_nulls = local_context->getSettingsRef().external_table_functions_use_nulls;
     auto columns = fetchSQLiteTableStructure(db_ptr.get(), table_name);
 
     if (!columns)

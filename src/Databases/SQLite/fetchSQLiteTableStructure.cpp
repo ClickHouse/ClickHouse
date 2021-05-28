@@ -27,15 +27,7 @@ static DataTypePtr convertSQLiteDataType(std::string type /* , bool is_nullable 
     else if (type.find("real") != std::string::npos || type.find("floa") != std::string::npos || type.find("doub") != std::string::npos)
         res = std::make_shared<DataTypeFloat64>();
     else
-    {
         res = std::make_shared<DataTypeString>(); // No decimal when fetching data through API
-        //        UInt32 precision = DecimalUtils::max_precision<Decimal128>;
-        //        UInt32 scale = precision / 2;
-        //        res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-    }
-
-    //    if (is_nullable)
-    //        res = std::make_shared<DataTypeNullable>(res);
 
     return res;
 }
