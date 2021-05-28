@@ -30,7 +30,7 @@ namespace ErrorCodes
  * Implementation simply stores intervals sorted by beginning and sums lengths at final.
  */
 template <typename T>
-struct AggregateFunctionSegmentLengthSumData
+struct AggregateFunctionIntervalLengthSumData
 {
     constexpr static size_t MAX_ARRAY_SIZE = 0xFFFFFF;
 
@@ -50,7 +50,7 @@ struct AggregateFunctionSegmentLengthSumData
         segments.emplace_back(begin, end);
     }
 
-    void merge(const AggregateFunctionSegmentLengthSumData & other)
+    void merge(const AggregateFunctionIntervalLengthSumData & other)
     {
         if (other.segments.empty())
             return;
@@ -127,11 +127,11 @@ struct AggregateFunctionSegmentLengthSumData
 };
 
 template <typename T, typename Data>
-class AggregateFunctionSegmentLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSegmentLengthSum<T, Data>>
+class AggregateFunctionIntervalLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>
 {
 private:
     template <typename TResult>
-    TResult getSegmentLengthSum(Data & data) const
+    TResult getIntervalLengthSum(Data & data) const
     {
         if (data.segments.empty())
             return 0;
@@ -160,10 +160,10 @@ private:
     }
 
 public:
-    String getName() const override { return "segmentLengthSum"; }
+    String getName() const override { return "intervalLengthSum"; }
 
-    explicit AggregateFunctionSegmentLengthSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSegmentLengthSum<T, Data>>(arguments, {})
+    explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {})
     {
     }
 
@@ -210,9 +210,9 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         if constexpr (std::is_floating_point_v<T>)
-            assert_cast<ColumnFloat64 &>(to).getData().push_back(getSegmentLengthSum<Float64>(this->data(place)));
+            assert_cast<ColumnFloat64 &>(to).getData().push_back(getIntervalLengthSum<Float64>(this->data(place)));
         else
-            assert_cast<ColumnUInt64 &>(to).getData().push_back(getSegmentLengthSum<UInt64>(this->data(place)));
+            assert_cast<ColumnUInt64 &>(to).getData().push_back(getIntervalLengthSum<UInt64>(this->data(place)));
     }
 };
 
