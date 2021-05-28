@@ -3,6 +3,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatFactory.h>
+#include <common/logger_useful.h
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
