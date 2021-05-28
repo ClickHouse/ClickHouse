@@ -490,7 +490,7 @@ void makeWindowDescriptionFromAST(const WindowDescriptions & existing_descriptio
                 definition.parent_window_name);
         }
 
-        auto & parent = it->second;
+        const auto & parent = it->second;
         desc.partition_by = parent.partition_by;
         desc.order_by = parent.order_by;
         desc.frame = parent.frame;
