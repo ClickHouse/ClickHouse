@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -43,7 +44,6 @@ struct ReadFromMergeTree::AnalysisResult
 {
     RangesInDataParts parts_with_ranges;
     MergeTreeDataSelectSamplingData sampling;
-    String query_id;
     IndexStats index_stats;
     Names column_names_to_read;
     ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
@@ -830,14 +830,14 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
     LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
-    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
 
     MergeTreeDataSelectExecutor::filterPartsByPartition(
-        metadata_snapshot_base, data, query_info, context, query_context, parts, part_values, max_block_numbers_to_read.get(), log, result.index_stats);
+        parts, part_values, metadata_snapshot_base, data, query_info, context,
+        max_block_numbers_to_read.get(), log, result.index_stats);
 
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
-        select, parts, metadata_snapshot, key_condition,
-        data, log, sample_factor_column_queried, metadata_snapshot->getColumns().getAllPhysical(), context);
+        select, metadata_snapshot->getColumns().getAllPhysical(), parts, key_condition,
+        data, metadata_snapshot, context, sample_factor_column_queried, log);
 
     if (result.sampling.read_nothing)
         return result;
@@ -885,8 +885,6 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         sum_marks,
         sum_ranges);
 
-    result.query_id = MergeTreeDataSelectExecutor::checkLimits(data, result.parts_with_ranges, context);
-
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.parts_with_ranges.size());
     ProfileEvents::increment(ProfileEvents::SelectedRanges, sum_ranges);
     ProfileEvents::increment(ProfileEvents::SelectedMarks, sum_marks);
@@ -905,6 +903,8 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = selectRangesToRead(prepared_parts);
+    auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result.parts_with_ranges, context);
+
     if (result.parts_with_ranges.empty())
     {
         pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
@@ -1048,8 +1048,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
         processors.emplace_back(processor);
 
     // Attach QueryIdHolder if needed
-    if (!result.query_id.empty())
-        pipe.addQueryIdHolder(std::make_shared<QueryIdHolder>(result.query_id, data));
+    if (query_id_holder)
+        pipe.addQueryIdHolder(std::move(query_id_holder));
 
     pipeline.init(std::move(pipe));
 }

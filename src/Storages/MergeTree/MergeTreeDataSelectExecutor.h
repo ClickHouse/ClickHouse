@@ -45,16 +45,7 @@ public:
         QueryProcessingStage::Enum processed_stage,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
-    size_t estimateNumMarksToRead(
-        MergeTreeData::DataPartsVector parts,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot_base,
-        const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        unsigned num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
-
+    /// The same as read, but with specified set of parts.
     QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
@@ -63,6 +54,19 @@ public:
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
+        unsigned num_streams,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+
+    /// Get an estimation for the number of marks we are going to read.
+    /// Reads nothing. Secondary indexes are not used.
+    /// This method is used to select best projection for table.
+    size_t estimateNumMarksToRead(
+        MergeTreeData::DataPartsVector parts,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot_base,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr context,
         unsigned num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
@@ -131,12 +135,15 @@ private:
         Poco::Logger * log);
 
 public:
+    /// For given number rows and bytes, get the number of marks to read.
+    /// It is a minimal number of marks which contain so many rows and bytes.
     static size_t roundRowsOrBytesToMarks(
         size_t rows_setting,
         size_t bytes_setting,
         size_t rows_granularity,
         size_t bytes_granularity);
 
+    /// The same as roundRowsOrBytesToMarks, but return no more than max_marks.
     static size_t minMarksForConcurrentRead(
         size_t rows_setting,
         size_t bytes_setting,
@@ -144,48 +151,58 @@ public:
         size_t bytes_granularity,
         size_t max_marks);
 
+    /// If possible, filter using expression on virtual columns.
+    /// Example: SELECT count() FROM table WHERE _part = 'part_name'
+    /// If expression found, return a set with allowed part names (std::nullopt otherwise).
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
         const MergeTreeData & data,
-        MergeTreeData::DataPartsVector & parts,
+        const MergeTreeData::DataPartsVector & parts,
         const ASTPtr & query,
         ContextPtr context);
 
+    /// Filter parts using minmax index and partition key.
     static void filterPartsByPartition(
+        MergeTreeData::DataPartsVector & parts,
+        const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const SelectQueryInfo & query_info,
         const ContextPtr & context,
-        const ContextPtr & query_context,
-        MergeTreeData::DataPartsVector & parts,
-        const std::optional<std::unordered_set<String>> & part_values,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         Poco::Logger * log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Filter parts using primary key and secondary indexes.
+    /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         MergeTreeData::DataPartsVector && parts,
         StorageMetadataPtr metadata_snapshot,
         const SelectQueryInfo & query_info,
         const ContextPtr & context,
-        KeyCondition & key_condition,
+        const KeyCondition & key_condition,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log,
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes);
 
+    /// Create expression for sampling.
+    /// Also, calculate _sample_factor if needed.
+    /// Also, update key condition with selected sampling range.
     static MergeTreeDataSelectSamplingData getSampling(
         const ASTSelectQuery & select,
+        NamesAndTypesList available_real_columns,
         const MergeTreeData::DataPartsVector & parts,
-        const StorageMetadataPtr & metadata_snapshot,
         KeyCondition & key_condition,
         const MergeTreeData & data,
-        Poco::Logger * log,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
         bool sample_factor_column_queried,
-        NamesAndTypesList available_real_columns,
-        ContextPtr context);
+        Poco::Logger * log);
 
-    static String checkLimits(
+    /// Check query limits: max_partitions_to_read, max_concurrent_queries.
+    /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.
+    static std::shared_ptr<QueryIdHolder> checkLimits(
         const MergeTreeData & data,
         const RangesInDataParts & parts_with_ranges,
         const ContextPtr & context);

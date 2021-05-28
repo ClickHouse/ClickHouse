@@ -381,14 +381,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
 MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     const ASTSelectQuery & select,
+    NamesAndTypesList available_real_columns,
     const MergeTreeData::DataPartsVector & parts,
-    const StorageMetadataPtr & metadata_snapshot,
     KeyCondition & key_condition,
     const MergeTreeData & data,
-    Poco::Logger * log,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
     bool sample_factor_column_queried,
-    NamesAndTypesList available_real_columns,
-    ContextPtr context)
+    Poco::Logger * log)
 {
     const Settings & settings = context->getSettingsRef();
     /// Sampling.
@@ -643,7 +643,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
     const MergeTreeData & data,
-    MergeTreeData::DataPartsVector & parts,
+    const MergeTreeData::DataPartsVector & parts,
     const ASTPtr & query,
     ContextPtr context)
 {
@@ -666,13 +666,12 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByPartition(
+    MergeTreeData::DataPartsVector & parts,
+    const std::optional<std::unordered_set<String>> & part_values,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
-    const ContextPtr & query_context,
-    MergeTreeData::DataPartsVector & parts,
-    const std::optional<std::unordered_set<String>> & part_values,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     Poco::Logger * log,
     ReadFromMergeTree::IndexStats & index_stats)
@@ -709,6 +708,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
         }
     }
 
+    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     PartFilterCounters part_filter_counters;
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
         selectPartsToReadWithUUIDFilter(
@@ -766,7 +766,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     StorageMetadataPtr metadata_snapshot,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
-    KeyCondition & key_condition,
+    const KeyCondition & key_condition,
     const MergeTreeReaderSettings & reader_settings,
     Poco::Logger * log,
     size_t num_streams,
@@ -992,7 +992,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
-String MergeTreeDataSelectExecutor::checkLimits(
+std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
     const RangesInDataParts & parts_with_ranges,
     const ContextPtr & context)
@@ -1032,7 +1032,10 @@ String MergeTreeDataSelectExecutor::checkLimits(
         }
     }
 
-    return query_id;
+    if (!query_id.empty())
+        return std::make_shared<QueryIdHolder>(query_id, data);
+
+    return nullptr;
 }
 
 static void selectColumnNames(
@@ -1135,15 +1138,15 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     }
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
-    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     ReadFromMergeTree::IndexStats index_stats;
 
     filterPartsByPartition(
-        metadata_snapshot_base, data, query_info, context, query_context, parts, part_values, max_block_numbers_to_read.get(), log, index_stats);
+        parts, part_values, metadata_snapshot_base, data, query_info,
+        context, max_block_numbers_to_read.get(), log, index_stats);
 
     auto sampling = MergeTreeDataSelectExecutor::getSampling(
-        select, parts, metadata_snapshot, key_condition,
-        data, log, sample_factor_column_queried, metadata_snapshot->getColumns().getAllPhysical(), context);
+        select, metadata_snapshot->getColumns().getAllPhysical(), parts, key_condition,
+        data, metadata_snapshot, context, sample_factor_column_queried, log);
 
     if (sampling.read_nothing)
         return 0;
