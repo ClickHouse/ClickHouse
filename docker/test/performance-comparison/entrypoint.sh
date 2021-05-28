@@ -149,4 +149,4 @@ cp compare.log /output
 
 # Upload images to S3 to use them in html page
 mkdir -p /output/images/svg
-cp./*.svg /output/images/svg/
+cp ./*.svg /output/images/svg/
