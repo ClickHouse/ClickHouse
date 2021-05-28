@@ -59,7 +59,7 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
         if (part_info == it->first)
         {
             /// We could throw logical error on part duplication,
-            /// but it may rarely happen to virtual parts set as a result of replica cloning. 
+            /// but it may rarely happen to virtual parts set as a result of replica cloning.
             return false;
         }
         if (out_replaced_parts)
