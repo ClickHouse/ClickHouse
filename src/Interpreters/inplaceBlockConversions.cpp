@@ -24,7 +24,7 @@ namespace
 {
 
 /// Add all required expressions for missing columns calculation
-void addDefaultRequiredExpressionsRecursively(const Block & block, const String & required_column, const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns)
+void addDefaultRequiredExpressionsRecursively(Block & block, const String & required_column, const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns)
 {
     checkStackSize();
     if (block.has(required_column) || added_columns.count(required_column))
@@ -52,7 +52,7 @@ void addDefaultRequiredExpressionsRecursively(const Block & block, const String 
     }
 }
 
-ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
+ASTPtr defaultRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
 {
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
 
@@ -87,57 +87,89 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-ActionsDAGPtr createExpressions(
-    const Block & header,
+void executeExpressionsOnBlock(
+    Block & block,
     ASTPtr expr_list,
     bool save_unneeded_columns,
     const NamesAndTypesList & required_columns,
-    ContextPtr context)
+    const Context & context)
 {
     if (!expr_list)
-        return nullptr;
+        return;
 
-    auto syntax_result = TreeRewriter(context).analyze(expr_list, header.getNamesAndTypesList());
-    auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
-    auto dag = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
-    auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
-    dag = ActionsDAG::merge(std::move(*dag), std::move(*actions));
-
-    if (save_unneeded_columns)
+    if (!save_unneeded_columns)
     {
-        dag->removeUnusedActions(required_columns.getNames());
-        dag->addMaterializingOutputActions();
+        auto syntax_result = TreeRewriter(context).analyze(expr_list, block.getNamesAndTypesList());
+        ExpressionAnalyzer{expr_list, syntax_result, context}.getActions(true)->execute(block);
+        return;
     }
 
-    return dag;
+    /** ExpressionAnalyzer eliminates "unused" columns, in order to ensure their safety
+      * we are going to operate on a copy instead of the original block */
+    Block copy_block{block};
+
+    auto syntax_result = TreeRewriter(context).analyze(expr_list, block.getNamesAndTypesList());
+    auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
+    auto required_source_columns = syntax_result->requiredSourceColumns();
+    auto rows_was = copy_block.rows();
+
+    // Delete all not needed columns in DEFAULT expression.
+    // They can intersect with columns added in PREWHERE
+    // test 00950_default_prewhere
+    // CLICKHOUSE-4523
+    for (const auto & delete_column : copy_block.getNamesAndTypesList())
+    {
+        if (std::find(required_source_columns.begin(), required_source_columns.end(), delete_column.name) == required_source_columns.end())
+        {
+            copy_block.erase(delete_column.name);
+        }
+    }
+
+    if (copy_block.columns() == 0)
+    {
+        // Add column to indicate block size in execute()
+        copy_block.insert({DataTypeUInt8().createColumnConst(rows_was, 0u), std::make_shared<DataTypeUInt8>(), "__dummy"});
+    }
+
+    expression_analyzer.getActions(true)->execute(copy_block);
+
+    /// move evaluated columns to the original block, materializing them at the same time
+    size_t pos = 0;
+    for (auto col = required_columns.begin(); col != required_columns.end(); ++col, ++pos)
+    {
+        if (copy_block.has(col->name))
+        {
+            auto evaluated_col = copy_block.getByName(col->name);
+            evaluated_col.column = evaluated_col.column->convertToFullColumnIfConst();
+
+            if (block.has(col->name))
+                block.getByName(col->name) = std::move(evaluated_col);
+            else
+                block.insert(pos, std::move(evaluated_col));
+        }
+    }
 }
 
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context)
+void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, const Context & context)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns);
     if (conversion_expr_list->children.empty())
         return;
-
-    if (auto dag = createExpressions(block, conversion_expr_list, true, required_columns, context))
-    {
-        auto expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
-        expression->execute(block);
-    }
+    executeExpressionsOnBlock(block, conversion_expr_list, true, required_columns, context);
 }
 
-ActionsDAGPtr evaluateMissingDefaults(
-    const Block & header,
+void evaluateMissingDefaults(Block & block,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    ContextPtr context, bool save_unneeded_columns)
+    const Context & context, bool save_unneeded_columns)
 {
     if (!columns.hasDefaults())
-        return nullptr;
+        return;
 
-    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns);
-    return createExpressions(header, expr_list, save_unneeded_columns, required_columns, context);
+    ASTPtr default_expr_list = defaultRequiredExpressions(block, required_columns, columns);
+    executeExpressionsOnBlock(block, default_expr_list, save_unneeded_columns, required_columns, context);
 }
 
 }

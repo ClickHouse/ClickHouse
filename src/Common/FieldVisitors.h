@@ -3,7 +3,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <common/demangle.h>
-#include <Common/NaNUtils.h>
 
 
 class SipHash;
@@ -77,7 +76,6 @@ public:
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
     String operator() (const Tuple & x) const;
-    String operator() (const Map & x) const;
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
@@ -86,30 +84,6 @@ public:
 
     String operator() (const UInt256 & x) const;
     String operator() (const Int256 & x) const;
-};
-
-
-class FieldVisitorWriteBinary
-{
-public:
-    void operator() (const Null & x, WriteBuffer & buf) const;
-    void operator() (const UInt64 & x, WriteBuffer & buf) const;
-    void operator() (const UInt128 & x, WriteBuffer & buf) const;
-    void operator() (const Int64 & x, WriteBuffer & buf) const;
-    void operator() (const Int128 & x, WriteBuffer & buf) const;
-    void operator() (const Float64 & x, WriteBuffer & buf) const;
-    void operator() (const String & x, WriteBuffer & buf) const;
-    void operator() (const Array & x, WriteBuffer & buf) const;
-    void operator() (const Tuple & x, WriteBuffer & buf) const;
-    void operator() (const Map & x, WriteBuffer & buf) const;
-    void operator() (const DecimalField<Decimal32> & x, WriteBuffer & buf) const;
-    void operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const;
-    void operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const;
-    void operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const;
-    void operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const;
-
-    void operator() (const UInt256 & x, WriteBuffer & buf) const;
-    void operator() (const Int256 & x, WriteBuffer & buf) const;
 };
 
 
@@ -126,7 +100,6 @@ public:
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
     String operator() (const Tuple & x) const;
-    String operator() (const Map & x) const;
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
@@ -163,42 +136,16 @@ public:
         throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const Map &) const
-    {
-        throw Exception("Cannot convert Map to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
-    }
-
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
     T operator() (const Int128 & x) const { return T(x); }
 
     T operator() (const Float64 & x) const
     {
-        if constexpr (!std::is_floating_point_v<T>)
-        {
-            if (!isFinite(x))
-            {
-                /// When converting to bool it's ok (non-zero converts to true, NaN including).
-                if (std::is_same_v<T, bool>)
-                    return true;
-
-                /// Conversion of infinite values to integer is undefined.
-                throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
-            }
-            else if (x > std::numeric_limits<T>::max() || x < std::numeric_limits<T>::lowest())
-            {
-                throw Exception("Cannot convert out of range floating point value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
-            }
-        }
-
         if constexpr (std::is_same_v<Decimal256, T>)
-        {
             return Int256(x);
-        }
         else
-        {
             return T(x);
-        }
     }
 
     T operator() (const UInt128 &) const
@@ -240,6 +187,8 @@ public:
     {
         if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
+        else if constexpr (std::is_same_v<T, UInt8>)
+            return static_cast<T>(static_cast<UInt16>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
         else
@@ -265,7 +214,6 @@ public:
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
     void operator() (const Tuple & x) const;
-    void operator() (const Map & x) const;
     void operator() (const DecimalField<Decimal32> & x) const;
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;
@@ -308,7 +256,6 @@ public:
     bool operator() (String &) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (Map &) const { throw Exception("Cannot sum Maps", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 

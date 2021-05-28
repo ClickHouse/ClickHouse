@@ -17,8 +17,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-namespace
-{
 
 /** Generate random string of specified length with printable ASCII characters, almost uniformly distributed.
   * First argument is length, other optional arguments are ignored and used to prevent common subexpression elimination to get different values.
@@ -27,7 +25,7 @@ class FunctionRandomPrintableASCII : public IFunction
 {
 public:
     static constexpr auto name = "randomPrintableASCII";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomPrintableASCII>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomPrintableASCII>(); }
 
     String getName() const override
     {
@@ -57,7 +55,7 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
@@ -66,7 +64,7 @@ public:
 
         pcg64_fast rng(randomSeed());
 
-        const IColumn & length_column = *arguments[0].column;
+        const IColumn & length_column = *block.getByPosition(arguments[0]).column;
 
         IColumn::Offset offset = 0;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
@@ -106,11 +104,9 @@ public:
             offset = next_offset;
         }
 
-        return col_to;
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
-
-}
 
 void registerFunctionRandomPrintableASCII(FunctionFactory & factory)
 {

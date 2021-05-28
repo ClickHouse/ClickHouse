@@ -1,13 +1,11 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionFactory.h>
@@ -49,7 +47,6 @@ struct SpecialParserType
     bool is_nullable = false;
     bool is_array = false;
     bool is_tuple = false;
-    bool is_map = false;
     /// Type and nullability
     std::vector<std::pair<Field::Types::Which, bool>> nested_types;
 
@@ -123,10 +120,6 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
         {
             field_type = Field::Types::Tuple;
         }
-        else if (type_info.isMap())
-        {
-            field_type = Field::Types::Map;
-        }
         else
             throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
                             ErrorCodes::LOGICAL_ERROR);
@@ -144,9 +137,9 @@ class ReplaceLiteralsVisitor
 {
 public:
     LiteralsInfo replaced_literals;
-    ContextPtr context;
+    const Context & context;
 
-    explicit ReplaceLiteralsVisitor(ContextPtr context_) : context(context_) { }
+    explicit ReplaceLiteralsVisitor(const Context & context_) : context(context_) { }
 
     void visit(ASTPtr & ast, bool force_nullable)
     {
@@ -204,21 +197,6 @@ private:
                 if (not_null == array.end())
                     return true;
             }
-            else if (literal->value.getType() == Field::Types::Map)
-            {
-                const Map & map = literal->value.get<Map>();
-                if (map.size() % 2)
-                    return false;
-            }
-            else if (literal->value.getType() == Field::Types::Tuple)
-            {
-                const Tuple & tuple = literal->value.get<Tuple>();
-
-                for (const auto & value : tuple)
-                    if (value.isNull())
-                        return true;
-            }
-
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
             setDataType(replaced_literals.back());
@@ -266,15 +244,6 @@ private:
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeTuple>(nested_types);
         }
-        else if (field_type == Field::Types::Map)
-        {
-            info.special_parser.is_map = true;
-
-            info.type = applyVisitor(FieldToDataType(), info.literal->value);
-            auto nested_types = assert_cast<const DataTypeMap &>(*info.type).getKeyValueTypes();
-            fillLiteralInfo(nested_types, info);
-            info.type = std::make_shared<DataTypeMap>(nested_types);
-        }
         else
             throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
                             ErrorCodes::LOGICAL_ERROR);
@@ -293,7 +262,7 @@ private:
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
 ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, ContextPtr context)
+                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, const Context & context)
 {
     null_as_default = null_as_default_;
 
@@ -305,7 +274,6 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     /// Make sequence of tokens and determine IDataType by Field::Types:Which for each literal.
     token_after_literal_idx.reserve(replaced_literals.size());
     special_parser.resize(replaced_literals.size());
-    serializations.resize(replaced_literals.size());
 
     TokenIterator prev_end = expression_begin;
     for (size_t i = 0; i < replaced_literals.size(); ++i)
@@ -326,8 +294,6 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
         literals.insert({nullptr, info.type, info.dummy_column_name});
 
         prev_end = info.literal->end.value();
-
-        serializations[i] = info.type->getDefaultSerialization();
     }
 
     while (prev_end < expression_end)
@@ -377,7 +343,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
                                                            TokenIterator expression_begin,
                                                            TokenIterator expression_end,
                                                            const ASTPtr & expression_,
-                                                           ContextPtr context,
+                                                           const Context & context,
                                                            bool * found_in_cache,
                                                            const String & salt)
 {
@@ -385,7 +351,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context);
     visitor.visit(expression, result_column_type->isNullable() || null_as_default);
-    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(expression);
 
     size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
@@ -461,7 +427,7 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
                 return false;
         }
         else
-            structure->serializations[cur_column]->deserializeTextQuoted(*columns[cur_column], istr, format_settings);
+            type->deserializeAsTextQuoted(*columns[cur_column], istr, format_settings);
 
         ++cur_column;
     }
@@ -488,7 +454,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     /// If literal does not fit entirely in the buffer, parsing error will happen.
     /// However, it's possible to deduce new template (or use template from cache) after error like it was template mismatch.
 
-    if (type_info.is_array || type_info.is_tuple || type_info.is_map)
+    if (type_info.is_array || type_info.is_tuple)
     {
         /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
@@ -509,10 +475,8 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         DataTypes nested_types;
         if (type_info.is_array)
             nested_types = { assert_cast<const DataTypeArray &>(*collection_type).getNestedType() };
-        else if (type_info.is_tuple)
-            nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
         else
-            nested_types = assert_cast<const DataTypeMap &>(*collection_type).getKeyValueTypes();
+            nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {

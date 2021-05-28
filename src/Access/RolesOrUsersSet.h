@@ -13,8 +13,7 @@ class AccessControlManager;
 
 
 /// Represents a set of users/roles like
-/// {user_name | role_name | CURRENT_USER | ALL | NONE} [,...]
-/// [EXCEPT {user_name | role_name | CURRENT_USER | ALL | NONE} [,...]]
+/// {user_name | role_name | CURRENT_USER} [,...] | NONE | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 /// Similar to ASTRolesOrUsersSet, but with IDs instead of names.
 struct RolesOrUsersSet
 {
@@ -61,8 +60,8 @@ struct RolesOrUsersSet
     friend bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs);
     friend bool operator !=(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs) { return !(lhs == rhs); }
 
-    bool all = false;
     boost::container::flat_set<UUID> ids;
+    bool all = false;
     boost::container::flat_set<UUID> except_ids;
 
 private:

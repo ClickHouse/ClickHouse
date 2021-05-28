@@ -39,31 +39,22 @@ public:
         /// Relative to <path> from server config (possibly <path> of some <disk> of some <volume> for *MergeTree)
         const String & relative_data_path;
         const StorageID & table_id;
-        ContextWeakPtr local_context;
-        ContextWeakPtr context;
+        Context & local_context;
+        Context & context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         bool attach;
         bool has_force_restore_data_flag;
-
-        ContextPtr getContext() const;
-        ContextPtr getLocalContext() const;
     };
 
-    /// Analog of the IStorage::supports*() helpers
-    /// (But the former cannot be replaced with StorageFeatures due to nesting)
     struct StorageFeatures
     {
         bool supports_settings = false;
         bool supports_skipping_indices = false;
         bool supports_sort_order = false;
         bool supports_ttl = false;
-        /// See also IStorage::supportsReplication()
         bool supports_replication = false;
-        /// See also IStorage::supportsDeduplication()
         bool supports_deduplication = false;
-        /// See also IStorage::supportsParallelInsert()
-        bool supports_parallel_insert = false;
         AccessType source_access_type = AccessType::NONE;
     };
 
@@ -79,8 +70,8 @@ public:
     StoragePtr get(
         const ASTCreateQuery & query,
         const String & relative_data_path,
-        ContextPtr local_context,
-        ContextPtr context,
+        Context & local_context,
+        Context & context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         bool has_force_restore_data_flag) const;
@@ -94,7 +85,6 @@ public:
         .supports_ttl = false,
         .supports_replication = false,
         .supports_deduplication = false,
-        .supports_parallel_insert = false,
         .source_access_type = AccessType::NONE,
     });
 

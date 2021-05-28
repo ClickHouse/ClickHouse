@@ -10,16 +10,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
-    : IOutputFormat(header, out_)
-    , types(header.getDataTypes())
-    , params(params_)
-{
-    serializations.reserve(types.size());
-    for (const auto & type : types)
-        serializations.push_back(type->getDefaultSerialization());
-}
-
 void IRowOutputFormat::consume(DB::Chunk chunk)
 {
     writePrefixIfNot();
@@ -31,13 +21,12 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
     {
         if (!first_row)
             writeRowBetweenDelimiter();
+        first_row = false;
 
         write(columns, row);
 
-        if (params.callback)
-            params.callback(columns, row);
-
-        first_row = false;
+        if (write_single_row_callback)
+            write_single_row_callback(columns, row);
     }
 }
 
@@ -92,7 +81,7 @@ void IRowOutputFormat::write(const Columns & columns, size_t row_num)
         if (i != 0)
             writeFieldDelimiter();
 
-        writeField(*columns[i], *serializations[i], row_num);
+        writeField(*columns[i], *types[i], row_num);
     }
 
     writeRowEndDelimiter();

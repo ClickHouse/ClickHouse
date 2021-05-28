@@ -29,16 +29,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
 class FunctionAddressToLine : public IFunction
 {
 public:
     static constexpr auto name = "addressToLine";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
-        context->checkAccess(AccessType::addressToLine);
+        context.checkAccess(AccessType::addressToLine);
         return std::make_shared<FunctionAddressToLine>();
     }
 
@@ -72,9 +69,9 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & column = arguments[0].column;
+        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
         if (!column_concrete)
@@ -89,7 +86,7 @@ public:
             result_column->insertData(res_str.data, res_str.size);
         }
 
-        return result_column;
+        block.getByPosition(result).column = std::move(result_column);
     }
 
 private:
@@ -106,18 +103,16 @@ private:
 
     StringRef impl(uintptr_t addr) const
     {
-        auto symbol_index_ptr = SymbolIndex::instance();
-        const SymbolIndex & symbol_index = *symbol_index_ptr;
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {
-            auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
+            auto dwarf_it = cache.dwarfs.try_emplace(object->name, *object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
 
             Dwarf::LocationInfo location;
-            std::vector<Dwarf::SymbolizedFrame> frames;  // NOTE: not used in FAST mode.
-            if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST, frames))
+            if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST))
             {
                 const char * arena_begin = nullptr;
                 WriteBufferFromArena out(cache.arena, arena_begin);
@@ -148,8 +143,6 @@ private:
         return it->getMapped();
     }
 };
-
-}
 
 void registerFunctionAddressToLine(FunctionFactory & factory)
 {

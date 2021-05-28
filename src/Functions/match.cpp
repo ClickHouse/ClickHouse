@@ -5,8 +5,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct NameMatch
 {
@@ -14,8 +12,6 @@ struct NameMatch
 };
 
 using FunctionMatch = FunctionsStringSearch<MatchImpl<false>, NameMatch>;
-
-}
 
 void registerFunctionMatch(FunctionFactory & factory)
 {

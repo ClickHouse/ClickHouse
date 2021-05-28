@@ -1,4 +1,3 @@
-#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
@@ -36,17 +35,17 @@ struct FunctionRunningDifferenceName<false>
     static constexpr auto name = "runningDifferenceStartingWithFirstValue";
 };
 
-/** Calculate difference of consecutive values in columns.
-  * So, result of function depends on partition of data to columnss and on order of data in columns.
+/** Calculate difference of consecutive values in block.
+  * So, result of function depends on partition of data to blocks and on order of data in block.
   */
 template <bool is_first_line_zero>
 class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
-    /// It is possible to track value from previous columns, to calculate continuously across all columnss. Not implemented.
+    /// It is possible to track value from previous block, to calculate continuously across all blocks. Not implemented.
 
     template <typename Src, typename Dst>
-    static NO_SANITIZE_UNDEFINED void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
+    static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
     {
         size_t size = src.size();
         dst.resize(size);
@@ -76,7 +75,6 @@ private:
             else
             {
                 auto cur = src[i];
-                /// Overflow is Ok.
                 dst[i] = static_cast<Dst>(cur) - prev;
                 prev = cur;
             }
@@ -124,7 +122,7 @@ private:
 public:
     static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
@@ -166,19 +164,23 @@ public:
         return res;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto & src = arguments.at(0);
+        auto & src = block.getByPosition(arguments.at(0));
+        const auto & res_type = block.getByPosition(result).type;
 
         /// When column is constant, its difference is zero.
         if (isColumnConst(*src.column))
-            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        {
+            block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(input_rows_count);
+            return;
+        }
 
-        auto res_column = removeNullable(result_type)->createColumn();
-        const auto * src_column = src.column.get();
+        auto res_column = removeNullable(res_type)->createColumn();
+        auto * src_column = src.column.get();
         ColumnPtr null_map_column = nullptr;
         const NullMap * null_map = nullptr;
-        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(src_column))
+        if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(src_column))
         {
             src_column = &nullable_column->getNestedColumn();
             null_map_column = nullable_column->getNullMapColumnPtr();
@@ -194,9 +196,9 @@ public:
         });
 
         if (null_map_column)
-            return ColumnNullable::create(std::move(res_column), null_map_column);
+            block.getByPosition(result).column = ColumnNullable::create(std::move(res_column), null_map_column);
         else
-            return res_column;
+            block.getByPosition(result).column = std::move(res_column);
     }
 };
 

@@ -2,6 +2,7 @@
 #include <Storages/Kafka/parseSyslogLevel.h>
 
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -28,13 +29,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/formatReadable.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <librdkafka/rdkafka.h>
 #include <common/getFQDNOrHostName.h>
@@ -50,96 +49,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-struct StorageKafkaInterceptors
-{
-    static rd_kafka_resp_err_t rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
-    {
-        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
-
-        const auto & storage_id = self->getStorageID();
-        const auto & table = storage_id.getTableName();
-
-        switch (thread_type)
-        {
-            case RD_KAFKA_THREAD_MAIN:
-                setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
-                break;
-            case RD_KAFKA_THREAD_BACKGROUND:
-                setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
-                break;
-            case RD_KAFKA_THREAD_BROKER:
-                setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
-                break;
-        }
-
-        /// Create ThreadStatus to track memory allocations from librdkafka threads.
-        //
-        /// And store them in a separate list (thread_statuses) to make sure that they will be destroyed,
-        /// regardless how librdkafka calls the hooks.
-        /// But this can trigger use-after-free if librdkafka will not destroy threads after rd_kafka_wait_destroyed()
-        auto thread_status = std::make_shared<ThreadStatus>();
-        std::lock_guard lock(self->thread_statuses_mutex);
-        self->thread_statuses.emplace_back(std::move(thread_status));
-
-        return RD_KAFKA_RESP_ERR_NO_ERROR;
-    }
-    static rd_kafka_resp_err_t rdKafkaOnThreadExit(rd_kafka_t *, rd_kafka_thread_type_t, const char *, void * ctx)
-    {
-        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
-
-        std::lock_guard lock(self->thread_statuses_mutex);
-        const auto it = std::find_if(self->thread_statuses.begin(), self->thread_statuses.end(), [](const auto & thread_status_ptr)
-        {
-            return thread_status_ptr.get() == current_thread;
-        });
-        if (it == self->thread_statuses.end())
-            throw Exception("No thread status for this librdkafka thread.", ErrorCodes::LOGICAL_ERROR);
-
-        self->thread_statuses.erase(it);
-
-        return RD_KAFKA_RESP_ERR_NO_ERROR;
-    }
-
-    static rd_kafka_resp_err_t rdKafkaOnNew(rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
-    {
-        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
-        rd_kafka_resp_err_t status;
-
-        status = rd_kafka_interceptor_add_on_thread_start(rk, "init-thread", rdKafkaOnThreadStart, ctx);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-        {
-            LOG_ERROR(self->log, "Cannot set on thread start interceptor due to {} error", status);
-            return status;
-        }
-
-        status = rd_kafka_interceptor_add_on_thread_exit(rk, "exit-thread", rdKafkaOnThreadExit, ctx);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(self->log, "Cannot set on thread exit interceptor due to {} error", status);
-
-        return status;
-    }
-
-    static rd_kafka_resp_err_t rdKafkaOnConfDup(rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
-    {
-        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
-        rd_kafka_resp_err_t status;
-
-        // cppkafka copies configuration multiple times
-        status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "init", rdKafkaOnConfDup, ctx);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-        {
-            LOG_ERROR(self->log, "Cannot set on conf dup interceptor due to {} error", status);
-            return status;
-        }
-
-        status = rd_kafka_conf_interceptor_add_on_new(new_conf, "init", rdKafkaOnNew, ctx);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(self->log, "Cannot set on conf new interceptor due to {} error", status);
-
-        return status;
-    }
-};
 
 namespace
 {
@@ -167,44 +76,74 @@ namespace
             conf.set(key_name, config.getString(key_path));
         }
     }
+
+    rd_kafka_resp_err_t rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
+    {
+        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+
+        const auto & storage_id = self->getStorageID();
+        const auto & table = storage_id.getTableName();
+
+        switch (thread_type)
+        {
+            case RD_KAFKA_THREAD_MAIN:
+                setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BACKGROUND:
+                setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BROKER:
+                setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+                break;
+        }
+        return RD_KAFKA_RESP_ERR_NO_ERROR;
+    }
+
+    rd_kafka_resp_err_t rdKafkaOnNew(rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
+    {
+        return rd_kafka_interceptor_add_on_thread_start(rk, "setThreadName", rdKafkaOnThreadStart, ctx);
+    }
+
+    rd_kafka_resp_err_t rdKafkaOnConfDup(rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
+    {
+        rd_kafka_resp_err_t status;
+
+        // cppkafka copies configuration multiple times
+        status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "setThreadName", rdKafkaOnConfDup, ctx);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+            return status;
+
+        status = rd_kafka_conf_interceptor_add_on_new(new_conf, "setThreadName", rdKafkaOnNew, ctx);
+        return status;
+    }
 }
 
 StorageKafka::StorageKafka(
-    const StorageID & table_id_, ContextPtr context_, const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_)
+    const StorageID & table_id_,
+    Context & context_,
+    const ColumnsDescription & columns_,
+    std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
+    , global_context(context_.getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
-    , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value)))
-    , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value))
-    , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value))
-    , client_id(
-          kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_)
-                                                        : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value))
-    , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
+    , topics(parseTopics(global_context.getMacros()->expand(kafka_settings->kafka_topic_list.value)))
+    , brokers(global_context.getMacros()->expand(kafka_settings->kafka_broker_list.value))
+    , group(global_context.getMacros()->expand(kafka_settings->kafka_group_name.value))
+    , client_id(kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_) : global_context.getMacros()->expand(kafka_settings->kafka_client_id.value))
+    , format_name(global_context.getMacros()->expand(kafka_settings->kafka_format.value))
     , row_delimiter(kafka_settings->kafka_row_delimiter.value)
-    , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value))
+    , schema_name(global_context.getMacros()->expand(kafka_settings->kafka_schema.value))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers)
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
-    , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
 {
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
-    {
-        kafka_settings->input_format_allow_errors_num = 0;
-        kafka_settings->input_format_allow_errors_ratio = 0;
-    }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    auto task_count = thread_per_consumer ? num_consumers : 1;
-    for (size_t i = 0; i < task_count; ++i)
-    {
-        auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this, i]{ threadFunc(i); });
-        task->deactivate();
-        tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
-    }
+    task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
+    task->deactivate();
 }
 
 SettingsChanges StorageKafka::createSettingsAdjustments()
@@ -252,15 +191,17 @@ Names StorageKafka::parseTopics(String topic_list)
 
 String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 {
-    return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name);
+    std::stringstream ss;
+    ss << VERSION_NAME << "-" << getFQDNOrHostName() << "-" << table_id_.database_name << "-" << table_id_.table_name;
+    return ss.str();
 }
 
 
 Pipe StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr local_context,
+    const SelectQueryInfo & /* query_info */,
+    const Context & context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     unsigned /* num_streams */)
@@ -271,7 +212,7 @@ Pipe StorageKafka::read(
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
     pipes.reserve(num_created_consumers);
-    auto modified_context = Context::createCopy(local_context);
+    auto modified_context = std::make_shared<Context>(context);
     modified_context->applySettingsChanges(settings_adjustments);
 
     // Claim as many consumers as requested, but don't block
@@ -289,9 +230,9 @@ Pipe StorageKafka::read(
 }
 
 
-BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    auto modified_context = Context::createCopy(local_context);
+    auto modified_context = std::make_shared<Context>(context);
     modified_context->applySettingsChanges(settings_adjustments);
 
     if (topics.size() > 1)
@@ -316,23 +257,17 @@ void StorageKafka::startup()
     }
 
     // Start the reader thread
-    for (auto & task : tasks)
-    {
-        task->holder->activateAndSchedule();
-    }
+    task->activateAndSchedule();
 }
 
 
 void StorageKafka::shutdown()
 {
-    for (auto & task : tasks)
-    {
-        // Interrupt streaming thread
-        task->stream_cancelled = true;
+    // Interrupt streaming thread
+    stream_cancelled = true;
 
-        LOG_TRACE(log, "Waiting for cleanup");
-        task->holder->deactivate();
-    }
+    LOG_TRACE(log, "Waiting for cleanup");
+    task->deactivate();
 
     LOG_TRACE(log, "Closing consumers");
     for (size_t i = 0; i < num_created_consumers; ++i)
@@ -387,7 +322,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
     updateConfiguration(conf);
 
     auto producer = std::make_shared<cppkafka::Producer>(conf);
-    const Settings & settings = getContext()->getSettingsRef();
+    const Settings & settings = global_context.getSettingsRef();
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     return std::make_shared<WriteBufferToKafkaProducer>(
@@ -403,7 +338,9 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     conf.set("group.id", group);
     if (num_consumers > 1)
     {
-        conf.set("client.id", fmt::format("{}-{}", client_id, consumer_number));
+        std::stringstream ss;
+        ss << client_id << "-" << consumer_number;
+        conf.set("client.id", ss.str());
     }
     else
     {
@@ -431,26 +368,21 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    if (thread_per_consumer)
-    {
-        auto& stream_cancelled = tasks[consumer_number]->stream_cancelled;
-        return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
-    }
-    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, tasks.back()->stream_cancelled, topics);
+    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
 }
 
 size_t StorageKafka::getMaxBlockSize() const
 {
     return kafka_settings->kafka_max_block_size.changed
         ? kafka_settings->kafka_max_block_size.value
-        : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+        : (global_context.getSettingsRef().max_insert_block_size.value / num_consumers);
 }
 
 size_t StorageKafka::getPollMaxBatchSize() const
 {
     size_t batch_size = kafka_settings->kafka_poll_max_batch_size.changed
                         ? kafka_settings->kafka_poll_max_batch_size.value
-                        : getContext()->getSettingsRef().max_block_size.value;
+                        : global_context.getSettingsRef().max_block_size.value;
 
     return std::min(batch_size,getMaxBlockSize());
 }
@@ -459,13 +391,13 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
 {
     return kafka_settings->kafka_poll_timeout_ms.changed
         ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
-        : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+        : global_context.getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
 void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 {
     // Update consumer configuration from the configuration
-    const auto & config = getContext()->getConfigRef();
+    const auto & config = global_context.getConfigRef();
     if (config.has(CONFIG_PREFIX))
         loadFromConfig(conf, config, CONFIG_PREFIX);
 
@@ -494,16 +426,14 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 
         int status;
 
-        status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(),
-            "init", StorageKafkaInterceptors::rdKafkaOnNew, self);
+        status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(), "setThreadName", rdKafkaOnNew, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set new interceptor due to {} error", status);
+            LOG_ERROR(log, "Cannot set new interceptor");
 
         // cppkafka always copy the configuration
-        status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(),
-            "init", StorageKafkaInterceptors::rdKafkaOnConfDup, self);
+        status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(), "setThreadName", rdKafkaOnConfDup, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set dup conf interceptor due to {} error", status);
+            LOG_ERROR(log, "Cannot set dup conf interceptor");
     }
 }
 
@@ -517,7 +447,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, global_context);
         if (!table)
             return false;
 
@@ -534,10 +464,8 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
     return true;
 }
 
-void StorageKafka::threadFunc(size_t idx)
+void StorageKafka::threadFunc()
 {
-    assert(idx < tasks.size());
-    auto task = tasks[idx];
     try
     {
         auto table_id = getStorageID();
@@ -548,7 +476,7 @@ void StorageKafka::threadFunc(size_t idx)
             auto start_time = std::chrono::steady_clock::now();
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!task->stream_cancelled && num_created_consumers > 0)
+            while (!stream_cancelled && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
                     break;
@@ -579,17 +507,15 @@ void StorageKafka::threadFunc(size_t idx)
     }
 
     // Wait for attached views
-    if (!task->stream_cancelled)
-        task->holder->scheduleAfter(RESCHEDULE_MS);
+    if (!stream_cancelled)
+        task->scheduleAfter(RESCHEDULE_MS);
 }
 
 
 bool StorageKafka::streamToViews()
 {
-    Stopwatch watch;
-
     auto table_id = getStorageID();
-    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto table = DatabaseCatalog::instance().getTable(table_id, global_context);
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -600,31 +526,30 @@ bool StorageKafka::streamToViews()
 
     size_t block_size = getMaxBlockSize();
 
-    auto kafka_context = Context::createCopy(getContext());
+    auto kafka_context = std::make_shared<Context>(global_context);
     kafka_context->makeQueryContext();
     kafka_context->applySettingsChanges(settings_adjustments);
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, kafka_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, *kafka_context, false, true, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
     BlockInputStreams streams;
+    streams.reserve(num_created_consumers);
 
-    auto stream_count = thread_per_consumer ? 1 : num_created_consumers;
-    streams.reserve(stream_count);
-    for (size_t i = 0; i < stream_count; ++i)
+    for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.out->getHeader().getNames(), log, block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
-        StreamLocalLimits limits;
+        IBlockInputStream::LocalLimits limits;
 
         limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
                                                  ? kafka_settings->kafka_flush_interval_ms
-                                                 : getContext()->getSettingsRef().stream_flush_interval_ms;
+                                                 : global_context.getSettingsRef().stream_flush_interval_ms;
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
         stream->setLimits(limits);
@@ -640,11 +565,7 @@ bool StorageKafka::streamToViews()
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
     std::atomic<bool> stub = {false};
-    size_t rows = 0;
-    copyData(*in, *block_io.out, [&rows](const Block & block)
-    {
-        rows += block.rows();
-    }, &stub);
+    copyData(*in, *block_io.out, &stub);
 
     bool some_stream_is_stalled = false;
     for (auto & stream : streams)
@@ -652,10 +573,6 @@ bool StorageKafka::streamToViews()
         some_stream_is_stalled = some_stream_is_stalled || stream->as<KafkaBlockInputStream>()->isStalled();
         stream->as<KafkaBlockInputStream>()->commit();
     }
-
-    UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
-        formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
 
     return some_stream_is_stalled;
 }
@@ -705,14 +622,14 @@ void registerStorageKafka(StorageFactory & factory)
                         engine_args[(ARG_NUM)-1] =                          \
                             evaluateConstantExpressionAsLiteral(            \
                                 engine_args[(ARG_NUM)-1],                   \
-                                args.getLocalContext());                    \
+                                args.local_context);                        \
                     }                                                       \
                     if ((EVAL) == 2)                                        \
                     {                                                       \
                         engine_args[(ARG_NUM)-1] =                          \
                            evaluateConstantExpressionOrIdentifierAsLiteral( \
                                 engine_args[(ARG_NUM)-1],                   \
-                                args.getLocalContext());                    \
+                                args.local_context);                        \
                     }                                                       \
                     kafka_settings->PAR_NAME =                              \
                         engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
@@ -767,7 +684,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings));
+        return StorageKafka::create(args.table_id, args.context, args.columns, std::move(kafka_settings));
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
@@ -775,7 +692,7 @@ void registerStorageKafka(StorageFactory & factory)
 
 NamesAndTypesList StorageKafka::getVirtuals() const
 {
-    auto result = NamesAndTypesList{
+    return NamesAndTypesList{
         {"_topic", std::make_shared<DataTypeString>()},
         {"_key", std::make_shared<DataTypeString>()},
         {"_offset", std::make_shared<DataTypeUInt64>()},
@@ -785,32 +702,6 @@ NamesAndTypesList StorageKafka::getVirtuals() const
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
     };
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
-    {
-        result.push_back({"_raw_message", std::make_shared<DataTypeString>()});
-        result.push_back({"_error", std::make_shared<DataTypeString>()});
-    }
-    return result;
-}
-
-Names StorageKafka::getVirtualColumnNames() const
-{
-    auto result = Names {
-        "_topic",
-        "_key",
-        "_offset",
-        "_partition",
-        "_timestamp",
-        "_timestamp_ms",
-        "_headers.name",
-        "_headers.value",
-    };
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
-    {
-        result.push_back({"_raw_message"});
-        result.push_back({"_error"});
-    }
-    return result;
 }
 
 }

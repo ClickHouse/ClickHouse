@@ -11,9 +11,9 @@ TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
     const Block & header_,
     bool with_names_,
     bool with_types_,
-    const RowOutputFormatParams & params_,
+    FormatFactory::WriteCallback callback,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_, callback), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
 }
 
@@ -43,9 +43,9 @@ void TabSeparatedRowOutputFormat::doWritePrefix()
 }
 
 
-void TabSeparatedRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
+void TabSeparatedRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    serialization.serializeTextEscaped(column, row_num, out, format_settings);
+    type.serializeAsTextEscaped(column, row_num, out, format_settings);
 }
 
 
@@ -80,12 +80,11 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, false, false, params, settings);
+            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, false, false, callback, settings);
         });
-        factory.markOutputFormatSupportsParallelFormatting(name);
     }
 
     for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
@@ -93,12 +92,11 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRawRowOutputFormat>(buf, sample, false, false, params, settings);
+            return std::make_shared<TabSeparatedRawRowOutputFormat>(buf, sample, false, false, callback, settings);
         });
-        factory.markOutputFormatSupportsParallelFormatting(name);
     }
 
     for (const auto * name : {"TabSeparatedWithNames", "TSVWithNames"})
@@ -106,12 +104,11 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, false, params, settings);
+            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, false, callback, settings);
         });
-        factory.markOutputFormatSupportsParallelFormatting(name);
     }
 
     for (const auto * name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
@@ -119,12 +116,11 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, true, params, settings);
+            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, true, callback, settings);
         });
-        factory.markOutputFormatSupportsParallelFormatting(name);
     }
 }
 

@@ -1,8 +1,3 @@
----
-toc_priority: 37
-toc_title: File
----
-
 # File(Format) {#table_engines-file}
 
 Управляет данными в одном файле на диске в указанном формате.
@@ -63,7 +58,7 @@ SELECT * FROM file_engine_table
 
 ## Использование движка в Clickhouse-local {#ispolzovanie-dvizhka-v-clickhouse-local}
 
-В [clickhouse-local](../../../engines/table-engines/special/file.md) движок в качестве параметра принимает не только формат, но и путь к файлу. В том числе можно указать стандартные потоки ввода/вывода цифровым или буквенным обозначением `0` или `stdin`, `1` или `stdout`. Можно записывать и читать сжатые файлы. Для этого нужно задать дополнительный параметр движка или расширение файла (`gz`, `br` или `xz`).
+В [clickhouse-local](../../../engines/table-engines/special/file.md) движок в качестве параметра принимает не только формат, но и путь к файлу. В том числе можно указать стандартные потоки ввода/вывода цифровым или буквенным обозначением `0` или `stdin`, `1` или `stdout`.
 
 **Пример:**
 
@@ -81,3 +76,4 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   индексы;
     -   репликация.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/file/) <!--hide-->

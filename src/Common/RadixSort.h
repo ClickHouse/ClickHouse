@@ -11,10 +11,9 @@
 #include <cstdint>
 #include <cassert>
 #include <type_traits>
-#include <memory>
 
 #include <ext/bit_cast.h>
-#include <common/extended_types.h>
+#include <Core/Types.h>
 #include <Core/Defines.h>
 
 
@@ -35,16 +34,16 @@
 
 /** Used as a template parameter. See below.
   */
-struct RadixSortAllocator
+struct RadixSortMallocAllocator
 {
     void * allocate(size_t size)
     {
-        return ::operator new(size);
+        return malloc(size);
     }
 
-    void deallocate(void * ptr, size_t size)
+    void deallocate(void * ptr, size_t /*size*/)
     {
-        ::operator delete(ptr, size);
+        return free(ptr);
     }
 };
 
@@ -100,7 +99,7 @@ struct RadixSortFloatTraits
     /// An object with the functions allocate and deallocate.
     /// Can be used, for example, to allocate memory for a temporary array on the stack.
     /// To do this, the allocator itself is created on the stack.
-    using Allocator = RadixSortAllocator;
+    using Allocator = RadixSortMallocAllocator;
 
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
@@ -139,7 +138,7 @@ struct RadixSortUIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortIdentityTransform<KeyBits>;
-    using Allocator = RadixSortAllocator;
+    using Allocator = RadixSortMallocAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -173,7 +172,7 @@ struct RadixSortIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortSignedTransform<KeyBits>;
-    using Allocator = RadixSortAllocator;
+    using Allocator = RadixSortMallocAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }

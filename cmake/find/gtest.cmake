@@ -1,4 +1,11 @@
-# included only if ENABLE_TESTS=1
+option (ENABLE_GTEST_LIBRARY "Enable gtest library" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_GTEST_LIBRARY)
+    if(USE_INTERNAL_GTEST_LIBRARY)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal Google Test when ENABLE_GTEST_LIBRARY=OFF")
+    endif()
+    return()
+endif()
 
 option (USE_INTERNAL_GTEST_LIBRARY "Set to FALSE to use system Google Test instead of bundled" ${NOT_UNBUNDLED})
 
@@ -8,7 +15,6 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest/CMakeList
        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal gtest")
        set (USE_INTERNAL_GTEST_LIBRARY 0)
    endif ()
-
    set (MISSING_INTERNAL_GTEST_LIBRARY 1)
 endif ()
 

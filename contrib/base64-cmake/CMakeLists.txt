@@ -11,7 +11,7 @@ endif ()
 target_compile_options(base64_scalar PRIVATE -falign-loops)
 
 if (ARCH_AMD64)
-    target_compile_options(base64_ssse3 PRIVATE -mno-avx -mno-avx2 -mssse3 -falign-loops)
+    target_compile_options(base64_ssse3 PRIVATE -mssse3 -falign-loops)
     target_compile_options(base64_avx PRIVATE -falign-loops -mavx)
     target_compile_options(base64_avx2 PRIVATE -falign-loops -mavx2)
 else ()

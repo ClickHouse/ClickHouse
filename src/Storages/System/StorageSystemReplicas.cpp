@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -59,15 +60,15 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 Pipe StorageSystemReplicas::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
+    const SelectQueryInfo & query_info,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    const auto access = context->getAccess();
+    const auto access = context.getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     /// We collect a set of replicated tables.

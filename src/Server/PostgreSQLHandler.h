@@ -37,7 +37,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 
     IServer & server;
-    ContextPtr connection_context;
+    Context connection_context;
     bool ssl_enabled;
     Int32 connection_id;
     Int32 secret_key;

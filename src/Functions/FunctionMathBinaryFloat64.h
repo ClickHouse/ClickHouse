@@ -28,7 +28,7 @@ class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathBinaryFloat64>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathBinaryFloat64>(); }
     static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -54,7 +54,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg) const
+    bool executeTyped(Block & block, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg) const
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -95,14 +95,15 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            return dst;
+            block.getByPosition(result).column = std::move(dst);
+            return true;
         }
 
-        return nullptr;
+        return false;
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
+    bool executeTyped(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -156,7 +157,8 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            return dst;
+            block.getByPosition(result).column = std::move(dst);
+            return true;
         }
         if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
@@ -198,17 +200,17 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
-            return dst;
+            block.getByPosition(result).column = std::move(dst);
+            return true;
         }
 
-        return nullptr;
+        return false;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col_left = arguments[0];
-        const ColumnWithTypeAndName & col_right = arguments[1];
-        ColumnPtr res;
+        const ColumnWithTypeAndName & col_left = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & col_right = block.getByPosition(arguments[1]);
 
         auto call = [&](const auto & types) -> bool
         {
@@ -222,7 +224,7 @@ private:
 
             if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
+                if (executeTyped<LeftType, RightType>(block, result, left_arg_typed, right_arg))
                     return true;
 
                 throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
@@ -230,7 +232,7 @@ private:
             }
             if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
+                if (executeTyped<LeftType, RightType>(block, result, left_arg_typed, right_arg))
                     return true;
 
                 throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
@@ -246,8 +248,6 @@ private:
         if (!callOnBasicTypes<true, true, false, false>(left_index, right_index, call))
             throw Exception{"Illegal column " + col_left.column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
-
-        return res;
     }
 };
 

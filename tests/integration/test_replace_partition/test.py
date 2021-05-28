@@ -1,9 +1,6 @@
-# pylint: disable=line-too-long
-# pylint: disable=unused-argument
-# pylint: disable=redefined-outer-name:
-
-import time
 import pytest
+import time
+import sys
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
@@ -12,27 +9,25 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-
 def _fill_nodes(nodes, shard):
     for node in nodes:
         node.query(
-            '''
-                CREATE DATABASE test;
+        '''
+            CREATE DATABASE test;
 
-                CREATE TABLE real_table(date Date, id UInt32, dummy UInt32)
-                ENGINE = MergeTree(date, id, 8192);
+            CREATE TABLE real_table(date Date, id UInt32, dummy UInt32)
+            ENGINE = MergeTree(date, id, 8192);
 
-                CREATE TABLE other_table(date Date, id UInt32, dummy UInt32)
-                ENGINE = MergeTree(date, id, 8192);
+            CREATE TABLE other_table(date Date, id UInt32, dummy UInt32)
+            ENGINE = MergeTree(date, id, 8192);
 
-                CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
-            '''.format(shard=shard, replica=node.name))
+            CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
+        '''.format(shard=shard, replica=node.name))
 
 
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
-
 
 @pytest.fixture(scope="module")
 def normal_work():
@@ -45,7 +40,6 @@ def normal_work():
 
     finally:
         cluster.shutdown()
-
 
 def test_normal_work(normal_work):
     node1.query("insert into test_table values ('2017-06-16', 111, 0)")
@@ -60,10 +54,8 @@ def test_normal_work(normal_work):
     assert_eq_with_retry(node1, "SELECT id FROM test_table order by id", '222')
     assert_eq_with_retry(node2, "SELECT id FROM test_table order by id", '222')
 
-
 node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
-
 
 @pytest.fixture(scope="module")
 def drop_failover():
@@ -77,7 +69,6 @@ def drop_failover():
     finally:
         cluster.shutdown()
 
-
 def test_drop_failover(drop_failover):
     node3.query("insert into test_table values ('2017-06-16', 111, 0)")
     node3.query("insert into real_table values ('2017-06-16', 222, 0)")
@@ -85,6 +76,7 @@ def test_drop_failover(drop_failover):
     assert_eq_with_retry(node3, "SELECT id FROM test_table order by id", '111')
     assert_eq_with_retry(node3, "SELECT id FROM real_table order by id", '222')
     assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '111')
+
 
     with PartitionManager() as pm:
         # Hinder replication between replicas
@@ -99,22 +91,17 @@ def test_drop_failover(drop_failover):
         # Network interrupted -- replace is not ok, but it's ok
         assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '111')
 
-        # Drop partition on source node
+        #Drop partition on source node
         node3.query("ALTER TABLE test_table DROP PARTITION 201706")
 
-    # Wait few seconds for connection to zookeeper to be restored
-    time.sleep(5)
+    # connection restored
 
-    msg = node4.query_with_retry(
-        "select last_exception from system.replication_queue where type = 'REPLACE_RANGE'",
-        check_callback=lambda x: 'Not found part' not in x, sleep_time=1)
-    assert 'Not found part' not in msg
+    node4.query_with_retry("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'", check_callback=lambda x: 'Not found part' not in x, sleep_time=1)
+    assert 'Not found part' not in node4.query("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'")
     assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '')
-
 
 node5 = cluster.add_instance('node5', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 node6 = cluster.add_instance('node6', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
-
 
 @pytest.fixture(scope="module")
 def replace_after_replace_failover():
@@ -128,7 +115,6 @@ def replace_after_replace_failover():
     finally:
         cluster.shutdown()
 
-
 def test_replace_after_replace_failover(replace_after_replace_failover):
     node5.query("insert into test_table values ('2017-06-16', 111, 0)")
     node5.query("insert into real_table values ('2017-06-16', 222, 0)")
@@ -138,6 +124,7 @@ def test_replace_after_replace_failover(replace_after_replace_failover):
     assert_eq_with_retry(node5, "SELECT id FROM real_table order by id", '222')
     assert_eq_with_retry(node5, "SELECT id FROM other_table order by id", '333')
     assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", '111')
+
 
     with PartitionManager() as pm:
         # Hinder replication between replicas
@@ -152,16 +139,11 @@ def test_replace_after_replace_failover(replace_after_replace_failover):
         # Network interrupted -- replace is not ok, but it's ok
         assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", '111')
 
-        # Replace partition on source node
+        #Replace partition on source node
         node5.query("ALTER TABLE test_table REPLACE PARTITION 201706 FROM other_table")
 
         assert_eq_with_retry(node5, "SELECT id FROM test_table order by id", '333')
 
-    # Wait few seconds for connection to zookeeper to be restored
-    time.sleep(5)
-
-    msg = node6.query_with_retry(
-        "select last_exception from system.replication_queue where type = 'REPLACE_RANGE'",
-        check_callback=lambda x: 'Not found part' not in x, sleep_time=1)
-    assert 'Not found part' not in msg
+    node6.query_with_retry("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'", check_callback=lambda x: 'Not found part' not in x, sleep_time=1)
+    assert 'Not found part' not in node6.query("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'")
     assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", '333')

@@ -5,9 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/Throttler.h>
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#endif
+
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -18,22 +16,21 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ReadBufferFromPocoSocket.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <Compression/ICompressionCodec.h>
 
 #include <atomic>
 #include <optional>
 
+
 namespace DB
 {
 
 class ClientInfo;
 class Pipe;
-struct Settings;
 
 /// Struct which represents data we are going to send for external table.
 struct ExternalTableData
@@ -53,6 +50,8 @@ class Connection;
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
+using Scalars = std::map<String, Block>;
+
 
 /// Packet that could be received from server.
 struct Packet
@@ -64,7 +63,6 @@ struct Packet
     std::vector<String> multistring_message;
     Progress progress;
     BlockStreamProfileInfo profile_info;
-    std::vector<UUID> part_uuids;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -85,17 +83,13 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
-        const String & cluster_,
-        const String & cluster_secret_,
-        const String & client_name_,
-        Protocol::Compression compression_,
-        Protocol::Secure secure_,
+        const String & client_name_ = "client",
+        Protocol::Compression compression_ = Protocol::Compression::Enable,
+        Protocol::Secure secure_ = Protocol::Secure::Disable,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_),
-        cluster(cluster_),
-        cluster_secret(cluster_secret_),
         client_name(client_name_),
         compression(compression_),
         secure(secure_),
@@ -110,7 +104,7 @@ public:
         setDescription();
     }
 
-    virtual ~Connection() = default;
+    virtual ~Connection() {}
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)
@@ -139,8 +133,6 @@ public:
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
 
-    Protocol::Compression getCompression() const { return compression; }
-
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
         const ConnectionTimeouts & timeouts,
@@ -158,10 +150,6 @@ public:
     void sendScalarsData(Scalars & data);
     /// Send all contents of external (temporary) tables.
     void sendExternalTablesData(ExternalTablesData & data);
-    /// Send parts' uuids to excluded them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
-
-    void sendReadTaskResponse(const String &);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -196,27 +184,12 @@ public:
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
-    Poco::Net::Socket * getSocket() { return socket.get(); }
-
-    /// Each time read from socket blocks and async_callback is set, it will be called. You can poll socket inside it.
-    void setAsyncCallback(AsyncCallback async_callback_)
-    {
-        async_callback = std::move(async_callback_);
-        if (in)
-            in->setAsyncCallback(std::move(async_callback));
-    }
-
 private:
     String host;
     UInt16 port;
     String default_database;
     String user;
     String password;
-
-    /// For inter-server authorization
-    String cluster;
-    String cluster_secret;
-    String salt;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
@@ -242,7 +215,7 @@ private:
     String server_display_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
+    std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
     std::optional<UInt64> last_input_packet_type;
 
@@ -273,7 +246,7 @@ private:
     class LoggerWrapper
     {
     public:
-        explicit LoggerWrapper(Connection & parent_)
+        LoggerWrapper(Connection & parent_)
             : log(nullptr), parent(parent_)
         {
         }
@@ -293,47 +266,25 @@ private:
 
     LoggerWrapper log_wrapper;
 
-    AsyncCallback async_callback = {};
-
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
-
-#if USE_SSL
-    void sendClusterNameAndSalt();
-#endif
     bool ping();
 
     Block receiveData();
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
-    std::unique_ptr<Exception> receiveException() const;
-    Progress receiveProgress() const;
-    BlockStreamProfileInfo receiveProfileInfo() const;
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type);
+    std::unique_ptr<Exception> receiveException();
+    Progress receiveProgress();
+    BlockStreamProfileInfo receiveProfileInfo();
 
     void initInputBuffers();
     void initBlockInput();
     void initBlockLogsInput();
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
-};
-
-class AsyncCallbackSetter
-{
-public:
-    AsyncCallbackSetter(Connection * connection_, AsyncCallback async_callback) : connection(connection_)
-    {
-        connection->setAsyncCallback(std::move(async_callback));
-    }
-
-    ~AsyncCallbackSetter()
-    {
-        connection->setAsyncCallback({});
-    }
-private:
-    Connection * connection;
 };
 
 }

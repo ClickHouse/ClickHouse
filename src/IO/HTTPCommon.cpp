@@ -1,6 +1,5 @@
 #include <IO/HTTPCommon.h>
 
-#include <Server/HTTP/HTTPServerResponse.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/PoolBase.h>
@@ -21,9 +20,9 @@
 #    include <Poco/Net/PrivateKeyPassphraseHandler.h>
 #    include <Poco/Net/RejectCertificateHandler.h>
 #    include <Poco/Net/SSLManager.h>
-#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
+#include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/Application.h>
 
 #include <tuple>
@@ -69,26 +68,26 @@ namespace
             throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
     }
 
-    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host = true)
+    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host=true)
     {
         HTTPSessionPtr session;
 
         if (https)
-        {
 #if USE_SSL
-            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
-            session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
+            session = std::make_shared<Poco::Net::HTTPSClientSession>();
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
-        }
         else
-        {
-            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
-            session = std::make_shared<Poco::Net::HTTPClientSession>(resolved_host, port);
-        }
+            session = std::make_shared<Poco::Net::HTTPClientSession>();
 
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
+
+        if (resolve_host)
+            session->setHost(DNSResolver::instance().resolveHost(host).toString());
+        else
+            session->setHost(host);
+        session->setPort(port);
 
         /// doesn't work properly without patch
 #if defined(POCO_CLICKHOUSE_PATCH)
@@ -106,72 +105,23 @@ namespace
         const std::string host;
         const UInt16 port;
         bool https;
-        const String proxy_host;
-        const UInt16 proxy_port;
-        bool proxy_https;
-        bool resolve_host;
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
         ObjectPtr allocObject() override
         {
-            auto session = makeHTTPSessionImpl(host, port, https, true, resolve_host);
-            if (!proxy_host.empty())
-            {
-                const String proxy_scheme = proxy_https ? "https" : "http";
-                session->setProxyHost(proxy_host);
-                session->setProxyPort(proxy_port);
-
-#if !defined(ARCADIA_BUILD) && defined(POCO_CLICKHOUSE_PATCH)
-                session->setProxyProtocol(proxy_scheme);
-
-                /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
-                session->setProxyTunnel(!proxy_https && https);
-#endif
-            }
-            return session;
+            return makeHTTPSessionImpl(host, port, https, true);
         }
 
     public:
-        SingleEndpointHTTPSessionPool(
-                const std::string & host_,
-                UInt16 port_,
-                bool https_,
-                const std::string & proxy_host_,
-                UInt16 proxy_port_,
-                bool proxy_https_,
-                size_t max_pool_size_,
-                bool resolve_host_ = true)
-            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool"))
-            , host(host_)
-            , port(port_)
-            , https(https_)
-            , proxy_host(proxy_host_)
-            , proxy_port(proxy_port_)
-            , proxy_https(proxy_https_)
-            , resolve_host(resolve_host_)
+        SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_)
+            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool")), host(host_), port(port_), https(https_)
         {
         }
     };
 
     class HTTPSessionPool : private boost::noncopyable
     {
-    public:
-        struct Key
-        {
-            String target_host;
-            UInt16 target_port;
-            bool is_target_https;
-            String proxy_host;
-            UInt16 proxy_port;
-            bool is_proxy_https;
-
-            bool operator ==(const Key & rhs) const
-            {
-                return std::tie(target_host, target_port, is_target_https, proxy_host, proxy_port, is_proxy_https)
-                    == std::tie(rhs.target_host, rhs.target_port, rhs.is_target_https, rhs.proxy_host, rhs.proxy_port, rhs.is_proxy_https);
-            }
-        };
-
     private:
+        using Key = std::tuple<std::string, UInt16, bool>;
         using PoolPtr = std::shared_ptr<SingleEndpointHTTPSessionPool>;
         using Entry = SingleEndpointHTTPSessionPool::Entry;
 
@@ -180,12 +130,9 @@ namespace
             size_t operator()(const Key & k) const
             {
                 SipHash s;
-                s.update(k.target_host);
-                s.update(k.target_port);
-                s.update(k.is_target_https);
-                s.update(k.proxy_host);
-                s.update(k.proxy_port);
-                s.update(k.is_proxy_https);
+                s.update(std::get<0>(k));
+                s.update(std::get<1>(k));
+                s.update(std::get<2>(k));
                 return s.get64();
             }
         };
@@ -205,32 +152,18 @@ namespace
 
         Entry getSession(
             const Poco::URI & uri,
-            const Poco::URI & proxy_uri,
             const ConnectionTimeouts & timeouts,
-            size_t max_connections_per_endpoint,
-            bool resolve_host = true)
+            size_t max_connections_per_endpoint)
         {
             std::unique_lock lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);
-
-
-            String proxy_host;
-            UInt16 proxy_port = 0;
-            bool proxy_https = false;
-            if (!proxy_uri.empty())
-            {
-                proxy_host = proxy_uri.getHost();
-                proxy_port = proxy_uri.getPort();
-                proxy_https = isHTTPS(proxy_uri);
-            }
-
-            HTTPSessionPool::Key key{host, port, https, proxy_host, proxy_port, proxy_https};
+            auto key = std::make_tuple(host, port, https);
             auto pool_ptr = endpoints_pool.find(key);
             if (pool_ptr == endpoints_pool.end())
                 std::tie(pool_ptr, std::ignore) = endpoints_pool.emplace(
-                    key, std::make_shared<SingleEndpointHTTPSessionPool>(host, port, https, proxy_host, proxy_port, proxy_https, max_connections_per_endpoint, resolve_host));
+                    key, std::make_shared<SingleEndpointHTTPSessionPool>(host, port, https, max_connections_per_endpoint));
 
             auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
@@ -244,17 +177,13 @@ namespace
                 if (!msg.empty())
                 {
                     LOG_TRACE((&Poco::Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
-
-                    if (resolve_host)
+                    /// Host can change IP
+                    const auto ip = DNSResolver::instance().resolveHost(host).toString();
+                    if (ip != session->getHost())
                     {
-                        /// Host can change IP
-                        const auto ip = DNSResolver::instance().resolveHost(host).toString();
-                        if (ip != session->getHost())
-                        {
-                            session->reset();
-                            session->setHost(ip);
-                            session->attachSessionData({});
-                        }
+                        session->reset();
+                        session->setHost(ip);
+                        session->attachSessionData({});
                     }
                 }
             }
@@ -266,7 +195,7 @@ namespace
     };
 }
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, unsigned keep_alive_timeout)
+void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;
@@ -288,14 +217,9 @@ HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts &
 }
 
 
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host)
+PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size)
 {
-    return makePooledHTTPSession(uri, {}, timeouts, per_endpoint_pool_size, resolve_host);
-}
-
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const Poco::URI & proxy_uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host)
-{
-    return HTTPSessionPool::instance().getSession(uri, proxy_uri, timeouts, per_endpoint_pool_size, resolve_host);
+    return HTTPSessionPool::instance().getSession(uri, timeouts, per_endpoint_pool_size);
 }
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
@@ -312,13 +236,9 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
 {
     auto status = response.getStatus();
 
-    if (!(status == Poco::Net::HTTPResponse::HTTP_OK
-        || status == Poco::Net::HTTPResponse::HTTP_CREATED
-        || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
-        || (isRedirect(status) && allow_redirects)))
+    if (!(status == Poco::Net::HTTPResponse::HTTP_OK || (isRedirect(status) && allow_redirects)))
     {
-        std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        error_message.exceptions(std::ios::failbit);
+        std::stringstream error_message;
         error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
                       << response.getReason() << ", body: " << istr.rdbuf();
 

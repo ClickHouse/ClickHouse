@@ -1,0 +1,17 @@
+Distributed(number)-over-Distributed(number)
+1	0
+1	1
+1	0
+1	1
+1	0
+1	1
+1	0
+1	1
+Distributed(rand)-over-Distributed(number)
+4	0
+4	1
+Distributed(rand)-over-Distributed(rand)
+2	0
+2	1
+2	0
+2	1

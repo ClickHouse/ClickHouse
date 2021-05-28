@@ -97,19 +97,12 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
             set(TZ_OBJS ${TZ_OBJS} ${TZ_OBJ})
 
             # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
-            # PPC64LE fails to do this with objcopy, use ld or lld instead
-            if (ARCH_PPC64LE)
-                add_custom_command(OUTPUT ${TZ_OBJ}
-                    COMMAND cp ${TZDIR}/${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}
-                    COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ${CMAKE_LINKER} -m elf64lppc -r -b binary -o ${TZ_OBJ} ${TIMEZONE_ID}
-                    COMMAND rm ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID})
-            else()
-                add_custom_command(OUTPUT ${TZ_OBJ}
-                    COMMAND cp ${TZDIR}/${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}
-                    COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS}
+            add_custom_command(OUTPUT ${TZ_OBJ}
+                COMMAND cp ${TZDIR}/${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}
+                COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS}
                             --rename-section .data=.rodata,alloc,load,readonly,data,contents ${TIMEZONE_ID} ${TZ_OBJ}
-                    COMMAND rm ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID})
-            endif()
+                COMMAND rm ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID})
+
             set_source_files_properties(${TZ_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
         endforeach(TIMEZONE)
 

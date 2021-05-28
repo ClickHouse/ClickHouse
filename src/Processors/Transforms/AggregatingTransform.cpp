@@ -1,5 +1,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Common/ClickHouseRevision.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/ISource.h>
 #include <Processors/Pipe.h>
@@ -55,7 +56,7 @@ namespace
     public:
         SourceFromNativeStream(const Block & header, const std::string & path)
                 : ISource(header), file_in(path), compressed_in(file_in),
-                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
         {
             block_in->readPrefix();
         }
@@ -379,7 +380,6 @@ private:
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksSource>(
                     params, data, shared_data, arena);
@@ -541,7 +541,7 @@ void AggregatingTransform::initGenerate()
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
 
-    LOG_DEBUG(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
         elapsed_seconds, src_rows / elapsed_seconds,
         ReadableSize(src_bytes / elapsed_seconds));
@@ -599,7 +599,7 @@ void AggregatingTransform::initGenerate()
             pipe = Pipe::unitePipes(std::move(pipes));
         }
 
-        LOG_DEBUG(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
+        LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
 
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 

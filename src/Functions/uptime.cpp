@@ -13,9 +13,9 @@ class FunctionUptime : public IFunction
 {
 public:
     static constexpr auto name = "uptime";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionUptime>(context->getUptimeSeconds());
+        return std::make_shared<FunctionUptime>(context.getUptimeSeconds());
     }
 
     explicit FunctionUptime(time_t uptime_) : uptime(uptime_)
@@ -39,9 +39,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return DataTypeUInt32().createColumnConst(input_rows_count, static_cast<UInt64>(uptime));
+        block.getByPosition(result).column = DataTypeUInt32().createColumnConst(input_rows_count, static_cast<UInt64>(uptime));
     }
 
 private:

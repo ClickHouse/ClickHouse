@@ -1,13 +1,9 @@
 #pragma once
 
-#include <Server/HTTP/HTTPRequestHandler.h>
-#include <Common/CurrentMetrics.h>
-#include <Interpreters/InterserverCredentials.h>
-
-#include <Poco/Logger.h>
-
 #include <memory>
-#include <string>
+#include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequestHandler.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace CurrentMetrics
@@ -21,7 +17,7 @@ namespace DB
 class IServer;
 class WriteBufferFromHTTPServerResponse;
 
-class InterserverIOHTTPHandler : public HTTPRequestHandler
+class InterserverIOHTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
     explicit InterserverIOHTTPHandler(IServer & server_)
@@ -30,7 +26,7 @@ public:
     {
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     struct Output
@@ -43,9 +39,9 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 
-    void processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
+    void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output);
 
-    std::pair<String, bool> checkAuthentication(HTTPServerRequest & request) const;
+    std::pair<String, bool> checkAuthentication(Poco::Net::HTTPServerRequest & request) const;
 };
 
 }

@@ -1,18 +1,17 @@
-#include <Server/ReplicasStatusHandler.h>
+#include "ReplicasStatusHandler.h"
 
+#include <Interpreters/Context.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/HTMLForm.h>
+#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
-#include <Interpreters/Context.h>
-#include <Server/HTTP/HTMLForm.h>
-#include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPHandlerRequestFilter.h>
-#include <Server/IServer.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/typeid_cast.h>
 
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPHandlerRequestFilter.h>
 
 
 namespace DB
@@ -25,7 +24,7 @@ ReplicasStatusHandler::ReplicasStatusHandler(IServer & server)
 }
 
 
-void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     try
     {
@@ -34,10 +33,10 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = params.get("verbose", "") == "1";
 
-        const MergeTreeSettings & settings = context->getReplicatedMergeTreeSettings();
+        const MergeTreeSettings & settings = context.getMergeTreeSettings();
 
         bool ok = true;
-        WriteBufferFromOwnString message;
+        std::stringstream message;
 
         auto databases = DatabaseCatalog::instance().getDatabases();
 
@@ -73,7 +72,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
         }
 
-        const auto & config = context->getConfigRef();
+        const auto & config = context.getConfigRef();
         setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
         if (!ok)
@@ -83,7 +82,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
 
         if (verbose)
-            *response.send() << message.str();
+            response.send() << message.rdbuf();
         else
         {
             const char * data = "Ok.\n";
@@ -101,7 +100,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             if (!response.sent())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                *response.send() << getCurrentExceptionMessage(false) << std::endl;
+                response.send() << getCurrentExceptionMessage(false) << std::endl;
             }
         }
         catch (...)
@@ -111,11 +110,9 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     }
 }
 
-HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
+Poco::Net::HTTPRequestHandlerFactory * createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
-    factory->addFiltersFromConfig(server.config(), config_prefix);
-    return factory;
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>(server), server.config(), config_prefix);
 }
 
 }

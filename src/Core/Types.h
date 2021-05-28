@@ -3,8 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <common/extended_types.h>
-#include <common/defines.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -14,11 +13,6 @@ namespace DB
 
 struct Null {};
 
-/// Ignore strange gcc warning https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55776
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-#endif
 /// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
@@ -57,16 +51,27 @@ enum class TypeIndex
     Function,
     AggregateFunction,
     LowCardinality,
-    Map,
 };
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
-/// Other int defines are in common/types.h
+/// defined in common/types.h
+using UInt8 = ::UInt8;
+using UInt16 = ::UInt16;
+using UInt32 = ::UInt32;
+using UInt64 = ::UInt64;
 using UInt256 = ::wUInt256;
+
+using Int8 = ::Int8;
+using Int16 = ::Int16;
+using Int32 = ::Int32;
+using Int64 = ::Int64;
 using Int128 = ::Int128;
 using Int256 = ::wInt256;
+
+using Float32 = float;
+using Float64 = double;
+
+using String = std::string;
+
 
 /** Note that for types not used in DB, IsNumber is false.
   */
@@ -147,7 +152,7 @@ struct Decimal
     operator T () const { return value; }
 
     template <typename U>
-    U convertTo() const
+    U convertTo()
     {
         /// no IsDecimalNumber defined yet
         if constexpr (std::is_same_v<U, Decimal<Int32>> ||
@@ -158,7 +163,7 @@ struct Decimal
             return convertTo<typename U::NativeType>();
         }
         else
-            return static_cast<U>(value);
+            return bigint_cast<U>(value);
     }
 
     const Decimal<T> & operator += (const T & x) { value += x; return *this; }
@@ -166,9 +171,6 @@ struct Decimal
     const Decimal<T> & operator *= (const T & x) { value *= x; return *this; }
     const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
     const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
-
-    /// This is to avoid UB for sumWithOverflow()
-    void NO_SANITIZE_UNDEFINED addOverflow(const T & x) { value += x; }
 
     T value;
 };
@@ -189,44 +191,29 @@ using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
 using Decimal256 = Decimal<Int256>;
 
-// Distinguishable type to allow function resolution/deduction based on value type,
-// but also relatively easy to convert to/from Decimal64.
-class DateTime64 : public Decimal64
-{
-public:
-    using Base = Decimal64;
-    using Base::Base;
-
-    DateTime64(const Base & v)
-        : Base(v)
-    {}
-};
+using DateTime64 = Decimal64;
 
 template <> struct TypeName<Decimal32>   { static constexpr const char * get() { return "Decimal32";   } };
 template <> struct TypeName<Decimal64>   { static constexpr const char * get() { return "Decimal64";   } };
 template <> struct TypeName<Decimal128>  { static constexpr const char * get() { return "Decimal128";  } };
 template <> struct TypeName<Decimal256>  { static constexpr const char * get() { return "Decimal256";  } };
-template <> struct TypeName<DateTime64>  { static constexpr const char * get() { return "DateTime64";  } };
 
 template <> struct TypeId<Decimal32>    { static constexpr const TypeIndex value = TypeIndex::Decimal32; };
 template <> struct TypeId<Decimal64>    { static constexpr const TypeIndex value = TypeIndex::Decimal64; };
 template <> struct TypeId<Decimal128>   { static constexpr const TypeIndex value = TypeIndex::Decimal128; };
 template <> struct TypeId<Decimal256>   { static constexpr const TypeIndex value = TypeIndex::Decimal256; };
-template <> struct TypeId<DateTime64>   { static constexpr const TypeIndex value = TypeIndex::DateTime64; };
 
 template <typename T> constexpr bool IsDecimalNumber = false;
 template <> inline constexpr bool IsDecimalNumber<Decimal32> = true;
 template <> inline constexpr bool IsDecimalNumber<Decimal64> = true;
 template <> inline constexpr bool IsDecimalNumber<Decimal128> = true;
 template <> inline constexpr bool IsDecimalNumber<Decimal256> = true;
-template <> inline constexpr bool IsDecimalNumber<DateTime64> = true;
 
 template <typename T> struct NativeType { using Type = T; };
 template <> struct NativeType<Decimal32> { using Type = Int32; };
 template <> struct NativeType<Decimal64> { using Type = Int64; };
 template <> struct NativeType<Decimal128> { using Type = Int128; };
 template <> struct NativeType<Decimal256> { using Type = Int256; };
-template <> struct NativeType<DateTime64> { using Type = Int64; };
 
 template <typename T> constexpr bool OverBigInt = false;
 template <> inline constexpr bool OverBigInt<Int256> = true;
@@ -272,7 +259,6 @@ inline constexpr const char * getTypeName(TypeIndex idx)
         case TypeIndex::Function:   return "Function";
         case TypeIndex::AggregateFunction: return "AggregateFunction";
         case TypeIndex::LowCardinality: return "LowCardinality";
-        case TypeIndex::Map:        return "Map";
     }
 
     __builtin_unreachable();
@@ -293,15 +279,6 @@ namespace std
         {
             return std::hash<DB::Int64>()(x.value >> 64)
                 ^ std::hash<DB::Int64>()(x.value & std::numeric_limits<DB::UInt64>::max());
-        }
-    };
-
-    template <>
-    struct hash<DB::DateTime64>
-    {
-        size_t operator()(const DB::DateTime64 & x) const
-        {
-            return std::hash<std::decay_t<decltype(x)>::NativeType>()(x);
         }
     };
 

@@ -4,7 +4,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderTempConfigRepository.h>
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
-#include <Interpreters/DDLTask.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -49,7 +48,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
         /// Attach the dictionary as table too.
         try
         {
-            /// TODO Make StorageDictionary an owner of IDictionary objects.
+            /// TODO Make StorageDictionary an owner of IDictionaryBase objects.
             /// All DDL operations with dictionaries will work with StorageDictionary table,
             /// and StorageDictionary will be responsible for loading of DDL dictionaries.
             /// ExternalLoaderDatabaseConfigRepository and other hacks related to ExternalLoader
@@ -125,9 +124,9 @@ void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_na
         detachTable(dictionary_name);
 }
 
-void DatabaseWithDictionaries::createDictionary(ContextPtr local_context, const String & dictionary_name, const ASTPtr & query)
+void DatabaseWithDictionaries::createDictionary(const Context & context, const String & dictionary_name, const ASTPtr & query)
 {
-    const auto & settings = local_context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
     /** The code is based on the assumption that all threads share the same order of operations:
       * - create the .sql.tmp file;
@@ -151,7 +150,7 @@ void DatabaseWithDictionaries::createDictionary(ContextPtr local_context, const 
         throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
                         "Dictionary {} already exists.", dict_id.getFullNameNotQuoted());
 
-    if (isTableExist(dictionary_name, getContext()))
+    if (isTableExist(dictionary_name, global_context))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", dict_id.getFullTableName());
 
     String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
@@ -169,28 +168,17 @@ void DatabaseWithDictionaries::createDictionary(ContextPtr local_context, const 
     }
 
     bool succeeded = false;
-    bool uuid_locked = false;
     SCOPE_EXIT({
         if (!succeeded)
-        {
-            if (uuid_locked)
-                DatabaseCatalog::instance().removeUUIDMappingFinally(dict_id.uuid);
             Poco::File(dictionary_metadata_tmp_path).remove();
-        }
     });
-
-    if (dict_id.uuid != UUIDHelpers::Nil)
-    {
-        DatabaseCatalog::instance().addUUIDMapping(dict_id.uuid);
-        uuid_locked = true;
-    }
 
     /// Add a temporary repository containing the dictionary.
     /// We need this temp repository to try loading the dictionary before actually attaching it to the database.
     auto temp_repository = external_loader.addConfigRepository(std::make_unique<ExternalLoaderTempConfigRepository>(
-        getDatabaseName(), dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>(), local_context)));
+        getDatabaseName(), dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>())));
 
-    bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
+    bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
         /// load() is called here to force loading the dictionary, wait until the loading is finished,
@@ -198,16 +186,12 @@ void DatabaseWithDictionaries::createDictionary(ContextPtr local_context, const 
         external_loader.load(dict_id.getInternalDictionaryName());
     }
 
-    auto config = getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>(), local_context);
+    auto config = getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>());
     attachDictionary(dictionary_name, DictionaryAttachInfo{query, config, time(nullptr)});
     SCOPE_EXIT({
         if (!succeeded)
             detachDictionary(dictionary_name);
     });
-
-    auto txn = local_context->getZooKeeperMetadataTransaction();
-    if (txn && !local_context->isInternalSubquery())
-        txn->commit();      /// Commit point (a sort of) for Replicated database
 
     /// If it was ATTACH query and file with dictionary metadata already exist
     /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -221,7 +205,7 @@ void DatabaseWithDictionaries::createDictionary(ContextPtr local_context, const 
     succeeded = true;
 }
 
-void DatabaseWithDictionaries::removeDictionary(ContextPtr local_context, const String & dictionary_name)
+void DatabaseWithDictionaries::removeDictionary(const Context &, const String & dictionary_name)
 {
     DictionaryAttachInfo attach_info;
     detachDictionaryImpl(dictionary_name, attach_info);
@@ -229,11 +213,6 @@ void DatabaseWithDictionaries::removeDictionary(ContextPtr local_context, const 
     try
     {
         String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
-
-        auto txn = local_context->getZooKeeperMetadataTransaction();
-        if (txn && !local_context->isInternalSubquery())
-            txn->commit();      /// Commit point (a sort of) for Replicated database
-
         Poco::File(dictionary_metadata_path).remove();
         CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus,
                                  StorageID(attach_info.create_query).getInternalDictionaryName());
@@ -244,10 +223,6 @@ void DatabaseWithDictionaries::removeDictionary(ContextPtr local_context, const 
         attachDictionary(dictionary_name, attach_info);
         throw;
     }
-
-    UUID dict_uuid = attach_info.create_query->as<ASTCreateQuery>()->uuid;
-    if (dict_uuid != UUIDHelpers::Nil)
-        DatabaseCatalog::instance().removeUUIDMappingFinally(dict_uuid);
 }
 
 DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name)
@@ -346,7 +321,7 @@ void DatabaseWithDictionaries::reloadDictionaryConfig(const String & full_name)
     /// Ensure that this database is attached to ExternalLoader as a config repository.
     if (!database_as_config_repo_for_external_loader.load())
     {
-        auto repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(*this, getContext());
+        auto repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(*this, global_context);
         auto remove_repository_callback = external_loader.addConfigRepository(std::move(repository));
         database_as_config_repo_for_external_loader = boost::make_shared<ext::scope_guard>(std::move(remove_repository_callback));
     }
@@ -370,9 +345,9 @@ void DatabaseWithDictionaries::shutdown()
 
 
 DatabaseWithDictionaries::DatabaseWithDictionaries(
-    const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context_)
-    : DatabaseOnDisk(name, metadata_path_, data_path_, logger, context_)
-    , external_loader(context_->getExternalDictionariesLoader())
+    const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
+    : DatabaseOnDisk(name, metadata_path_, data_path_, logger, context)
+    , external_loader(context.getExternalDictionariesLoader())
 {
 }
 

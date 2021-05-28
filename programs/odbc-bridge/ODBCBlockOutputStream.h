@@ -2,41 +2,30 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Poco/Data/Session.h>
 #include <Core/ExternalResultDescription.h>
 #include <Parsers/IdentifierQuotingStyle.h>
-#include <Interpreters/Context_fwd.h>
-#include <nanodbc/nanodbc.h>
-
 
 namespace DB
 {
-
 class ODBCBlockOutputStream : public IBlockOutputStream
 {
-
 public:
-    ODBCBlockOutputStream(
-            nanodbc::connection & connection_,
-            const std::string & remote_database_name_,
-            const std::string & remote_table_name_,
-            const Block & sample_block_,
-            ContextPtr local_context_,
-            IdentifierQuotingStyle quoting);
+    ODBCBlockOutputStream(Poco::Data::Session && session_, const std::string & remote_database_name_,
+                          const std::string & remote_table_name_, const Block & sample_block_, IdentifierQuotingStyle quoting);
 
     Block getHeader() const override;
     void write(const Block & block) override;
 
 private:
-    Poco::Logger * log;
-
-    nanodbc::connection & connection;
+    Poco::Data::Session session;
     std::string db_name;
     std::string table_name;
     Block sample_block;
-    ContextPtr local_context;
     IdentifierQuotingStyle quoting;
 
     ExternalResultDescription description;
+    Poco::Logger * log;
 };
 
 }

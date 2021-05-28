@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/SettingsProfileElement.h>

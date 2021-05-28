@@ -7,9 +7,6 @@
 namespace DB::GatherUtils
 {
 
-namespace
-{
-
 struct ArrayResizeDynamic : public ArrayAndValueSourceSelectorBySink<ArrayResizeDynamic>
 {
     template <typename ArraySource, typename ValueSource, typename Sink>
@@ -20,7 +17,6 @@ struct ArrayResizeDynamic : public ArrayAndValueSourceSelectorBySink<ArrayResize
     }
 };
 
-}
 
 void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & size_column)
 {

@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
@@ -63,7 +63,7 @@ struct ReplicatedMergeTreeTableMetadata
         }
     };
 
-    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
+    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, const Context & context) const;
 
     Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const;
 
