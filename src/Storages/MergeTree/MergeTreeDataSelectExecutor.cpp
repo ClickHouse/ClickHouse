@@ -30,7 +30,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/MergingFinal.h>
 
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
