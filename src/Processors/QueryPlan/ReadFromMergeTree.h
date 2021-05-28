@@ -1,14 +1,13 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/Pipe.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
-//#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
 namespace DB
 {
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+
+class Pipe;
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
