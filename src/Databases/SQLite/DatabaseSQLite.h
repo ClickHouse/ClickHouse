@@ -14,7 +14,6 @@ public:
     DatabaseSQLite(ContextPtr context_, const ASTStorage * database_engine_define_, const String & database_path_);
 
     String getEngineName() const override { return "SQLite"; }
-    //    String getMetadataPath() const override { return metadata_path; }
 
     bool canContainMergeTreeTables() const override { return false; }
     bool canContainDistributedTables() const override { return false; }
@@ -28,7 +27,6 @@ public:
     void shutdown() override;
 
 private:
-    //    String metadata_path;
     ASTPtr database_engine_define;
     std::shared_ptr<sqlite3> db_ptr;
 
