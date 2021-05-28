@@ -87,7 +87,6 @@ public:
     {
         const auto & langcolumn = arguments[0].column;
         const auto & strcolumn = arguments[1].column;
-        ColumnPtr res;
 
         const ColumnConst * lang_col = checkAndGetColumn<ColumnConst>(langcolumn.get());
         const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
