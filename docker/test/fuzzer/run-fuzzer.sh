@@ -128,7 +128,7 @@ continue
 
     # If the server dies, most often the fuzzer returns code 210: connetion
     # refused, and sometimes also code 32: attempt to read after eof. For
-    # simplicity, check again whether the server is accepting cnnections, using
+    # simplicity, check again whether the server is accepting connections, using
     # clickhouse-client. We don't check for existence of server process, because
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
