@@ -1,6 +1,6 @@
 <test>
     <preconditions>
-        <table_exists>hits_100m_single</table_exists>
+        <table_exists>hits_10m_single</table_exists>
         <ram_size>30000000000</ram_size>
     </preconditions>
 
@@ -58,5 +58,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT {key} AS k, {func}(UserID) FROM (SELECT {key}, UserID FROM hits_100m_single LIMIT 20000000) GROUP BY k</query>
+    <query>SELECT {key} AS k, {func}(UserID) FROM hits_10m_single GROUP BY k FORMAT Null</query>
 </test>
