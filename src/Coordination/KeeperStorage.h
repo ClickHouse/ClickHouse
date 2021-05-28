@@ -5,6 +5,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/SessionExpiryQueue.h>
+#include <Coordination/ACLMap.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <unordered_map>
 #include <unordered_set>
@@ -30,7 +31,7 @@ public:
     struct Node
     {
         String data;
-        Coordination::ACLs acls{};
+        uint64_t acl_id = 0; /// 0 -- no ACL by default
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
@@ -81,6 +82,7 @@ public:
     SessionAndWatcher sessions_and_watchers;
     SessionExpiryQueue session_expiry_queue;
     SessionAndTimeout session_and_timeout;
+    ACLMap acl_map;
 
     int64_t zxid{0};
     bool finalized{false};

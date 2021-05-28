@@ -13,6 +13,7 @@ using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
 enum SnapshotVersion : uint8_t
 {
     V0 = 0,
+    V1 = 1, /// with ACL map
 };
 
 struct KeeperStorageSnapshot
@@ -29,12 +30,14 @@ public:
 
     KeeperStorage * storage;
 
-    SnapshotVersion version = SnapshotVersion::V0;
+    SnapshotVersion version = SnapshotVersion::V1;
     SnapshotMetadataPtr snapshot_meta;
     int64_t session_id;
     size_t snapshot_container_size;
     KeeperStorage::Container::const_iterator begin;
     SessionAndTimeout session_and_timeout;
+    KeeperStorage::SessionAndAuth session_and_auth;
+    std::unordered_map<uint64_t, Coordination::ACLs> acl_map;
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;

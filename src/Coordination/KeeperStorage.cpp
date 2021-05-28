@@ -226,7 +226,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
         if (it == container.end())
             return true;
 
-        const auto & node_acls = it->value.acls;
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -267,12 +267,17 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
 
                 KeeperStorage::Node created_node;
 
-                if (!fixupACL(request.acls, session_auth_ids, created_node.acls))
+                Coordination::ACLs node_acls;
+                if (!fixupACL(request.acls, session_auth_ids, node_acls))
                 {
                     response.error = Coordination::Error::ZINVALIDACL;
                     return {response_ptr, {}};
                 }
 
+                uint64_t acl_id = storage.acl_map.convertACLs(node_acls);
+                storage.acl_map.addUsage(acl_id);
+
+                created_node.acl_id = acl_id;
                 created_node.stat.czxid = zxid;
                 created_node.stat.mzxid = zxid;
                 created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
@@ -312,13 +317,15 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 if (request.is_ephemeral)
                     ephemerals[session_id].emplace(path_created);
 
-                undo = [&container, &ephemerals, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path]
+                undo = [&storage, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
                 {
-                    container.erase(path_created);
-                    if (is_ephemeral)
-                        ephemerals[session_id].erase(path_created);
+                    storage.container.erase(path_created);
+                    storage.acl_map.removeUsage(acl_id);
 
-                    container.updateValue(parent_path, [child_path] (KeeperStorage::Node & undo_parent)
+                    if (is_ephemeral)
+                        storage.ephemerals[session_id].erase(path_created);
+
+                    storage.container.updateValue(parent_path, [child_path] (KeeperStorage::Node & undo_parent)
                     {
                         --undo_parent.stat.cversion;
                         --undo_parent.stat.numChildren;
@@ -345,7 +352,7 @@ struct KeeperStorageGetRequest final : public KeeperStorageRequest
         if (it == container.end())
             return true;
 
-        const auto & node_acls = it->value.acls;
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -386,7 +393,7 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
         if (it == container.end())
             return true;
 
-        const auto & node_acls = it->value.acls;
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -429,6 +436,8 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
                     ephemerals.erase(ephemerals_it);
             }
 
+            storage.acl_map.removeUsage(prev_node.acl_id);
+
             auto child_basename = getBaseName(it->key);
             container.updateValue(parentPath(request.path), [&child_basename] (KeeperStorage::Node & parent)
             {
@@ -441,13 +450,15 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
 
             container.erase(request.path);
 
-            undo = [prev_node, &container, &ephemerals, path = request.path, child_basename]
+            undo = [prev_node, &storage, path = request.path, child_basename]
             {
                 if (prev_node.stat.ephemeralOwner != 0)
-                    ephemerals[prev_node.stat.ephemeralOwner].emplace(path);
+                    storage.ephemerals[prev_node.stat.ephemeralOwner].emplace(path);
 
-                container.insert(path, prev_node);
-                container.updateValue(parentPath(path), [&child_basename] (KeeperStorage::Node & parent)
+                storage.acl_map.addUsage(prev_node.acl_id);
+
+                storage.container.insert(path, prev_node);
+                storage.container.updateValue(parentPath(path), [&child_basename] (KeeperStorage::Node & parent)
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
@@ -500,7 +511,7 @@ struct KeeperStorageSetRequest final : public KeeperStorageRequest
         if (it == container.end())
             return true;
 
-        const auto & node_acls = it->value.acls;
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -577,7 +588,7 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
         if (it == container.end())
             return true;
 
-        const auto & node_acls = it->value.acls;
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -622,7 +633,7 @@ struct KeeperStorageCheckRequest final : public KeeperStorageRequest
         if (it == container.end())
             return true;
 
-        const auto & node_acls = it->value.acls;
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
         if (node_acls.empty())
             return true;
 

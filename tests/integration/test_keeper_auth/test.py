@@ -6,7 +6,7 @@ from kazoo.security import ACL, make_digest_acl, make_acl
 from kazoo.exceptions import AuthFailedError, InvalidACLError, NoAuthError, KazooException
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/keeper_config.xml', 'configs/logs_conf.xml'], with_zookeeper=True, use_keeper=False)
+node = cluster.add_instance('node', main_configs=['configs/keeper_config.xml', 'configs/logs_conf.xml'], with_zookeeper=True, use_keeper=False, stay_alive=True)
 
 SUPERAUTH = "super:admin"
 
@@ -246,3 +246,57 @@ def test_bad_auth(started_cluster):
     with pytest.raises(InvalidACLError):
         print("Sending 12")
         auth_connection.create("/test_bad_acl", b"data", acl=[make_acl("digest", "dsad:DSAa:d", read=True, write=False, create=True, delete=True, admin=True)])
+
+def test_auth_snapshot(started_cluster):
+    connection = get_fake_zk()
+    connection.add_auth('digest', 'user1:password1')
+
+    connection.create("/test_snapshot_acl", b"data", acl=[make_acl("auth", "", all=True)])
+
+    connection1 = get_fake_zk()
+    connection1.add_auth('digest', 'user2:password2')
+
+    connection1.create("/test_snapshot_acl1", b"data", acl=[make_acl("auth", "", all=True)])
+
+    connection2 = get_fake_zk()
+
+    connection2.create("/test_snapshot_acl2", b"data")
+
+    for i in range(100):
+        connection.create(f"/test_snapshot_acl/path{i}", b"data", acl=[make_acl("auth", "", all=True)])
+
+    node.restart_clickhouse()
+
+    connection = get_fake_zk()
+
+    with pytest.raises(NoAuthError):
+        connection.get("/test_snapshot_acl")
+
+    connection.add_auth('digest', 'user1:password1')
+
+    assert connection.get("/test_snapshot_acl")[0] == b"data"
+
+    with pytest.raises(NoAuthError):
+        connection.get("/test_snapshot_acl1")
+
+    assert connection.get("/test_snapshot_acl2")[0] == b"data"
+
+    for i in range(100):
+        assert connection.get(f"/test_snapshot_acl/path{i}")[0] == b"data"
+
+    connection1 = get_fake_zk()
+    connection1.add_auth('digest', 'user2:password2')
+
+    assert connection1.get("/test_snapshot_acl1")[0] == b"data"
+
+    with pytest.raises(NoAuthError):
+        connection1.get("/test_snapshot_acl")
+
+
+    connection2 = get_fake_zk()
+    assert connection2.get("/test_snapshot_acl2")[0] == b"data"
+    with pytest.raises(NoAuthError):
+        connection2.get("/test_snapshot_acl")
+
+    with pytest.raises(NoAuthError):
+        connection2.get("/test_snapshot_acl1")
