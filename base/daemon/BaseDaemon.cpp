@@ -350,14 +350,15 @@ private:
                 , calculated_binary_hash, daemon.stored_binary_hash);
         }
 #endif
-
-        /// Write crash to system.crash_log table if available.
-        if (collectCrashLog)
-            collectCrashLog(sig, thread_num, query_id, stack_trace);
+        LOG_FATAL(log, "Here. {} {}", sig, SanitizerTrap);
 
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
             SentryWriter::onFault(sig, error_message, stack_trace);
+
+        /// Write crash to system.crash_log table if available.
+        if (collectCrashLog)
+            collectCrashLog(sig, thread_num, query_id, stack_trace);
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
