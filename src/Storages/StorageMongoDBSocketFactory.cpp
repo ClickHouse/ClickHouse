@@ -2,7 +2,6 @@
 
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/SecureStreamSocket.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
