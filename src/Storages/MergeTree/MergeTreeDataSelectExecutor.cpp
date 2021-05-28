@@ -381,7 +381,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
 MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     const ASTSelectQuery & select,
-    MergeTreeData::DataPartsVector & parts,
+    const MergeTreeData::DataPartsVector & parts,
     const StorageMetadataPtr & metadata_snapshot,
     KeyCondition & key_condition,
     const MergeTreeData & data,
@@ -1189,43 +1189,19 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
-    const auto & settings = context->getSettingsRef();
-
-    MergeTreeReaderSettings reader_settings =
-    {
-        .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
-        .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
-        .mmap_cache = context->getMMappedFileCache(),
-        .max_read_buffer_size = settings.max_read_buffer_size,
-        .save_marks_in_cache = true,
-        .checksum_on_read = settings.checksum_on_read,
-    };
-
-    ReadFromMergeTree::Settings step_settings
-    {
-        .max_block_size = max_block_size,
-        .num_streams = num_streams,
-        .preferred_block_size_bytes = settings.preferred_block_size_bytes,
-        .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
-        .use_uncompressed_cache = settings.use_uncompressed_cache,
-        .force_primary_key = settings.force_primary_key,
-        .sample_factor_column_queried = sample_factor_column_queried,
-        .reader_settings = reader_settings,
-        .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
-    };
-
     auto read_from_merge_tree = std::make_unique<ReadFromMergeTree>(
-        query_info,
-        max_block_numbers_to_read,
-        context,
+        parts,
+        real_column_names,
+        virt_column_names,
         data,
+        query_info,
         metadata_snapshot,
         metadata_snapshot_base,
-        real_column_names,
-        parts,
-        query_info.projection ? query_info.projection->prewhere_info : query_info.prewhere_info,
-        virt_column_names,
-        step_settings,
+        context,
+        max_block_size,
+        num_streams,
+        sample_factor_column_queried,
+        max_block_numbers_to_read,
         log
     );
 

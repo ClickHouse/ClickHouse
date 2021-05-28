@@ -40,22 +40,6 @@ public:
 
     using IndexStats = std::vector<IndexStat>;
 
-    /// Part of settings which are needed for reading.
-    struct Settings
-    {
-        UInt64 max_block_size;
-        size_t num_streams;
-        size_t preferred_block_size_bytes;
-        size_t preferred_max_column_in_block_size_bytes;
-        //size_t min_marks_for_concurrent_read;
-        bool use_uncompressed_cache;
-        bool force_primary_key;
-        bool sample_factor_column_queried;
-
-        MergeTreeReaderSettings reader_settings;
-        MergeTreeReadPool::BackoffSettings backoff_settings;
-    };
-
     enum class ReadType
     {
         /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -72,17 +56,18 @@ public:
     };
 
     ReadFromMergeTree(
-        const SelectQueryInfo & query_info_,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
-        ContextPtr context_,
+        MergeTreeData::DataPartsVector parts_,
+        Names real_column_names_,
+        Names virt_column_names_,
         const MergeTreeData & data_,
+        const SelectQueryInfo & query_info_,
         StorageMetadataPtr metadata_snapshot_,
         StorageMetadataPtr metadata_snapshot_base_,
-        Names real_column_names_,
-        MergeTreeData::DataPartsVector parts_,
-        PrewhereInfoPtr prewhere_info_,
-        Names virt_column_names_,
-        Settings settings_,
+        ContextPtr context_,
+        size_t max_block_size_,
+        size_t num_streams_,
+        bool sample_factor_column_queried_,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         Poco::Logger * log_
     );
 
@@ -97,23 +82,33 @@ public:
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
 private:
-    SelectQueryInfo query_info;
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
-    ContextPtr context;
+    const MergeTreeReaderSettings reader_settings;
+
+    MergeTreeData::DataPartsVector prepared_parts;
+    Names real_column_names;
+    Names virt_column_names;
+
     const MergeTreeData & data;
+    SelectQueryInfo query_info;
+    PrewhereInfoPtr prewhere_info;
+
     StorageMetadataPtr metadata_snapshot;
     StorageMetadataPtr metadata_snapshot_base;
 
-    Names real_column_names;
-    MergeTreeData::DataPartsVector prepared_parts;
-    PrewhereInfoPtr prewhere_info;
-    Names virt_column_names;
-    Settings settings;
+    ContextPtr context;
+
+    const size_t max_block_size;
+    const size_t requested_num_streams;
+    const size_t preferred_block_size_bytes;
+    const size_t preferred_max_column_in_block_size_bytes;
+    const bool sample_factor_column_queried;
+
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
     Poco::Logger * log;
 
-    Pipe read(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, size_t used_max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
-    Pipe readFromPool(RangesInDataParts parts_with_ranges, Names required_columns, size_t used_max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
+    Pipe read(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
+    Pipe readFromPool(RangesInDataParts parts_with_ranges, Names required_columns, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
     Pipe readInOrder(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, bool use_uncompressed_cache);
 
     template<typename TSource>

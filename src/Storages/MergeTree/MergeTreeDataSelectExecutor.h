@@ -176,7 +176,7 @@ public:
 
     static MergeTreeDataSelectSamplingData getSampling(
         const ASTSelectQuery & select,
-        MergeTreeData::DataPartsVector & parts,
+        const MergeTreeData::DataPartsVector & parts,
         const StorageMetadataPtr & metadata_snapshot,
         KeyCondition & key_condition,
         const MergeTreeData & data,
