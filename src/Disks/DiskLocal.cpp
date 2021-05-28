@@ -7,7 +7,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 #include <IO/createReadBufferFromFileBase.h>
-#include <Common/FileSystemHelpers.h>
+#include <Common/filesystemHelpers.h>
 
 #include <fstream>
 #include <unistd.h>
