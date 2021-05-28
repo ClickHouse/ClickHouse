@@ -4,13 +4,13 @@ toc_priority: 128
 
 # groupBitmap {#groupbitmap}
 
-Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс `-State`, то возвращают [объект bitmap](../../../sql-reference/functions/bitmap-functions.md#bitmap-functions).
+Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс -State, то возвращают [объект bitmap](../../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmap(expr)
 ```
 
-**Аргументы**
+**Параметры**
 
 `expr` – выражение, результат которого имеет тип данных `UInt*`.
 
@@ -43,3 +43,4 @@ num
 3
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/) <!--hide-->

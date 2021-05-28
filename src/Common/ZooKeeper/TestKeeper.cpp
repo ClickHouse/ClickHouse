@@ -1,7 +1,7 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/types.h>
+#include <Core/Types.h>
 
 #include <sstream>
 #include <iomanip>
@@ -31,6 +31,7 @@ using Undo = std::function<void()>;
 
 struct TestKeeperRequest : virtual Request
 {
+    virtual bool isMutable() const { return false; }
     virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
     virtual void processWatches(TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/) const {}
@@ -84,6 +85,7 @@ struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
     explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+    bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -110,6 +112,7 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
     explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+    bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -198,7 +201,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
         else
         {
             TestKeeper::Node created_node;
-            created_node.seq_num = 0; //-V1048
+            created_node.seq_num = 0;
             created_node.stat.czxid = zxid;
             created_node.stat.mzxid = zxid;
             created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
@@ -213,27 +216,26 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             if (is_sequential)
             {
                 auto seq_num = it->second.seq_num;
+                ++it->second.seq_num;
 
-                std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                seq_num_str.exceptions(std::ios::failbit);
+                std::stringstream seq_num_str;
                 seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
                 path_created += seq_num_str.str();
             }
 
-            /// Increment sequential number even if node is not sequential
-            ++it->second.seq_num;
-
             response.path_created = path_created;
             container.emplace(path_created, std::move(created_node));
 
-            undo = [&container, path_created, parent_path = it->first]
+            undo = [&container, path_created, is_sequential = is_sequential, parent_path = it->first]
             {
                 container.erase(path_created);
                 auto & undo_parent = container.at(parent_path);
                 --undo_parent.stat.cversion;
                 --undo_parent.stat.numChildren;
-                --undo_parent.seq_num;
+
+                if (is_sequential)
+                    --undo_parent.seq_num;
             };
 
             ++it->second.stat.cversion;
@@ -271,7 +273,7 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
         auto & parent = container.at(parentPath(path));
         --parent.stat.numChildren;
         ++parent.stat.cversion;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
 
         undo = [prev_node, &container, path = path]
         {
@@ -293,7 +295,7 @@ std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Contai
     if (it != container.end())
     {
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
     else
     {
@@ -316,7 +318,7 @@ std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container
     {
         response.stat = it->second.stat;
         response.data = it->second.data;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<GetResponse>(response), {} };
@@ -343,7 +345,7 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
         it->second.data = data;
         ++container.at(parentPath(path)).stat.cversion;
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
 
         undo = [prev_node, &container, path = path]
         {
@@ -387,7 +389,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
         }
 
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<ListResponse>(response), {} };
@@ -407,7 +409,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Contain
     }
     else
     {
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<CheckResponse>(response), {} };
@@ -421,38 +423,26 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
 
     try
     {
-        auto request_it = requests.begin();
-        response.error = Error::ZOK; //-V1048
-        while (request_it != requests.end())
+        for (const auto & request : requests)
         {
-            const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
-            ++request_it;
+            const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(*request);
             auto [ cur_response, undo_action ] = concrete_request.process(container, zxid);
             response.responses.emplace_back(cur_response);
             if (cur_response->error != Error::ZOK)
             {
                 response.error = cur_response->error;
-                break;
-            }
 
-            undo_actions.emplace_back(std::move(undo_action));
+                for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
+                    if (*it)
+                        (*it)();
+
+                return { std::make_shared<MultiResponse>(response), {} };
+            }
+            else
+                undo_actions.emplace_back(std::move(undo_action));
         }
 
-        if (response.error != Error::ZOK)
-        {
-            for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
-                if (*it)
-                    (*it)();
-
-            while (request_it != requests.end())
-            {
-                const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
-                ++request_it;
-                response.responses.emplace_back(concrete_request.createResponse());
-                response.responses.back()->error = Error::ZRUNTIMEINCONSISTENCY;
-            }
-        }
-
+        response.error = Error::ZOK;
         return { std::make_shared<MultiResponse>(response), {} };
     }
     catch (...)
@@ -520,30 +510,19 @@ void TestKeeper::processingThread()
                 if (expired)
                     break;
 
+                if (info.watch)
+                {
+                    auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
+                        ? list_watches
+                        : watches;
+
+                    watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
+                }
 
                 ++zxid;
 
                 info.request->addRootPath(root_path);
                 auto [response, _] = info.request->process(container, zxid);
-
-                if (info.watch)
-                {
-                    /// To be compatible with real ZooKeeper we add watch if request was successful (i.e. node exists)
-                    /// or if it was exists request which allows to add watches for non existing nodes.
-                    if (response->error == Error::ZOK)
-                    {
-                        auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
-                            ? list_watches
-                            : watches;
-
-                        watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
-                    }
-                    else if (response->error == Error::ZNONODE && dynamic_cast<const ExistsRequest *>(info.request.get()))
-                    {
-                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
-                    }
-                }
-
                 if (response->error == Error::ZOK)
                     info.request->processWatches(watches, list_watches);
 

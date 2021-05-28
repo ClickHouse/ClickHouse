@@ -1,0 +1,292 @@
+SELECT a
+FROM t1_00849
+CROSS JOIN t2_00849
+SELECT a
+FROM t1_00849
+ALL INNER JOIN t2_00849 ON a = t2_00849.a
+WHERE a = t2_00849.a
+SELECT a
+FROM t1_00849
+ALL INNER JOIN t2_00849 ON b = t2_00849.b
+WHERE b = t2_00849.b
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        a AS `--t1_00849.a`,
+        b,
+        t2_00849.a AS `--t2_00849.a`,
+        t2_00849.b
+    FROM t1_00849
+    ALL INNER JOIN t2_00849 ON `--t1_00849.a` = `--t2_00849.a`
+) AS `--.s`
+ALL INNER JOIN t3_00849 ON `--t1_00849.a` = a
+WHERE (`--t1_00849.a` = `--t2_00849.a`) AND (`--t1_00849.a` = a)
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        a AS `--t1_00849.a`,
+        b AS `--t1_00849.b`,
+        t2_00849.a,
+        t2_00849.b AS `--t2_00849.b`
+    FROM t1_00849
+    ALL INNER JOIN t2_00849 ON `--t1_00849.b` = `--t2_00849.b`
+) AS `--.s`
+ALL INNER JOIN t3_00849 ON `--t1_00849.b` = b
+WHERE (`--t1_00849.b` = `--t2_00849.b`) AND (`--t1_00849.b` = b)
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        `--t1_00849.a`,
+        b,
+        `--t2_00849.a`,
+        `t2_00849.b`,
+        a AS `--t3_00849.a`,
+        t3_00849.b
+    FROM 
+    (
+        SELECT 
+            a AS `--t1_00849.a`,
+            b,
+            t2_00849.a AS `--t2_00849.a`,
+            t2_00849.b
+        FROM t1_00849
+        ALL INNER JOIN t2_00849 ON `--t1_00849.a` = `--t2_00849.a`
+    ) AS `--.s`
+    ALL INNER JOIN t3_00849 ON `--t1_00849.a` = `--t3_00849.a`
+) AS `--.s`
+ALL INNER JOIN t4_00849 ON `--t1_00849.a` = a
+WHERE (`--t1_00849.a` = `--t2_00849.a`) AND (`--t1_00849.a` = `--t3_00849.a`) AND (`--t1_00849.a` = a)
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        `--t1_00849.a`,
+        `--t1_00849.b`,
+        `t2_00849.a`,
+        `--t2_00849.b`,
+        a,
+        b AS `--t3_00849.b`
+    FROM 
+    (
+        SELECT 
+            a AS `--t1_00849.a`,
+            b AS `--t1_00849.b`,
+            t2_00849.a,
+            t2_00849.b AS `--t2_00849.b`
+        FROM t1_00849
+        ALL INNER JOIN t2_00849 ON `--t1_00849.b` = `--t2_00849.b`
+    ) AS `--.s`
+    ALL INNER JOIN t3_00849 ON `--t1_00849.b` = `--t3_00849.b`
+) AS `--.s`
+ALL INNER JOIN t4_00849 ON `--t1_00849.b` = b
+WHERE (`--t1_00849.b` = `--t2_00849.b`) AND (`--t1_00849.b` = `--t3_00849.b`) AND (`--t1_00849.b` = b)
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        `--t1_00849.a`,
+        b,
+        `--t2_00849.a`,
+        `t2_00849.b`,
+        a AS `--t3_00849.a`,
+        t3_00849.b
+    FROM 
+    (
+        SELECT 
+            a AS `--t1_00849.a`,
+            b,
+            t2_00849.a AS `--t2_00849.a`,
+            t2_00849.b
+        FROM t1_00849
+        ALL INNER JOIN t2_00849 ON `--t2_00849.a` = `--t1_00849.a`
+    ) AS `--.s`
+    ALL INNER JOIN t3_00849 ON `--t2_00849.a` = `--t3_00849.a`
+) AS `--.s`
+ALL INNER JOIN t4_00849 ON `--t2_00849.a` = a
+WHERE (`--t2_00849.a` = `--t1_00849.a`) AND (`--t2_00849.a` = `--t3_00849.a`) AND (`--t2_00849.a` = a)
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        `--t1_00849.a`,
+        b,
+        `--t2_00849.a`,
+        `t2_00849.b`,
+        a AS `--t3_00849.a`,
+        t3_00849.b
+    FROM 
+    (
+        SELECT 
+            a AS `--t1_00849.a`,
+            b,
+            t2_00849.a AS `--t2_00849.a`,
+            t2_00849.b
+        FROM t1_00849
+        CROSS JOIN t2_00849
+    ) AS `--.s`
+    ALL INNER JOIN t3_00849 ON (`--t3_00849.a` = `--t1_00849.a`) AND (`--t3_00849.a` = `--t2_00849.a`)
+) AS `--.s`
+ALL INNER JOIN t4_00849 ON `--t3_00849.a` = a
+WHERE (`--t3_00849.a` = `--t1_00849.a`) AND (`--t3_00849.a` = `--t2_00849.a`) AND (`--t3_00849.a` = a)
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        `--t1_00849.a`,
+        b,
+        `--t2_00849.a`,
+        `t2_00849.b`,
+        a AS `--t3_00849.a`,
+        t3_00849.b
+    FROM 
+    (
+        SELECT 
+            a AS `--t1_00849.a`,
+            b,
+            t2_00849.a AS `--t2_00849.a`,
+            t2_00849.b
+        FROM t1_00849
+        CROSS JOIN t2_00849
+    ) AS `--.s`
+    CROSS JOIN t3_00849
+) AS `--.s`
+ALL INNER JOIN t4_00849 ON (a = `--t1_00849.a`) AND (a = `--t2_00849.a`) AND (a = `--t3_00849.a`)
+WHERE (a = `--t1_00849.a`) AND (a = `--t2_00849.a`) AND (a = `--t3_00849.a`)
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        `--t1_00849.a`,
+        b,
+        `--t2_00849.a`,
+        `t2_00849.b`,
+        a AS `--t3_00849.a`,
+        t3_00849.b
+    FROM 
+    (
+        SELECT 
+            a AS `--t1_00849.a`,
+            b,
+            t2_00849.a AS `--t2_00849.a`,
+            t2_00849.b
+        FROM t1_00849
+        ALL INNER JOIN t2_00849 ON `--t1_00849.a` = `--t2_00849.a`
+    ) AS `--.s`
+    ALL INNER JOIN t3_00849 ON `--t2_00849.a` = `--t3_00849.a`
+) AS `--.s`
+ALL INNER JOIN t4_00849 ON `--t3_00849.a` = a
+WHERE (`--t1_00849.a` = `--t2_00849.a`) AND (`--t2_00849.a` = `--t3_00849.a`) AND (`--t3_00849.a` = a)
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        `--t1_00849.a`,
+        b,
+        `t2_00849.a`,
+        `t2_00849.b`,
+        a,
+        t3_00849.b
+    FROM 
+    (
+        SELECT 
+            a AS `--t1_00849.a`,
+            b,
+            t2_00849.a,
+            t2_00849.b
+        FROM t1_00849
+        CROSS JOIN t2_00849
+    ) AS `--.s`
+    CROSS JOIN t3_00849
+) AS `--.s`
+CROSS JOIN t4_00849
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        `--t1_00849.a`,
+        b,
+        `t2_00849.a`,
+        `t2_00849.b`,
+        a,
+        t3_00849.b
+    FROM 
+    (
+        SELECT 
+            a AS `--t1_00849.a`,
+            b,
+            t2_00849.a,
+            t2_00849.b
+        FROM t1_00849
+        CROSS JOIN t2_00849
+    ) AS `--.s`
+    CROSS JOIN t3_00849
+) AS `--.s`
+CROSS JOIN t4_00849
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        a AS `--t1_00849.a`,
+        b,
+        t2_00849.a,
+        t2_00849.b
+    FROM t1_00849
+    CROSS JOIN t2_00849
+) AS `--.s`
+CROSS JOIN t3_00849
+SELECT `--t1_00849.a` AS `t1_00849.a`
+FROM 
+(
+    SELECT 
+        a AS `--t1_00849.a`,
+        b,
+        t2_00849.a AS `--t2_00849.a`,
+        t2_00849.b
+    FROM t1_00849
+    ALL INNER JOIN t2_00849 ON `--t1_00849.a` = `--t2_00849.a`
+) AS `--.s`
+CROSS JOIN t3_00849
+SELECT * FROM t1, t2
+1	1	1	1
+1	1	1	\N
+2	2	1	1
+2	2	1	\N
+3	3	1	1
+3	3	1	\N
+4	4	1	1
+4	4	1	\N
+SELECT * FROM t1, t2 WHERE t1.a = t2.a
+1	1	1	1
+1	1	1	\N
+SELECT t1.a, t2.a FROM t1, t2 WHERE t1.b = t2.b
+1	1
+SELECT t1.a, t2.b, t3.b FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
+1	1	1
+1	1	\N
+1	\N	1
+1	\N	\N
+SELECT t1.a, t2.b, t3.b FROM t1, t2, t3 WHERE t1.b = t2.b AND t1.b = t3.b
+1	1	1
+SELECT t1.a, t2.b, t3.b, t4.b FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t1.a = t3.a AND t1.a = t4.a
+1	1	1	1
+1	1	1	\N
+1	1	\N	1
+1	1	\N	\N
+1	\N	1	1
+1	\N	1	\N
+1	\N	\N	1
+1	\N	\N	\N
+SELECT t1.a, t2.b, t3.b, t4.b FROM t1, t2, t3, t4 WHERE t1.b = t2.b AND t1.b = t3.b AND t1.b = t4.b
+1	1	1	1
+SELECT t1.a, t2.b, t3.b, t4.b FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t2.a = t3.a AND t3.a = t4.a
+1	1	1	1
+1	1	1	\N
+1	1	\N	1
+1	1	\N	\N
+1	\N	1	1
+1	\N	1	\N
+1	\N	\N	1
+1	\N	\N	\N

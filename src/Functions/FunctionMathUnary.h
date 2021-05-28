@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -35,7 +35,7 @@ class FunctionMathUnary : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathUnary>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathUnary>(); }
 
 private:
     String getName() const override { return name; }
@@ -87,8 +87,18 @@ private:
             if (rows_remaining != 0)
             {
                 T src_remaining[Impl::rows_per_iteration];
-                memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
-                memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
+                if constexpr (is_big_int_v<T> || std::is_same_v<T, Decimal256>)
+                {
+                    for (size_t i = 0; i < rows_remaining; i++)
+                        src_remaining[i] = src_data[rows_size + i];
+                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
+                        src_remaining[i] = 0;
+                }
+                else
+                {
+                    memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
+                    memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
+                }
                 ReturnType dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(src_remaining, dst_remaining);
@@ -103,7 +113,7 @@ private:
     }
 
     template <typename T, typename ReturnType>
-    static ColumnPtr execute(const ColumnVector<T> * col)
+    static bool execute(Block & block, const ColumnVector<T> * col, const size_t result)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
@@ -114,11 +124,12 @@ private:
 
         executeInIterations(src_data.data(), dst_data.data(), size);
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
+        return true;
     }
 
     template <typename T, typename ReturnType>
-    static ColumnPtr execute(const ColumnDecimal<T> * col)
+    static bool execute(Block & block, const ColumnDecimal<T> * col, const size_t result)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
@@ -129,19 +140,19 @@ private:
         dst_data.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            dst_data[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
+            dst_data[i] = convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<ReturnType>>(src_data[i], scale);
 
         executeInIterations(dst_data.data(), dst_data.data(), size);
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
+        return true;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        const ColumnWithTypeAndName & col = arguments[0];
-        ColumnPtr res;
+        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
 
         auto call = [&](const auto & types) -> bool
         {
@@ -151,14 +162,12 @@ private:
             using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
-            return (res = execute<Type, ReturnType>(col_vec)) != nullptr;
+            return execute<Type, ReturnType>(block, col_vec, result);
         };
 
         if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))
             throw Exception{"Illegal column " + col.column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
-
-        return res;
     }
 };
 

@@ -28,13 +28,13 @@ void finalizeChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-Block TotalsHavingTransform::transformHeader(Block block, const ActionsDAG * expression, bool final)
+Block TotalsHavingTransform::transformHeader(Block block, const ExpressionActionsPtr & expression, bool final)
 {
     if (final)
         finalizeBlock(block);
 
     if (expression)
-        block = expression->updateHeader(std::move(block));
+        expression->execute(block);
 
     return block;
 }
@@ -47,7 +47,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
@@ -65,8 +65,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     if (expression)
     {
         auto totals_header = finalized_header;
-        size_t num_rows = totals_header.rows();
-        expression->execute(totals_header, num_rows);
+        expression->execute(totals_header);
         outputs.emplace_back(totals_header, this);
     }
     else
@@ -157,16 +156,15 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     {
         /// Compute the expression in HAVING.
         const auto & cur_header = final ? finalized_header : getInputPort().getHeader();
-        size_t num_rows = finalized.getNumRows();
         auto finalized_block = cur_header.cloneWithColumns(finalized.detachColumns());
 
-        for (const auto & action : expression->getActions())
+        for (const ExpressionAction & action : expression->getActions())
         {
-            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            if (action.type == ExpressionAction::ARRAY_JOIN)
                 throw Exception("Having clause cannot contain arrayJoin", ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        expression->execute(finalized_block, num_rows);
+        expression->execute(finalized_block);
         auto columns = finalized_block.getColumns();
 
         ColumnPtr filter_column_ptr = columns[filter_column_pos];
@@ -175,6 +173,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         if (const_filter_description.always_true)
         {
             addToTotals(chunk, nullptr);
+            auto num_rows = columns.front()->size();
             chunk.setColumns(std::move(columns), num_rows);
             return;
         }
@@ -207,7 +206,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
             }
         }
 
-        num_rows = columns.front()->size();
+        auto num_rows = columns.front()->size();
         chunk.setColumns(std::move(columns), num_rows);
     }
 
@@ -267,11 +266,9 @@ void TotalsHavingTransform::prepareTotals()
 
     if (expression)
     {
-        size_t num_rows = totals.getNumRows();
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
-        expression->execute(block, num_rows);
-        /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
-        totals = Chunk(block.getColumns(), num_rows);
+        expression->execute(block);
+        totals = Chunk(block.getColumns(), 1);
     }
 }
 

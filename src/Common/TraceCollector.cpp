@@ -11,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
-#include <Common/setThreadName.h>
 #include <common/logger_useful.h>
 
 
@@ -22,12 +21,7 @@ namespace
 {
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    ///
-    /// And it cannot be large, since otherwise it will not fit into PIPE_BUF.
-    /// The performance test query ids can be surprisingly long like
-    /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
-    /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 128;
+    constexpr size_t QUERY_ID_MAX_LEN = 1024;
 }
 
 LazyPipeFDs pipe;
@@ -41,7 +35,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log_)
     /** Turn write end of pipe to non-blocking mode to avoid deadlocks
       * when QueryProfiler is invoked under locks and TraceCollector cannot pull data from pipe.
       */
-    pipe.setNonBlockingWrite();
+    pipe.setNonBlocking();
     pipe.tryIncreaseSize(1 << 20);
 
     thread = ThreadFromGlobalPool(&TraceCollector::run, this);
@@ -65,31 +59,17 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
         8 * sizeof(char) +                     // maximum VarUInt length for string size
         QUERY_ID_MAX_LEN * sizeof(char) +      // maximum query_id length
         sizeof(UInt8) +                        // number of stack frames
-        sizeof(StackTrace::FramePointers) +    // collected stack trace, maximum capacity
+        sizeof(StackTrace::Frames) +           // collected stack trace, maximum capacity
         sizeof(TraceType) +                    // trace type
         sizeof(UInt64) +                       // thread_id
         sizeof(Int64);                         // size
-    /// Write should be atomic to avoid overlaps
-    /// (since recursive collect() is possible)
-    static_assert(buf_size < PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic");
-
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
-    StringRef query_id;
-    UInt64 thread_id;
+    StringRef query_id = CurrentThread::getQueryId();
+    query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
-    if (CurrentThread::isInitialized())
-    {
-        query_id = CurrentThread::getQueryId();
-        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
-
-        thread_id = CurrentThread::get().thread_id;
-    }
-    else
-    {
-        thread_id = MainThreadStatus::get()->thread_id;
-    }
+    auto thread_id = CurrentThread::get().thread_id;
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
     writeStringBinary(query_id, out);
@@ -125,8 +105,6 @@ void TraceCollector::stop()
 
 void TraceCollector::run()
 {
-    setThreadName("TraceCollector");
-
     ReadBufferFromFileDescriptor in(pipe.fds_rw[0]);
 
     while (true)
@@ -163,14 +141,8 @@ void TraceCollector::run()
 
         if (trace_log)
         {
-            // time and time_in_microseconds are both being constructed from the same timespec so that the
-            // times will be equal up to the precision of a second.
-            struct timespec ts;
-            clock_gettime(CLOCK_REALTIME, &ts);
-
-            UInt64 time = UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
-            UInt64 time_in_microseconds = UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
-            TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size};
+            UInt64 time = clock_gettime_ns(CLOCK_REALTIME);
+            TraceLogElement element{time_t(time / 1000000000), time, trace_type, thread_id, query_id, trace, size};
             trace_log->add(element);
         }
     }

@@ -1,7 +1,7 @@
 ---
 title: SELECT Query
 toc_folder_title: SELECT
-toc_priority: 32
+toc_priority: 33
 toc_title: Overview
 ---
 
@@ -20,13 +20,12 @@ SELECT [DISTINCT] expr_list
 [GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
-[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
+[GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
-[SETTINGS ...]
-[UNION  ...]
+[UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
 ```
@@ -47,8 +46,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [SELECT clause](#select-clause)
 -   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
--   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
--   [UNION clause](../../../sql-reference/statements/select/union.md)
+-   [UNION ALL clause](../../../sql-reference/statements/select/union-all.md)
 -   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 -   [FORMAT clause](../../../sql-reference/statements/select/format.md)
 
@@ -57,9 +55,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 [Expressions](../../../sql-reference/syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](../../../sql-reference/statements/select/group-by.md) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
-
-
-### COLUMNS expression {#columns-expression}
 
 To match some columns in the result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
 
@@ -164,122 +159,4 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 
 For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 
-## SELECT modifiers {#select-modifiers}
-
-You can use the following modifiers in `SELECT` queries.
-
-### APPLY {#apply-modifier}
-
-Allows you to invoke some function for each row returned by an outer table expression of a query. 
-
-**Syntax:**
-
-``` sql
-SELECT <expr> APPLY( <func> ) FROM [db.]table_name
-```
-
-**Example:** 
-
-``` sql
-CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
-INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
-SELECT * APPLY(sum) FROM columns_transformers;
-```
-
-```
-┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
-│    220 │     18 │    347 │
-└────────┴────────┴────────┘
-```
-
-### EXCEPT {#except-modifier}
-
-Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
-
-**Syntax:**
-
-``` sql
-SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
-```
-
-**Example:**
-
-``` sql
-SELECT * EXCEPT (i) from columns_transformers;
-```
-
-```
-┌──j─┬───k─┐
-│ 10 │ 324 │
-│  8 │  23 │
-└────┴─────┘
-```
-
-### REPLACE {#replace-modifier}
-
-Specifies one or more [expression aliases](../../../sql-reference/syntax.md#syntax-expression_aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
-
-This modifier does not change the names or order of columns. However, it can change the value and the value type.
-
-**Syntax:**
-
-``` sql
-SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
-```
-
-**Example:**
-
-``` sql
-SELECT * REPLACE(i + 1 AS i) from columns_transformers;
-```
-
-```
-┌───i─┬──j─┬───k─┐
-│ 101 │ 10 │ 324 │
-│ 121 │  8 │  23 │
-└─────┴────┴─────┘
-```
-
-### Modifier Combinations {#modifier-combinations}
-
-You can use each modifier separately or combine them.
-
-**Examples:**
-
-Using the same modifier multiple times.
-
-``` sql
-SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
-```
-
-```
-┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
-│                        2 │                        3 │
-└──────────────────────────┴──────────────────────────┘
-```
-
-Using multiple modifiers in a single query.
-
-``` sql
-SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
-```
-
-```
-┌─sum(plus(i, 1))─┬─sum(k)─┐
-│             222 │    347 │
-└─────────────────┴────────┘
-```
-
-## SETTINGS in SELECT Query {#settings-in-select}
-
-You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed. 
-
-Other ways to make settings see [here](../../../operations/settings/index.md). 
-
-**Example**
-
-``` sql
-SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
-```
-
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/)<!--hide-->
+{## [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}

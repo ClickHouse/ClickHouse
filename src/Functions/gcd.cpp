@@ -1,33 +1,44 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <Functions/GCDLCMImpl.h>
-
-#include <boost/integer/common_factor.hpp>
+#include <numeric>
 
 
 namespace DB
 {
 
-namespace
+namespace ErrorCodes
 {
-
-struct NameGCD { static constexpr auto name = "gcd"; };
+    extern const int NOT_IMPLEMENTED;
+}
 
 template <typename A, typename B>
-struct GCDImpl : public GCDLCMImpl<A, B, GCDImpl<A, B>, NameGCD>
+struct GCDImpl
 {
-    using ResultType = typename GCDLCMImpl<A, B, GCDImpl, NameGCD>::ResultType;
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+    static const constexpr bool allow_fixed_string = false;
 
-    static ResultType applyImpl(A a, B b)
+    template <typename Result = ResultType>
+    static inline Result apply([[maybe_unused]] A a, [[maybe_unused]] B b)
     {
-        using Int = typename NumberTraits::ToInteger<ResultType>::Type;
-        return boost::integer::gcd(Int(a), Int(b));
+        if constexpr (is_big_int_v<A> || is_big_int_v<B> || is_big_int_v<Result>)
+            throw Exception("GCD is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        else
+        {
+            throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+            throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+            return std::gcd(
+                typename NumberTraits::ToInteger<Result>::Type(a),
+                typename NumberTraits::ToInteger<Result>::Type(b));
+        }
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
+#endif
 };
 
-using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false, false>;
-
-}
+struct NameGCD { static constexpr auto name = "gcd"; };
+using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD, false>;
 
 void registerFunctionGCD(FunctionFactory & factory)
 {

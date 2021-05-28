@@ -97,7 +97,7 @@ public:
         KeepFunctionVisitor::Data keep_data{data.key_names_to_keep, keep_key};
         KeepFunctionVisitor(keep_data).visit(function_node->arguments);
 
-        if (!keep_key) //-V547
+        if (!keep_key)
             (data.key_names_to_keep).erase(function_node->getColumnName());
     }
 
@@ -105,7 +105,7 @@ public:
     {
         if (auto * function_node = ast->as<ASTFunction>())
         {
-            if (function_node->arguments && !function_node->arguments->children.empty())
+            if (!(function_node->arguments->children.empty()))
                 visit(function_node, data);
         }
     }

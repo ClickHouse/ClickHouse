@@ -1,8 +1,3 @@
----
-toc_priority: 36
-toc_title: Merge
----
-
 # Merge {#merge}
 
 Движок `Merge` (не путайте с движком `MergeTree`) не хранит данные самостоятельно, а позволяет читать одновременно из произвольного количества других таблиц.
@@ -65,3 +60,4 @@ FROM WatchLog
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/merge/) <!--hide-->

@@ -7,8 +7,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -16,13 +15,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 
 static void skipTSVRow(ReadBuffer & in, const size_t num_columns)
 {
-    NullOutput null_sink;
+    NullSink null_sink;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -63,19 +61,19 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(const Block & header_, Re
         column_indexes_by_names.emplace(column_info.name, i);
     }
 
-    column_mapping->column_indexes_for_input_fields.reserve(num_columns);
-    column_mapping->read_columns.assign(num_columns, false);
+    column_indexes_for_input_fields.reserve(num_columns);
+    read_columns.assign(num_columns, false);
 }
 
 
 void TabSeparatedRowInputFormat::setupAllColumnsByTableSchema()
 {
     const auto & header = getPort().getHeader();
-    column_mapping->read_columns.assign(header.columns(), true);
-    column_mapping->column_indexes_for_input_fields.resize(header.columns());
+    read_columns.assign(header.columns(), true);
+    column_indexes_for_input_fields.resize(header.columns());
 
-    for (size_t i = 0; i < column_mapping->column_indexes_for_input_fields.size(); ++i)
-        column_mapping->column_indexes_for_input_fields[i] = i;
+    for (size_t i = 0; i < column_indexes_for_input_fields.size(); ++i)
+        column_indexes_for_input_fields[i] = i;
 }
 
 
@@ -86,13 +84,13 @@ void TabSeparatedRowInputFormat::addInputColumn(const String & column_name)
     {
         if (format_settings.skip_unknown_fields)
         {
-            column_mapping->column_indexes_for_input_fields.push_back(std::nullopt);
+            column_indexes_for_input_fields.push_back(std::nullopt);
             return;
         }
 
         throw Exception(
                 "Unknown field found in TSV header: '" + column_name + "' " +
-                "at position " + std::to_string(column_mapping->column_indexes_for_input_fields.size()) +
+                "at position " + std::to_string(column_indexes_for_input_fields.size()) +
                 "\nSet the 'input_format_skip_unknown_fields' parameter explicitly to ignore and proceed",
                 ErrorCodes::INCORRECT_DATA
         );
@@ -100,11 +98,11 @@ void TabSeparatedRowInputFormat::addInputColumn(const String & column_name)
 
     const auto column_index = column_it->second;
 
-    if (column_mapping->read_columns[column_index])
+    if (read_columns[column_index])
         throw Exception("Duplicate field found while parsing TSV header: " + column_name, ErrorCodes::INCORRECT_DATA);
 
-    column_mapping->read_columns[column_index] = true;
-    column_mapping->column_indexes_for_input_fields.emplace_back(column_index);
+    read_columns[column_index] = true;
+    column_indexes_for_input_fields.emplace_back(column_index);
 }
 
 
@@ -114,8 +112,8 @@ void TabSeparatedRowInputFormat::fillUnreadColumnsWithDefaults(MutableColumns & 
     if (unlikely(row_num == 1))
     {
         columns_to_fill_with_default_values.clear();
-        for (size_t index = 0; index < column_mapping->read_columns.size(); ++index)
-            if (column_mapping->read_columns[index] == 0)
+        for (size_t index = 0; index < read_columns.size(); ++index)
+            if (read_columns[index] == 0)
                 columns_to_fill_with_default_values.push_back(index);
     }
 
@@ -137,9 +135,7 @@ void TabSeparatedRowInputFormat::readPrefix()
         skipBOMIfExists(in);
     }
 
-    /// This is a bit of abstraction leakage, but we have almost the same code in other places.
-    /// Thus, we check if this InputFormat is working with the "real" beginning of the data in case of parallel parsing.
-    if (with_names && getCurrentUnitNumber() == 0)
+    if (with_names)
     {
         if (format_settings.with_names_use_header)
         {
@@ -168,15 +164,15 @@ void TabSeparatedRowInputFormat::readPrefix()
         else
         {
             setupAllColumnsByTableSchema();
-            skipTSVRow(in, column_mapping->column_indexes_for_input_fields.size());
+            skipTSVRow(in, column_indexes_for_input_fields.size());
         }
     }
-    else if (!column_mapping->is_set)
+    else
         setupAllColumnsByTableSchema();
 
     if (with_types)
     {
-        skipTSVRow(in, column_mapping->column_indexes_for_input_fields.size());
+        skipTSVRow(in, column_indexes_for_input_fields.size());
     }
 }
 
@@ -188,24 +184,24 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 
     updateDiagnosticInfo();
 
-    ext.read_columns.assign(column_mapping->read_columns.size(), true);
-    for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
+    ext.read_columns.assign(read_columns.size(), true);
+    for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
-        const auto & column_index = column_mapping->column_indexes_for_input_fields[file_column];
-        const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
+        const auto & column_index = column_indexes_for_input_fields[file_column];
+        const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
         if (column_index)
         {
             const auto & type = data_types[*column_index];
-            ext.read_columns[*column_index] = readField(*columns[*column_index], type, serializations[*column_index], is_last_file_column);
+            ext.read_columns[*column_index] = readField(*columns[*column_index], type, is_last_file_column);
         }
         else
         {
-            NullOutput null_sink;
+            NullSink null_sink;
             readEscapedStringInto(null_sink, in);
         }
 
         /// skip separators
-        if (file_column + 1 < column_mapping->column_indexes_for_input_fields.size())
+        if (file_column + 1 < column_indexes_for_input_fields.size())
         {
             assertChar('\t', in);
         }
@@ -224,27 +220,24 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 }
 
 
-bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type,
-    const SerializationPtr & serialization, bool is_last_file_column)
+bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
 {
     const bool at_delimiter = !is_last_file_column && !in.eof() && *in.position() == '\t';
     const bool at_last_column_line_end = is_last_file_column && (in.eof() || *in.position() == '\n');
-
     if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
         column.insertDefault();
         return false;
     }
     else if (format_settings.null_as_default && !type->isNullable())
-        return SerializationNullable::deserializeTextEscapedImpl(column, in, format_settings, serialization);
-
-    serialization->deserializeTextEscaped(column, in, format_settings);
+        return DataTypeNullable::deserializeTextEscaped(column, in, format_settings, type);
+    type->deserializeAsTextEscaped(column, in, format_settings);
     return true;
 }
 
 bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
-    for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
+    for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
         if (file_column == 0 && in.eof())
         {
@@ -252,10 +245,10 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
             return false;
         }
 
-        if (column_mapping->column_indexes_for_input_fields[file_column].has_value())
+        if (column_indexes_for_input_fields[file_column].has_value())
         {
             const auto & header = getPort().getHeader();
-            size_t col_idx = column_mapping->column_indexes_for_input_fields[file_column].value();
+            size_t col_idx = column_indexes_for_input_fields[file_column].value();
             if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx],
                                                         out, file_column))
                 return false;
@@ -270,7 +263,7 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
         }
 
         /// Delimiters
-        if (file_column + 1 == column_mapping->column_indexes_for_input_fields.size())
+        if (file_column + 1 == column_indexes_for_input_fields.size())
         {
             if (!in.eof())
             {
@@ -336,13 +329,10 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
 
 void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
-    const auto & index = column_mapping->column_indexes_for_input_fields[file_column];
-    if (index)
+    if (column_indexes_for_input_fields[file_column])
     {
-        bool can_be_parsed_as_null = removeLowCardinality(type)->isNullable();
-
         // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
-        if (!can_be_parsed_as_null && !in.eof())
+        if (!type->isNullable() && !in.eof())
         {
             if (*in.position() == '\\' && in.available() >= 2)
             {
@@ -358,13 +348,12 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
                 }
             }
         }
-
-        const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
-        readField(column, type, serializations[*index], is_last_file_column);
+        const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
+        readField(column, type, is_last_file_column);
     }
     else
     {
-        NullOutput null_sink;
+        NullSink null_sink;
         readEscapedStringInto(null_sink, in);
     }
 }
@@ -378,8 +367,8 @@ void TabSeparatedRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
     const auto & sample = getPort().getHeader();
-    column_mapping->read_columns.assign(sample.columns(), false);
-    column_mapping->column_indexes_for_input_fields.clear();
+    read_columns.assign(sample.columns(), false);
+    column_indexes_for_input_fields.clear();
     columns_to_fill_with_default_values.clear();
 }
 
@@ -434,21 +423,19 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     bool need_more_data = true;
     char * pos = in.position();
-    size_t number_of_rows = 0;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
         pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
 
-        if (pos > in.buffer().end())
-                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
-        else if (pos == in.buffer().end())
+        if (pos == in.buffer().end())
             continue;
-        else if (*pos == '\\')
+
+        if (*pos == '\\')
         {
             ++pos;
             if (loadAtPosition(in, memory, pos))
@@ -456,9 +443,6 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
         }
         else if (*pos == '\n' || *pos == '\r')
         {
-            if (*pos == '\n')
-                ++number_of_rows;
-
             if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
                 need_more_data = false;
             ++pos;
@@ -467,13 +451,13 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 
     saveUpToPosition(in, memory, pos);
 
-    return {loadAtPosition(in, memory, pos), number_of_rows};
+    return loadAtPosition(in, memory, pos);
 }
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     // We can use the same segmentation engine for TSKV.
-    for (const auto & name : {"TabSeparated", "TSV", "TSKV", "TabSeparatedWithNames", "TSVWithNames"})
+    for (const auto * name : {"TabSeparated", "TSV", "TSKV"})
     {
         factory.registerFileSegmentationEngine(name, &fileSegmentationEngineTabSeparatedImpl);
     }

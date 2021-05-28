@@ -1,20 +1,19 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Interpreters/Context_fwd.h>
-#include <IO/Progress.h>
-#include <Common/MemoryTracker.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ProfileEvents.h>
 #include <common/StringRef.h>
+#include <Common/ProfileEvents.h>
+#include <Common/MemoryTracker.h>
 
-#include <boost/noncopyable.hpp>
+#include <Core/SettingsEnums.h>
 
-#include <functional>
-#include <map>
+#include <IO/Progress.h>
+
 #include <memory>
+#include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <functional>
+#include <boost/noncopyable.hpp>
 
 
 namespace Poco
@@ -26,12 +25,12 @@ namespace Poco
 namespace DB
 {
 
+class Context;
 class QueryStatus;
 class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCpu;
 class QueryThreadLog;
-struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
@@ -57,8 +56,8 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
-    ContextWeakPtr query_context;
-    ContextWeakPtr global_context;
+    Context * query_context = nullptr;
+    Context * global_context = nullptr;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
     std::function<void()> fatal_error_callback;
@@ -71,7 +70,6 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
-    UInt64 normalized_query_hash = 0;
 };
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
@@ -88,6 +86,9 @@ extern thread_local ThreadStatus * current_thread;
 class ThreadStatus : public boost::noncopyable
 {
 public:
+    ThreadStatus();
+    ~ThreadStatus();
+
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     const UInt64 thread_id = 0;
     /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
@@ -108,52 +109,6 @@ public:
 
     using Deleter = std::function<void()>;
     Deleter deleter;
-
-    // This is the current most-derived OpenTelemetry span for this thread. It
-    // can be changed throughout the query execution, whenever we enter a new
-    // span or exit it. See OpenTelemetrySpanHolder that is normally responsible
-    // for these changes.
-    OpenTelemetryTraceContext thread_trace_context;
-
-protected:
-    ThreadGroupStatusPtr thread_group;
-
-    std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
-
-    /// Is set once
-    ContextWeakPtr global_context;
-    /// Use it only from current thread
-    ContextWeakPtr query_context;
-
-    String query_id;
-
-    /// A logs queue used by TCPHandler to pass logs to a client
-    InternalTextLogsQueueWeakPtr logs_queue_ptr;
-
-    bool performance_counters_finalized = false;
-    UInt64 query_start_time_nanoseconds = 0;
-    UInt64 query_start_time_microseconds = 0;
-    time_t query_start_time = 0;
-    size_t queries_started = 0;
-
-    // CPU and Real time query profilers
-    std::unique_ptr<QueryProfilerReal> query_profiler_real;
-    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
-
-    Poco::Logger * log = nullptr;
-
-    friend class CurrentThread;
-
-    /// Use ptr not to add extra dependencies in the header
-    std::unique_ptr<RUsageCounters> last_rusage;
-    std::unique_ptr<TasksStatsCounters> taskstats;
-
-    /// Is used to send logs from logs_queue to client in case of fatal errors.
-    std::function<void()> fatal_error_callback;
-
-public:
-    ThreadStatus();
-    ~ThreadStatus();
 
     ThreadGroupStatusPtr getThreadGroup() const
     {
@@ -177,9 +132,9 @@ public:
         return query_id;
     }
 
-    auto getQueryContext() const
+    const Context * getQueryContext() const
     {
-        return query_context.lock();
+        return query_context;
     }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
@@ -202,7 +157,7 @@ public:
 
     /// Sets query context for current master thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
-    void attachQueryContext(ContextPtr query_context);
+    void attachQueryContext(Context & query_context);
 
     /// Update several ProfileEvents counters
     void updatePerformanceCounters();
@@ -222,31 +177,46 @@ protected:
 
     void finalizeQueryProfiler();
 
-    void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
+    void logToQueryThreadLog(QueryThreadLog & thread_log);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
+    ThreadGroupStatusPtr thread_group;
+
+    std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
+
+    /// Is set once
+    Context * global_context = nullptr;
+    /// Use it only from current thread
+    Context * query_context = nullptr;
+
+    String query_id;
+
+    /// A logs queue used by TCPHandler to pass logs to a client
+    InternalTextLogsQueueWeakPtr logs_queue_ptr;
+
+    bool performance_counters_finalized = false;
+    UInt64 query_start_time_nanoseconds = 0;
+    time_t query_start_time = 0;
+    size_t queries_started = 0;
+
+    // CPU and Real time query profilers
+    std::unique_ptr<QueryProfilerReal> query_profiler_real;
+    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
+
+    Poco::Logger * log = nullptr;
+
+    friend class CurrentThread;
+
+    /// Use ptr not to add extra dependencies in the header
+    std::unique_ptr<RUsageCounters> last_rusage;
+    std::unique_ptr<TasksStatsCounters> taskstats;
+
+    /// Is used to send logs from logs_queue to client in case of fatal errors.
+    std::function<void()> fatal_error_callback;
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);
-};
-
-/**
- * Creates ThreadStatus for the main thread.
- */
-class MainThreadStatus : public ThreadStatus
-{
-public:
-    static MainThreadStatus & getInstance();
-    static ThreadStatus * get() { return main_thread; }
-    static bool isMainThread() { return main_thread == current_thread; }
-
-    ~MainThreadStatus();
-
-private:
-    MainThreadStatus();
-
-    static ThreadStatus * main_thread;
 };
 
 }

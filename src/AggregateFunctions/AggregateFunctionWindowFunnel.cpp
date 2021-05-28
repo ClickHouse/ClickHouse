@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <ext/range.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -57,7 +58,7 @@ AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & nam
 
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", createAggregateFunctionWindowFunnel<AggregateFunctionWindowFunnelData>);
+    factory.registerFunction("windowFunnel", createAggregateFunctionWindowFunnel<AggregateFunctionWindowFunnelData>, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

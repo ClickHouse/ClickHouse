@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 #include <common/arithmeticOverflow.h>
@@ -46,6 +46,7 @@ namespace
             ptr_out[i] = ptr_in[i] ^ mask;
         }
     }
+}
 
 
 class FunctionFuzzBits : public IFunction
@@ -53,7 +54,7 @@ class FunctionFuzzBits : public IFunction
 public:
     static constexpr auto name = "fuzzBits";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFuzzBits>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFuzzBits>(); }
 
     String getName() const override { return name; }
 
@@ -78,10 +79,10 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        auto col_in_untyped = arguments[0].column;
-        const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
+        auto col_in_untyped = block.getByPosition(arguments[0]).column;
+        const double inverse_probability = assert_cast<const ColumnConst &>(*block.getByPosition(arguments[1]).column).getValue<double>();
 
         if (inverse_probability < 0.0 || 1.0 < inverse_probability)
         {
@@ -99,43 +100,21 @@ public:
             ColumnString::Chars & chars_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
 
-            size_t col_in_rows = col_in->getOffsets().size();
+            chars_to.resize(col_in->getChars().size());
+            // TODO: Maybe we can share `col_in->getOffsets()` to `offsets_to.resize` like clever pointers? They are same
+            offsets_to.resize(input_rows_count);
 
-            if (col_in_rows >= input_rows_count)
+            const auto * ptr_in = col_in->getChars().data();
+            auto * ptr_to = chars_to.data();
+            fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
+
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                chars_to.resize(col_in->getChars().size());
-                // TODO: Maybe we can share `col_in->getOffsets()` to `offsets_to.resize` like clever pointers? They are same
-                offsets_to.resize(input_rows_count);
-
-                const auto * ptr_in = col_in->getChars().data();
-                auto * ptr_to = chars_to.data();
-                fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
-
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    offsets_to[i] = col_in->getOffsets()[i];
-                    ptr_to[offsets_to[i] - 1] = 0;
-                }
-            }
-            else
-            {
-                assert(col_in_rows == 1);
-                chars_to.resize(col_in->getChars().size() * input_rows_count);
-                offsets_to.resize(input_rows_count);
-                size_t offset = col_in->getOffsets()[0];
-
-                const auto * ptr_in = col_in->getChars().data();
-                auto * ptr_to = chars_to.data();
-
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    fuzzBits(ptr_in, ptr_to + i * offset, offset, inverse_probability);
-                    offsets_to[i] = (i + 1) * offset;
-                    ptr_to[offsets_to[i] - 1] = 0;
-                }
+                offsets_to[i] = col_in->getOffsets()[i];
+                ptr_to[offsets_to[i] - 1] = 0;
             }
 
-            return col_to;
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
@@ -153,18 +132,16 @@ public:
             auto * ptr_to = chars_to.data();
             fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
 
-            return col_to;
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 };
-
-}
 
 void registerFunctionFuzzBits(FunctionFactory & factory)
 {

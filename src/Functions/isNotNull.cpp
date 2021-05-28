@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -9,8 +9,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
@@ -19,7 +17,7 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIsNotNull>();
     }
@@ -39,9 +37,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnWithTypeAndName & elem = arguments[0];
+        const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Return the negated null map.
@@ -52,17 +50,15 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
                 res_data[i] = !src_data[i];
 
-            return res_column;
+            block.getByPosition(result).column = std::move(res_column);
         }
         else
         {
             /// Since no element is nullable, return a constant one.
-            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
         }
     }
 };
-
-}
 
 void registerFunctionIsNotNull(FunctionFactory & factory)
 {

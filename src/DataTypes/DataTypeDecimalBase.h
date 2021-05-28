@@ -1,12 +1,12 @@
 #pragma once
+#include <cmath>
 
 #include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context_fwd.h>
+#include <DataTypes/DataTypeWithSimpleSerialization.h>
 
-#include <cmath>
 #include <type_traits>
 
 
@@ -18,8 +18,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-bool decimalCheckComparisonOverflow(ContextPtr context);
-bool decimalCheckArithmeticOverflow(ContextPtr context);
+class Context;
+bool decimalCheckComparisonOverflow(const Context & context);
+bool decimalCheckArithmeticOverflow(const Context & context);
 
 inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 {
@@ -54,7 +55,7 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 ///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <typename T>
-class DataTypeDecimalBase : public IDataType
+class DataTypeDecimalBase : public DataTypeWithSimpleSerialization
 {
     static_assert(IsDecimalNumber<T>);
 
@@ -64,7 +65,7 @@ public:
 
     static constexpr bool is_parametric = true;
 
-    static constexpr size_t maxPrecision() { return DecimalUtils::max_precision<T>; }
+    static constexpr size_t maxPrecision() { return DecimalUtils::maxPrecision<T>(); }
 
     DataTypeDecimalBase(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
@@ -76,7 +77,7 @@ public:
             throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
-    TypeIndex getTypeId() const override { return TypeId<T>; }
+    TypeIndex getTypeId() const override { return TypeId<T>::value; }
 
     Field getDefault() const override;
     MutableColumnPtr createColumn() const override;
@@ -95,6 +96,14 @@ public:
     bool canBeUsedInBooleanContext() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
+
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+
     /// Decimal specific
 
     UInt32 getPrecision() const { return precision; }
@@ -111,17 +120,14 @@ public:
         return DecimalUtils::getFractionalPart(x, scale);
     }
 
-    T maxWholeValue() const { return getScaleMultiplier(precision - scale) - T(1); }
+    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
 
-    template <typename U>
-    bool canStoreWhole(U x) const
+    bool canStoreWhole(T x) const
     {
-        static_assert(is_signed_v<typename T::NativeType>);
         T max = maxWholeValue();
-        if constexpr (is_signed_v<U>)
-            return -max.value <= x && x <= max.value;
-        else
-            return x <= static_cast<make_unsigned_t<typename T::NativeType>>(max.value);
+        if (x > max || x < -max)
+            return false;
+        return true;
     }
 
     /// @returns multiplier for U to become T with correct scale
@@ -144,61 +150,55 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
-    inline DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
-    {
-        return {precision, scale};
-    }
-
 protected:
     const UInt32 precision;
     const UInt32 scale;
 };
 
 
-template <typename T>
-inline const DataTypeDecimalBase<T> * checkDecimalBase(const IDataType & data_type)
-{
-    if (isColumnedAsDecimalT<T>(data_type))
-        return static_cast<const DataTypeDecimalBase<T> *>(&data_type);
-
-    return nullptr;
-}
-
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
 inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
 {
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+    UInt32 scale{};
+    if constexpr (is_multiply)
+        scale = tx.getScale() + ty.getScale();
+    else if constexpr (is_division)
+        scale = tx.getScale();
+    else
+        scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+
+    if constexpr (sizeof(T) < sizeof(U))
+        return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
+    else
+        return DecimalType<T>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
+inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &)
 {
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+    return DecimalType<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
 }
 
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
+template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
+inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty)
 {
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+    return DecimalType<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
 template <template <typename> typename DecimalType>
 inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
-    if (precision_value < DecimalUtils::min_precision || precision_value > DecimalUtils::max_precision<Decimal256>)
+    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal256>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
         throw Exception("Negative scales and scales larger than precision are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    if (precision_value <= DecimalUtils::max_precision<Decimal32>)
+    if (precision_value <= DecimalUtils::maxPrecision<Decimal32>())
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);
-    else if (precision_value <= DecimalUtils::max_precision<Decimal64>)
+    else if (precision_value <= DecimalUtils::maxPrecision<Decimal64>())
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
-    else if (precision_value <= DecimalUtils::max_precision<Decimal128>)
+    else if (precision_value <= DecimalUtils::maxPrecision<Decimal128>())
        return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
     return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value);
 }

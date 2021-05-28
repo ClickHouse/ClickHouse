@@ -45,32 +45,9 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert);
-
-    MergeTreeData::MutableDataPartPtr
-    writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
-
-    MergeTreeData::MutableDataPartPtr writeProjectionPart(
-        Block block, const ProjectionDescription & projection, const IMergeTreeDataPart * parent_part);
-
-    static MergeTreeData::MutableDataPartPtr writeTempProjectionPart(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const IMergeTreeDataPart * parent_part,
-        size_t block_num);
-
-    Block mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation);
+    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot);
 
 private:
-    static MergeTreeData::MutableDataPartPtr writeProjectionPartImpl(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const StorageMetadataPtr & metadata_snapshot,
-        MergeTreeData::MutableDataPartPtr && new_data_part);
-
     MergeTreeData & data;
 
     Poco::Logger * log;

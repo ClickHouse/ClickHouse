@@ -13,12 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
     if (command_ast->type == ASTAlterCommand::DROP_PARTITION)
@@ -27,7 +21,6 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.type = DROP_PARTITION;
         res.partition = command_ast->partition;
         res.detach = command_ast->detach;
-        res.part = command_ast->part;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::DROP_DETACHED_PARTITION)
@@ -88,7 +81,6 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.type = FETCH_PARTITION;
         res.partition = command_ast->partition;
         res.from_zookeeper_path = command_ast->from;
-        res.part = command_ast->part;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FREEZE_PARTITION)
@@ -101,25 +93,10 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     }
     else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
     {
-        PartitionCommand res;
-        res.type = PartitionCommand::FREEZE_ALL_PARTITIONS;
-        res.with_name = command_ast->with_name;
-        return res;
-    }
-    else if (command_ast->type == ASTAlterCommand::UNFREEZE_PARTITION)
-    {
-        PartitionCommand res;
-        res.type = PartitionCommand::UNFREEZE_PARTITION;
-        res.partition = command_ast->partition;
-        res.with_name = command_ast->with_name;
-        return res;
-    }
-    else if (command_ast->type == ASTAlterCommand::UNFREEZE_ALL)
-    {
-        PartitionCommand res;
-        res.type = PartitionCommand::UNFREEZE_ALL_PARTITIONS;
-        res.with_name = command_ast->with_name;
-        return res;
+        PartitionCommand command;
+        command.type = PartitionCommand::FREEZE_ALL_PARTITIONS;
+        command.with_name = command_ast->with_name;
+        return command;
     }
     else
         return {};
@@ -147,23 +124,15 @@ std::string PartitionCommand::typeToString() const
         else
             return "DROP DETACHED PARTITION";
     case PartitionCommand::Type::FETCH_PARTITION:
-        if (part)
-            return "FETCH PART";
-        else
-            return "FETCH PARTITION";
+        return "FETCH PARTITION";
     case PartitionCommand::Type::FREEZE_ALL_PARTITIONS:
         return "FREEZE ALL";
     case PartitionCommand::Type::FREEZE_PARTITION:
         return "FREEZE PARTITION";
-    case PartitionCommand::Type::UNFREEZE_PARTITION:
-        return "UNFREEZE PARTITION";
-    case PartitionCommand::Type::UNFREEZE_ALL_PARTITIONS:
-        return "UNFREEZE ALL";
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
-    default:
-        throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
     }
+    __builtin_unreachable();
 }
 
 Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <utility>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <aws/core/client/ClientConfiguration.h>
 #include <Poco/URI.h>
 
