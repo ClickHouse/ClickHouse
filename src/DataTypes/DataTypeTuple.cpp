@@ -307,26 +307,30 @@ SerializationPtr DataTypeTuple::getSubcolumnSerialization(
 SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
+    bool use_explicit_names = have_explicit_names && serialize_names;
     for (size_t i = 0; i < elems.size(); ++i)
     {
+        String elem_name = use_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getDefaultSerialization();
-        serializations[i] = std::make_shared<SerializationTupleElement>(serialization, names[i]);
+        serializations[i] = std::make_shared<SerializationTupleElement>(serialization, elem_name);
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
+    return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
 }
 
 SerializationPtr DataTypeTuple::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
+    bool use_explicit_names = have_explicit_names && serialize_names;
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        auto subcolumn_name = Nested::concatenateName(column_name, names[i]);
+        String elem_name = use_explicit_names ? names[i] : toString(i + 1);
+        auto subcolumn_name = Nested::concatenateName(column_name, elem_name);
         auto serializaion = elems[i]->getSerialization(subcolumn_name, callback);
-        serializations[i] = std::make_shared<SerializationTupleElement>(serializaion, names[i]);
+        serializations[i] = std::make_shared<SerializationTupleElement>(serializaion, elem_name);
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
+    return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
