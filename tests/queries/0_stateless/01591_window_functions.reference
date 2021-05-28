@@ -1054,6 +1054,12 @@ settings max_block_size = 3;
 13	2	10	12	10	10	143
 14	2	10	13	10	10	154
 15	3	15	0	15	15	15
+-- careful with auto-application of Null combinator
+select lagInFrame(toNullable(1)) over ();
+0
+select lagInFrameOrNull(1) over (); -- { serverError 36 }
+select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
+\N	Nullable(Nothing)	\N
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
