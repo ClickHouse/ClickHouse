@@ -102,6 +102,7 @@ TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResul
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const String & comment,
     const String & source_database_,
     const Strings & source_tables_,
     ContextPtr context_)
@@ -112,12 +113,14 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const String & comment,
     const String & source_database_,
     const String & source_table_regexp_,
     ContextPtr context_)
@@ -128,6 +131,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -411,7 +415,7 @@ Pipe StorageMerge::createSources(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
                 std::move(adding_column_dag),
-                ExpressionActionsSettings::fromContext(modified_context));
+                ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
 
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
@@ -555,7 +559,7 @@ void StorageMerge::convertingSourceStream(
             pipe.getHeader().getColumnsWithTypeAndName(),
             header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
-    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context));
+    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
     pipe.addSimpleTransform([&](const Block & stream_header)
     {
@@ -623,9 +627,7 @@ void registerStorageMerge(StorageFactory & factory)
         String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageMerge::create(
-            args.table_id, args.columns,
-            source_database, table_name_regexp, args.getContext());
+        return StorageMerge::create(args.table_id, args.columns, args.comment, source_database, table_name_regexp, args.getContext());
     });
 }
 

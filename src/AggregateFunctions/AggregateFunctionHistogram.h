@@ -26,6 +26,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
