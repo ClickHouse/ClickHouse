@@ -139,7 +139,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     writeBinary(snapshot.session_id, out);
     writeBinary(snapshot.snapshot_container_size, out);
     size_t counter = 0;
-    for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++it, ++counter)
+    for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
     {
         const auto & path = it->key;
         const auto & node = it->value;
@@ -148,6 +148,13 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 
         writeBinary(path, out);
         writeNode(node, out);
+
+        /// Last iteration: check and exit here without iterator increment. Otherwise
+        /// false positive race condition on list end is possible.
+        if (counter == snapshot.snapshot_container_size - 1)
+            break;
+
+        ++it;
     }
 
     size_t size = snapshot.session_and_timeout.size();

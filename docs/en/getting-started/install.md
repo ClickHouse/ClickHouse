@@ -104,7 +104,7 @@ For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse buil
 
 After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
 
-Run `sudo ./clickhouse install` if you want to install clickhouse system-wide (also with needed condiguration files, configuring users etc.). After that run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it. 
+Run `sudo ./clickhouse install` if you want to install clickhouse system-wide (also with needed configuration files, configuring users etc.). After that run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it. 
 
 These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
 
@@ -132,7 +132,7 @@ To start the server as a daemon, run:
 $ sudo service clickhouse-server start
 ```
 
-If you don’t have `service` command, run as
+If you do not have `service` command, run as
 
 ``` bash
 $ sudo /etc/init.d/clickhouse-server start
@@ -140,7 +140,7 @@ $ sudo /etc/init.d/clickhouse-server start
 
 See the logs in the `/var/log/clickhouse-server/` directory.
 
-If the server doesn’t start, check the configurations in the file `/etc/clickhouse-server/config.xml`.
+If the server does not start, check the configurations in the file `/etc/clickhouse-server/config.xml`.
 
 You can also manually launch the server from the console:
 
@@ -149,7 +149,7 @@ $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
 In this case, the log will be printed to the console, which is convenient during development.
-If the configuration file is in the current directory, you don’t need to specify the `--config-file` parameter. By default, it uses `./config.xml`.
+If the configuration file is in the current directory, you do not need to specify the `--config-file` parameter. By default, it uses `./config.xml`.
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
