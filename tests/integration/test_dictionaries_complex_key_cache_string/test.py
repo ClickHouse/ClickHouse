@@ -10,11 +10,9 @@ def cluster(request):
     cluster = ClickHouseCluster(__file__)
     try:
         if request.param == "memory":
-            node = cluster.add_instance('node', main_configs=['configs/enable_dictionaries.xml',
-                                                              'configs/dictionaries/complex_key_cache_string.xml'])
+            node = cluster.add_instance('node', dictionaries=['configs/dictionaries/complex_key_cache_string.xml'])
         if request.param == "ssd":
-            node = cluster.add_instance('node', main_configs=['configs/enable_dictionaries.xml',
-                                                              'configs/dictionaries/ssd_complex_key_cache_string.xml'])
+            node = cluster.add_instance('node', dictionaries=['configs/dictionaries/ssd_complex_key_cache_string.xml'])
         cluster.start()
         node.query(
             "create table radars_table (radar_id String, radar_ip String, client_id String) engine=MergeTree() order by radar_id")
