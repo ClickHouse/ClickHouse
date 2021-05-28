@@ -145,8 +145,7 @@ def generate_dir_page(out_dir, entry: DirEntry, env, upper_level=False):
         entries=entries,
         special_entries=special_entries,
         bounds=bounds,
-        tests_total=len(tests),
-        tests_names=tests_names)
+        tests_total=len(tests))
 
     path = os.path.join(out_dir, entry.name)
 
@@ -170,6 +169,7 @@ def generate_file_page(out_dir, prefix, entry: FileEntry, env):
 
         output = template.render(
             lines=lines,
+            entry=entry,
             bounds=bounds,
             tests_total=len(tests))
 

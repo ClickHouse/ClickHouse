@@ -1,38 +1,42 @@
 <td><a href="{{ entry.url }}">{{ entry.name }}</a></td>
 <td class="
-{% if entry.lines[1] == 0 %}
-{% elif entry.lines[2] >= bounds["lines"][0] %}
-        table-success
-{% elif entry.lines[2] >= bounds["lines"][1] %}
-        table-warning
-{% else %}
-        table-danger
-{% endif %}">
-    {{ entry.lines[0] }} / {{ entry.lines[1] }}
+    {% if entry.lines[1] == 0 %}
+    {% elif entry.lines[2] >= bounds["lines"][0] %}
+            table-success
+    {% elif entry.lines[2] >= bounds["lines"][1] %}
+            table-warning
+    {% else %}
+            table-danger
+    {% endif %}">
+
+    {% if entry.lines[1] > 0 %}
+        {{ entry.lines[0] }} / {{ entry.lines[1] }}
+    {% else %}
+        -
+    {% endif %}
 </td>
 <td class="
-{% if entry.funcs[1] == 0 %}
-{% elif entry.funcs[2] >= bounds["funcs"][0] %}
-        table-success
-{% elif entry.funcs[2] >= bounds["funcs"][1] %}
-        table-warning
-{% else %}
-        table-danger
-{% endif %}">
-    {{ entry.funcs[0] }} / {{ entry.funcs[1] }}
+    {% if entry.funcs[1] == 0 %}
+    {% elif entry.funcs[2] >= bounds["funcs"][0] %}
+            table-success
+    {% elif entry.funcs[2] >= bounds["funcs"][1] %}
+            table-warning
+    {% else %}
+            table-danger
+    {% endif %}">
+    {% if entry.funcs[1] > 0 %}
+        {{ entry.funcs[0] }} / {{ entry.funcs[1] }}
+    {% else %}
+        -
+    {% endif %}
+</td>
 <td class="
-{% if entry.tests[1] >= bounds["tests"][0] %}
-        table-success
-{% elif entry.tests[1] >= bounds["tests"][1] %}
-        table-warning
-{% else %}
-        table-danger
-{% endif %}">
+    {% if entry.tests[1] >= bounds["tests"][0] %}
+            table-success
+    {% elif entry.tests[1] >= bounds["tests"][1] %}
+            table-warning
+    {% else %}
+            table-danger
+    {% endif %}">
     {{ entry.tests[0] }} / {{ tests_total }}
-    <a data-bs-toggle="offcanvas" href="#offcanvas" role="button" aria-controls="offcanvas"
-       data-hit-test-indices="
-{% for t in entry.tests_with_hits %}
-    {{ t }}
-{% endfor %}
-        "><span class="badge bg-secondary">View</span></a>
 </td>

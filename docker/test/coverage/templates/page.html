@@ -10,21 +10,6 @@
                 integrity="sha384-gtEjrD/SeCtmISkJkNUaaKMoLD0//ElJ19smozuHV6z3Iehds+3Ulb9Bn9Plx0x4" crossorigin="anonymous"></script>
     </head>
     <body>
-        <div class="offcanvas offcanvas-start" tabindex="-1" id="offcanvas" aria-labelledby="offcanvas_label">
-            <div class="offcanvas-header">
-                <h5 class="offcanvas-title" id="offcanvas_labe">Tests</h5>
-                <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-            </div>
-            <div class="offcanvas-body">
-                <table class="table table-sm">
-                    <tbody>
-                        {% for name in tests_names %}
-                            <tr class="test{{ loop.index }}"><td>{{ name }}</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
         <div class="container-lg">
             <div class="row gx-5">
                 {% block content %}
