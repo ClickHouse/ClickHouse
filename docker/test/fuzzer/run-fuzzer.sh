@@ -87,7 +87,7 @@ function fuzz
 {
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
-    NEW_TESTS="$(grep -P 'tests/queries/0_stateless/.*\.sql' ci-changed-files.txt | sed -r -e 's!^!ch/!' | sort -R)"
+    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\)$!ch/\1!p' ci-changed-files.txt | sort -R)"
     # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
     NEW_TESTS="$(filter_exists $NEW_TESTS)"
     if [[ -n "$NEW_TESTS" ]]
