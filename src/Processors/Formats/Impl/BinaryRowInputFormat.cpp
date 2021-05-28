@@ -28,7 +28,7 @@ bool BinaryRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
 void BinaryRowInputFormat::readPrefix()
 {
-    /// NOTE The header is completely ignored. This can be easily improved.
+    /// NOTE: The header is completely ignored. This can be easily improved.
 
     UInt64 columns = 0;
     String tmp;
