@@ -137,8 +137,10 @@ continue
     kill -0 $watchdog_pid
 
     # Wait for the fuzzer to complete.
-    wait "$fuzzer_pid"
-    fuzzer_exit_code=$?
+    # Note that the 'wait || ...' thing is required so that the script doesn't
+    # exit because of 'set -e' when 'wait' returns nonzero code.
+    fuzzer_exit_code=0
+    wait "$fuzzer_pid" || fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
 
     kill -- -$watchdog_pid ||:
