@@ -350,7 +350,6 @@ private:
                 , calculated_binary_hash, daemon.stored_binary_hash);
         }
 #endif
-        LOG_FATAL(log, "Here. {} {}", sig, SanitizerTrap);
 
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
