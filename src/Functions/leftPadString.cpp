@@ -87,7 +87,7 @@ namespace
     {
     public:
         static constexpr auto name = "leftPadString";
-        static FunctionPtr create(const Context &) { return std::make_shared<FunctionLeftPadString>(); }
+        static FunctionPtr create(const ContextPtr) { return std::make_shared<FunctionLeftPadString>(); }
 
         String getName() const override { return name; }
 
