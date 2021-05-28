@@ -21,7 +21,7 @@ select
     anyIf(initial_query_start_time, is_initial_query) = anyIf(initial_query_start_time, not is_initial_query),
     anyIf(initial_query_start_time_microseconds, is_initial_query) = anyIf(initial_query_start_time_microseconds, not is_initial_query)
 from system.query_log
-where initial_query_id = '$query_id' and type = 'QueryFinish';
+where event_date = today() and event_time >= now() - interval 1 hour and initial_query_id = '$query_id' and type = 'QueryFinish';
 "
 
 ${CLICKHOUSE_CLIENT} -q "drop table m"
