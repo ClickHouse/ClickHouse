@@ -289,6 +289,8 @@ SnapshotMetadataPtr KeeperStorageSnapshot::deserialize(KeeperStorage & storage, 
                 readBinary(scheme, in);
                 readBinary(id, in);
                 ids.emplace_back(KeeperStorage::AuthID{scheme, id});
+
+                session_auth_counter++;
             }
             if (ids.size() > 0)
                 storage.session_and_auth[active_session_id] = ids;
