@@ -57,7 +57,11 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     while (it != part_info_to_name.end() && part_info.contains(it->first))
     {
         if (part_info == it->first)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", name);
+        {
+            /// We could throw logical error on part duplication,
+            /// but it may rarely happen to virtual parts set as a result of replica cloning. 
+            return false;
+        }
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
         part_info_to_name.erase(it++);
