@@ -2597,7 +2597,8 @@ private:
         std::vector<WrapperType> element_wrappers;
         std::vector<std::optional<size_t>> to_reverse_index;
 
-        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
+        if (from_type->haveExplicitNames() && from_type->serializeNames()
+            && to_type->haveExplicitNames() && to_type->serializeNames())
         {
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
