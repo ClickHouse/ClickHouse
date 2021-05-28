@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionSegmentLengthSum.h>
+#include <AggregateFunctions/AggregateFunctionIntervalLengthSum.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -22,7 +22,7 @@ namespace
 {
     template <template <typename> class Data>
     AggregateFunctionPtr
-    createAggregateFunctionSegmentLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
+    createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
     {
         if (arguments.size() != 2)
             throw Exception(
@@ -45,7 +45,7 @@ namespace
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionSegmentLengthSum, Data>(*arguments[0], arguments));
+        AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionIntervalLengthSum, Data>(*arguments[0], arguments));
 
         if (res)
             return res;
@@ -58,9 +58,9 @@ namespace
 
 }
 
-void registerAggregateFunctionSegmentLengthSum(AggregateFunctionFactory & factory)
+void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("segmentLengthSum", createAggregateFunctionSegmentLengthSum<AggregateFunctionSegmentLengthSumData>);
+    factory.registerFunction("intervalLengthSum", createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>);
 }
 
 }
