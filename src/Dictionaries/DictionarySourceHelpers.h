@@ -1,39 +1,75 @@
 #pragma once
 
 #include <vector>
-#include <Columns/IColumn.h>
+
 #include <common/types.h>
+
 #include <Poco/File.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+
 class IBlockOutputStream;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
 struct DictionaryStructure;
-class Context;
 
 /// Write keys to block output stream.
 
+void formatBlock(BlockOutputStreamPtr & out, const Block & block);
+
 /// For simple key
-void formatIDs(BlockOutputStreamPtr & out, const std::vector<UInt64> & ids);
+
+Block blockForIds(
+    const DictionaryStructure & dict_struct,
+    const std::vector<UInt64> & ids);
 
 /// For composite key
-void formatKeys(
+
+Block blockForKeys(
     const DictionaryStructure & dict_struct,
-    BlockOutputStreamPtr & out,
     const Columns & key_columns,
     const std::vector<size_t> & requested_rows);
 
 /// Used for applying settings to copied context in some register[...]Source functions
-Context copyContextAndApplySettings(
+ContextPtr copyContextAndApplySettings(
     const std::string & config_prefix,
-    const Context & context,
+    ContextPtr context,
     const Poco::Util::AbstractConfiguration & config);
 
 void applySettingsToContext(
     const std::string & config_prefix,
-    Context & context,
+    ContextPtr context,
     const Poco::Util::AbstractConfiguration & config);
+
+/** A stream, adds additional columns to each block that it will read from inner stream.
+     *
+     *  block_to_add rows size must be equal to final sum rows size of all inner stream blocks.
+     */
+class BlockInputStreamWithAdditionalColumns final : public IBlockInputStream
+{
+public:
+    BlockInputStreamWithAdditionalColumns(Block block_to_add_, std::unique_ptr<IBlockInputStream> && stream_);
+
+    Block getHeader() const override;
+
+    Block readImpl() override;
+
+    void readPrefix() override;
+
+    void readSuffix() override;
+
+    String getName() const override;
+
+private:
+    Block block_to_add;
+    std::unique_ptr<IBlockInputStream> stream;
+    size_t current_range_index = 0;
+};
+
 }

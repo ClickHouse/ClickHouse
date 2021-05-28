@@ -4,13 +4,13 @@
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
-#include <Interpreters/DuplicateDistinctVisitor.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
+#include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
@@ -22,10 +22,14 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 
 namespace DB
 {
@@ -77,7 +81,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & so
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
-void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
+void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
@@ -131,14 +135,14 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                 const auto & dict_name = dict_name_ast->value.safeGet<String>();
                 const auto & attr_name = attr_name_ast->value.safeGet<String>();
 
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
+                const auto & dict_ptr = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
                     continue;
                 }
             }
-            else if (!function_factory.get(function->name, context)->isInjective(Block{}))
+            else if (!function_factory.get(function->name, context)->isInjective({}))
             {
                 ++i;
                 continue;
@@ -175,43 +179,21 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 
 struct GroupByKeysInfo
 {
-    std::unordered_set<String> key_names; ///set of keys' short names
-    bool has_identifier = false;
+    NameSet key_names; ///set of keys' short names
     bool has_function = false;
-    bool has_possible_collision = false;
 };
 
-GroupByKeysInfo getGroupByKeysInfo(ASTs & group_keys)
+GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
 {
     GroupByKeysInfo data;
 
-    ///filling set with short names of keys
-    for (auto & group_key : group_keys)
+    /// filling set with short names of keys
+    for (const auto & group_key : group_by_keys)
     {
         if (group_key->as<ASTFunction>())
             data.has_function = true;
 
-        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
-        {
-            data.has_identifier = true;
-            if (data.key_names.count(group_key_ident->shortName()))
-            {
-                ///There may be a collision between different tables having similar variables.
-                ///Due to the fact that we can't track these conflicts yet,
-                ///it's better to disable some optimizations to avoid elimination necessary keys.
-                data.has_possible_collision = true;
-            }
-
-            data.key_names.insert(group_key_ident->shortName());
-        }
-        else if (auto * group_key_func = group_key->as<ASTFunction>())
-        {
-            data.key_names.insert(group_key_func->getColumnName());
-        }
-        else
-        {
-            data.key_names.insert(group_key->getColumnName());
-        }
+        data.key_names.insert(group_key->getColumnName());
     }
 
     return data;
@@ -223,64 +205,41 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     if (!select_query->groupBy())
         return;
 
-    auto grp_by = select_query->groupBy();
-    auto & group_keys = grp_by->children;
+    auto group_by = select_query->groupBy();
+    const auto & group_by_keys = group_by->children;
 
     ASTs modified; ///result
 
-    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
+    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
 
-    if (!group_by_keys_data.has_function || group_by_keys_data.has_possible_collision)
+    if (!group_by_keys_data.has_function)
         return;
 
     GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    GroupByFunctionKeysVisitor(visitor_data).visit(grp_by);
+    GroupByFunctionKeysVisitor(visitor_data).visit(group_by);
 
-    modified.reserve(group_keys.size());
+    modified.reserve(group_by_keys.size());
 
-    ///filling the result
-    for (auto & group_key : group_keys)
-    {
-        if (auto * group_key_func = group_key->as<ASTFunction>())
-        {
-            if (group_by_keys_data.key_names.count(group_key_func->getColumnName()))
-                modified.push_back(group_key);
+    /// filling the result
+    for (const auto & group_key : group_by_keys)
+        if (group_by_keys_data.key_names.count(group_key->getColumnName()))
+            modified.push_back(group_key);
 
-            continue;
-        }
-        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
-        {
-            if (group_by_keys_data.key_names.count(group_key_ident->shortName()))
-                modified.push_back(group_key);
-
-            continue;
-        }
-        else
-        {
-            if (group_by_keys_data.key_names.count(group_key->getColumnName()))
-                modified.push_back(group_key);
-        }
-    }
-
-    ///modifying the input
-    grp_by->children = modified;
+    /// modifying the input
+    group_by->children = modified;
 }
 
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
-void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
+void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, ASTPtr & node)
 {
     if (!select_query->groupBy())
         return;
 
-    auto grp_by = select_query->groupBy();
-    auto & group_keys = grp_by->children;
-
-    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
-
-    auto select = select_query->select();
+    const auto & group_by_keys = select_query->groupBy()->children;
+    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
 
     SelectAggregateFunctionOfGroupByKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(select);
+    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(node);
 }
 
 /// Remove duplicate items from ORDER BY.
@@ -310,19 +269,136 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
-/// Optimize duplicate ORDER BY and DISTINCT
-void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context)
+/// Optimize duplicate ORDER BY
+void optimizeDuplicateOrderBy(ASTPtr & query, ContextPtr context)
 {
     DuplicateOrderByVisitor::Data order_by_data{context};
     DuplicateOrderByVisitor(order_by_data).visit(query);
-    DuplicateDistinctVisitor::Data distinct_data{};
-    DuplicateDistinctVisitor(distinct_data).visit(query);
+}
+
+/// Return simple subselect (without UNIONs or JOINs or SETTINGS) if any
+const ASTSelectQuery * getSimpleSubselect(const ASTSelectQuery & select)
+{
+    if (!select.tables())
+        return nullptr;
+
+    const auto & tables = select.tables()->children;
+    if (tables.empty() || tables.size() != 1)
+        return nullptr;
+
+    const auto & ast_table_expression = tables[0]->as<ASTTablesInSelectQueryElement>()->table_expression;
+    if (!ast_table_expression)
+        return nullptr;
+
+    const auto & table_expression = ast_table_expression->as<ASTTableExpression>();
+    if (!table_expression->subquery)
+        return nullptr;
+
+    const auto & subquery = table_expression->subquery->as<ASTSubquery>();
+    if (!subquery || subquery->children.size() != 1)
+        return nullptr;
+
+    const auto & subselect_union = subquery->children[0]->as<ASTSelectWithUnionQuery>();
+    if (!subselect_union || !subselect_union->list_of_selects ||
+        subselect_union->list_of_selects->children.size() != 1)
+        return nullptr;
+
+    const auto & subselect = subselect_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (subselect && subselect->settings())
+        return nullptr;
+
+    return subselect;
+}
+
+std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
+{
+    if (!select.select() || select.select()->children.empty())
+        return {};
+
+    std::unordered_set<String> names;
+    std::unordered_set<String> implicit_distinct;
+
+    if (!select.distinct)
+    {
+        /// SELECT a, b FROM (SELECT DISTINCT a FROM ...)
+        if (const ASTSelectQuery * subselect = getSimpleSubselect(select))
+            implicit_distinct = getDistinctNames(*subselect);
+
+        if (implicit_distinct.empty())
+            return {};
+    }
+
+    /// Extract result column names (prefer aliases, ignore table name)
+    for (const auto & id : select.select()->children)
+    {
+        String alias = id->tryGetAlias();
+
+        if (const auto * identifier = id->as<ASTIdentifier>())
+        {
+            const String & name = identifier->shortName();
+
+            if (select.distinct || implicit_distinct.count(name))
+            {
+                if (alias.empty())
+                    names.insert(name);
+                else
+                    names.insert(alias);
+            }
+        }
+        else if (select.distinct && !alias.empty())
+        {
+            /// It's not possible to use getAliasOrColumnName() cause name is context specific (function arguments)
+            names.insert(alias);
+        }
+    }
+
+    /// SELECT a FROM (SELECT DISTINCT a, b FROM ...)
+    if (!select.distinct && names.size() != implicit_distinct.size())
+        return {};
+
+    return names;
+}
+
+/// Remove DISTINCT from query if columns are known as DISTINCT from subquery
+void optimizeDuplicateDistinct(ASTSelectQuery & select)
+{
+    if (!select.select() || select.select()->children.empty())
+        return;
+
+    const ASTSelectQuery * subselect = getSimpleSubselect(select);
+    if (!subselect)
+        return;
+
+    std::unordered_set<String> distinct_names = getDistinctNames(*subselect);
+    std::unordered_set<String> selected_names;
+
+    /// Check source column names from select list (ignore aliases and table names)
+    for (const auto & id : select.select()->children)
+    {
+        const auto * identifier = id->as<ASTIdentifier>();
+        if (!identifier)
+            return;
+
+        String name = identifier->shortName();
+        if (!distinct_names.count(name))
+            return; /// Not a distinct column, keep DISTINCT for it.
+
+        selected_names.insert(name);
+    }
+
+    /// select columns list != distinct columns list
+    /// SELECT DISTINCT a FROM (SELECT DISTINCT a, b FROM ...)) -- cannot remove DISTINCT
+    if (selected_names.size() != distinct_names.size())
+        return;
+
+    select.distinct = false;
 }
 
 /// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
 /// has a single argument and not an aggregate functions.
-void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const Context & context,
-                                          const TablesWithColumns & tables_with_columns)
+void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
+                                          const TablesWithColumns & tables_with_columns,
+                                          const Names & sorting_key_columns)
 {
     auto order_by = select_query->orderBy();
     if (!order_by)
@@ -339,11 +415,20 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
         }
     }
 
-    for (auto & child : order_by->children)
+    bool is_sorting_key_prefix = true;
+    for (size_t i = 0; i < order_by->children.size(); ++i)
     {
-        auto * order_by_element = child->as<ASTOrderByElement>();
+        auto * order_by_element = order_by->children[i]->as<ASTOrderByElement>();
         auto & ast_func = order_by_element->children[0];
         if (!ast_func->as<ASTFunction>())
+            continue;
+
+        if (i >= sorting_key_columns.size() || ast_func->getColumnName() != sorting_key_columns[i])
+            is_sorting_key_prefix = false;
+
+        /// If order by expression matches the sorting key, do not remove
+        /// functions to allow execute reading in order of key.
+        if (is_sorting_key_prefix)
             continue;
 
         MonotonicityCheckVisitor::Data data{tables_with_columns, context, group_by_hashes};
@@ -359,11 +444,11 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
     }
 }
 
-/// If ORDER BY has argument x followed by f(x) transfroms it to ORDER BY x.
+/// If ORDER BY has argument x followed by f(x) transforms it to ORDER BY x.
 /// Optimize ORDER BY x, y, f(x), g(x, y), f(h(x)), t(f(x), g(x)) into ORDER BY x, y
 /// in case if f(), g(), h(), t() are deterministic (in scope of query).
 /// Don't optimize ORDER BY f(x), g(x), x even if f(x) is bijection for x or g(x).
-void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, const Context & context)
+void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, ContextPtr context)
 {
     const auto & order_by = select_query->orderBy();
     if (!order_by)
@@ -464,9 +549,21 @@ void optimizeAnyFunctions(ASTPtr & query)
     RewriteAnyFunctionVisitor(data).visit(query);
 }
 
-void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
+void optimizeSumIfFunctions(ASTPtr & query)
 {
-    RemoveInjectiveFunctionsVisitor::Data data = {context};
+    RewriteSumIfFunctionVisitor::Data data = {};
+    RewriteSumIfFunctionVisitor(data).visit(query);
+}
+
+void optimizeCountConstantAndSumOne(ASTPtr & query)
+{
+    RewriteCountVariantsVisitor::visit(query);
+}
+
+
+void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
+{
+    RemoveInjectiveFunctionsVisitor::Data data(context);
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
@@ -495,9 +592,10 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
 
 void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set,
                           const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-                          const Context & context, bool & rewrite_subqueries)
+                          ContextPtr context, const StorageMetadataPtr & metadata_snapshot,
+                          bool & rewrite_subqueries)
 {
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
@@ -523,20 +621,35 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     if (settings.optimize_move_functions_out_of_any)
         optimizeAnyFunctions(query);
 
+    if (settings.optimize_normalize_count_variants)
+        optimizeCountConstantAndSumOne(query);
+
+    if (settings.optimize_rewrite_sum_if_to_count_if)
+        optimizeSumIfFunctions(query);
+
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
         optimizeInjectiveFunctionsInsideUniq(query, context);
 
     /// Eliminate min/max/any aggregators of functions of GROUP BY keys
-    if (settings.optimize_aggregators_of_group_by_keys)
-        optimizeAggregateFunctionsOfGroupByKeys(select_query);
-
-    /// Remove duplicate items from ORDER BY.
-    optimizeDuplicatesInOrderBy(select_query);
+    if (settings.optimize_aggregators_of_group_by_keys
+        && !select_query->group_by_with_totals
+        && !select_query->group_by_with_rollup
+        && !select_query->group_by_with_cube)
+    {
+        optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
+    }
 
     /// Remove duplicate ORDER BY and DISTINCT from subqueries.
     if (settings.optimize_duplicate_order_by_and_distinct)
-        optimizeDuplicateOrderByAndDistinct(query, context);
+    {
+        optimizeDuplicateOrderBy(query, context);
+
+        /// DISTINCT has special meaning in Distributed query with enabled distributed_group_by_no_merge
+        /// TODO: disable Distributed/remote() tables only
+        if (!settings.distributed_group_by_no_merge)
+            optimizeDuplicateDistinct(*select_query);
+    }
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY
     if (settings.optimize_redundant_functions_in_order_by)
@@ -544,7 +657,13 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
 
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
-        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns);
+        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns,
+            metadata_snapshot ? metadata_snapshot->getSortingKeyColumns() : Names{});
+
+    /// Remove duplicate items from ORDER BY.
+    /// Execute it after all order by optimizations,
+    /// because they can produce duplicated columns.
+    optimizeDuplicatesInOrderBy(select_query);
 
     /// If function "if" has String-type arguments, transform them into enum
     if (settings.optimize_if_transform_strings_to_enum)

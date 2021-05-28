@@ -20,6 +20,9 @@ namespace ErrorCodes
 
 extern const UInt8 length_of_utf8_sequence[256];
 
+namespace
+{
+
 struct ToValidUTF8Impl
 {
     static void toValidUTF8One(const char * begin, const char * end, WriteBuffer & write_buffer)
@@ -134,6 +137,8 @@ struct NameToValidUTF8
     static constexpr auto name = "toValidUTF8";
 };
 using FunctionToValidUTF8 = FunctionStringToString<ToValidUTF8Impl, NameToValidUTF8>;
+
+}
 
 void registerFunctionToValidUTF8(FunctionFactory & factory)
 {

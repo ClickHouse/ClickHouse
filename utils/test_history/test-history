@@ -1,8 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Note: should work with python 2 and 3
-from __future__ import print_function
+
 from github import Github
 import datetime
 import tabulate
@@ -11,7 +11,7 @@ from termcolor import colored
 import sys
 
 COLORMAP = {
-    "success": colored("succes", 'green'),
+    "success": colored("success", 'green'),
     "failure": colored("failure", 'red'),
     "error": colored("error", 'red'),
     "pending": colored("pending", 'yellow'),
@@ -31,7 +31,7 @@ def _filter_statuses(statuses):
     filt = {}
     for status in sorted(statuses, key=lambda x: x.updated_at):
         filt[status.context] = status
-    return filt.values()
+    return list(filt.values())
 
 
 def get_filtered_statuses(commit):
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     all_data = []
     for num, commit in enumerate(commits):
         commit_sha, commit_modified, check_results = process_one_commit(commit)
-        mapped_keys = [key for key in check_results.keys() if args.substr in key]
+        mapped_keys = [key for key in list(check_results.keys()) if args.substr in key]
         if len(mapped_keys) > len(longest_header):
             longest_header = mapped_keys
         all_data.append((commit_modified, commit_sha, check_results))

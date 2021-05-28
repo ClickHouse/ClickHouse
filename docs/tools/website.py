@@ -145,13 +145,19 @@ def build_website(args):
             'public',
             'node_modules',
             'templates',
-            'locale'
+            'locale',
+            '.gitkeep'
         )
     )
+
+    # This file can be requested to check for available ClickHouse releases.
+    shutil.copy2(
+        os.path.join(args.src_dir, 'utils', 'list-versions', 'version_date.tsv'),
+        os.path.join(args.output_dir, 'data', 'version_date.tsv'))
+
     shutil.copy2(
         os.path.join(args.website_dir, 'js', 'embedd.min.js'),
-        os.path.join(args.output_dir, 'js', 'embedd.min.js')
-    )
+        os.path.join(args.output_dir, 'js', 'embedd.min.js'))
 
     for root, _, filenames in os.walk(args.output_dir):
         for filename in filenames:
@@ -226,6 +232,7 @@ def minify_website(args):
             f"'{args.output_dir}/docs/en/**/*.html' '{args.website_dir}/js/**/*.js' > {css_out}"
     else:
         command = f'cat {css_in} > {css_out}'
+
     logging.info(command)
     output = subprocess.check_output(command, shell=True)
     logging.debug(output)

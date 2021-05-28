@@ -1,3 +1,8 @@
+---
+toc_priority: 40
+toc_title: "Функции для работы со строками"
+---
+
 # Функции для работы со строками {#funktsii-dlia-raboty-so-strokami}
 
 ## empty {#empty}
@@ -24,12 +29,12 @@
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, то возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
 
-## char\_length, CHAR\_LENGTH {#char-length}
+## char_length, CHAR_LENGTH {#char-length}
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
 
-## character\_length, CHARACTER\_LENGTH {#character-length}
+## character_length, CHARACTER_LENGTH {#character-length}
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
@@ -65,19 +70,19 @@
 Заменяет некорректные символы UTF-8 на символ `�` (U+FFFD). Все идущие подряд некорректные символы схлопываются в один заменяющий символ.
 
 ``` sql
-toValidUTF8( input_string )
+toValidUTF8(input_string)
 ```
 
-Параметры:
+**Аргументы**
 
--   input\_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
+-   `input_string` — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
 
 Возвращаемое значение: Корректная строка UTF-8.
 
 **Пример**
 
 ``` sql
-SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 ```
 
 ``` text
@@ -90,16 +95,18 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 
 Повторяет строку определенное количество раз и объединяет повторяемые значения в одну строку.
 
+Синоним: `REPEAT`.
+
 **Синтаксис**
 
 ``` sql
 repeat(s, n)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `s` — Строка для повторения. [String](../../sql-reference/functions/string-functions.md).
--   `n` — Количество повторов. [UInt](../../sql-reference/functions/string-functions.md).
+-   `s` — строка для повторения. [String](../../sql-reference/functions/string-functions.md).
+-   `n` — количество повторов. [UInt](../../sql-reference/functions/string-functions.md).
 
 **Возвращаемое значение**
 
@@ -112,10 +119,10 @@ repeat(s, n)
 Запрос:
 
 ``` sql
-SELECT repeat('abc', 10)
+SELECT repeat('abc', 10);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─repeat('abc', 10)──────────────┐
@@ -165,7 +172,7 @@ SELECT format('{} {}', 'Hello', 'World')
 concat(s1, s2, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
 Значения типа String или FixedString.
 
@@ -180,10 +187,10 @@ concat(s1, s2, ...)
 Запрос:
 
 ``` sql
-SELECT concat('Hello, ', 'World!')
+SELECT concat('Hello, ', 'World!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─concat('Hello, ', 'World!')─┐
@@ -203,7 +210,7 @@ SELECT concat('Hello, ', 'World!')
 concatAssumeInjective(s1, s2, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
 Значения типа String или FixedString.
 
@@ -235,10 +242,10 @@ SELECT * from key_val
 Запрос:
 
 ``` sql
-SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─concat(key1, key2)─┬─sum(value)─┐
@@ -268,9 +275,13 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
 
 Производит кодирование строки s в base64-представление.
 
+Синоним: `TO_BASE64`.
+
 ## base64Decode(s) {#base64decode}
 
 Декодирует base64-представление s в исходную строку. При невозможности декодирования выбрасывает исключение
+
+Синоним: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -301,7 +312,7 @@ SELECT startsWith('Spider-Man', 'Spi');
 SELECT startsWith('Hello, world!', 'He');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─startsWith('Hello, world!', 'He')─┐
@@ -320,7 +331,7 @@ SELECT startsWith('Hello, world!', 'He');
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `trim_character` — один или несколько символов, подлежащие удалению. [String](../../sql-reference/functions/string-functions.md).
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
@@ -336,10 +347,10 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 Запрос:
 
 ``` sql
-SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
@@ -359,7 +370,7 @@ trimLeft(input_string)
 
 Алиас: `ltrim(input_string)`.
 
-**Параметры**
+**Аргументы**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -374,10 +385,10 @@ trimLeft(input_string)
 Запрос:
 
 ``` sql
-SELECT trimLeft('     Hello, world!     ')
+SELECT trimLeft('     Hello, world!     ');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─trimLeft('     Hello, world!     ')─┐
@@ -397,7 +408,7 @@ trimRight(input_string)
 
 Алиас: `rtrim(input_string)`.
 
-**Параметры**
+**Аргументы**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -412,10 +423,10 @@ trimRight(input_string)
 Запрос:
 
 ``` sql
-SELECT trimRight('     Hello, world!     ')
+SELECT trimRight('     Hello, world!     ');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─trimRight('     Hello, world!     ')─┐
@@ -435,7 +446,7 @@ trimBoth(input_string)
 
 Алиас: `trim(input_string)`.
 
-**Параметры**
+**Аргументы**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -450,10 +461,10 @@ trimBoth(input_string)
 Запрос:
 
 ``` sql
-SELECT trimBoth('     Hello, world!     ')
+SELECT trimBoth('     Hello, world!     ');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─trimBoth('     Hello, world!     ')─┐
@@ -479,4 +490,221 @@ SELECT trimBoth('     Hello, world!     ')
 
 Тип результата — UInt64.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->
+## normalizeQuery {#normalized-query}
+
+Заменяет литералы, последовательности литералов и сложные псевдонимы заполнителями.
+
+**Синтаксис**
+
+``` sql
+normalizeQuery(x)
+```
+
+**Аргументы** 
+
+-   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Последовательность символов с заполнителями.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT normalizeQuery('[1, 2, 3, x]') AS query;
+```
+
+Результат:
+
+``` text
+┌─query────┐
+│ [?.., x] │
+└──────────┘
+```
+
+## normalizedQueryHash {#normalized-query-hash}
+
+Возвращает идентичные 64-битные хэш - суммы без значений литералов для аналогичных запросов. Это помогает анализировать журнал запросов.
+
+**Синтаксис** 
+
+``` sql
+normalizedQueryHash(x)
+```
+
+**Аргументы** 
+
+-   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Хэш-сумма.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+## encodeXMLComponent {#encode-xml-component}
+
+Экранирует символы для размещения строки в текстовом узле или атрибуте XML.
+
+Экранируются символы, которые в формате XML являются зарезервированными (служебными): `<`, `&`, `>`, `"`, `'`.
+
+**Синтаксис** 
+
+``` sql
+encodeXMLComponent(x)
+```
+
+**Аргументы** 
+
+-   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка, в которой зарезервированные символы экранированы.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT encodeXMLComponent('Hello, "world"!');
+SELECT encodeXMLComponent('<123>');
+SELECT encodeXMLComponent('&clickhouse');
+SELECT encodeXMLComponent('\'foo\'');
+```
+
+Результат:
+
+``` text
+Hello, &quot;world&quot;!
+&lt;123&gt;
+&amp;clickhouse
+&apos;foo&apos;
+```
+
+## decodeXMLComponent {#decode-xml-component}
+
+Заменяет символами предопределенные мнемоники XML: `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
+Также эта функция заменяет числовые ссылки соответствующими символами юникод. Поддерживаются десятичная (например, `&#10003;`) и шестнадцатеричная (`&#x2713;`) формы.
+
+**Синтаксис**
+
+``` sql
+decodeXMLComponent(x)
+```
+
+**Аргументы**
+
+-   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка с произведенными заменами.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT decodeXMLComponent('&apos;foo&apos;');
+SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
+```
+
+Результат:
+
+``` text
+'foo' 
+< Σ >
+```
+
+**Смотрите также**
+
+-   [Мнемоники в HTML](https://ru.wikipedia.org/wiki/%D0%9C%D0%BD%D0%B5%D0%BC%D0%BE%D0%BD%D0%B8%D0%BA%D0%B8_%D0%B2_HTML)
+
+
+
+## extractTextFromHTML {#extracttextfromhtml}
+
+Функция для извлечения текста из HTML или XHTML.
+Она не соответствует всем HTML, XML или XHTML стандартам на 100%, но ее реализация достаточно точная и быстрая. Правила обработки следующие:
+
+1. Комментарии удаляются. Пример: `<!-- test -->`. Комментарий должен оканчиваться символами `-->`. Вложенные комментарии недопустимы.
+Примечание: конструкции наподобие `<!-->` и `<!--->` не являются допустимыми комментариями в HTML, но они будут удалены согласно другим правилам.
+2. Содержимое CDATA вставляется дословно. Примечание: формат CDATA специфичен для XML/XHTML. Но он обрабатывается всегда по принципу "наилучшего возможного результата".
+3. Элементы `script` и `style` удаляются вместе со всем содержимым. Примечание: предполагается, что закрывающий тег не может появиться внутри содержимого. Например, в JS строковый литерал должен быть экранирован как `"<\/script>"`.
+Примечание: комментарии и CDATA возможны внутри `script` или `style` - тогда закрывающие теги не ищутся внутри CDATA. Пример: `<script><![CDATA[</script>]]></script>`. Но они ищутся внутри комментариев. Иногда возникают сложные случаи: `<script>var x = "<!--"; </script> var y = "-->"; alert(x + y);</script>`
+Примечание: `script` и `style` могут быть названиями пространств имен XML - тогда они не обрабатываются как обычные элементы `script` или `style`. Пример: `<script:a>Hello</script:a>`.
+Примечание: пробелы возможны после имени закрывающего тега: `</script >`, но не перед ним: `< / script>`.
+4. Другие теги или элементы, подобные тегам, удаляются, а их внутреннее содержимое остается. Пример: `<a>.</a>`
+Примечание: ожидается, что такой HTML является недопустимым: `<a test=">"></a>`
+Примечание: функция также удаляет подобные тегам элементы: `<>`, `<!>`, и т. д.
+Примечание: если встречается тег без завершающего символа `>`, то удаляется этот тег и весь следующий за ним текст: `<hello `
+5. Мнемоники HTML и XML не декодируются. Они должны быть обработаны отдельной функцией.
+6. Пробелы в тексте удаляются и добавляются по следующим правилам:
+- Пробелы в начале и в конце извлеченного текста удаляются.
+- Несколько пробелов подряд заменяются одним пробелом.
+- Если текст разделен другими удаляемыми элементами и в этом месте нет пробела, он добавляется.
+- Это может привести к появлению неестественного написания, например: `Hello<b>world</b>`, `Hello<!-- -->world` — в HTML нет пробелов, но функция вставляет их. Также следует учитывать такие варианты написания: `Hello<p>world</p>`, `Hello<br>world`. Подобные результаты выполнения функции могут использоваться для анализа данных, например, для преобразования HTML-текста в набор используемых слов.
+7. Также обратите внимание, что правильная обработка пробелов требует поддержки `<pre></pre>` и свойств CSS `display` и `white-space`.
+
+**Синтаксис**
+
+``` sql
+extractTextFromHTML(x)
+```
+
+**Аргументы**
+
+-   `x` — текст для обработки. [String](../../sql-reference/data-types/string.md). 
+
+**Возвращаемое значение**
+
+-   Извлеченный текст.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Первый пример содержит несколько тегов и комментарий. На этом примере также видно, как обрабатываются пробелы.
+Второй пример показывает обработку `CDATA` и тега `script`.
+В третьем примере текст выделяется из полного HTML ответа, полученного с помощью функции [url](../../sql-reference/table-functions/url.md).
+
+Запрос:
+
+``` sql
+SELECT extractTextFromHTML(' <p> A text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
+SELECT extractTextFromHTML('<![CDATA[The content within <b>CDATA</b>]]> <script>alert("Script");</script>');
+SELECT extractTextFromHTML(html) FROM url('http://www.donothingfor2minutes.com/', RawBLOB, 'html String');
+```
+
+Результат:
+
+``` text
+A text with tags .
+The content within <b>CDATA</b>
+Do Nothing for 2 Minutes 2:00 &nbsp;
+```

@@ -16,15 +16,15 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
--   [FETCH PARTITION](#alter_fetch-partition) — Downloads a partition from another server.
+-   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 
 <!-- -->
 
-## DETACH PARTITION {#alter_detach-partition}
+## DETACH PARTITION\|PART {#alter_detach-partition}
 
 ``` sql
-ALTER TABLE table_name DETACH PARTITION partition_expr
+ALTER TABLE table_name DETACH PARTITION|PART partition_expr
 ```
 
 Moves all data for the specified partition to the `detached` directory. The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
@@ -32,19 +32,20 @@ Moves all data for the specified partition to the `detached` directory. The serv
 Example:
 
 ``` sql
-ALTER TABLE visits DETACH PARTITION 201901
+ALTER TABLE mt DETACH PARTITION '2020-11-21';
+ALTER TABLE mt DETACH PART 'all_2_2_0';
 ```
 
 Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
 
-## DROP PARTITION {#alter_drop-partition}
+## DROP PARTITION\|PART {#alter_drop-partition}
 
 ``` sql
-ALTER TABLE table_name DROP PARTITION partition_expr
+ALTER TABLE table_name DROP PARTITION|PART partition_expr
 ```
 
 Deletes the specified partition from the table. This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
@@ -52,6 +53,13 @@ Deletes the specified partition from the table. This query tags the partition as
 Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 The query is replicated – it deletes data on all replicas.
+
+Example:
+
+``` sql
+ALTER TABLE mt DROP PARTITION '2020-11-21';
+ALTER TABLE mt DROP PART 'all_4_4_0';
+```
 
 ## DROP DETACHED PARTITION\|PART {#alter_drop-detached}
 
@@ -77,9 +85,13 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table. All other replicas download the data from the replica-initiator.
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
+If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
-So you can put data to the `detached` directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
+If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own `detached` folder, it attaches the data without fetching it from other replicas.
+If there is no part with the correct checksums, the data is downloaded from any replica having the part.
+
+You can put data to the `detached` directory on one replica and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
 
 ## ATTACH PARTITION FROM {#alter_attach-partition-from}
 
@@ -87,7 +99,8 @@ So you can put data to the `detached` directory on one replica, and use the `ALT
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2` adds data to exsisting in the `table2`. Note that data won’t be deleted from `table1`.
+This query copies the data partition from `table1` to `table2`.
+Note that data will be deleted neither from `table1` nor from `table2`.
 
 For the query to run successfully, the following conditions must be met:
 
@@ -183,29 +196,35 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 
 The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
 
-## FETCH PARTITION {#alter_fetch-partition}
+## FETCH PARTITION|PART {#alter_fetch-partition}
 
 ``` sql
-ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ```
 
 Downloads a partition from another server. This query only works for the replicated tables.
 
 The query does the following:
 
-1.  Downloads the partition from the specified shard. In ‘path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
+1.  Downloads the partition|part from the specified shard. In ‘path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
 2.  Then the query puts the downloaded data to the `detached` directory of the `table_name` table. Use the [ATTACH PARTITION\|PART](#alter_attach-partition) query to add the data to the table.
 
 For example:
 
+1. FETCH PARTITION
 ``` sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
+2. FETCH PART
+``` sql
+ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
+ALTER TABLE users ATTACH PART 201901_2_2_0;
+```
 
 Note that:
 
--   The `ALTER ... FETCH PARTITION` query isn’t replicated. It places the partition to the `detached` directory only on the local server.
+-   The `ALTER ... FETCH PARTITION|PART` query isn’t replicated. It places the part or partition to the `detached` directory only on the local server.
 -   The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the `detached` directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
@@ -233,14 +252,54 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
+## UPDATE IN PARTITION {#update-in-partition}
+
+Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
+
+Syntax:
+
+``` sql
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+### Example
+
+``` sql
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+```
+
+### See Also
+
+-   [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements)
+
+## DELETE IN PARTITION {#delete-in-partition}
+
+Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
+
+Syntax:
+
+``` sql
+ALTER TABLE [db.]table DELETE [IN PARTITION partition_id] WHERE filter_expr
+```
+
+### Example
+
+``` sql
+ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+```
+
+### See Also
+
+-   [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations)
+
 ## How to Set Partition Expression {#alter-how-to-specify-part-expr}
 
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
 
 -   As a value from the `partition` column of the `system.parts` table. For example, `ALTER TABLE visits DETACH PARTITION 201901`.
--   As the expression from the table column. Constants and constant expressions are supported. For example, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
+-   As a tuple of expressions or constants that matches (in types) the table partitioning keys tuple. In the case of a single element partitioning key, the expression should be wrapped in the `tuple (...)` function. For example, `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`.
 -   Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   In the [ALTER ATTACH PART](#alter_attach-partition) and [DROP DETACHED PART](#alter_drop-detached) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached\_parts](../../../operations/system-tables/detached_parts.md#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   In the [ALTER ATTACH PART](#alter_attach-partition) and [DROP DETACHED PART](#alter_drop-detached) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](../../../operations/system-tables/detached_parts.md#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 
@@ -249,5 +308,7 @@ All the rules above are also true for the [OPTIMIZE](../../../sql-reference/stat
 ``` sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
+
+`IN PARTITION` specifies the partition to which the [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements) or [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).

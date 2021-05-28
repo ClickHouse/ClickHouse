@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<yandex>
+    <users>
+        <default>
+            <allow_databases>
+                <database>default</database>
+                <database>test</database>
+            </allow_databases>
+        </default>
+    </users>
+</yandex>

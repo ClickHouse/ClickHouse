@@ -25,5 +25,5 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 **另请参阅**
 
 -   [表引擎分布式](../../engines/table-engines/special/distributed.md)
--   [distributed\_replica\_error\_cap设置](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed\_replica\_error\_half\_life设置](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+-   [distributed_replica_error_cap设置](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
+-   [distributed_replica_error_half_life设置](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)

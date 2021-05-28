@@ -1,0 +1,4 @@
+masked
+3,"default:*@127%2E0%2E0%2E1:9000,default:*@127%2E0%2E0%2E2:9000"
+no masking
+1,"default@localhost:9000"

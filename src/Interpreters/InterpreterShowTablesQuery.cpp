@@ -6,8 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Common/typeid_cast.h>
-#include <iomanip>
-#include <sstream>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -19,8 +18,8 @@ namespace ErrorCodes
 }
 
 
-InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    : WithContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -31,17 +30,38 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     /// SHOW DATABASES
     if (query.databases)
-        return "SELECT name FROM system.databases";
+    {
+        WriteBufferFromOwnString rewritten_query;
+        rewritten_query << "SELECT name FROM system.databases";
 
-    /// SHOW CLUSTER/CLUSTERS 
+        if (!query.like.empty())
+        {
+            rewritten_query
+                << " WHERE name "
+                << (query.not_like ? "NOT " : "")
+                << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                << DB::quote << query.like;
+        }
+
+        if (query.limit_length)
+            rewritten_query << " LIMIT " << query.limit_length;
+
+        return rewritten_query.str();
+    }
+
+    /// SHOW CLUSTER/CLUSTERS
     if (query.clusters)
     {
-        std::stringstream rewritten_query;
+        WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT DISTINCT cluster FROM system.clusters";
 
         if (!query.like.empty())
         {
-            rewritten_query << " WHERE cluster " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+            rewritten_query
+                << " WHERE cluster "
+                << (query.not_like ? "NOT " : "")
+                << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                << DB::quote << query.like;
         }
 
         if (query.limit_length)
@@ -51,10 +71,30 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     }
     else if (query.cluster)
     {
-        std::stringstream rewritten_query;
+        WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT * FROM system.clusters";
 
-        rewritten_query << " WHERE cluster = " << std::quoted(query.cluster_str, '\'');
+        rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
+
+        return rewritten_query.str();
+    }
+
+    /// SHOW SETTINGS
+    if (query.m_settings)
+    {
+        WriteBufferFromOwnString rewritten_query;
+        rewritten_query << "SELECT name, type, value FROM system.settings";
+
+        if (query.changed)
+            rewritten_query << " WHERE changed = 1";
+
+        if (!query.like.empty())
+        {
+            rewritten_query
+                << (query.changed ? " AND name " : " WHERE name ")
+                << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                << DB::quote << query.like;
+        }
 
         return rewritten_query.str();
     }
@@ -62,10 +102,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.from.empty())
         throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 
-    String database = context.resolveDatabase(query.from);
+    String database = getContext()->resolveDatabase(query.from);
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
-    std::stringstream rewritten_query;
+    WriteBufferFromOwnString rewritten_query;
     rewritten_query << "SELECT name FROM system.";
 
     if (query.dictionaries)
@@ -82,10 +122,14 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << "is_temporary";
     }
     else
-        rewritten_query << "database = " << std::quoted(database, '\'');
+        rewritten_query << "database = " << DB::quote << database;
 
     if (!query.like.empty())
-        rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+        rewritten_query
+            << " AND name "
+            << (query.not_like ? "NOT " : "")
+            << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+            << DB::quote << query.like;
     else if (query.where_expression)
         rewritten_query << " AND (" << query.where_expression << ")";
 
@@ -98,7 +142,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 BlockIO InterpreterShowTablesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), context, true);
+    return executeQuery(getRewrittenQuery(), getContext(), true);
 }
 
 

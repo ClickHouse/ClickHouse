@@ -6,7 +6,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -17,6 +16,31 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
 }
 
+NameAndTypePair::NameAndTypePair(
+    const String & name_in_storage_, const String & subcolumn_name_,
+    const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_)
+    : name(name_in_storage_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
+    , type(subcolumn_type_)
+    , type_in_storage(type_in_storage_)
+    , subcolumn_delimiter_position(subcolumn_name_.empty() ? std::nullopt : std::make_optional(name_in_storage_.size()))
+{
+}
+
+String NameAndTypePair::getNameInStorage() const
+{
+    if (!subcolumn_delimiter_position)
+        return name;
+
+    return name.substr(0, *subcolumn_delimiter_position);
+}
+
+String NameAndTypePair::getSubcolumnName() const
+{
+    if (!subcolumn_delimiter_position)
+        return "";
+
+    return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
+}
 
 void NamesAndTypesList::readText(ReadBuffer & buf)
 {
@@ -137,25 +161,20 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-#if !defined(ARCADIA_BUILD)
-    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
-#endif
-    types.set_empty_key(StringRef());
+    std::unordered_map<std::string_view, const NameAndTypePair *> self_columns;
 
-    for (const NameAndTypePair & column : *this)
-        types[column.name] = &column.type;
+    for (const auto & column : *this)
+        self_columns[column.name] = &column;
 
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        auto it = types.find(name);
-        if (it == types.end())
+        auto it = self_columns.find(name);
+        if (it == self_columns.end())
             throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.emplace_back(name, *it->second);
+        res.emplace_back(*it->second);
     }
+
     return res;
 }
 

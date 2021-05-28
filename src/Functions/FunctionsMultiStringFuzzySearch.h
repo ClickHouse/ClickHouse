@@ -34,9 +34,9 @@ class FunctionsMultiStringFuzzySearch : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        if (Impl::is_using_hyperscan && !context.getSettingsRef().allow_hyperscan)
+        if (Impl::is_using_hyperscan && !context->getSettingsRef().allow_hyperscan)
             throw Exception(
                 "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
 
@@ -66,15 +66,15 @@ public:
         return Impl::getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & column_haystack = arguments[0].column;
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
 
-        const ColumnPtr & num_ptr = block.getByPosition(arguments[1]).column;
+        const ColumnPtr & num_ptr = arguments[1].column;
         const ColumnConst * col_const_num = nullptr;
         UInt32 edit_distance = 0;
 
@@ -86,17 +86,17 @@ public:
             edit_distance = col_const_num->getValue<UInt32>();
         else
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                "Illegal column " + arguments[1].column->getName()
                     + ". The number is not const or does not fit in UInt32",
                 ErrorCodes::ILLEGAL_COLUMN);
 
 
-        const ColumnPtr & arr_ptr = block.getByPosition(arguments[2]).column;
+        const ColumnPtr & arr_ptr = arguments[2].column;
         const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arr_ptr.get());
 
         if (!col_const_arr)
             throw Exception(
-                "Illegal column " + block.getByPosition(arguments[2]).column->getName() + ". The array is not const",
+                "Illegal column " + arguments[2].column->getName() + ". The array is not const",
                 ErrorCodes::ILLEGAL_COLUMN);
 
         Array src_arr = col_const_arr->getValue<Array>();
@@ -124,12 +124,12 @@ public:
             Impl::vectorConstant(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res, edit_distance);
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column " + arguments[0].column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         if constexpr (Impl::is_column_array)
-            block.getByPosition(result).column = ColumnArray::create(std::move(col_res), std::move(col_offsets));
+            return ColumnArray::create(std::move(col_res), std::move(col_offsets));
         else
-            block.getByPosition(result).column = std::move(col_res);
+            return col_res;
     }
 };
 

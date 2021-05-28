@@ -112,19 +112,19 @@ private:
 
             String value = zookeeper.get(path + "/" + children.front());
 
-#if !defined(ARCADIA_BUILD) /// C++20; Replicated tables are unused in Arcadia.
             if (value.ends_with(suffix))
             {
                 handler();
                 return;
             }
-#endif
+
             if (my_node_it == children.begin())
                 throw Poco::Exception("Assertion failed in LeaderElection");
 
             /// Watch for the node in front of us.
             --my_node_it;
-            if (!zookeeper.existsWatch(path + "/" + *my_node_it, nullptr, task->getWatchCallback()))
+            std::string get_path_value;
+            if (!zookeeper.tryGetWatch(path + "/" + *my_node_it, get_path_value, nullptr, task->getWatchCallback()))
                 task->schedule();
 
             success = true;

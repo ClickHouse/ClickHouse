@@ -28,7 +28,7 @@ namespace DB
   * - put lot of strings inside pool, keep their addresses;
   * - addresses remain valid during lifetime of pool;
   * - at destruction of pool, all memory is freed;
-  * - memory is allocated and freed by large chunks;
+  * - memory is allocated and freed by large MemoryChunks;
   * - freeing parts of data is not possible (but look at ArenaWithFreeLists if you need);
   */
 class Arena : private boost::noncopyable
@@ -37,16 +37,16 @@ private:
     /// Padding allows to use 'memcpySmallAllowReadWriteOverflow15' instead of 'memcpy'.
     static constexpr size_t pad_right = 15;
 
-    /// Contiguous chunk of memory and pointer to free space inside it. Member of single-linked list.
-    struct alignas(16) Chunk : private Allocator<false>    /// empty base optimization
+    /// Contiguous MemoryChunk of memory and pointer to free space inside it. Member of single-linked list.
+    struct alignas(16) MemoryChunk : private Allocator<false>    /// empty base optimization
     {
         char * begin;
         char * pos;
         char * end; /// does not include padding.
 
-        Chunk * prev;
+        MemoryChunk * prev;
 
-        Chunk(size_t size_, Chunk * prev_)
+        MemoryChunk(size_t size_, MemoryChunk * prev_)
         {
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
@@ -59,7 +59,7 @@ private:
             ASAN_POISON_MEMORY_REGION(begin, size_);
         }
 
-        ~Chunk()
+        ~MemoryChunk()
         {
             /// We must unpoison the memory before returning to the allocator,
             /// because the allocator might not have asan integration, and the
@@ -80,16 +80,17 @@ private:
     size_t growth_factor;
     size_t linear_growth_threshold;
 
-    /// Last contiguous chunk of memory.
-    Chunk * head;
+    /// Last contiguous MemoryChunk of memory.
+    MemoryChunk * head;
     size_t size_in_bytes;
+    size_t page_size;
 
-    static size_t roundUpToPageSize(size_t s)
+    static size_t roundUpToPageSize(size_t s, size_t page_size)
     {
-        return (s + 4096 - 1) / 4096 * 4096;
+        return (s + page_size - 1) / page_size * page_size;
     }
 
-    /// If chunks size is less than 'linear_growth_threshold', then use exponential growth, otherwise - linear growth
+    /// If MemoryChunks size is less than 'linear_growth_threshold', then use exponential growth, otherwise - linear growth
     ///  (to not allocate too much excessive memory).
     size_t nextSize(size_t min_next_size) const
     {
@@ -103,7 +104,7 @@ private:
         {
             // allocContinue() combined with linear growth results in quadratic
             // behavior: we append the data by small amounts, and when it
-            // doesn't fit, we create a new chunk and copy all the previous data
+            // doesn't fit, we create a new MemoryChunk and copy all the previous data
             // into it. The number of times we do this is directly proportional
             // to the total size of data that is going to be serialized. To make
             // the copying happen less often, round the next size up to the
@@ -113,13 +114,13 @@ private:
         }
 
         assert(size_after_grow >= min_next_size);
-        return roundUpToPageSize(size_after_grow);
+        return roundUpToPageSize(size_after_grow, page_size);
     }
 
-    /// Add next contiguous chunk of memory with size not less than specified.
-    void NO_INLINE addChunk(size_t min_size)
+    /// Add next contiguous MemoryChunk of memory with size not less than specified.
+    void NO_INLINE addMemoryChunk(size_t min_size)
     {
-        head = new Chunk(nextSize(min_size + pad_right), head);
+        head = new MemoryChunk(nextSize(min_size + pad_right), head);
         size_in_bytes += head->size();
     }
 
@@ -127,9 +128,10 @@ private:
     template <size_t> friend class AlignedArenaAllocator;
 
 public:
-    Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
+    explicit Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
         : growth_factor(growth_factor_), linear_growth_threshold(linear_growth_threshold_),
-        head(new Chunk(initial_size_, nullptr)), size_in_bytes(head->size())
+        head(new MemoryChunk(initial_size_, nullptr)), size_in_bytes(head->size()),
+        page_size(static_cast<size_t>(::getPageSize()))
     {
     }
 
@@ -142,7 +144,7 @@ public:
     char * alloc(size_t size)
     {
         if (unlikely(head->pos + size > head->end))
-            addChunk(size);
+            addMemoryChunk(size);
 
         char * res = head->pos;
         head->pos += size;
@@ -158,7 +160,7 @@ public:
             void * head_pos = head->pos;
             size_t space = head->end - head->pos;
 
-            auto res = static_cast<char *>(std::align(alignment, size, head_pos, space));
+            auto * res = static_cast<char *>(std::align(alignment, size, head_pos, space));
             if (res)
             {
                 head->pos = static_cast<char *>(head_pos);
@@ -167,7 +169,7 @@ public:
                 return res;
             }
 
-            addChunk(size + alignment);
+            addMemoryChunk(size + alignment);
         } while (true);
     }
 
@@ -192,8 +194,8 @@ public:
     /** Begin or expand a contiguous range of memory.
       * 'range_start' is the start of range. If nullptr, a new range is
       * allocated.
-      * If there is no space in the current chunk to expand the range,
-      * the entire range is copied to a new, bigger memory chunk, and the value
+      * If there is no space in the current MemoryChunk to expand the range,
+      * the entire range is copied to a new, bigger memory MemoryChunk, and the value
       * of 'range_start' is updated.
       * If the optional 'start_alignment' is specified, the start of range is
       * kept aligned to this value.
@@ -207,7 +209,7 @@ public:
         /*
          * Allocating zero bytes doesn't make much sense. Also, a zero-sized
          * range might break the invariant that the range begins at least before
-         * the current chunk end.
+         * the current MemoryChunk end.
          */
         assert(additional_bytes > 0);
 
@@ -226,19 +228,19 @@ public:
 
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
-        // the current Chunk.
+        // the current MemoryChunk.
         assert(range_start >= head->begin);
         assert(range_start < head->end);
 
         if (head->pos + additional_bytes <= head->end)
         {
-            // The new size fits into the last chunk, so just alloc the
+            // The new size fits into the last MemoryChunk, so just alloc the
             // additional size. We can alloc without alignment here, because it
             // only applies to the start of the range, and we don't change it.
             return alloc(additional_bytes);
         }
 
-        // New range doesn't fit into this chunk, will copy to a new one.
+        // New range doesn't fit into this MemoryChunk, will copy to a new one.
         //
         // Note: among other things, this method is used to provide a hack-ish
         // implementation of realloc over Arenas in ArenaAllocators. It wastes a
@@ -299,16 +301,16 @@ public:
         return res;
     }
 
-    /// Size of chunks in bytes.
+    /// Size of MemoryChunks in bytes.
     size_t size() const
     {
         return size_in_bytes;
     }
 
-    /// Bad method, don't use it -- the chunks are not your business, the entire
+    /// Bad method, don't use it -- the MemoryChunks are not your business, the entire
     /// purpose of the arena code is to manage them for you, so if you find
     /// yourself having to use this method, probably you're doing something wrong.
-    size_t remainingSpaceInCurrentChunk() const
+    size_t remainingSpaceInCurrentMemoryChunk() const
     {
         return head->remaining();
     }

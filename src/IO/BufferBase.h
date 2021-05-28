@@ -40,6 +40,7 @@ public:
         inline Position end() const { return end_pos; }
         inline size_t size() const { return size_t(end_pos - begin_pos); }
         inline void resize(size_t size) { end_pos = begin_pos + size; }
+        inline bool empty() const { return size() == 0; }
 
         inline void swap(Buffer & other)
         {

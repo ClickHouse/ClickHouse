@@ -24,7 +24,7 @@ DiskPtr DiskFactory::create(
     const String & name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const Context & context) const
+    ContextConstPtr context) const
 {
     const auto disk_type = config.getString(config_prefix + ".type", "local");
 

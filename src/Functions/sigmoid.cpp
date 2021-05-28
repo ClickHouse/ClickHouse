@@ -3,6 +3,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct SigmoidName { static constexpr auto name = "sigmoid"; };
 
@@ -36,6 +38,8 @@ static double sigmoid(double x)
 using FunctionSigmoid = FunctionMathUnary<UnaryFunctionVectorized<SigmoidName, sigmoid>>;
 
 #endif
+
+}
 
 void registerFunctionSigmoid(FunctionFactory & factory)
 {

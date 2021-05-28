@@ -16,7 +16,7 @@ Returns an array of selected substrings. Empty substrings may be selected if the
 splitByChar(<separator>, <s>)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `separator` — The separator which should contain exactly one character. [String](../../sql-reference/data-types/string.md).
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
@@ -53,7 +53,7 @@ Splits a string into substrings separated by a string. It uses a constant string
 splitByString(<separator>, <s>)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `separator` — The separator. [String](../../sql-reference/data-types/string.md).
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
@@ -121,7 +121,7 @@ Extracts all groups from non-overlapping substrings matched by a regular express
 extractAllGroups(text, regexp) 
 ```
 
-**Parameters** 
+**Arguments** 
 
 -   `text` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 -   `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
@@ -150,4 +150,3 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->

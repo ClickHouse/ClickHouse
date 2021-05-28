@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -14,16 +20,22 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
+
+namespace
+{
+
 class FunctionH3KRing : public IFunction
 {
 public:
     static constexpr auto name = "h3kRing";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3KRing>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3KRing>(); }
 
     std::string getName() const override { return name; }
 
@@ -47,10 +59,10 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
-        const auto * col_k = block.getByPosition(arguments[1]).column.get();
+        const auto * col_hindex = arguments[0].column.get();
+        const auto * col_k = arguments[1].column.get();
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
@@ -64,6 +76,15 @@ public:
         {
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);
+
+            /// Overflow is possible. The function maxKringSize does not check for overflow.
+            /// The calculation is similar to square of k but several times more.
+            /// Let's use huge underestimation as the safe bound. We should not allow to generate too large arrays nevertheless.
+            constexpr auto max_k = 10000;
+            if (k > max_k)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Too large 'k' argument for {} function, maximum {}", getName(), max_k);
+            if (k < 0)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
             const auto vec_size = maxKringSize(k);
             hindex_vec.resize(vec_size);
@@ -81,10 +102,11 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        block.getByPosition(result).column = std::move(dst);
+        return dst;
     }
 };
 
+}
 
 void registerFunctionH3KRing(FunctionFactory & factory)
 {
@@ -92,3 +114,5 @@ void registerFunctionH3KRing(FunctionFactory & factory)
 }
 
 }
+
+#endif

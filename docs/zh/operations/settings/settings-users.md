@@ -128,7 +128,7 @@ DNS请求的所有结果都将被缓存，直到服务器重新启动。
 <ip>127.0.0.1</ip>
 ```
 
-### user\_name/profile {#user-nameprofile}
+### user_name/profile {#user-nameprofile}
 
 您可以为用户分配设置配置文件。 设置配置文件在单独的部分配置 `users.xml` 文件 有关详细信息，请参阅 [设置配置文件](settings-profiles.md).
 

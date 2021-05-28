@@ -1,3 +1,8 @@
+---
+toc_priority: 48
+toc_title: "Управление доступом"
+---
+
 # Управление доступом {#access-control}
 
 ClickHouse поддерживает управление доступом на основе подхода [RBAC](https://ru.wikipedia.org/wiki/Управление_доступом_на_основе_ролей).
@@ -23,6 +28,7 @@ ClickHouse поддерживает управление доступом на �
 !!! note "Внимание"
     Нельзя одновременно использовать оба метода для управления одним и тем же объектом системы доступа.
 
+Чтобы посмотреть список всех пользователей, ролей, профилей и пр., а также все привилегии, используйте запрос [SHOW ACCESS](../sql-reference/statements/show.md#show-access-statement).
 
 ## Использование {#access-control-usage}
 
@@ -55,8 +61,8 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
-- [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+- [CREATE USER](../sql-reference/statements/create/user.md#create-user-statement)
+- [ALTER USER](../sql-reference/statements/alter/user.md)
 - [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
 - [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
@@ -82,8 +88,8 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
-- [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
+- [CREATE ROLE](../sql-reference/statements/create/index.md#create-role-statement)
+- [ALTER ROLE](../sql-reference/statements/alter/role.md)
 - [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
 - [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
 - [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
@@ -97,8 +103,8 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
-- [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
+- [CREATE ROW POLICY](../sql-reference/statements/create/index.md#create-row-policy-statement)
+- [ALTER ROW POLICY](../sql-reference/statements/alter/row-policy.md)
 - [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
 - [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
 
@@ -109,8 +115,8 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
-- [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
+- [CREATE SETTINGS PROFILE](../sql-reference/statements/create/index.md#create-settings-profile-statement)
+- [ALTER SETTINGS PROFILE](../sql-reference/statements/alter/settings-profile.md)
 - [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
 - [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
 
@@ -123,8 +129,8 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
-- [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
+- [CREATE QUOTA](../sql-reference/statements/create/index.md#create-quota-statement)
+- [ALTER QUOTA](../sql-reference/statements/alter/quota.md)
 - [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
 - [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
 
@@ -140,4 +146,3 @@ ClickHouse поддерживает управление доступом на �
     По умолчанию управление доступом на основе SQL выключено для всех пользователей. Вам необходимо настроить хотя бы одного пользователя в файле конфигурации `users.xml` и присвоить значение 1 параметру [access_management](settings/settings-users.md#access_management-user-setting).
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/access_rights/) <!--hide-->

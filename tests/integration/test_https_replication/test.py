@@ -1,30 +1,36 @@
-import time
-import pytest
-
-from helpers.cluster import ClickHouseCluster
-
-from helpers.test_tools import assert_eq_with_retry
-from helpers.network import PartitionManager
-from multiprocessing.dummy import Pool
 import random
+import time
+from multiprocessing.dummy import Pool
+
+import pytest
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 """
 Both ssl_conf.xml and no_ssl_conf.xml have the same port
 """
 
+
 def _fill_nodes(nodes, shard):
     for node in nodes:
         node.query(
-        '''
-            CREATE DATABASE test;
+            '''
+                CREATE DATABASE test;
+    
+                CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
+            '''.format(shard=shard, replica=node.name))
 
-            CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
-        '''.format(shard=shard, replica=node.name))
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml'], with_zookeeper=True)
-node2 = cluster.add_instance('node2', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml'], with_zookeeper=True)
+node1 = cluster.add_instance('node1',
+                             main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml', "configs/server.crt",
+                                           "configs/server.key", "configs/dhparam.pem", "configs/log_conf.xml"], with_zookeeper=True)
+node2 = cluster.add_instance('node2',
+                             main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml', "configs/server.crt",
+                                           "configs/server.key", "configs/dhparam.pem", "configs/log_conf.xml"], with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def both_https_cluster():
@@ -37,6 +43,7 @@ def both_https_cluster():
 
     finally:
         cluster.shutdown()
+
 
 def test_both_https(both_https_cluster):
     node1.query("insert into test_table values ('2017-06-16', 111, 0)")
@@ -68,7 +75,7 @@ def test_replication_after_partition(both_https_cluster):
     closing_pool = Pool(1)
     inserting_pool = Pool(5)
     cres = closing_pool.map_async(close, [random.randint(1, 3) for _ in range(10)])
-    ires = inserting_pool.map_async(insert_data_and_check, range(100))
+    ires = inserting_pool.map_async(insert_data_and_check, list(range(100)))
 
     cres.wait()
     ires.wait()
@@ -77,9 +84,11 @@ def test_replication_after_partition(both_https_cluster):
     assert_eq_with_retry(node2, "SELECT count() FROM test_table", '100')
 
 
+node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml', "configs/log_conf.xml"],
+                             with_zookeeper=True)
+node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml', "configs/log_conf.xml"],
+                             with_zookeeper=True)
 
-node3 = cluster.add_instance('node3', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
-node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def both_http_cluster():
@@ -93,6 +102,7 @@ def both_http_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_both_http(both_http_cluster):
     node3.query("insert into test_table values ('2017-06-16', 111, 0)")
 
@@ -104,8 +114,13 @@ def test_both_http(both_http_cluster):
     assert_eq_with_retry(node3, "SELECT id FROM test_table order by id", '111\n222')
     assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '111\n222')
 
-node5 = cluster.add_instance('node5', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml'], with_zookeeper=True)
-node6 = cluster.add_instance('node6', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
+
+node5 = cluster.add_instance('node5',
+                             main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml', "configs/server.crt",
+                                           "configs/server.key", "configs/dhparam.pem", "configs/log_conf.xml"], with_zookeeper=True)
+node6 = cluster.add_instance('node6', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml', "configs/log_conf.xml"],
+                             with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def mixed_protocol_cluster():
@@ -118,6 +133,7 @@ def mixed_protocol_cluster():
 
     finally:
         cluster.shutdown()
+
 
 def test_mixed_protocol(mixed_protocol_cluster):
     node5.query("insert into test_table values ('2017-06-16', 111, 0)")

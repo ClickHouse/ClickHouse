@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<!-- Config for test server -->
+<!-- Config for test server in Arcadia -->
 <yandex>
     <logger>
         <level>trace</level>
@@ -49,6 +49,7 @@
     <tmp_path>/tmp/clickhouse/tmp/</tmp_path>
     <users_config>users.xml</users_config>
     <access_control_path>/tmp/clickhouse/data/access/</access_control_path>
+    <custom_settings_prefixes>custom_</custom_settings_prefixes>
     <mark_cache_size>5368709120</mark_cache_size>
     <default_profile>default</default_profile>
     <default_database>default</default_database>

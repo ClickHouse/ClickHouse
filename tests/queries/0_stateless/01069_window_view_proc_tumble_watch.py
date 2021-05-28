@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 import signal
@@ -37,11 +37,11 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     
     client1.send('WATCH test.wv')
     client2.send('INSERT INTO test.mt VALUES (1, now())')
-    client1.expect('Progress: 0.00 rows.*\)')
     client1.expect('1' + end_of_block)
+    client1.expect('Progress: 1.00 rows.*\)')
     client2.send('INSERT INTO test.mt VALUES (1, now())')
-    client1.expect('Progress: 0.00 rows.*\)')
     client1.expect('1' + end_of_block)
+    client1.expect('Progress: 2.00 rows.*\)')
 
     # send Ctrl-C
     client1.send('\x03', eol='')

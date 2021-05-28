@@ -1,22 +1,27 @@
+---
+toc_priority: 58
+toc_title: "Функции для работы с внешними словарями"
+---
+
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
 Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-## dictGet {#dictget}
+## dictGet, dictGetOrDefault {#dictget}
 
 Извлекает значение из внешнего словаря.
 
 ``` sql
-dictGet('dict_name', 'attr_name', id_expr)
-dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
+dictGet('dict_name', attr_names, id_expr)
+dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
--   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
+-   `attr_names` — имя столбца словаря, [Строковый литерал](../syntax.md#syntax-string-literal), или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких имен.
+-   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
+-   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_names`, или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких выражений.
 
 **Возвращаемое значение**
 
@@ -29,7 +34,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 Если значение атрибута не удалось обработать или оно не соответствует типу данных атрибута, то ClickHouse генерирует исключение.
 
-**Пример**
+**Пример с единственным атрибутом**
 
 Создадим текстовый файл `ext-dict-text.csv` со следующим содержимым:
 
@@ -88,6 +93,71 @@ LIMIT 3
 └─────┴────────┘
 ```
 
+**Пример с несколькими атрибутами**
+
+Создадим текстовый файл `ext-dict-mult.csv` со следующим содержимым:
+
+``` text
+1,1,'1'
+2,2,'2'
+3,3,'3'
+```
+
+Первый столбец — `id`, второй столбец — `c1`, третий столбец — `c2`.
+
+Настройка внешнего словаря:
+
+``` xml
+<yandex>
+    <dictionary>
+        <name>ext-dict-mult</name>
+        <source>
+            <file>
+                <path>/path-to/ext-dict-mult.csv</path>
+                <format>CSV</format>
+            </file>
+        </source>
+        <layout>
+            <flat />
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>c1</name>
+                <type>UInt32</type>
+                <null_value></null_value>
+            </attribute>
+            <attribute>
+                <name>c2</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>            
+        </structure>
+        <lifetime>0</lifetime>
+    </dictionary>
+</yandex>
+```
+
+Выполним запрос:
+
+``` sql
+SELECT
+    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
+    toTypeName(val) AS type
+FROM system.numbers
+LIMIT 3;
+```
+
+``` text
+┌─val─────┬─type──────────────────┐
+│ (1,'1') │ Tuple(UInt8, String)  │
+│ (2,'2') │ Tuple(UInt8, String)  │
+│ (3,'3') │ Tuple(UInt8, String)  │
+└─────────┴───────────────────────┘
+```
+
 **Смотрите также**
 
 -   [Внешние словари](../../sql-reference/functions/ext-dict-functions.md)
@@ -100,10 +170,10 @@ LIMIT 3
 dictHas('dict_name', id)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 
 **Возвращаемое значение**
 
@@ -122,7 +192,7 @@ dictHas('dict_name', id)
 dictGetHierarchy('dict_name', key)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
@@ -139,7 +209,7 @@ Type: [Array(UInt64)](../../sql-reference/functions/ext-dict-functions.md).
 
 `dictIsIn ('dict_name', child_id_expr, ancestor_id_expr)`
 
-**Параметры**
+**Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `child_id_expr` — ключ для проверки. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
@@ -175,12 +245,12 @@ dictGet[Type]('dict_name', 'attr_name', id_expr)
 dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
--   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
+-   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
+-   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
 
 **Возвращаемое значение**
 
@@ -192,5 +262,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
     -   `dictGet[Type]OrDefault` возвращает аргумент `default_value_expr`.
 
 Если значение атрибута не удалось обработать или оно не соответствует типу данных атрибута, то ClickHouse генерирует исключение.
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ext_dict_functions/) <!--hide-->

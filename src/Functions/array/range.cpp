@@ -22,12 +22,17 @@ namespace ErrorCodes
 }
 
 
+/** Generates array
+  * range(size): [0, size)
+  * range(start, end): [start, end)
+  * range(start, end, step): [start, end) with step increments.
+  */
 class FunctionRange : public IFunction
 {
 public:
     static constexpr auto name = "range";
     static constexpr size_t max_elements = 100'000'000;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRange>(); }
 
 private:
     String getName() const override { return name; }
@@ -40,9 +45,9 @@ private:
     {
         if (arguments.size() > 3 || arguments.empty())
         {
-            throw Exception{"Function " + getName() + " needs 1..3 arguments; passed "
-                            + std::to_string(arguments.size()) + ".",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} needs 1..3 arguments; passed {}.",
+                getName(), arguments.size());
         }
 
         for (const auto & arg : arguments)
@@ -57,7 +62,7 @@ private:
     }
 
     template <typename T>
-    bool executeInternal(Block & block, const IColumn * arg, const size_t result) const
+    ColumnPtr executeInternal(const IColumn * arg) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(arg))
         {
@@ -94,21 +99,19 @@ private:
                 out_offsets[row_idx] = offset;
             }
 
-            block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
-            return true;
+            return ColumnArray::create(std::move(data_col), std::move(offsets_col));
         }
         else
-            return false;
+            return nullptr;
     }
 
     template <typename T>
-    bool executeConstStartStep(Block & block, const IColumn * end_arg, const T start, const T step, const size_t input_rows_count, const size_t result) const
+    ColumnPtr executeConstStartStep(
+            const IColumn * end_arg, const T start, const T step, const size_t input_rows_count) const
     {
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         if (!end_column)
-        {
-            return false;
-        }
+            return nullptr;
 
         const auto & end_data = end_column->getData();
 
@@ -145,24 +148,28 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step)
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step)
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
-        return true;
+        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
     template <typename T>
-    bool executeConstStep(Block & block, const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count, const size_t result) const
+    ColumnPtr executeConstStep(
+        const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_arg);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         if (!end_column || !start_column)
-        {
-            return false;
-        }
+            return nullptr;
 
         const auto & start_data = start_column->getData();
         const auto & end_data = end_column->getData();
@@ -200,24 +207,28 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_data[row_idx]; st < ed; st += step)
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step)
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
-        return true;
+        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
     template <typename T>
-    bool executeConstStart(Block & block, const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count, const size_t result) const
+    ColumnPtr executeConstStart(
+            const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count) const
     {
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         auto step_column = checkAndGetColumn<ColumnVector<T>>(step_arg);
         if (!end_column || !step_column)
-        {
-            return false;
-        }
+            return nullptr;
 
         const auto & end_data = end_column->getData();
         const auto & step_data = step_column->getData();
@@ -255,26 +266,30 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step_data[row_idx])
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step_data[row_idx])
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
-        return true;
+        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
     template <typename T>
-    bool executeGeneric(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result) const
+    ColumnPtr executeGeneric(
+        const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_col);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_col);
         auto step_column = checkAndGetColumn<ColumnVector<T>>(step_col);
 
         if (!start_column || !end_column || !step_column)
-        {
-            return false;
-        }
+            return nullptr;
 
         const auto & start_data = start_column->getData();
         const auto & end_start = end_column->getData();
@@ -313,95 +328,124 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_start[row_idx]; st < ed; st += step_data[row_idx])
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step_data[row_idx])
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
 
-        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
-        return true;
+        return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        DataTypePtr elem_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
+        WhichDataType which(elem_type);
+
+        if (!which.isUInt8()
+            && !which.isUInt16()
+            && !which.isUInt32()
+            && !which.isUInt64())
+        {
+            throw Exception{"Illegal columns of arguments of function " + getName()
+                + ", the function only implemented for unsigned integers up to 64 bit", ErrorCodes::ILLEGAL_COLUMN};
+        }
+
+        ColumnPtr res;
         if (arguments.size() == 1)
         {
-            const auto * col = block.getByPosition(arguments[0]).column.get();
-            if (!executeInternal<UInt8>(block, col, result) &&
-                !executeInternal<UInt16>(block, col, result) &&
-                !executeInternal<UInt32>(block, col, result) &&
-                !executeInternal<UInt64>(block, col, result))
+            const auto * col = arguments[0].column.get();
+            if (!((res = executeInternal<UInt8>(col))
+                || (res = executeInternal<UInt16>(col))
+                || (res = executeInternal<UInt32>(col))
+                || (res = executeInternal<UInt64>(col))))
             {
                 throw Exception{"Illegal column " + col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
             }
-            return;
+            return res;
         }
 
         Columns columns_holder(3);
-        ColumnRawPtrs columns(3);
-
-        const auto return_type = checkAndGetDataType<DataTypeArray>(block.getByPosition(result).type.get())->getNestedType();
+        ColumnRawPtrs column_ptrs(3);
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (i == 1)
-                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type)->convertToFullColumnIfConst();
+                columns_holder[i] = castColumn(arguments[i], elem_type)->convertToFullColumnIfConst();
             else
-                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type);
+                columns_holder[i] = castColumn(arguments[i], elem_type);
 
-            columns[i] = columns_holder[i].get();
+            column_ptrs[i] = columns_holder[i].get();
         }
 
-        // for step column, defaults to 1
+        /// Step is one by default.
         if (arguments.size() == 2)
         {
-            columns_holder[2] = return_type->createColumnConst(input_rows_count, 1);
-            columns[2] = columns_holder[2].get();
+            /// Convert a column with constant 1 to the result type.
+            columns_holder[2] = castColumn(
+                {DataTypeUInt8().createColumnConst(input_rows_count, 1), std::make_shared<DataTypeUInt8>(), {}},
+                elem_type);
+
+            column_ptrs[2] = columns_holder[2].get();
         }
 
-        bool is_start_const = isColumnConst(*columns[0]);
-        bool is_step_const = isColumnConst(*columns[2]);
-        bool ok;
+        bool is_start_const = isColumnConst(*column_ptrs[0]);
+        bool is_step_const = isColumnConst(*column_ptrs[2]);
         if (is_start_const && is_step_const)
         {
-            UInt64 start = assert_cast<const ColumnConst &>(*columns[0]).getUInt(0);
-            UInt64 step = assert_cast<const ColumnConst &>(*columns[2]).getUInt(0);
+            UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
+            UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
 
-            ok = executeConstStartStep<UInt8>(block, columns[1], start, step, input_rows_count, result) ||
-                executeConstStartStep<UInt16>(block, columns[1], start, step, input_rows_count, result) ||
-                executeConstStartStep<UInt32>(block, columns[1], start, step, input_rows_count, result) ||
-                executeConstStartStep<UInt64>(block, columns[1], start, step, input_rows_count, result);
+            if ((res = executeConstStartStep<UInt8>(column_ptrs[1], start, step, input_rows_count)) ||
+                (res = executeConstStartStep<UInt16>(column_ptrs[1], start, step, input_rows_count)) ||
+                (res = executeConstStartStep<UInt32>(column_ptrs[1], start, step, input_rows_count)) ||
+                (res = executeConstStartStep<UInt64>(column_ptrs[1], start, step, input_rows_count)))
+            {
+            }
         }
         else if (is_start_const && !is_step_const)
         {
-            UInt64 start = assert_cast<const ColumnConst &>(*columns[0]).getUInt(0);
+            UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
 
-            ok = executeConstStart<UInt8>(block, columns[1], columns[2], start, input_rows_count, result) ||
-                executeConstStart<UInt16>(block, columns[1], columns[2], start, input_rows_count, result) ||
-                executeConstStart<UInt32>(block, columns[1], columns[2], start, input_rows_count, result) ||
-                executeConstStart<UInt64>(block, columns[1], columns[2], start, input_rows_count, result);
+            if ((res = executeConstStart<UInt8>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
+                (res = executeConstStart<UInt16>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
+                (res = executeConstStart<UInt32>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
+                (res = executeConstStart<UInt64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
+            {
+            }
         }
         else if (!is_start_const && is_step_const)
         {
-            UInt64 step = assert_cast<const ColumnConst &>(*columns[2]).getUInt(0);
+            UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
 
-            ok = executeConstStep<UInt8>(block, columns[0], columns[1], step, input_rows_count, result) ||
-                executeConstStep<UInt16>(block, columns[0], columns[1], step, input_rows_count, result) ||
-                executeConstStep<UInt32>(block, columns[0], columns[1], step, input_rows_count, result) ||
-                executeConstStep<UInt64>(block, columns[0], columns[1], step, input_rows_count, result);
+            if ((res = executeConstStep<UInt8>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
+                (res = executeConstStep<UInt16>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
+                (res = executeConstStep<UInt32>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
+                (res = executeConstStep<UInt64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
+            {
+            }
         }
         else
         {
-            ok = executeGeneric<UInt8>(block, columns[0], columns[1], columns[2], input_rows_count, result) ||
-                executeGeneric<UInt16>(block, columns[0], columns[1], columns[2], input_rows_count, result) ||
-                executeGeneric<UInt32>(block, columns[0], columns[1], columns[2], input_rows_count, result) ||
-                executeGeneric<UInt64>(block, columns[0], columns[1], columns[2], input_rows_count, result);
+            if ((res = executeGeneric<UInt8>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
+                (res = executeGeneric<UInt16>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
+                (res = executeGeneric<UInt32>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
+                (res = executeGeneric<UInt64>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)))
+            {
+            }
         }
 
-        if (!ok)
+        if (!res)
         {
-            throw Exception{"Illegal columns " + columns[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal columns " + column_ptrs[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
+
+        return res;
     }
 
 };

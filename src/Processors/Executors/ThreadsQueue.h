@@ -9,7 +9,7 @@ namespace ErrorCodes
 
 /// Simple struct which stores threads with numbers [0 .. num_threads - 1].
 /// Allows to push and pop specified thread, or pop any thread if has.
-/// Oll operations (except init) are O(1). No memory allocations after init happen.
+/// All operations (except init) are O(1). No memory allocations after init happen.
 struct ThreadsQueue
 {
     void init(size_t num_threads)

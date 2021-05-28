@@ -6,13 +6,15 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Returns name of IColumn instance.
 class FunctionToColumnTypeName : public IFunction
 {
 public:
     static constexpr auto name = "toColumnTypeName";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionToColumnTypeName>();
     }
@@ -34,18 +36,18 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column
-            = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).column->getName());
+        return DataTypeString().createColumnConst(input_rows_count, arguments[0].column->getName());
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const override
     {
-        return DataTypeString().createColumnConst(1, block.getByPosition(arguments[0]).type->createColumn()->getName());
+        return DataTypeString().createColumnConst(1, arguments[0].type->createColumn()->getName());
     }
 };
 
+}
 
 void registerFunctionToColumnTypeName(FunctionFactory & factory)
 {

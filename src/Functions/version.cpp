@@ -16,7 +16,7 @@ class FunctionVersion : public IFunction
 {
 public:
     static constexpr auto name = "version";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionVersion>();
     }
@@ -25,6 +25,10 @@ public:
     {
         return name;
     }
+
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -36,16 +40,16 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, VERSION_STRING);
+        return DataTypeString().createColumnConst(input_rows_count, VERSION_STRING);
     }
 };
 
 
 void registerFunctionVersion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionVersion>();
+    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
 }
 
 }

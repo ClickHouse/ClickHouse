@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.4">
+<test max_ignored_relative_change="0.2">
     <substitutions>
         <substitution>
             <name>format</name>

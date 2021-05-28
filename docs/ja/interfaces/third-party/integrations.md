@@ -19,15 +19,15 @@ toc_title: "\u7D71\u5408"
         -   [clickhouse-mysql-データリーダー](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-レプリケーター](https://github.com/larsnovikov/horgh-replicator)
     -   [PostgreSQL](https://www.postgresql.org)
-        -   [clickhousedb\_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
-        -   [インフィclickhouse\_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) （用途 [インフィclickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
+        -   [インフィclickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) （用途 [インフィclickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
         -   [pg2ch](https://github.com/mkabilov/pg2ch)
-        -   [clickhouse\_fdw](https://github.com/adjust/clickhouse_fdw)
+        -   [clickhouse_fdw](https://github.com/adjust/clickhouse_fdw)
     -   [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   メッセージキュ
     -   [カフカ](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) （用途 [Goクライアント](https://github.com/ClickHouse/clickhouse-go/))
+        -   [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) （用途 [Goクライアント](https://github.com/ClickHouse/clickhouse-go/))
         -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   ストリーム処理
     -   [フリンク](https://flink.apache.org)
@@ -51,12 +51,12 @@ toc_title: "\u7D71\u5408"
     -   [グラファナ](https://grafana.com/)
         -   [クリックハウス-グラファナ](https://github.com/Vertamedia/clickhouse-grafana)
     -   [プロメテウス](https://prometheus.io/)
-        -   [clickhouse\_exporter](https://github.com/f1yegor/clickhouse_exporter)
+        -   [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         -   [プロムハウス](https://github.com/Percona-Lab/PromHouse)
-        -   [clickhouse\_exporter](https://github.com/hot-wifi/clickhouse_exporter) （用途 [Goクライアント](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) （用途 [Goクライアント](https://github.com/kshvakov/clickhouse/))
     -   [ナギオス](https://www.nagios.org/)
-        -   [check\_clickhouse](https://github.com/exogroup/check_clickhouse/)
-        -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
+        -   [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+        -   [check_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [Zabbix](https://www.zabbix.com)
         -   [clickhouse-zabbix-テンプレート](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)
@@ -76,7 +76,7 @@ toc_title: "\u7D71\u5408"
 
 -   Python
     -   [SQLAlchemy](https://www.sqlalchemy.org)
-        -   [sqlalchemy-クリックハウス](https://github.com/cloudflare/sqlalchemy-clickhouse) （用途 [インフィclickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [sqlalchemy-クリックハウス](https://github.com/cloudflare/sqlalchemy-clickhouse) （用途 [インフィclickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [パンダ](https://pandas.pydata.org)
         -   [パンダハウス](https://github.com/kszucs/pandahouse)
 -   PHP
@@ -91,7 +91,7 @@ toc_title: "\u7D71\u5408"
 -   Scala
     -   [アッカ](https://akka.io)
         -   [clickhouse-scala-クライアント](https://github.com/crobox/clickhouse-scala-client)
--   C\#
+-   C#
     -   [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
         -   [クリックハウスAdo](https://github.com/killwort/ClickHouse-Net)
         -   [クリックハウスクライアン](https://github.com/DarkWanderer/ClickHouse.Client)
@@ -99,7 +99,7 @@ toc_title: "\u7D71\u5408"
         -   [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 -   エリクサー
     -   [Ecto](https://github.com/elixir-ecto/ecto)
-        -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+        -   [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 -   Ruby
     -   [Ruby on rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)

@@ -5,18 +5,36 @@
 #    include <cstdio>
 #    include <mntent.h>
 #endif
+#include <cerrno>
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/Version.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_STATVFS;
 }
+
+
+struct statvfs getStatVFS(const String & path)
+{
+    struct statvfs fs;
+    while (statvfs(path.c_str(), &fs) != 0)
+    {
+        if (errno == EINTR)
+            continue;
+        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+    }
+    return fs;
+}
+
 
 bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])
 {
@@ -46,7 +64,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     const auto get_device_id = [](const std::filesystem::path & p)
     {
         struct stat st;
-        if (stat(p.c_str(), &st))
+        if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
             throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
         return st.st_dev;
     };
@@ -61,7 +79,6 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
         if (device_id != parent_device_id)
             return absolute_path;
         absolute_path = parent;
-        device_id = parent_device_id;
     }
 
     return absolute_path;
@@ -79,8 +96,8 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
         throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
     mntent fs_info;
     constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
-    char buf[buf_size];
-    while (getmntent_r(mounted_filesystems, &fs_info, buf, buf_size) && fs_info.mnt_dir != mount_point)
+    std::vector<char> buf(buf_size);
+    while (getmntent_r(mounted_filesystems, &fs_info, buf.data(), buf_size) && fs_info.mnt_dir != mount_point)
         ;
     endmntent(mounted_filesystems);
     if (fs_info.mnt_dir != mount_point)

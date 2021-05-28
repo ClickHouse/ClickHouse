@@ -1,5 +1,10 @@
 #include "ClusterCopierApp.h"
 #include <Common/StatusFile.h>
+#include <Common/TerminalSize.h>
+#include <IO/ConnectionTimeoutsContext.h>
+#include <Formats/registerFormats.h>
+#include <ext/scope_guard_safe.h>
+#include <unistd.h>
 
 
 namespace DB
@@ -52,7 +57,13 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
 void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
 {
+    uint16_t terminal_width = 0;
+    if (isatty(STDIN_FILENO))
+        terminal_width = getTerminalWidth();
+
     Poco::Util::HelpFormatter help_formatter(options());
+    if (terminal_width)
+        help_formatter.setWidth(terminal_width);
     help_formatter.setCommand(commandName());
     help_formatter.setHeader("Copies tables from one cluster to another");
     help_formatter.setUsage("--config-file <config-file> --task-path <task-path>");
@@ -97,12 +108,12 @@ void ClusterCopierApp::mainImpl()
     ThreadStatus thread_status;
 
     auto * log = &logger();
-    LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::get());
+    LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
 
     SharedContextHolder shared_context = Context::createShared();
-    auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    auto context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
-    SCOPE_EXIT(context->shutdown());
+    SCOPE_EXIT_SAFE(context->shutdown());
 
     context->setConfig(loaded_config.configuration);
     context->setApplicationType(Context::ApplicationType::LOCAL);
@@ -114,15 +125,16 @@ void ClusterCopierApp::mainImpl()
     registerStorages();
     registerDictionaries();
     registerDisks();
+    registerFormats();
 
     static const std::string default_database = "_local";
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, context));
     context->setCurrentDatabase(default_database);
 
     /// Initialize query scope just in case.
-    CurrentThread::QueryScope query_scope(*context);
+    CurrentThread::QueryScope query_scope(context);
 
-    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
+    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);

@@ -4,6 +4,7 @@
 #include <common/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -22,6 +23,7 @@ namespace ErrorCodes
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
     : delta_bytes_size(delta_bytes_size_)
 {
+    setCodecDescription("Delta", {std::make_shared<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
 }
 
 uint8_t CompressionCodecDelta::getMethodByte() const
@@ -29,9 +31,9 @@ uint8_t CompressionCodecDelta::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Delta);
 }
 
-String CompressionCodecDelta::getCodecDesc() const
+void CompressionCodecDelta::updateHash(SipHash & hash) const
 {
-    return fmt::format("Delta({})", size_t(delta_bytes_size));
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 namespace
@@ -134,7 +136,7 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
 namespace
 {
 
-UInt8 getDeltaBytesSize(DataTypePtr column_type)
+UInt8 getDeltaBytesSize(const IDataType * column_type)
 {
     if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not of fixed size",
@@ -150,15 +152,10 @@ UInt8 getDeltaBytesSize(DataTypePtr column_type)
 
 }
 
-void CompressionCodecDelta::useInfoAboutType(const DataTypePtr & data_type)
-{
-    delta_bytes_size = getDeltaBytesSize(data_type);
-}
-
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Delta);
-    factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         UInt8 delta_bytes_size = 0;
 

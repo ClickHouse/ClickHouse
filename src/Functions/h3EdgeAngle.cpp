@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
+#if USE_H3
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -18,12 +24,15 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+namespace
+{
+
 class FunctionH3EdgeAngle : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeAngle";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3EdgeAngle>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeAngle>(); }
 
     std::string getName() const override { return name; }
 
@@ -41,9 +50,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_hindex = arguments[0].column.get();
 
         auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
@@ -62,10 +71,11 @@ public:
             dst_data[row] = res;
         }
 
-        block.getByPosition(result).column = std::move(dst);
+        return dst;
     }
 };
 
+}
 
 void registerFunctionH3EdgeAngle(FunctionFactory & factory)
 {
@@ -73,3 +83,5 @@ void registerFunctionH3EdgeAngle(FunctionFactory & factory)
 }
 
 }
+
+#endif

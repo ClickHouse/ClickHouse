@@ -5,37 +5,87 @@ toc_title: Third-Party Libraries Used
 
 # Third-Party Libraries Used {#third-party-libraries-used}
 
-| Library             | License                                                                                                                                      |
-|---------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
-| base64              | [BSD 2-Clause License](https://github.com/aklomp/base64/blob/a27c565d1b6c676beaf297fe503c4518185666f7/LICENSE)                               |
-| boost               | [Boost Software License 1.0](https://github.com/ClickHouse-Extras/boost-extra/blob/6883b40449f378019aec792f9983ce3afc7ff16e/LICENSE_1_0.txt) |
-| brotli              | [MIT](https://github.com/google/brotli/blob/master/LICENSE)                                                                                  |
-| capnproto           | [MIT](https://github.com/capnproto/capnproto/blob/master/LICENSE)                                                                            |
-| cctz                | [Apache License 2.0](https://github.com/google/cctz/blob/4f9776a310f4952454636363def82c2bf6641d5f/LICENSE.txt)                               |
-| double-conversion   | [BSD 3-Clause License](https://github.com/google/double-conversion/blob/cf2f0f3d547dc73b4612028a155b80536902ba02/LICENSE)                    |
-| FastMemcpy          | [MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libmemcpy/impl/LICENSE)                                                      |
-| googletest          | [BSD 3-Clause License](https://github.com/google/googletest/blob/master/LICENSE)                                                             |
-| h3                  | [Apache License 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                         |
-| hyperscan           | [BSD 3-Clause License](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                               |
-| libbtrie            | [BSD 2-Clause License](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                        |
-| libcxxabi           | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                          |
-| libdivide           | [Zlib License](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                           |
-| libgsasl            | [LGPL v2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                             |
-| libhdfs3            | [Apache License 2.0](https://github.com/ClickHouse-Extras/libhdfs3/blob/bd6505cbb0c130b0db695305b9a38546fa880e5a/LICENSE.txt)                |
-| libmetrohash        | [Apache License 2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libmetrohash/LICENSE)                                      |
-| libpcg-random       | [Apache License 2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libpcg-random/LICENSE-APACHE.txt)                          |
-| libressl            | [OpenSSL License](https://github.com/ClickHouse-Extras/ssl/blob/master/COPYING)                                                              |
-| librdkafka          | [BSD 2-Clause License](https://github.com/edenhill/librdkafka/blob/363dcad5a23dc29381cc626620e68ae418b3af19/LICENSE)                         |
-| libwidechar\_width  | [CC0 1.0 Universal](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                     |
-| llvm                | [BSD 3-Clause License](https://github.com/ClickHouse-Extras/llvm/blob/163def217817c90fb982a6daf384744d8472b92b/llvm/LICENSE.TXT)             |
-| lz4                 | [BSD 2-Clause License](https://github.com/lz4/lz4/blob/c10863b98e1503af90616ae99725ecd120265dfb/LICENSE)                                     |
-| mariadb-connector-c | [LGPL v2.1](https://github.com/ClickHouse-Extras/mariadb-connector-c/blob/3.1/COPYING.LIB)                                                   |
-| murmurhash          | [Public Domain](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/murmurhash/LICENSE)                                             |
-| pdqsort             | [Zlib License](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/pdqsort/license.txt)                                             |
-| poco                | [Boost Software License - Version 1.0](https://github.com/ClickHouse-Extras/poco/blob/fe5505e56c27b6ecb0dcbc40c49dc2caf4e9637f/LICENSE)      |
-| protobuf            | [BSD 3-Clause License](https://github.com/ClickHouse-Extras/protobuf/blob/12735370922a35f03999afff478e1c6d7aa917a4/LICENSE)                  |
-| re2                 | [BSD 3-Clause License](https://github.com/google/re2/blob/7cf8b88e8f70f97fd4926b56aa87e7f53b2717e0/LICENSE)                                  |
-| sentry-native       | [MIT License](https://github.com/getsentry/sentry-native/blob/master/LICENSE)                                                                 |
-| UnixODBC            | [LGPL v2.1](https://github.com/ClickHouse-Extras/UnixODBC/tree/b0ad30f7f6289c12b76f04bfb9d466374bb32168)                                     |
-| zlib-ng             | [Zlib License](https://github.com/ClickHouse-Extras/zlib-ng/blob/develop/LICENSE.md)                                                         |
-| zstd                | [BSD 3-Clause License](https://github.com/facebook/zstd/blob/dev/LICENSE)                                                                    |
+The list of third-party libraries can be obtained by the following query:
+
+```
+SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en'
+```
+
+[Example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIGxpYnJhcnlfbmFtZSwgbGljZW5zZV90eXBlLCBsaWNlbnNlX3BhdGggRlJPTSBzeXN0ZW0ubGljZW5zZXMgT1JERVIgQlkgbGlicmFyeV9uYW1lIENPTExBVEUgJ2VuJw==)
+
+| library_name | license_type | license_path | 
+|:-|:-|:-|
+| abseil-cpp | Apache | /contrib/abseil-cpp/LICENSE |
+| AMQP-CPP | Apache | /contrib/AMQP-CPP/LICENSE |
+| arrow | Apache | /contrib/arrow/LICENSE.txt |
+| avro | Apache | /contrib/avro/LICENSE.txt |
+| aws | Apache | /contrib/aws/LICENSE.txt |
+| aws-c-common | Apache | /contrib/aws-c-common/LICENSE |
+| aws-c-event-stream | Apache | /contrib/aws-c-event-stream/LICENSE |
+| aws-checksums | Apache | /contrib/aws-checksums/LICENSE |
+| base64 | BSD 2-clause | /contrib/base64/LICENSE |
+| boost | Boost | /contrib/boost/LICENSE_1_0.txt |
+| boringssl | BSD | /contrib/boringssl/LICENSE |
+| brotli | MIT | /contrib/brotli/LICENSE |
+| capnproto | MIT | /contrib/capnproto/LICENSE |
+| cassandra | Apache | /contrib/cassandra/LICENSE.txt |
+| cctz | Apache | /contrib/cctz/LICENSE.txt |
+| cityhash102 | MIT | /contrib/cityhash102/COPYING |
+| cppkafka | BSD 2-clause | /contrib/cppkafka/LICENSE |
+| croaring | Apache | /contrib/croaring/LICENSE |
+| curl | Apache | /contrib/curl/docs/LICENSE-MIXING.md |
+| cyrus-sasl | BSD 2-clause | /contrib/cyrus-sasl/COPYING |
+| double-conversion | BSD 3-clause | /contrib/double-conversion/LICENSE |
+| dragonbox | Apache | /contrib/dragonbox/LICENSE-Apache2-LLVM |
+| fast_float | Apache | /contrib/fast_float/LICENSE |
+| fastops | MIT | /contrib/fastops/LICENSE |
+| flatbuffers | Apache | /contrib/flatbuffers/LICENSE.txt |
+| fmtlib | Unknown | /contrib/fmtlib/LICENSE.rst |
+| gcem | Apache | /contrib/gcem/LICENSE |
+| googletest | BSD 3-clause | /contrib/googletest/LICENSE |
+| grpc | Apache | /contrib/grpc/LICENSE |
+| h3 | Apache | /contrib/h3/LICENSE |
+| hyperscan | Boost | /contrib/hyperscan/LICENSE |
+| icu | Public Domain | /contrib/icu/icu4c/LICENSE |
+| icudata | Public Domain | /contrib/icudata/LICENSE |
+| jemalloc | BSD 2-clause | /contrib/jemalloc/COPYING |
+| krb5 | MIT | /contrib/krb5/src/lib/gssapi/LICENSE |
+| libc-headers | LGPL | /contrib/libc-headers/LICENSE |
+| libcpuid | BSD 2-clause | /contrib/libcpuid/COPYING |
+| libcxx | Apache | /contrib/libcxx/LICENSE.TXT |
+| libcxxabi | Apache | /contrib/libcxxabi/LICENSE.TXT |
+| libdivide | zLib | /contrib/libdivide/LICENSE.txt |
+| libfarmhash | MIT | /contrib/libfarmhash/COPYING |
+| libgsasl | LGPL | /contrib/libgsasl/LICENSE |
+| libhdfs3 | Apache | /contrib/libhdfs3/LICENSE.txt |
+| libmetrohash | Apache | /contrib/libmetrohash/LICENSE |
+| libpq | Unknown | /contrib/libpq/COPYRIGHT |
+| libpqxx | BSD 3-clause | /contrib/libpqxx/COPYING |
+| librdkafka | MIT | /contrib/librdkafka/LICENSE.murmur2 |
+| libunwind | Apache | /contrib/libunwind/LICENSE.TXT |
+| libuv | BSD | /contrib/libuv/LICENSE |
+| llvm | Apache | /contrib/llvm/llvm/LICENSE.TXT |
+| lz4 | BSD | /contrib/lz4/LICENSE |
+| mariadb-connector-c | LGPL | /contrib/mariadb-connector-c/COPYING.LIB |
+| miniselect | Boost | /contrib/miniselect/LICENSE_1_0.txt |
+| msgpack-c | Boost | /contrib/msgpack-c/LICENSE_1_0.txt |
+| murmurhash | Public Domain | /contrib/murmurhash/LICENSE |
+| NuRaft | Apache | /contrib/NuRaft/LICENSE |
+| openldap | Unknown | /contrib/openldap/LICENSE |
+| orc | Apache | /contrib/orc/LICENSE |
+| poco | Boost | /contrib/poco/LICENSE |
+| protobuf | BSD 3-clause | /contrib/protobuf/LICENSE |
+| rapidjson | MIT | /contrib/rapidjson/bin/jsonschema/LICENSE |
+| re2 | BSD 3-clause | /contrib/re2/LICENSE |
+| replxx | BSD 3-clause | /contrib/replxx/LICENSE.md |
+| rocksdb | BSD 3-clause | /contrib/rocksdb/LICENSE.leveldb |
+| sentry-native | MIT | /contrib/sentry-native/LICENSE |
+| simdjson | Apache | /contrib/simdjson/LICENSE |
+| snappy | Public Domain | /contrib/snappy/COPYING |
+| sparsehash-c11 | BSD 3-clause | /contrib/sparsehash-c11/LICENSE |
+| stats | Apache | /contrib/stats/LICENSE |
+| thrift | Apache | /contrib/thrift/LICENSE |
+| unixodbc | LGPL | /contrib/unixodbc/COPYING |
+| xz | Public Domain | /contrib/xz/COPYING |
+| zlib-ng | zLib | /contrib/zlib-ng/LICENSE.md |
+| zstd | BSD | /contrib/zstd/LICENSE |

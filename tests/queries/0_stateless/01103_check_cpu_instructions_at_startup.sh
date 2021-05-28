@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 # If we run sanitized binary under qemu, it will try to slowly allocate 20 TiB until OOM.
 # Don't even try to do that. This test should be disabled for sanitizer builds.
@@ -11,7 +12,7 @@ command=$(command -v ${CLICKHOUSE_LOCAL})
 
 function run_with_cpu()
 {
-    qemu-x86_64-static -cpu "$@" $command --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
+    qemu-x86_64-static -cpu "$@" "$command" --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
 }
 
 run_with_cpu qemu64

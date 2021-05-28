@@ -141,3 +141,4 @@ SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(2, NULL), (NULL, NULL)] FR
 SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [] FROM null_in_tuple WHERE t not in ((1, '1'), (1, NULL), (2, NULL), (NULL, '3'), (NULL, NULL));
 
 DROP TABLE IF EXISTS null_in_tuple;
+DROP TABLE test_set2;

@@ -12,9 +12,9 @@ toc_priority: 151
 skewSamp(expr)
 ```
 
-**Параметры**
+**Аргументы**
 
-`expr` — [Выражение](../../syntax.md#syntax-expressions), возвращающее число.
+`expr` — [выражение](../../syntax.md#syntax-expressions), возвращающее число.
 
 **Возвращаемое значение**
 
@@ -23,7 +23,6 @@ skewSamp(expr)
 **Пример**
 
 ``` sql
-SELECT skewSamp(value) FROM series_with_value_column
+SELECT skewSamp(value) FROM series_with_value_column;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/skewsamp/) <!--hide-->

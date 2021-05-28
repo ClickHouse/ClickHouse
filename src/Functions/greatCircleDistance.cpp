@@ -95,8 +95,14 @@ void geodistInit()
 
         sphere_metric_meters_lut[i] = static_cast<float>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
 
-        sphere_metric_lut[i] = cosf(latitude);
+        sphere_metric_lut[i] = sqrf(cosf(latitude));
     }
+}
+
+inline NO_SANITIZE_UNDEFINED size_t floatToIndex(float x)
+{
+    /// Implementation specific behaviour on overflow or infinite value.
+    return static_cast<size_t>(x);
 }
 
 inline float geodistDegDiff(float f)
@@ -110,7 +116,7 @@ inline float geodistDegDiff(float f)
 inline float geodistFastCos(float x)
 {
     float y = fabsf(x) * (COS_LUT_SIZE / PI / 2);
-    size_t i = static_cast<size_t>(y);
+    size_t i = floatToIndex(y);
     y -= i;
     i &= (COS_LUT_SIZE - 1);
     return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
@@ -119,7 +125,7 @@ inline float geodistFastCos(float x)
 inline float geodistFastSin(float x)
 {
     float y = fabsf(x) * (COS_LUT_SIZE / PI / 2);
-    size_t i = static_cast<size_t>(y);
+    size_t i = floatToIndex(y);
     y -= i;
     i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
     return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
@@ -139,7 +145,7 @@ inline float geodistFastAsinSqrt(float x)
     {
         // distance under 17083 km, 512-entry LUT error under 0.00072%
         x *= ASIN_SQRT_LUT_SIZE;
-        size_t i = static_cast<size_t>(x);
+        size_t i = floatToIndex(x);
         return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
     }
     return asinf(sqrtf(x)); // distance over 17083 km, just compute exact
@@ -176,13 +182,13 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
         ///  (Remember how a plane flies from Moscow to New York)
         /// But if longitude is close but latitude is different enough, there is no difference between meridian and great circle line.
 
-        float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, KTABLE] indexes
-        size_t latitude_midpoint_index = static_cast<size_t>(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
+        float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
+        size_t latitude_midpoint_index = floatToIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
-        float k_lat;
-        float k_lon;
+        float k_lat{};
+        float k_lon{};
 
         if constexpr (method == Method::SPHERE_DEGREES)
         {
@@ -255,23 +261,23 @@ private:
         return std::make_shared<DataTypeFloat32>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto dst = ColumnVector<Float32>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        const IColumn & col_lon1 = *block.getByPosition(arguments[0]).column;
-        const IColumn & col_lat1 = *block.getByPosition(arguments[1]).column;
-        const IColumn & col_lon2 = *block.getByPosition(arguments[2]).column;
-        const IColumn & col_lat2 = *block.getByPosition(arguments[3]).column;
+        const IColumn & col_lon1 = *arguments[0].column;
+        const IColumn & col_lat1 = *arguments[1].column;
+        const IColumn & col_lon2 = *arguments[2].column;
+        const IColumn & col_lat2 = *arguments[3].column;
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             dst_data[row_num] = distance<method>(
                 col_lon1.getFloat32(row_num), col_lat1.getFloat32(row_num),
                 col_lon2.getFloat32(row_num), col_lat2.getFloat32(row_num));
 
-        block.getByPosition(result).column = std::move(dst);
+        return dst;
     }
 };
 
@@ -281,7 +287,7 @@ template <Method method>
 class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
 {
 public:
-    explicit FunctionGeoDistance(const Context & context) : selector(context)
+    explicit FunctionGeoDistance(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGeoDistance<method>>();
@@ -296,12 +302,12 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionGeoDistance<method>>(context);
     }

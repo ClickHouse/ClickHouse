@@ -1,16 +1,19 @@
-#include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Core/ColumnNumbers.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionImpl.h>
 
 
 namespace DB
+{
+
+namespace
 {
 
 /// Implements the function coalesce which takes a set of arguments and
@@ -21,12 +24,12 @@ class FunctionCoalesce : public IFunction
 public:
     static constexpr auto name = "coalesce";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(const Context & context_) : context(context_) {}
+    explicit FunctionCoalesce(ContextPtr context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -85,17 +88,17 @@ public:
         return res;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// coalesce(arg0, arg1, ..., argN) is essentially
         /// multiIf(isNotNull(arg0), assumeNotNull(arg0), isNotNull(arg1), assumeNotNull(arg1), ..., argN)
         /// with constant NULL arguments removed.
 
-        ColumnNumbers filtered_args;
+        ColumnsWithTypeAndName filtered_args;
         filtered_args.reserve(arguments.size());
         for (const auto & arg : arguments)
         {
-            const auto & type = block.getByPosition(arg).type;
+            const auto & type = arg.type;
 
             if (type->onlyNull())
                 continue;
@@ -110,13 +113,11 @@ public:
         auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context);
         auto multi_if = FunctionFactory::instance().get("multiIf", context);
 
-        ColumnNumbers multi_if_args;
-
-        Block temp_block = block;
+        ColumnsWithTypeAndName multi_if_args;
+        ColumnsWithTypeAndName tmp_args(1);
 
         for (size_t i = 0; i < filtered_args.size(); ++i)
         {
-            size_t res_pos = temp_block.columns();
             bool is_last = i + 1 == filtered_args.size();
 
             if (is_last)
@@ -125,40 +126,27 @@ public:
             }
             else
             {
-                temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
-                is_not_null->build({temp_block.getByPosition(filtered_args[i])})->execute(temp_block, {filtered_args[i]}, res_pos, input_rows_count);
-                temp_block.insert({nullptr, removeNullable(block.getByPosition(filtered_args[i]).type), ""});
-                assume_not_null->build({temp_block.getByPosition(filtered_args[i])})->execute(temp_block, {filtered_args[i]}, res_pos + 1, input_rows_count);
+                tmp_args[0] = filtered_args[i];
+                auto & cond = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
+                cond.column = is_not_null->build(tmp_args)->execute(tmp_args, cond.type, input_rows_count);
 
-                multi_if_args.push_back(res_pos);
-                multi_if_args.push_back(res_pos + 1);
+                tmp_args[0] = filtered_args[i];
+                auto & val = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(filtered_args[i].type), ""});
+                val.column = assume_not_null->build(tmp_args)->execute(tmp_args, val.type, input_rows_count);
             }
         }
 
         /// If all arguments appeared to be NULL.
         if (multi_if_args.empty())
-        {
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(input_rows_count);
-            return;
-        }
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         if (multi_if_args.size() == 1)
-        {
-            block.getByPosition(result).column = block.getByPosition(multi_if_args.front()).column;
-            return;
-        }
+            return multi_if_args.front().column;
 
-        ColumnsWithTypeAndName multi_if_args_elems;
-        multi_if_args_elems.reserve(multi_if_args.size());
-        for (auto column_num : multi_if_args)
-            multi_if_args_elems.emplace_back(temp_block.getByPosition(column_num));
-
-        multi_if->build(multi_if_args_elems)->execute(temp_block, multi_if_args, result, input_rows_count);
-
-        ColumnPtr res = std::move(temp_block.getByPosition(result).column);
+        ColumnPtr res = multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count);
 
         /// if last argument is not nullable, result should be also not nullable
-        if (!block.getByPosition(multi_if_args.back()).column->isNullable() && res->isNullable())
+        if (!multi_if_args.back().column->isNullable() && res->isNullable())
         {
             if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
                 res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn())->getNestedColumnPtr();
@@ -168,13 +156,14 @@ public:
                 res = checkAndGetColumn<ColumnNullable>(*res)->getNestedColumnPtr();
         }
 
-        block.getByPosition(result).column = std::move(res);
+        return res;
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
+}
 
 void registerFunctionCoalesce(FunctionFactory & factory)
 {

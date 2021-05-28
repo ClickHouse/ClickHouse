@@ -76,7 +76,6 @@ SELECT l.lc, r.lc, toTypeName(l.lc), toTypeName(materialize(r.lc)) FROM nl AS l 
 SELECT l.lc, r.lc, toTypeName(l.lc), toTypeName(materialize(r.lc)) FROM nl AS l FULL JOIN r_lc AS r USING (x);
 SELECT l.lc, r.lc, toTypeName(l.lc), toTypeName(materialize(r.lc)) FROM nl AS l FULL JOIN r_lc AS r USING (lc);
 
--- TODO: LC nullability
 SET join_use_nulls = 1;
 
 SELECT lc, toTypeName(lc) FROM l_lc AS l RIGHT JOIN r_lc AS r USING (x);

@@ -16,13 +16,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, const Context & context)
-    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context)
+DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
+    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
 void DatabaseMemory::createTable(
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     const String & table_name,
     const StoragePtr & table,
     const ASTPtr & query)
@@ -33,7 +33,7 @@ void DatabaseMemory::createTable(
 }
 
 void DatabaseMemory::dropTable(
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     const String & table_name,
     bool /*no_delay*/)
 {
@@ -53,18 +53,21 @@ void DatabaseMemory::dropTable(
     }
     table->is_dropped = true;
     create_queries.erase(table_name);
+    UUID table_uuid = table->getStorageID().uuid;
+    if (table_uuid != UUIDHelpers::Nil)
+        DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = database_name;
+    create_query->database = getDatabaseName();
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
     return create_query;
 }
 
-ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
+ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
@@ -75,20 +78,20 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const 
         else
             return {};
     }
-    return it->second;
+    return it->second->clone();
 }
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name, global_context))
+    if (auto table = tryGetTable(table_name, getContext()))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::drop(const Context & context)
+void DatabaseMemory::drop(ContextPtr local_context)
 {
     /// Remove data on explicit DROP DATABASE
-    std::filesystem::remove_all(context.getPath() + data_path);
+    std::filesystem::remove_all(local_context->getPath() + data_path);
 }
 
 }

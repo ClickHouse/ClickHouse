@@ -26,7 +26,6 @@
 #include <Core/Defines.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/sort.hpp>
-#include <sstream>
 
 
 namespace DB
@@ -72,6 +71,15 @@ namespace
                 query->settings = user.settings.toAST();
             else
                 query->settings = user.settings.toASTWithNames(*manager);
+        }
+
+        if (user.grantees != RolesOrUsersSet::AllTag{})
+        {
+            if (attach_mode)
+                query->grantees = user.grantees.toAST();
+            else
+                query->grantees = user.grantees.toASTWithNames(*manager);
+            query->grantees->use_keyword_any = true;
         }
 
         return query;
@@ -217,8 +225,8 @@ namespace
 }
 
 
-InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    : WithContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -238,19 +246,19 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    std::stringstream create_query_ss;
+    WriteBufferFromOwnString create_query_buf;
     for (const auto & create_query : create_queries)
     {
-        formatAST(*create_query, create_query_ss, false, true);
-        column->insert(create_query_ss.str());
-        create_query_ss.str("");
+        formatAST(*create_query, create_query_buf, false, true);
+        column->insert(create_query_buf.str());
+        create_query_buf.restart();
     }
 
     /// Prepare description of the result column.
-    std::stringstream desc_ss;
+    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    formatAST(show_query, desc_ss, false, true);
-    String desc = desc_ss.str();
+    formatAST(show_query, desc_buf, false, true);
+    String desc = desc_buf.str();
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
@@ -262,9 +270,9 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities() const
 {
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
-    const auto & access_control = context.getAccessControlManager();
-    context.checkAccess(getRequiredAccess());
-    show_query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    const auto & access_control = getContext()->getAccessControlManager();
+    getContext()->checkAccess(getRequiredAccess());
+    show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)
@@ -278,12 +286,12 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_user)
     {
-        if (auto user = context.getUser())
+        if (auto user = getContext()->getUser())
             entities.push_back(user);
     }
     else if (show_query.current_quota)
     {
-        auto usage = context.getQuotaUsage();
+        auto usage = getContext()->getQuotaUsage();
         if (usage)
             entities.push_back(access_control.read<Quota>(usage->quota_id));
     }
@@ -333,7 +341,7 @@ ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
     auto entities = getEntities();
 
     ASTs list;
-    const auto & access_control = context.getAccessControlManager();
+    const auto & access_control = getContext()->getAccessControlManager();
     for (const auto & entity : entities)
         list.push_back(getCreateQuery(*entity, access_control));
 

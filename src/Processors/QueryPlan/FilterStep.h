@@ -4,8 +4,8 @@
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
@@ -13,17 +13,24 @@ class FilterStep : public ITransformingStep
 public:
     FilterStep(
         const DataStream & input_stream_,
-        ExpressionActionsPtr expression_,
+        ActionsDAGPtr actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
 
     String getName() const override { return "Filter"; }
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
 
+    void updateInputStream(DataStream input_stream, bool keep_header);
+
+    void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    const ActionsDAGPtr & getExpression() const { return actions_dag; }
+    const String & getFilterColumnName() const { return filter_column_name; }
+    bool removesFilterColumn() const { return remove_filter_column; }
+
 private:
-    ExpressionActionsPtr expression;
+    ActionsDAGPtr actions_dag;
     String filter_column_name;
     bool remove_filter_column;
 };

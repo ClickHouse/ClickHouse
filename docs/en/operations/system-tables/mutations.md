@@ -44,3 +44,5 @@ If there were problems with mutating some data parts, the following columns cont
 -   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
 -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table engine
 -   [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/mutations) <!--hide-->

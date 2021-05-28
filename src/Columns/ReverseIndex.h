@@ -316,8 +316,8 @@ template <typename IndexType, typename ColumnType>
 class ReverseIndex
 {
 public:
-    explicit ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
-            : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), saved_hash_ptr(nullptr) {}
+    ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
+        : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), saved_hash_ptr(nullptr) {}
 
     void setColumn(ColumnType * column_);
 
@@ -325,7 +325,23 @@ public:
     static constexpr bool use_saved_hash = !is_numeric_column;
 
     UInt64 insert(const StringRef & data);
-    UInt64 getInsertionPoint(const StringRef & data);
+
+    /// Returns the found data's index in the dictionary. If index is not built, builds it.
+    UInt64 getInsertionPoint(StringRef data)
+    {
+        if (!index)
+            buildIndex();
+        return getIndexImpl(data);
+    }
+
+    /// Returns the found data's index in the dictionary if the #index is built, otherwise, returns a std::nullopt.
+    std::optional<UInt64> getIndex(StringRef data) const
+    {
+        if (!index)
+            return {};
+        return getIndexImpl(data);
+    }
+
     UInt64 lastInsertionPoint() const { return size() + base_index; }
 
     ColumnType * getColumn() const { return column; }
@@ -380,6 +396,8 @@ private:
     }
 
     ColumnUInt64::MutablePtr calcHashes() const;
+
+    UInt64 getIndexImpl(StringRef data) const;
 };
 
 
@@ -499,11 +517,8 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(const StringRef & data)
 }
 
 template <typename IndexType, typename ColumnType>
-UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPoint(const StringRef & data)
+UInt64 ReverseIndex<IndexType, ColumnType>::getIndexImpl(StringRef data) const
 {
-    if (!index)
-        buildIndex();
-
     using IteratorType = typename IndexMapType::iterator;
     IteratorType iterator;
 
@@ -512,5 +527,4 @@ UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPoint(const StringRef & 
 
     return iterator == index->end() ? size() + base_index : iterator->getValue();
 }
-
 }

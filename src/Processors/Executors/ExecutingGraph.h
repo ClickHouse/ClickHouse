@@ -90,7 +90,7 @@ public:
 
         /// Ports which have changed their state since last processor->prepare() call.
         /// They changed when neighbour processors interact with connected ports.
-        /// Tey will be used as arguments for next processor->prepare() (and will be cleaned after that).
+        /// They will be used as arguments for next processor->prepare() (and will be cleaned after that).
         IProcessor::PortNumbers updated_input_ports;
         IProcessor::PortNumbers updated_output_ports;
 

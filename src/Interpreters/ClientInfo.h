@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Core/Types.h>
-
+#include <common/types.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 namespace DB
 {
@@ -24,6 +25,9 @@ public:
     {
         TCP = 1,
         HTTP = 2,
+        GRPC = 3,
+        MYSQL = 4,
+        POSTGRESQL = 5,
     };
 
     enum class HTTPMethod : uint8_t
@@ -58,6 +62,10 @@ public:
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
 
+    // OpenTelemetry trace context we received from client, or which we are going
+    // to send to server.
+    OpenTelemetryTraceContext client_trace_context;
+
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
@@ -69,14 +77,26 @@ public:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    unsigned client_revision = 0;
+    unsigned client_tcp_protocol_version = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
+    String http_referer;
+
+    /// For mysql
+    UInt64 connection_id = 0;
+
+    /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
+    /// It's expected that proxy appends the forwarded address to the end of the list.
+    /// The element can be trusted only if you trust the corresponding proxy.
+    /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
+    String forwarded_for;
 
     /// Common
     String quota_key;
+
+    UInt64 distributed_depth = 0;
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

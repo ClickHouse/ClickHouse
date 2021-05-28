@@ -3,7 +3,7 @@
 #if defined(OS_LINUX) || defined(__FreeBSD__)
 #include <IO/ReadBufferAIO.h>
 #endif
-#include <IO/MMapReadBufferFromFile.h>
+#include <IO/MMapReadBufferFromFileWithCache.h>
 #include <Common/ProfileEvents.h>
 
 
@@ -21,7 +21,7 @@ namespace DB
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename_,
-    size_t estimated_size, size_t aio_threshold, size_t mmap_threshold,
+    size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
     size_t buffer_size_, int flags_, char * existing_memory_, size_t alignment)
 {
 #if defined(OS_LINUX) || defined(__FreeBSD__)
@@ -45,11 +45,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     (void)estimated_size;
 #endif
 
-    if (!existing_memory_ && mmap_threshold && estimated_size >= mmap_threshold)
+    if (!existing_memory_ && mmap_threshold && mmap_cache && estimated_size >= mmap_threshold)
     {
         try
         {
-            auto res = std::make_unique<MMapReadBufferFromFile>(filename_, 0);
+            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*mmap_cache, filename_, 0);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
         }

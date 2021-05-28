@@ -10,22 +10,40 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
 }
 
+namespace
+{
+
 /// Optimizations for integer modulo by a constant.
 
 template <typename A, typename B>
 struct ModuloByConstantImpl
-    : BinaryOperationImplBase<A, B, ModuloImpl<A, B>>
+    : BinaryOperation<A, B, ModuloImpl<A, B>>
 {
-    using ResultType = typename ModuloImpl<A, B>::ResultType;
+    using Op = ModuloImpl<A, B>;
+    using ResultType = typename Op::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
-    static NO_INLINE void vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
+    template <OpCase op_case>
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    {
+        if constexpr (op_case == OpCase::Vector)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        else if constexpr (op_case == OpCase::LeftConstant)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(*a, b[i]);
+        else
+            vectorConstant(a, *b, c, size);
+    }
+
+    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
+
+    static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -52,12 +70,19 @@ struct ModuloByConstantImpl
         if (unlikely(static_cast<A>(b) == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
-        libdivide::divider<A> divider(b);
+        /// Division by min negative value.
+        if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
+            throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
+
+        /// Modulo of division by negative number is the same as the positive number.
+        if (b < 0)
+            b = -b;
 
         /// Here we failed to make the SSE variant from libdivide give an advantage.
 
         if (b & (b - 1))
         {
+            libdivide::divider<A> divider(b);
             for (size_t i = 0; i < size; ++i)
                 dst[i] = src[i] - (src[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
         }
@@ -71,10 +96,14 @@ struct ModuloByConstantImpl
     }
 };
 
+}
+
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
   * Can be expanded to all possible combinations, but more code is needed.
   */
 
+namespace impl_
+{
 template <> struct BinaryOperationImpl<UInt64, UInt8, ModuloImpl<UInt64, UInt8>> : ModuloByConstantImpl<UInt64, UInt8> {};
 template <> struct BinaryOperationImpl<UInt64, UInt16, ModuloImpl<UInt64, UInt16>> : ModuloByConstantImpl<UInt64, UInt16> {};
 template <> struct BinaryOperationImpl<UInt64, UInt32, ModuloImpl<UInt64, UInt32>> : ModuloByConstantImpl<UInt64, UInt32> {};
@@ -94,10 +123,10 @@ template <> struct BinaryOperationImpl<Int32, Int8, ModuloImpl<Int32, Int8>> : M
 template <> struct BinaryOperationImpl<Int32, Int16, ModuloImpl<Int32, Int16>> : ModuloByConstantImpl<Int32, Int16> {};
 template <> struct BinaryOperationImpl<Int32, Int32, ModuloImpl<Int32, Int32>> : ModuloByConstantImpl<Int32, Int32> {};
 template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> : ModuloByConstantImpl<Int32, Int64> {};
-
+}
 
 struct NameModulo { static constexpr auto name = "modulo"; };
-using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo, false>;
+using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, false>;
 
 void registerFunctionModulo(FunctionFactory & factory)
 {

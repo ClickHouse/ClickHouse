@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ public:
     struct Data
     {
         std::unordered_set<String> & keys;
-        const Context & context;
+        ContextPtr context;
         bool redundant = true;
         bool done = false;
 
@@ -75,7 +76,8 @@ public:
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
-        return node->as<ASTFunction>();
+        /// Visit functions and their arguments, that are stored in ASTExpressionList.
+        return node->as<ASTFunction>() || node->as<ASTExpressionList>();
     }
 };
 

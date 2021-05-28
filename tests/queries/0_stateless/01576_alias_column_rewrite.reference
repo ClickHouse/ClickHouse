@@ -1,0 +1,74 @@
+test-partition-prune
+1
+1
+1
+1
+1
+test-join
+1
+1
+alias2alias
+1
+1
+1
+1
+1
+1
+1
+array-join
+1
+0	0
+lambda
+1
+optimize_read_in_order
+Expression (Projection)
+  Limit (preliminary LIMIT)
+    MergingSorted (Merge sorted streams for ORDER BY)
+      MergeSorting (Merge sorted blocks for ORDER BY)
+        PartialSorting (Sort each block for ORDER BY)
+          Expression ((Before ORDER BY + Add table aliases))
+            SettingQuotaAndLimits (Set limits and quota after reading from storage)
+              ReadFromMergeTree
+Expression (Projection)
+  Limit (preliminary LIMIT)
+    FinishSorting
+      Expression ((Before ORDER BY + Add table aliases))
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          Union
+            ReadFromMergeTree
+            ReadFromMergeTree
+            ReadFromMergeTree
+Expression (Projection)
+  Limit (preliminary LIMIT)
+    FinishSorting
+      Expression (Before ORDER BY)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          Union
+            ReadFromMergeTree
+            ReadFromMergeTree
+            ReadFromMergeTree
+optimize_aggregation_in_order
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression ((Before GROUP BY + Add table aliases))
+      SettingQuotaAndLimits (Set limits and quota after reading from storage)
+        ReadFromMergeTree
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression ((Before GROUP BY + Add table aliases))
+      SettingQuotaAndLimits (Set limits and quota after reading from storage)
+        Union
+          ReadFromMergeTree
+          ReadFromMergeTree
+          ReadFromMergeTree
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      SettingQuotaAndLimits (Set limits and quota after reading from storage)
+        Union
+          ReadFromMergeTree
+          ReadFromMergeTree
+          ReadFromMergeTree
+second-index
+1
+1

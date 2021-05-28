@@ -6,14 +6,16 @@
 
 namespace DB
 {
+namespace
+{
 
-/// Returns size on disk for *block* (without taking into account compression).
+/// Returns size on disk for *columns* (without taking into account compression).
 class FunctionBlockSerializedSize : public IFunction
 {
 public:
     static constexpr auto name = "blockSerializedSize";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBlockSerializedSize>();
     }
@@ -28,38 +30,40 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         UInt64 size = 0;
 
-        for (auto arg_pos : arguments)
-            size += blockSerializedSizeOne(block.getByPosition(arg_pos));
+        for (const auto & arg : arguments)
+            size += columnsSerializedSizeOne(arg);
 
-        block.getByPosition(result).column = DataTypeUInt64().createColumnConst(
-            input_rows_count, size)->convertToFullColumnIfConst();
+        return DataTypeUInt64().createColumnConst(input_rows_count, size)->convertToFullColumnIfConst();
     }
 
-    static UInt64 blockSerializedSizeOne(const ColumnWithTypeAndName & elem)
+    static UInt64 columnsSerializedSizeOne(const ColumnWithTypeAndName & elem)
     {
         ColumnPtr full_column = elem.column->convertToFullColumnIfConst();
 
-        IDataType::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkSettings settings;
         NullWriteBuffer out;
 
-        settings.getter = [&out](IDataType::SubstreamPath) -> WriteBuffer * { return &out; };
+        settings.getter = [&out](ISerialization::SubstreamPath) -> WriteBuffer * { return &out; };
 
-        IDataType::SerializeBinaryBulkStatePtr state;
+        ISerialization::SerializeBinaryBulkStatePtr state;
 
-        elem.type->serializeBinaryBulkStatePrefix(settings, state);
-        elem.type->serializeBinaryBulkWithMultipleStreams(*full_column,
+        auto serialization = elem.type->getDefaultSerialization();
+
+        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*full_column,
             0 /** offset */, 0 /** limit */,
             settings, state);
-        elem.type->serializeBinaryBulkStateSuffix(settings, state);
+        serialization->serializeBinaryBulkStateSuffix(settings, state);
 
         return out.count();
     }
 };
 
+}
 
 void registerFunctionBlockSerializedSize(FunctionFactory & factory)
 {

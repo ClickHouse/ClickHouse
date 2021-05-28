@@ -37,6 +37,11 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     if (!ast.setting_name.empty())
     {
         setting_name = ast.setting_name;
+
+        /// Optionally check if a setting with that name is allowed.
+        if (manager)
+            manager->checkSettingNameIsAllowed(setting_name);
+
         value = ast.value;
         min_value = ast.min_value;
         max_value = ast.max_value;
@@ -48,10 +53,6 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
             min_value = Settings::castValueUtil(setting_name, min_value);
         if (!max_value.isNull())
             max_value = Settings::castValueUtil(setting_name, max_value);
-
-        /// Optionally check if a setting with that name is allowed.
-        if (manager)
-            manager->checkSettingNameIsAllowed(setting_name);
     }
 }
 

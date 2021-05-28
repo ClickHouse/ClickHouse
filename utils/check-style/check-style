@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing'
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing/|Parsers/New'
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE_DIRS |
@@ -36,29 +36,161 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
 # Double whitespaces
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null | while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
+    grep -vP $EXCLUDE_DIRS |
+    while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
 
 # Unused ErrorCodes
 # NOTE: to fix automatically, replace echo with:
 # sed -i "/extern const int $code/d" $file
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'extern const int [_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sed -r -e 's/^.*?extern const int ([_A-Z]+);.*?$/\1/' | while read code; do grep -q "ErrorCodes::$code" $file || echo "ErrorCode $code is defined but not used in file $file"; done; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'extern const int [_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sed -r -e 's/^.*?extern const int ([_A-Z]+);.*?$/\1/' | while read code; do grep -q "ErrorCodes::$code" $file || echo "ErrorCode $code is defined but not used in file $file"; done; done
 
 # Undefined ErrorCodes
 # NOTE: to fix automatically, replace echo with:
 # ( grep -q -F 'namespace ErrorCodes' $file && sed -i -r "0,/(\s*)extern const int [_A-Z]+/s//\1extern const int $code;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace ErrorCodes\n{\n    extern const int '$code';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'ErrorCodes::[_A-Z]+' $file | sed -r -e 's/^.*?ErrorCodes::([_A-Z]+).*?$/\1/' | while read code; do grep -q "extern const int $code" $file || echo "ErrorCode $code is used in file $file but not defined"; done; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'ErrorCodes::[_A-Z]+' $file | sed -r -e 's/^.*?ErrorCodes::([_A-Z]+).*?$/\1/' | while read code; do grep -q "extern const int $code" $file || echo "ErrorCode $code is used in file $file but not defined"; done; done
 
 # Duplicate ErrorCodes
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate ErrorCode in file $file"; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate ErrorCode in file $file"; done
 
 # Three or more consecutive empty lines
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
 
 # Broken XML files (requires libxml2-utils)
-find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' | xargs xmllint --noout --nonet
+find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs xmllint --noout --nonet
+
+# FIXME: for now only clickhouse-test
+pylint --rcfile=$ROOT_PATH/.pylintrc --score=n $ROOT_PATH/tests/clickhouse-test
+
+find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
+    grep -vP $EXCLUDE_DIRS |
+    xargs yamllint --config-file=$ROOT_PATH/.yamllint
 
 # Machine translation to Russian is strictly prohibited
-find $ROOT_PATH/docs/ru -name '*.md' | xargs grep -l -F 'machine_translated: true'
+find $ROOT_PATH/docs/ru -name '*.md' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -F 'machine_translated: true'
 
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
-find $ROOT_PATH/tests/queries -iname '*fail*' | grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
+find $ROOT_PATH/tests/queries -iname '*fail*' |
+    grep -vP $EXCLUDE_DIRS |
+    grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
+
+# Queries to system.query_log/system.query_thread_log should have current_database = currentDatabase() condition
+# NOTE: it is not that accuate, but at least something.
+tests_with_query_log=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
+        grep -vP $EXCLUDE_DIRS |
+        xargs grep --with-filename -e system.query_log -e system.query_thread_log | cut -d: -f1 | sort -u
+) )
+for test_case in "${tests_with_query_log[@]}"; do
+    grep -qE current_database.*currentDatabase "$test_case" || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
+done
+
+# Queries with ReplicatedMergeTree
+# NOTE: it is not that accuate, but at least something.
+tests_with_replicated_merge_tree=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
+        grep -vP $EXCLUDE_DIRS |
+        xargs grep --with-filename -e ReplicatedMergeTree | cut -d: -f1 | sort -u
+) )
+for test_case in "${tests_with_replicated_merge_tree[@]}"; do
+    case "$test_case" in
+        *.sh)
+            test_case_zk_prefix="\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
+            grep -q -e "ReplicatedMergeTree.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
+            ;;
+        *.sql)
+            # NOTE: *.sql is not supported because it is not possible right now, because:
+            # - ReplicatedMergeTree supports only ASTLiteral for zookeeper path
+            #   (and adding support of other nodes, with evaluating them are not that easy, due to zk_prefix is "optional")
+            # - Hence concat(currentDatabase(), 'foo')
+            # - Also params cannot be used, because the are wrapped with CAST()
+            #
+            # But hopefully they will not be a problem
+            # (since they do not do any "stressing" and overlap probability should be lower).
+            ;;
+        *.py)
+            # Right now there is not such tests anyway
+            echo "No ReplicatedMergeTree style check for *.py ($test_case)"
+            ;;
+    esac
+done
+
+# All the submodules should be from https://github.com/
+find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
+
+# There shouldn't be any code snippets under GPL or LGPL
+find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
+
+# There shouldn't be any docker containers outside docker directory
+find $ROOT_PATH -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
+
+# There shouldn't be any docker compose files outside docker directory
+#find $ROOT_PATH -not -path $ROOT_PATH'/tests/testflows*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name '*compose*.yml' -type f 2>/dev/null | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to docker directory:"
+
+# Check that ya.make files are auto-generated
+"$ROOT_PATH"/utils/generate-ya-make/generate-ya-make.sh
+# FIXME: apparently sandbox (don't confuse it with docker) cloning sources
+# using some ancient git version, <2.8, that contains one bug for submodules
+# initialization [1]:
+#
+#    " * A partial rewrite of "git submodule" in the 2.7 timeframe changed
+#        the way the gitdir: pointer in the submodules point at the real
+#        repository location to use absolute paths by accident.  This has
+#        been corrected."
+#
+#  [1]: https://github.com/git/git/blob/cf11a67975b057a144618badf16dc4e3d25b9407/Documentation/RelNotes/2.8.3.txt#L33-L36
+#
+# Due to which "git status" will report the following error:
+#
+#     fatal: not a git repository: /place/sandbox-data/tasks/0/2/882869720/ClickHouse/.git/modules/contrib/AMQP-CPP
+#
+# Anyway this check does not requires any submodule traverse, so it is fine to ignore those errors.
+git status -uno 2> >(grep "fatal: not a git repository: /place/sandbox-data/tasks/.*/ClickHouse/\\.git/modules/contrib") | grep ya.make && echo "ya.make files should be generated with utils/generate-ya-make/generate-ya-make.sh"
+
+# Check that every header file has #pragma once in first line
+find $ROOT_PATH/{src,programs,utils} -name '*.h' |
+    grep -vP $EXCLUDE_DIRS |
+    while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
+
+# Check for executable bit on non-executable files
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
+
+# Check for BOM
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' | grep -P '.' && echo "Files should not have UTF-16LE BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
+
+# Too many exclamation marks
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
+
+# Trailing whitespaces
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -P ' $' | grep -P '.' && echo "^ Trailing whitespaces."
+
+# Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
+
+# Conflict markers
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
+    xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
+
+# Forbid subprocess.check_call(...) in integration tests because it does not provide enough information on errors
+find $ROOT_PATH'/tests/integration' -name '*.py' |
+    xargs grep -F 'subprocess.check_call' | grep -v "STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL" && echo "Use helpers.cluster.run_and_check or subprocess.run instead of subprocess.check_call to print detailed info on error"

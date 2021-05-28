@@ -1,9 +1,9 @@
-import docker
 import os
 import pwd
-import pytest
 import re
 
+import docker
+import pytest
 from helpers.cluster import ClickHouseCluster, CLICKHOUSE_START_COMMAND
 
 
@@ -27,11 +27,13 @@ def test_different_user():
     container.exec_run('chown {} /var/lib/clickhouse'.format(other_user_id), privileged=True)
     container.exec_run(CLICKHOUSE_START_COMMAND)
 
-    cluster.shutdown() # cleanup
+    cluster.shutdown()  # cleanup
 
     with open(os.path.join(node.path, 'logs/clickhouse-server.err.log')) as log:
         expected_message = "Effective user of the process \(.*\) does not match the owner of the data \(.*\)\. Run under 'sudo -u .*'\."
         last_message = log.readlines()[-1].strip()
 
         if re.search(expected_message, last_message) is None:
-            pytest.fail('Expected the server to fail with a message "{}", but the last message is "{}"'.format(expected_message, last_message))
+            pytest.fail(
+                'Expected the server to fail with a message "{}", but the last message is "{}"'.format(expected_message,
+                                                                                                       last_message))

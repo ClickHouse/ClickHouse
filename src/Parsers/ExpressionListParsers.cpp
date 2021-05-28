@@ -1,13 +1,10 @@
-#include <Parsers/IAST.h>
+#include <Parsers/ExpressionListParsers.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/parseIntervalKind.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-
-#include <Common/typeid_cast.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -20,6 +17,8 @@ const char * ParserMultiplicativeExpression::operators[] =
     "*",     "multiply",
     "/",     "divide",
     "%",     "modulo",
+    "MOD",   "modulo",
+    "DIV",   "intDiv",
     nullptr
 };
 
@@ -54,6 +53,12 @@ const char * ParserComparisonExpression::operators[] =
     "NOT IN",        "notIn",
     "GLOBAL IN",     "globalIn",
     "GLOBAL NOT IN", "globalNotIn",
+    nullptr
+};
+
+const char * ParserComparisonExpression::overlapping_operators_to_skip[] =
+{
+    "IN PARTITION",
     nullptr
 };
 
@@ -96,9 +101,55 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto list = std::make_shared<ASTExpressionList>(result_separator);
     list->children = std::move(elements);
     node = list;
+
     return true;
 }
 
+bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTs elements;
+
+    auto parse_element = [&]
+    {
+        ASTPtr element;
+        if (!elem_parser->parse(pos, element, expected))
+            return false;
+
+        elements.push_back(element);
+        return true;
+    };
+
+    /// Parse UNION type
+    auto parse_separator = [&]
+    {
+        if (s_union_parser->ignore(pos, expected))
+        {
+            // SELECT ... UNION ALL SELECT ...
+            if (s_all_parser->check(pos, expected))
+            {
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::ALL);
+            }
+            // SELECT ... UNION DISTINCT SELECT ...
+            else if (s_distinct_parser->check(pos, expected))
+            {
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::DISTINCT);
+            }
+            // SELECT ... UNION SELECT ...
+            else
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::Unspecified);
+            return true;
+        }
+        return false;
+    };
+
+    if (!parseUtil(pos, parse_element, parse_separator))
+        return false;
+
+    auto list = std::make_shared<ASTExpressionList>();
+    list->children = std::move(elements);
+    node = list;
+    return true;
+}
 
 static bool parseOperator(IParser::Pos & pos, const char * op, Expected & expected)
 {
@@ -139,6 +190,14 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             /// try to find any of the valid operators
 
             const char ** it;
+            Expected stub;
+            for (it = overlapping_operators_to_skip; *it; ++it)
+                if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
+                    break;
+
+            if (*it)
+                break;
+
             for (it = operators; *it; it += 2)
                 if (parseOperator(pos, *it, expected))
                     break;
@@ -408,6 +467,14 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 }
 
 
+bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (ParserTableFunctionView().parse(pos, node, expected))
+        return true;
+    return elem_parser.parse(pos, node, expected);
+}
+
+
 bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// try to find any of the valid operators
@@ -490,11 +557,32 @@ bool ParserUnaryMinusExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 }
 
 
+bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr expr_ast;
+    if (!elem_parser.parse(pos, expr_ast, expected))
+        return false;
+
+    ASTPtr type_ast;
+    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
+        && ParserDataType().parse(pos, type_ast, expected))
+    {
+        node = createFunctionCast(expr_ast, type_ast);
+    }
+    else
+    {
+        node = expr_ast;
+    }
+
+    return true;
+}
+
+
 bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &expected)
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserExpressionElement>(),
+        std::make_unique<ParserCastExpression>(),
         std::make_unique<ParserExpressionWithOptionalAlias>(false)
     }.parse(pos, node, expected);
 }
@@ -510,9 +598,10 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 }
 
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
-    : impl(std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserExpression>(),
-                                                     allow_alias_without_as_keyword))
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function)
+    : impl(std::make_unique<ParserWithOptionalAlias>(
+        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>()),
+        allow_alias_without_as_keyword))
 {
 }
 
@@ -520,7 +609,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
@@ -645,6 +734,47 @@ bool ParserTimestampOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expe
     return true;
 }
 
+bool ParserIntervalOperatorExpression::parseArgumentAndIntervalKind(
+    Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected)
+{
+    auto begin = pos;
+    auto init_expected = expected;
+    ASTPtr string_literal;
+    //// A String literal followed INTERVAL keyword,
+    /// the literal can be a part of an expression or
+    /// include Number and INTERVAL TYPE at the same time
+    if (ParserStringLiteral{}.parse(pos, string_literal, expected))
+    {
+        String literal;
+        if (string_literal->as<ASTLiteral &>().value.tryGet(literal))
+        {
+            Tokens tokens(literal.data(), literal.data() + literal.size());
+            Pos token_pos(tokens, 0);
+            Expected token_expected;
+
+            if (!ParserNumber{}.parse(token_pos, expr, token_expected))
+                return false;
+            else
+            {
+                /// case: INTERVAL '1' HOUR
+                /// back to begin
+                if (!token_pos.isValid())
+                {
+                    pos = begin;
+                    expected = init_expected;
+                }
+                else
+                    /// case: INTERVAL '1 HOUR'
+                    return parseIntervalKind(token_pos, token_expected, interval_kind);
+            }
+        }
+    }
+    // case: INTERVAL expr HOUR
+    if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
+        return false;
+    return parseIntervalKind(pos, expected, interval_kind);
+}
+
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
@@ -654,15 +784,8 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
         return next_parser.parse(pos, node, expected);
 
     ASTPtr expr;
-    /// Any expression can be inside, because operator surrounds it.
-    if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
-    {
-        pos = begin;
-        return next_parser.parse(pos, node, expected);
-    }
-
     IntervalKind interval_kind;
-    if (!parseIntervalKind(pos, expected, interval_kind))
+    if (!parseArgumentAndIntervalKind(pos, expr, interval_kind, expected))
     {
         pos = begin;
         return next_parser.parse(pos, node, expected);
@@ -689,6 +812,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+    ParserFunction func_parser;
 
     ASTPtr identifier;
     ASTPtr value;
@@ -696,8 +820,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    /// If it's not literal or identifier, than it's possible list of pairs
-    if (!literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    /// If it's neither literal, nor identifier, nor function, than it's possible list of pairs
+    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;
         ParserToken open(TokenType::OpeningRoundBracket);
@@ -716,8 +840,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
 
     auto pair = std::make_shared<ASTPair>(with_brackets);
-    pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
-    pair->second = value;
+    pair->first = Poco::toLower(identifier->as<ASTIdentifier>()->name());
+    pair->set(pair->second, value);
     node = pair;
     return true;
 }
@@ -729,3 +853,4 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 }
+

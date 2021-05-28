@@ -19,6 +19,7 @@ inc="-I. \
 -I./contrib/double-conversion \
 -I./contrib/cityhash102/include \
 -I./contrib/croaring \
+-I./contrib/miniselect/include \
 -I./contrib/murmurhash/include \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
@@ -40,7 +41,6 @@ inc="-I. \
 -I/usr/include/llvm-5.0 \
 -I./contrib/llvm/llvm/include \
 -I${BUILD_DIR}/contrib/llvm/llvm/include \
--I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./contrib/capnproto/c++/src \
 -I./contrib/unixodbc/include \
@@ -50,7 +50,6 @@ inc="-I. \
 -I${BUILD_DIR}/base \
 -I./base/daemon \
 -I./base/consistent-hashing \
--I./base/consistent-hashing-sumbur \
 -I./contrib/libhdfs3/include \
 -I./contrib/base64/include \
 -I./contrib/protobuf/src \

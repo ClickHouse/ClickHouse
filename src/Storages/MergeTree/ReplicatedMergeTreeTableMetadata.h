@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
@@ -27,6 +27,7 @@ struct ReplicatedMergeTreeTableMetadata
     String partition_key;
     String sorting_key;
     String skip_indices;
+    String projections;
     String constraints;
     String ttl_table;
     UInt64 index_granularity_bytes;
@@ -45,22 +46,29 @@ struct ReplicatedMergeTreeTableMetadata
         bool sorting_key_changed = false;
         String new_sorting_key;
 
+        bool sampling_expression_changed = false;
+        String new_sampling_expression;
+
         bool skip_indices_changed = false;
         String new_skip_indices;
 
         bool constraints_changed = false;
         String new_constraints;
 
+        bool projections_changed = false;
+        String new_projections;
+
         bool ttl_table_changed = false;
         String new_ttl_table;
 
         bool empty() const
         {
-            return !sorting_key_changed && !skip_indices_changed && !ttl_table_changed && !constraints_changed;
+            return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
+                && !ttl_table_changed && !constraints_changed;
         }
     };
 
-    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, const Context & context) const;
+    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
 
     Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const;
 

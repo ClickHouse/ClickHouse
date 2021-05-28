@@ -1,9 +1,10 @@
+#pragma once
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/CustomWeekTransforms.h>
 #include <Functions/IFunctionImpl.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -22,7 +23,7 @@ class FunctionCustomWeekToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionCustomWeekToSomething>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
 
     String getName() const override { return name; }
 
@@ -51,7 +52,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -67,7 +68,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!isString(arguments[2].type))
@@ -75,7 +76,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (isDate(arguments[0].type) && std::is_same_v<ToDataType, DataTypeDate>)
@@ -95,26 +96,26 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
 
         if (which.isDate())
-            CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
-                block, arguments, result, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
+                arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime())
-            CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
-                block, arguments, result, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
+                arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime64())
         {
-            CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
-                block, arguments, result, input_rows_count,
+            return CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
+                arguments, result_type, input_rows_count,
                 TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         }
         else
             throw Exception(
-                "Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+                "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

@@ -1,17 +1,18 @@
-#include "InterserverIOHTTPHandler.h"
+#include <Server/InterserverIOHTTPHandler.h>
 
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <common/logger_useful.h>
-#include <Common/HTMLForm.h>
-#include <Common/setThreadName.h>
+#include <Server/IServer.h>
+
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include "IServer.h"
+#include <Server/HTTP/HTMLForm.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Common/setThreadName.h>
+#include <common/logger_useful.h>
+
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace DB
 {
@@ -22,35 +23,32 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
-std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net::HTTPServerRequest & request) const
+std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
-    const auto & config = server.config();
-
-    if (config.has("interserver_http_credentials.user"))
+    auto server_credentials = server.context()->getInterserverCredentials();
+    if (server_credentials)
     {
         if (!request.hasCredentials())
-            return {"Server requires HTTP Basic authentication, but client doesn't provide it", false};
+            return server_credentials->isValidUser("", "");
+
         String scheme, info;
         request.getCredentials(scheme, info);
 
         if (scheme != "Basic")
             return {"Server requires HTTP Basic authentication but client provides another method", false};
 
-        String user = config.getString("interserver_http_credentials.user");
-        String password = config.getString("interserver_http_credentials.password", "");
-
         Poco::Net::HTTPBasicCredentials credentials(info);
-        if (std::make_pair(user, password) != std::make_pair(credentials.getUsername(), credentials.getPassword()))
-            return {"Incorrect user or password in HTTP Basic authentication", false};
+        return server_credentials->isValidUser(credentials.getUsername(), credentials.getPassword());
     }
     else if (request.hasCredentials())
     {
         return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
     }
+
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output)
+void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 {
     HTMLForm params(request);
 
@@ -59,9 +57,9 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
-    ReadBufferFromIStream body(request.stream());
+    auto & body = request.getStream();
 
-    auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
+    auto endpoint = server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())
@@ -79,31 +77,50 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 }
 
 
-void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
 
     /// In order to work keep-alive.
-    if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+    if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
     Output used_output;
     const auto & config = server.config();
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive_timeout);
+    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
+        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+
+    auto write_response = [&](const std::string & message)
+    {
+        if (response.sent())
+            return;
+
+        auto & out = *used_output.out;
+        try
+        {
+            writeString(message, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            out.finalize();
+        }
+    };
 
     try
     {
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
-            LOG_INFO(log, "Done processing query");
+            used_output.out->finalize();
+            LOG_DEBUG(log, "Done processing query");
         }
         else
         {
-            response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
-            if (!response.sent())
-                writeString(message, *used_output.out);
+            response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
+            write_response(message);
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
         }
     }
@@ -118,8 +135,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
         bool is_real_error = e.code() != ErrorCodes::ABORTED;
 
         std::string message = getCurrentExceptionMessage(is_real_error);
-        if (!response.sent())
-            writeString(message, *used_output.out);
+        write_response(message);
 
         if (is_real_error)
             LOG_ERROR(log, message);
@@ -130,8 +146,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         std::string message = getCurrentExceptionMessage(false);
-        if (!response.sent())
-            writeString(message, *used_output.out);
+        write_response(message);
 
         LOG_ERROR(log, message);
     }

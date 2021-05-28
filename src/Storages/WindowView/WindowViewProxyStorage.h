@@ -10,9 +10,9 @@ namespace DB
 class WindowViewProxyStorage : public IStorage
 {
 public:
-    WindowViewProxyStorage(const StorageID & table_id_, ColumnsDescription columns_, Pipes pipes_, QueryProcessingStage::Enum to_stage_)
+    WindowViewProxyStorage(const StorageID & table_id_, ColumnsDescription columns_, Pipe pipe_, QueryProcessingStage::Enum to_stage_)
     : IStorage(table_id_)
-    , pipes(std::move(pipes_))
+    , pipe(std::move(pipe_))
     , to_stage(to_stage_)
     {
         columns_.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
@@ -24,22 +24,26 @@ public:
 public:
     std::string getName() const override { return "WindowViewProxy"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override { return to_stage; }
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override
+    {
+        return to_stage;
+    }
 
-    Pipes read(
-        const Names & /*column_names*/,
+    Pipe read(
+        const Names & ,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & /*query_info*/,
-        const Context & /*context*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        return std::move(pipes);
+        return std::move(pipe);
     }
 
 private:
-    Pipes pipes;
+    Pipe pipe;
     QueryProcessingStage::Enum to_stage;
 };
 }

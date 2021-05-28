@@ -1,5 +1,4 @@
 #include <Access/AccessRights.h>
-#include <Common/Exception.h>
 #include <common/logger_useful.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -10,20 +9,17 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int INVALID_GRANT;
+    extern const int BAD_ARGUMENTS;
 }
-
 
 namespace
 {
-    using Kind = AccessRightsElementWithOptions::Kind;
-
     struct ProtoElement
     {
         AccessFlags access_flags;
         boost::container::small_vector<std::string_view, 3> full_name;
         bool grant_option = false;
-        Kind kind = Kind::GRANT;
+        bool is_partial_revoke = false;
 
         friend bool operator<(const ProtoElement & left, const ProtoElement & right)
         {
@@ -50,8 +46,8 @@ namespace
             if (int cmp = compare_name(left.full_name, right.full_name, 1))
                 return cmp < 0;
 
-            if (left.kind != right.kind)
-                return (left.kind == Kind::GRANT);
+            if (left.is_partial_revoke != right.is_partial_revoke)
+                return right.is_partial_revoke;
 
             if (left.grant_option != right.grant_option)
                 return right.grant_option;
@@ -62,12 +58,12 @@ namespace
             return (left.access_flags < right.access_flags);
         }
 
-        AccessRightsElementWithOptions getResult() const
+        AccessRightsElement getResult() const
         {
-            AccessRightsElementWithOptions res;
+            AccessRightsElement res;
             res.access_flags = access_flags;
             res.grant_option = grant_option;
-            res.kind = kind;
+            res.is_partial_revoke = is_partial_revoke;
             switch (full_name.size())
             {
                 case 0:
@@ -112,11 +108,11 @@ namespace
     class ProtoElements : public std::vector<ProtoElement>
     {
     public:
-        AccessRightsElementsWithOptions getResult() const
+        AccessRightsElements getResult() const
         {
             ProtoElements sorted = *this;
             boost::range::sort(sorted);
-            AccessRightsElementsWithOptions res;
+            AccessRightsElements res;
             res.reserve(sorted.size());
 
             for (size_t i = 0; i != sorted.size();)
@@ -151,7 +147,7 @@ namespace
             {
                 return (element.full_name.size() != 3) || (element.full_name[0] != start_element.full_name[0])
                     || (element.full_name[1] != start_element.full_name[1]) || (element.grant_option != start_element.grant_option)
-                    || (element.kind != start_element.kind);
+                    || (element.is_partial_revoke != start_element.is_partial_revoke);
             });
 
             return it - (begin() + start);
@@ -160,7 +156,7 @@ namespace
         /// Collects columns together to write multiple columns into one AccessRightsElement.
         /// That procedure allows to output access rights in more compact way,
         /// e.g. "SELECT(x, y)" instead of "SELECT(x), SELECT(y)".
-        void appendResultWithElementsWithDifferenceInColumnOnly(size_t start, size_t count, AccessRightsElementsWithOptions & res) const
+        void appendResultWithElementsWithDifferenceInColumnOnly(size_t start, size_t count, AccessRightsElements & res) const
         {
             const auto * pbegin = data() + start;
             const auto * pend = pbegin + count;
@@ -187,7 +183,7 @@ namespace
                 res.emplace_back();
                 auto & back = res.back();
                 back.grant_option = pbegin->grant_option;
-                back.kind = pbegin->kind;
+                back.is_partial_revoke = pbegin->is_partial_revoke;
                 back.any_database = false;
                 back.database = pbegin->full_name[0];
                 back.any_table = false;
@@ -214,30 +210,14 @@ namespace
         COLUMN_LEVEL,
     };
 
-    AccessFlags getAcceptableFlags(Level level)
+    AccessFlags getAllGrantableFlags(Level level)
     {
         switch (level)
         {
-            case GLOBAL_LEVEL:
-            {
-                static const AccessFlags res = AccessFlags::allFlags();
-                return res;
-            }
-            case DATABASE_LEVEL:
-            {
-                static const AccessFlags res = AccessFlags::allDatabaseFlags() | AccessFlags::allTableFlags() | AccessFlags::allDictionaryFlags() | AccessFlags::allColumnFlags();
-                return res;
-            }
-            case TABLE_LEVEL:
-            {
-                static const AccessFlags res = AccessFlags::allTableFlags() | AccessFlags::allDictionaryFlags() | AccessFlags::allColumnFlags();
-                return res;
-            }
-            case COLUMN_LEVEL:
-            {
-                static const AccessFlags res = AccessFlags::allColumnFlags();
-                return res;
-            }
+            case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
+            case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel();
+            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
+            case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
         __builtin_unreachable();
     }
@@ -276,21 +256,7 @@ public:
 
     void grant(const AccessFlags & flags_)
     {
-        if (!flags_)
-            return;
-
-        AccessFlags flags_to_add = flags_ & getAcceptableFlags();
-
-        if (!flags_to_add)
-        {
-            if (level == DATABASE_LEVEL)
-                throw Exception(flags_.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
-            else if (level == TABLE_LEVEL)
-                throw Exception(flags_.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
-            else if (level == COLUMN_LEVEL)
-                throw Exception(flags_.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
-        }
-
+        AccessFlags flags_to_add = flags_ & getAllGrantableFlags();
         addGrantsRec(flags_to_add);
         optimizeTree();
     }
@@ -456,8 +422,8 @@ public:
     }
 
 private:
-    AccessFlags getAcceptableFlags() const { return ::DB::getAcceptableFlags(level); }
-    AccessFlags getChildAcceptableFlags() const { return ::DB::getAcceptableFlags(static_cast<Level>(level + 1)); }
+    AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
+    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level + 1)); }
 
     Node * tryGetChild(const std::string_view & name) const
     {
@@ -480,7 +446,7 @@ private:
         Node & new_child = (*children)[*new_child_name];
         new_child.node_name = std::move(new_child_name);
         new_child.level = static_cast<Level>(level + 1);
-        new_child.flags = flags & new_child.getAcceptableFlags();
+        new_child.flags = flags & new_child.getAllGrantableFlags();
         return new_child;
     }
 
@@ -496,12 +462,12 @@ private:
 
     bool canEraseChild(const Node & child) const
     {
-        return ((flags & child.getAcceptableFlags()) == child.flags) && !child.children;
+        return ((flags & child.getAllGrantableFlags()) == child.flags) && !child.children;
     }
 
     void addGrantsRec(const AccessFlags & flags_)
     {
-        if (auto flags_to_add = flags_ & getAcceptableFlags())
+        if (auto flags_to_add = flags_ & getAllGrantableFlags())
         {
             flags |= flags_to_add;
             if (children)
@@ -547,15 +513,15 @@ private:
         const AccessFlags & parent_flags)
     {
         auto flags = node.flags;
-        auto parent_fl = parent_flags & node.getAcceptableFlags();
+        auto parent_fl = parent_flags & node.getAllGrantableFlags();
         auto revokes = parent_fl - flags;
         auto grants = flags - parent_fl;
 
         if (revokes)
-            res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes, full_name, false, true});
 
         if (grants)
-            res.push_back(ProtoElement{grants, full_name, false, Kind::GRANT});
+            res.push_back(ProtoElement{grants, full_name, false, false});
 
         if (node.children)
         {
@@ -576,9 +542,9 @@ private:
         const Node * node_go,
         const AccessFlags & parent_flags_go)
     {
-        auto acceptable_flags = ::DB::getAcceptableFlags(static_cast<Level>(full_name.size()));
-        auto parent_fl = parent_flags & acceptable_flags;
-        auto parent_fl_go = parent_flags_go & acceptable_flags;
+        auto grantable_flags = ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
+        auto parent_fl = parent_flags & grantable_flags;
+        auto parent_fl_go = parent_flags_go & grantable_flags;
         auto flags = node ? node->flags : parent_fl;
         auto flags_go = node_go ? node_go->flags : parent_fl_go;
         auto revokes = parent_fl - flags;
@@ -587,16 +553,16 @@ private:
         auto grants = flags - parent_fl - grants_go;
 
         if (revokes)
-            res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes, full_name, false, true});
 
         if (revokes_go)
-            res.push_back(ProtoElement{revokes_go, full_name, true, Kind::REVOKE});
+            res.push_back(ProtoElement{revokes_go, full_name, true, true});
 
         if (grants)
-            res.push_back(ProtoElement{grants, full_name, false, Kind::GRANT});
+            res.push_back(ProtoElement{grants, full_name, false, false});
 
         if (grants_go)
-            res.push_back(ProtoElement{grants_go, full_name, true, Kind::GRANT});
+            res.push_back(ProtoElement{grants_go, full_name, true, false});
 
         if (node && node->children)
         {
@@ -672,8 +638,8 @@ private:
         }
 
         max_flags_with_children |= max_among_children;
-        AccessFlags add_acceptable_flags = getAcceptableFlags() - getChildAcceptableFlags();
-        min_flags_with_children &= min_among_children | add_acceptable_flags;
+        AccessFlags add_flags = getAllGrantableFlags() - getChildAllGrantableFlags();
+        min_flags_with_children &= min_among_children | add_flags;
     }
 
     void makeUnionRec(const Node & rhs)
@@ -689,7 +655,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.flags |= rhs.flags & lhs_child.getAcceptableFlags();
+                    lhs_child.flags |= rhs.flags & lhs_child.getAllGrantableFlags();
             }
         }
     }
@@ -738,7 +704,7 @@ private:
 
         if (new_flags != flags)
         {
-            new_flags &= getAcceptableFlags();
+            new_flags &= getAllGrantableFlags();
             flags_added |= static_cast<bool>(new_flags - flags);
             flags_removed |= static_cast<bool>(flags - new_flags);
             flags = new_flags;
@@ -811,8 +777,10 @@ void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
 }
 
 template <bool with_grant_option>
-void AccessRights::grantImpl(const AccessRightsElement & element)
+void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
+    assert(!element.is_partial_revoke);
+    assert(!element.grant_option || with_grant_option);
     if (element.any_database)
         grantImpl<with_grant_option>(element.access_flags);
     else if (element.any_table)
@@ -821,6 +789,24 @@ void AccessRights::grantImpl(const AccessRightsElement & element)
         grantImpl<with_grant_option>(element.access_flags, element.database, element.table);
     else
         grantImpl<with_grant_option>(element.access_flags, element.database, element.table, element.columns);
+}
+
+template <bool with_grant_option>
+void AccessRights::grantImpl(const AccessRightsElement & element)
+{
+    if (element.is_partial_revoke)
+        throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::BAD_ARGUMENTS);
+    if constexpr (with_grant_option)
+    {
+        grantImplHelper<true>(element);
+    }
+    else
+    {
+        if (element.grant_option)
+            grantImplHelper<true>(element);
+        else
+            grantImplHelper<false>(element);
+    }
 }
 
 template <bool with_grant_option>
@@ -867,8 +853,9 @@ void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 }
 
 template <bool grant_option>
-void AccessRights::revokeImpl(const AccessRightsElement & element)
+void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
+    assert(!element.grant_option || grant_option);
     if (element.any_database)
         revokeImpl<grant_option>(element.access_flags);
     else if (element.any_table)
@@ -877,6 +864,22 @@ void AccessRights::revokeImpl(const AccessRightsElement & element)
         revokeImpl<grant_option>(element.access_flags, element.database, element.table);
     else
         revokeImpl<grant_option>(element.access_flags, element.database, element.table, element.columns);
+}
+
+template <bool grant_option>
+void AccessRights::revokeImpl(const AccessRightsElement & element)
+{
+    if constexpr (grant_option)
+    {
+        revokeImplHelper<true>(element);
+    }
+    else
+    {
+        if (element.grant_option)
+            revokeImplHelper<true>(element);
+        else
+            revokeImplHelper<false>(element);
+    }
 }
 
 template <bool grant_option>
@@ -905,7 +908,7 @@ void AccessRights::revokeGrantOption(const AccessRightsElement & element) { revo
 void AccessRights::revokeGrantOption(const AccessRightsElements & elements) { revokeImpl<true>(elements); }
 
 
-AccessRightsElementsWithOptions AccessRights::getElements() const
+AccessRightsElements AccessRights::getElements() const
 {
 #if 0
     logTree();
@@ -940,8 +943,9 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 }
 
 template <bool grant_option>
-bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
+bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
+    assert(!element.grant_option || grant_option);
     if (element.any_database)
         return isGrantedImpl<grant_option>(element.access_flags);
     else if (element.any_table)
@@ -950,6 +954,22 @@ bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
         return isGrantedImpl<grant_option>(element.access_flags, element.database, element.table);
     else
         return isGrantedImpl<grant_option>(element.access_flags, element.database, element.table, element.columns);
+}
+
+template <bool grant_option>
+bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
+{
+    if constexpr (grant_option)
+    {
+        return isGrantedImplHelper<true>(element);
+    }
+    else
+    {
+        if (element.grant_option)
+            return isGrantedImplHelper<true>(element);
+        else
+            return isGrantedImplHelper<false>(element);
+    }
 }
 
 template <bool grant_option>

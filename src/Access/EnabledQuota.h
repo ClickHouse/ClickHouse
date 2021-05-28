@@ -25,9 +25,10 @@ public:
         String user_name;
         boost::container::flat_set<UUID> enabled_roles;
         Poco::Net::IPAddress client_address;
+        String forwarded_address;
         String client_key;
 
-        auto toTuple() const { return std::tie(user_id, enabled_roles, user_name, client_address, client_key); }
+        auto toTuple() const { return std::tie(user_id, enabled_roles, user_name, client_address, forwarded_address, client_key); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
         friend bool operator !=(const Params & lhs, const Params & rhs) { return !(lhs == rhs); }
         friend bool operator <(const Params & lhs, const Params & rhs) { return lhs.toTuple() < rhs.toTuple(); }

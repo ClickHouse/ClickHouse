@@ -12,6 +12,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 #include <common/DateLUT.h>
+#include <Interpreters/Context.h>
 
 #include "IFunctionImpl.h"
 
@@ -66,7 +67,7 @@ struct ToStartOfTransform;
     template <> \
     struct ToStartOfTransform<IntervalKind::INTERVAL_KIND> \
     { \
-        static DayNum execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
+        static ExtendedDayNum execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
             return time_zone.toStartOf##INTERVAL_KIND##Interval(time_zone.toDayNum(t), delta); \
         } \
@@ -107,9 +108,9 @@ struct ToStartOfTransform;
     template <> \
     struct AddTime<IntervalKind::INTERVAL_KIND> \
     { \
-        static DayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl & time_zone) \
+        static ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
-            return time_zone.add##INTERVAL_KIND##s(DayNum(d), delta); \
+            return time_zone.add##INTERVAL_KIND##s(ExtendedDayNum(d), delta); \
         } \
     };
     ADD_DATE(Year)
@@ -120,7 +121,7 @@ struct ToStartOfTransform;
     template <>
     struct AddTime<IntervalKind::Week>
     {
-        static DayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &) { return DayNum(d + 7 * delta);}
+        static ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &) { return ExtendedDayNum(d + 7 * delta);}
     };
 
 #define ADD_TIME(INTERVAL_KIND, INTERVAL) \
@@ -269,15 +270,14 @@ namespace
             return std::make_shared<DataTypeTuple>(DataTypes{dataType, dataType});
         }
 
-        [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
         {
-            const auto & time_column = block.getByPosition(arguments[0]);
-            const auto & interval_column = block.getByPosition(arguments[1]);
+            const auto & time_column = arguments[0];
+            const auto & interval_column = arguments[1];
             const auto & from_datatype = *time_column.type.get();
             const auto which_type = WhichDataType(from_datatype);
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
-            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
             if (!which_type.isDateTime() || !time_column_vec)
                 throw Exception(
                     "Illegal column " + time_column.name + " of function " + function_name + ". Must contain dates or dates with time",
@@ -351,16 +351,14 @@ namespace
             return std::make_shared<DataTypeDateTime>();
         }
 
-        [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
         {
-            const auto & time_column = block.getByPosition(arguments[0]);
-            const auto which_type = WhichDataType(time_column.type);
+            const auto which_type = WhichDataType(arguments[0].type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, function_name);
+                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
             else
-                result_column_ = block.getByPosition(arguments[0]).column;
+                result_column_ = arguments[0].column;
             return executeWindowBound(result_column_, 0, function_name);
         }
     };
@@ -376,16 +374,14 @@ namespace
             return WindowImpl<TUMBLE_START>::getReturnType(arguments, function_name);
         }
 
-        [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name)
         {
-            const auto & time_column = block.getByPosition(arguments[0]);
-            const auto which_type = WhichDataType(time_column.type);
+            const auto which_type = WhichDataType(arguments[0].type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, function_name);
+                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
             else
-                result_column_ = block.getByPosition(arguments[0]).column;
+                result_column_ = arguments[0].column;
             return executeWindowBound(result_column_, 1, function_name);
         }
     };
@@ -434,15 +430,14 @@ namespace
             return std::make_shared<DataTypeTuple>(DataTypes{dataType, dataType});
         }
 
-        static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
         {
-            const auto & time_column = block.getByPosition(arguments[0]);
-            const auto & hop_interval_column = block.getByPosition(arguments[1]);
-            const auto & window_interval_column = block.getByPosition(arguments[2]);
+            const auto & time_column = arguments[0];
+            const auto & hop_interval_column = arguments[1];
+            const auto & window_interval_column = arguments[2];
             const auto & from_datatype = *time_column.type.get();
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
-            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 3, 0);
+            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 3, 0);
             if (!WhichDataType(from_datatype).isDateTime() || !time_column_vec)
                 throw Exception(
                     "Illegal column " + time_column.name + " argument of function " + function_name
@@ -574,14 +569,14 @@ namespace
         }
 
         [[maybe_unused]] static ColumnPtr
-        dispatchForHopColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        dispatchForHopColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            const auto & time_column = block.getByPosition(arguments[0]);
-            const auto & hop_interval_column = block.getByPosition(arguments[1]);
-            const auto & window_interval_column = block.getByPosition(arguments[2]);
+            const auto & time_column = arguments[0];
+            const auto & hop_interval_column = arguments[1];
+            const auto & window_interval_column = arguments[2];
             const auto & from_datatype = *time_column.type.get();
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
-            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 3, 0);
+            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 3, 0);
             if (!WhichDataType(from_datatype).isDateTime() || !time_column_vec)
                 throw Exception(
                     "Illegal column " + time_column.name + " argument of function " + function_name
@@ -658,24 +653,23 @@ namespace
         }
 
         [[maybe_unused]] static ColumnPtr
-        dispatchForTumbleColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        dispatchForTumbleColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            ColumnPtr column = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, function_name);
+            ColumnPtr column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
             return executeWindowBound(column, 1, function_name);
         }
 
-        [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
         {
             if (arguments.size() == 2)
-                return dispatchForTumbleColumns(block, arguments, function_name);
+                return dispatchForTumbleColumns(arguments, function_name);
             else
             {
-                const auto & third_column = block.getByPosition(arguments[2]);
+                const auto & third_column = arguments[2];
                 if (arguments.size() == 3 && WhichDataType(third_column.type).isString())
-                    return dispatchForTumbleColumns(block, arguments, function_name);
+                    return dispatchForTumbleColumns(arguments, function_name);
                 else
-                    return dispatchForHopColumns(block, arguments, function_name);
+                    return dispatchForHopColumns(arguments, function_name);
             }
         }
     };
@@ -702,10 +696,9 @@ namespace
             return std::make_shared<DataTypeDateTime>();
         }
 
-        [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
         {
-            const auto & time_column = block.getByPosition(arguments[0]);
+            const auto & time_column = arguments[0];
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (arguments.size() == 1)
@@ -716,7 +709,7 @@ namespace
                     result_column_ = time_column.column;
             }
             else
-                result_column_ = WindowImpl<HOP>::dispatchForColumns(block, arguments, function_name);
+                result_column_ = WindowImpl<HOP>::dispatchForColumns(arguments, function_name);
             return executeWindowBound(result_column_, 0, function_name);
         }
     };
@@ -731,10 +724,9 @@ namespace
             return WindowImpl<HOP_START>::getReturnType(arguments, function_name);
         }
 
-        [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
         {
-            const auto & time_column = block.getByPosition(arguments[0]);
+            const auto & time_column = arguments[0];
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (arguments.size() == 1)
@@ -745,7 +737,7 @@ namespace
                     result_column_ = time_column.column;
             }
             else
-                result_column_ = WindowImpl<HOP>::dispatchForColumns(block, arguments, function_name);
+                result_column_ = WindowImpl<HOP>::dispatchForColumns(arguments, function_name);
 
             return executeWindowBound(result_column_, 1, function_name);
         }
@@ -757,7 +749,7 @@ class FunctionWindow : public IFunction
 {
 public:
     static constexpr auto name = WindowImpl<type>::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionWindow>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWindow>(); }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -766,10 +758,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return WindowImpl<type>::getReturnType(arguments, name); }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
-        auto result_column = WindowImpl<type>::dispatchForColumns(block, arguments, name);
-        block.getByPosition(result).column = std::move(result_column);
+        return WindowImpl<type>::dispatchForColumns(arguments, name);
     }
 };
 

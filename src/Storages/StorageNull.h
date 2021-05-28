@@ -4,7 +4,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
@@ -22,35 +21,35 @@ class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public ISt
 public:
     std::string getName() const override { return "Null"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo &,
-        const Context & /*context*/,
+        SelectQueryInfo &,
+        ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
         size_t,
         unsigned) override
     {
-        Pipes pipes;
-        pipes.emplace_back(
+        return Pipe(
             std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
-        return pipes;
     }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &) override
+    bool supportsParallelInsert() const override { return true; }
+
+    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
     {
         return std::make_shared<NullBlockOutputStream>(metadata_snapshot->getSampleBlock());
     }
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows() const override
+    std::optional<UInt64> totalRows(const Settings &) const override
     {
         return {0};
     }
-    std::optional<UInt64> totalBytes() const override
+    std::optional<UInt64> totalBytes(const Settings &) const override
     {
         return {0};
     }

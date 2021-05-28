@@ -32,5 +32,5 @@ clusterAllReplicas('cluster_name', db, table)
 
 **See Also**
 
--   [skip\_unavailable\_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
--   [load\_balancing](../../operations/settings/settings.md#settings-load_balancing)
+-   [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+-   [load_balancing](../../operations/settings/settings.md#settings-load_balancing)

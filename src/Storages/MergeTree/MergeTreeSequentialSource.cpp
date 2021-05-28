@@ -23,16 +23,16 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
-    , mark_cache(storage.global_context.getMarkCache())
+    , mark_cache(storage.getContext()->getMarkCache())
 {
     if (!quiet)
     {
         /// Print column name but don't pollute logs in case of many columns.
         if (columns_to_read.size() == 1)
-            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
+            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
                 data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
         else
-            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
+            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
                 data_part->getMarksCount(), data_part->name, data_part->rows_count);
     }
 

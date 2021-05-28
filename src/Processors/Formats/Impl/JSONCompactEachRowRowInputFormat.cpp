@@ -1,9 +1,10 @@
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -19,8 +20,9 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(ReadBuffer & 
         const Block & header_,
         Params params_,
         const FormatSettings & format_settings_,
-        bool with_names_)
-        : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), with_names(with_names_)
+        bool with_names_,
+        bool yield_strings_)
+        : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), with_names(with_names_), yield_strings(yield_strings_)
 {
     const auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
@@ -169,7 +171,7 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
 
         skipWhitespaceIfAny(in);
         if (in.eof())
-            throw Exception("Unexpected end of stream while parsing JSONCompactEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw ParsingException("Unexpected end of stream while parsing JSONCompactEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
         if (file_column + 1 != column_indexes_for_input_fields.size())
         {
             assertChar(',', in);
@@ -200,14 +202,31 @@ void JSONCompactEachRowRowInputFormat::readField(size_t index, MutableColumns & 
     {
         read_columns[index] = true;
         const auto & type = data_types[index];
-        if (format_settings.null_as_default && !type->isNullable())
-            read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+        const auto & serialization = serializations[index];
+
+        if (yield_strings)
+        {
+            String str;
+            readJSONString(str, in);
+
+            ReadBufferFromString buf(str);
+
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = SerializationNullable::deserializeWholeTextImpl(*columns[index], buf, format_settings, serialization);
+            else
+                serialization->deserializeWholeText(*columns[index], buf, format_settings);
+        }
         else
-            type->deserializeAsTextJSON(*columns[index], in, format_settings);
+        {
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = SerializationNullable::deserializeTextJSONImpl(*columns[index], in, format_settings, serialization);
+            else
+                serialization->deserializeTextJSON(*columns[index], in, format_settings);
+        }
     }
     catch (Exception & e)
     {
-        e.addMessage("(while read the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
+        e.addMessage("(while reading the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
 }
@@ -225,7 +244,7 @@ void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
     {
-        return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
+        return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, false, false);
     });
 
     factory.registerInputFormatProcessor("JSONCompactEachRowWithNamesAndTypes", [](
@@ -234,7 +253,25 @@ void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
     {
-        return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, true);
+        return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, true, false);
+    });
+
+    factory.registerInputFormatProcessor("JSONCompactStringsEachRow", [](
+            ReadBuffer & buf,
+            const Block & sample,
+            IRowInputFormat::Params params,
+            const FormatSettings & settings)
+    {
+        return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, false, true);
+    });
+
+    factory.registerInputFormatProcessor("JSONCompactStringsEachRowWithNamesAndTypes", [](
+            ReadBuffer & buf,
+            const Block & sample,
+            IRowInputFormat::Params params,
+            const FormatSettings & settings)
+    {
+        return std::make_shared<JSONCompactEachRowRowInputFormat>(buf, sample, std::move(params), settings, true, true);
     });
 }
 

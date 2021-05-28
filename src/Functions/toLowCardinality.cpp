@@ -7,12 +7,14 @@
 
 namespace DB
 {
+namespace
+{
 
 class FunctionToLowCardinality: public IFunction
 {
 public:
     static constexpr auto name = "toLowCardinality";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToLowCardinality>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToLowCardinality>(); }
 
     String getName() const override { return name; }
 
@@ -30,23 +32,23 @@ public:
         return std::make_shared<DataTypeLowCardinality>(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override
     {
         auto arg_num = arguments[0];
-        const auto & arg = block.getByPosition(arg_num);
-        auto & res = block.getByPosition(result);
+        const auto & arg = arguments[0];
 
         if (arg.type->lowCardinality())
-            res.column = arg.column;
+            return arg.column;
         else
         {
-            auto column = res.type->createColumn();
+            auto column = res_type->createColumn();
             typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
-            res.column = std::move(column);
+            return column;
         }
     }
 };
 
+}
 
 void registerFunctionToLowCardinality(FunctionFactory & factory)
 {

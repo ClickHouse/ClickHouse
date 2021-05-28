@@ -49,9 +49,7 @@ $(document).ready(function () {
     $('#sidebar .nav-link.active').parents('.collapse').each(function() {
         var current = $(this);
         if (current.attr('id') !== 'sidebar') {
-            current.css('transition-duration', '0s');
             current.collapse('show');
-            current.css('transition-duration', '0.4s');
         }
     });
     $(window).resize(onResize);

@@ -1,7 +1,7 @@
 import pytest
 
-
 from helpers.cluster import ClickHouseCluster
+
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1')
@@ -39,4 +39,5 @@ def test_range_hashed_dict(started_cluster):
     """)
     node1.query("SYSTEM RELOAD DICTIONARY default.rates")
 
-    assert node1.query("SELECT dictGetString('default.rates', 'currency', toUInt64(4990954156238030839), toDateTime('2019-10-01 00:00:00'))") == "RU\n"
+    assert node1.query(
+        "SELECT dictGetString('default.rates', 'currency', toUInt64(4990954156238030839), toDateTime('2019-10-01 00:00:00'))") == "RU\n"

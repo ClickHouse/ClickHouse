@@ -26,7 +26,7 @@ class FunctionArrayConcat : public IFunction
 {
 public:
     static constexpr auto name = "arrayConcat";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayConcat>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayConcat>(); }
 
     String getName() const override { return name; }
 
@@ -49,17 +49,10 @@ public:
         return getLeastSupertype(arguments);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const DataTypePtr & return_type = block.getByPosition(result).type;
-
-        if (return_type->onlyNull())
-        {
-            block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(input_rows_count);
-            return;
-        }
-
-        auto result_column = return_type->createColumn();
+        if (result_type->onlyNull())
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         size_t rows = input_rows_count;
         size_t num_args = arguments.size();
@@ -68,11 +61,11 @@ public:
 
         for (size_t i = 0; i < num_args; ++i)
         {
-            const ColumnWithTypeAndName & arg = block.getByPosition(arguments[i]);
+            const ColumnWithTypeAndName & arg = arguments[i];
             ColumnPtr preprocessed_column = arg.column;
 
-            if (!arg.type->equals(*return_type))
-                preprocessed_column = castColumn(arg, return_type);
+            if (!arg.type->equals(*result_type))
+                preprocessed_column = castColumn(arg, result_type);
 
             preprocessed_columns[i] = std::move(preprocessed_column);
         }
@@ -95,10 +88,9 @@ public:
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
         }
 
-        auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
-        GatherUtils::concat(sources, *sink);
+        auto sink = GatherUtils::concat(sources);
 
-        block.getByPosition(result).column = std::move(result_column);
+        return sink;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

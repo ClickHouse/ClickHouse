@@ -133,112 +133,112 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
 
 template <typename NumberType, typename NumberVectorBatch, typename ConvertFunc>
 void ORCBlockOutputFormat::writeNumbers(
-        orc::ColumnVectorBatch * orc_column,
+        orc::ColumnVectorBatch & orc_column,
         const IColumn & column,
         const PaddedPODArray<UInt8> * null_bytemap,
         ConvertFunc convert)
 {
-    NumberVectorBatch * number_orc_column = dynamic_cast<NumberVectorBatch *>(orc_column);
+    NumberVectorBatch & number_orc_column = dynamic_cast<NumberVectorBatch &>(orc_column);
     const auto & number_column = assert_cast<const ColumnVector<NumberType> &>(column);
-    number_orc_column->resize(number_column.size());
+    number_orc_column.resize(number_column.size());
 
     for (size_t i = 0; i != number_column.size(); ++i)
     {
         if (null_bytemap && (*null_bytemap)[i])
         {
-            number_orc_column->notNull[i] = 0;
+            number_orc_column.notNull[i] = 0;
             continue;
         }
-        number_orc_column->data[i] = convert(number_column.getElement(i));
+        number_orc_column.data[i] = convert(number_column.getElement(i));
     }
-    number_orc_column->numElements = number_column.size();
+    number_orc_column.numElements = number_column.size();
 }
 
 template <typename Decimal, typename DecimalVectorBatch, typename ConvertFunc>
 void ORCBlockOutputFormat::writeDecimals(
-        orc::ColumnVectorBatch * orc_column,
+        orc::ColumnVectorBatch & orc_column,
         const IColumn & column,
         DataTypePtr & type,
         const PaddedPODArray<UInt8> * null_bytemap,
         ConvertFunc convert)
 {
-    DecimalVectorBatch *decimal_orc_column = dynamic_cast<DecimalVectorBatch *>(orc_column);
+    DecimalVectorBatch & decimal_orc_column = dynamic_cast<DecimalVectorBatch &>(orc_column);
     const auto & decimal_column = assert_cast<const ColumnDecimal<Decimal> &>(column);
     const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal> *>(type.get());
-    decimal_orc_column->precision = decimal_type->getPrecision();
-    decimal_orc_column->scale = decimal_type->getScale();
-    decimal_orc_column->resize(decimal_column.size());
+    decimal_orc_column.precision = decimal_type->getPrecision();
+    decimal_orc_column.scale = decimal_type->getScale();
+    decimal_orc_column.resize(decimal_column.size());
     for (size_t i = 0; i != decimal_column.size(); ++i)
     {
         if (null_bytemap && (*null_bytemap)[i])
         {
-            decimal_orc_column->notNull[i] = 0;
+            decimal_orc_column.notNull[i] = 0;
             continue;
         }
-        decimal_orc_column->values[i] = convert(decimal_column.getElement(i).value);
+        decimal_orc_column.values[i] = convert(decimal_column.getElement(i).value);
     }
-    decimal_orc_column->numElements = decimal_column.size();
+    decimal_orc_column.numElements = decimal_column.size();
 }
 
 template <typename ColumnType>
 void ORCBlockOutputFormat::writeStrings(
-        orc::ColumnVectorBatch * orc_column,
+        orc::ColumnVectorBatch & orc_column,
         const IColumn & column,
         const PaddedPODArray<UInt8> * null_bytemap)
 {
-    orc::StringVectorBatch * string_orc_column = dynamic_cast<orc::StringVectorBatch *>(orc_column);
+    orc::StringVectorBatch & string_orc_column = dynamic_cast<orc::StringVectorBatch &>(orc_column);
     const auto & string_column = assert_cast<const ColumnType &>(column);
-    string_orc_column->resize(string_column.size());
+    string_orc_column.resize(string_column.size());
 
     for (size_t i = 0; i != string_column.size(); ++i)
     {
         if (null_bytemap && (*null_bytemap)[i])
         {
-            string_orc_column->notNull[i] = 0;
+            string_orc_column.notNull[i] = 0;
             continue;
         }
         const StringRef & string = string_column.getDataAt(i);
-        string_orc_column->data[i] = const_cast<char *>(string.data);
-        string_orc_column->length[i] = string.size;
+        string_orc_column.data[i] = const_cast<char *>(string.data);
+        string_orc_column.length[i] = string.size;
     }
-    string_orc_column->numElements = string_column.size();
+    string_orc_column.numElements = string_column.size();
 }
 
 template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
 void ORCBlockOutputFormat::writeDateTimes(
-        orc::ColumnVectorBatch * orc_column,
+        orc::ColumnVectorBatch & orc_column,
         const IColumn & column,
         const PaddedPODArray<UInt8> * null_bytemap,
         GetSecondsFunc get_seconds,
         GetNanosecondsFunc get_nanoseconds)
 {
-    orc::TimestampVectorBatch * timestamp_orc_column = dynamic_cast<orc::TimestampVectorBatch *>(orc_column);
+    orc::TimestampVectorBatch & timestamp_orc_column = dynamic_cast<orc::TimestampVectorBatch &>(orc_column);
     const auto & timestamp_column = assert_cast<const ColumnType &>(column);
-    timestamp_orc_column->resize(timestamp_column.size());
+    timestamp_orc_column.resize(timestamp_column.size());
 
     for (size_t i = 0; i != timestamp_column.size(); ++i)
     {
         if (null_bytemap && (*null_bytemap)[i])
         {
-            timestamp_orc_column->notNull[i] = 0;
+            timestamp_orc_column.notNull[i] = 0;
             continue;
         }
-        timestamp_orc_column->data[i] = get_seconds(timestamp_column.getElement(i));
-        timestamp_orc_column->nanoseconds[i] = get_nanoseconds(timestamp_column.getElement(i));
+        timestamp_orc_column.data[i] = get_seconds(timestamp_column.getElement(i));
+        timestamp_orc_column.nanoseconds[i] = get_nanoseconds(timestamp_column.getElement(i));
     }
-    timestamp_orc_column->numElements = timestamp_column.size();
+    timestamp_orc_column.numElements = timestamp_column.size();
 }
 
 void ORCBlockOutputFormat::writeColumn(
-        orc::ColumnVectorBatch * orc_column,
-        const IColumn & column,
-        DataTypePtr & type,
-        const PaddedPODArray<UInt8> * null_bytemap)
+    orc::ColumnVectorBatch & orc_column,
+    const IColumn & column,
+    DataTypePtr & type,
+    const PaddedPODArray<UInt8> * null_bytemap)
 {
     if (null_bytemap)
     {
-        orc_column->hasNulls = true;
-        orc_column->notNull.resize(column.size());
+        orc_column.hasNulls = true;
+        orc_column.notNull.resize(column.size());
     }
     switch (type->getTypeId())
     {
@@ -364,20 +364,20 @@ void ORCBlockOutputFormat::writeColumn(
         }
         case TypeIndex::Array:
         {
-            orc::ListVectorBatch * list_orc_column = dynamic_cast<orc::ListVectorBatch *>(orc_column);
+            orc::ListVectorBatch & list_orc_column = dynamic_cast<orc::ListVectorBatch &>(orc_column);
             const auto & list_column = assert_cast<const ColumnArray &>(column);
             auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
             const ColumnArray::Offsets & offsets = list_column.getOffsets();
-            list_orc_column->resize(list_column.size());
+            list_orc_column.resize(list_column.size());
             /// The length of list i in ListVectorBatch is offsets[i+1] - offsets[i].
-            list_orc_column->offsets[0] = 0;
+            list_orc_column.offsets[0] = 0;
             for (size_t i = 0; i != list_column.size(); ++i)
             {
-                list_orc_column->offsets[i + 1] = offsets[i];
+                list_orc_column.offsets[i + 1] = offsets[i];
             }
-            orc::ColumnVectorBatch * nested_orc_column = list_orc_column->elements.get();
+            orc::ColumnVectorBatch & nested_orc_column = *list_orc_column.elements;
             writeColumn(nested_orc_column, list_column.getData(), nested_type, null_bytemap);
-            list_orc_column->numElements = list_column.size();
+            list_orc_column.numElements = list_column.size();
             break;
         }
         default:
@@ -414,12 +414,12 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
     /// getMaxColumnSize is needed to write arrays.
     /// The size of the batch must be no less than total amount of array elements.
     ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
-    orc::StructVectorBatch *root = dynamic_cast<orc::StructVectorBatch *>(batch.get());
+    orc::StructVectorBatch & root = dynamic_cast<orc::StructVectorBatch &>(*batch);
     for (size_t i = 0; i != columns_num; ++i)
     {
-        writeColumn(root->fields[i], *chunk.getColumns()[i], data_types[i], nullptr);
+        writeColumn(*root.fields[i], *chunk.getColumns()[i], data_types[i], nullptr);
     }
-    root->numElements = rows_num;
+    root.numElements = rows_num;
     writer->add(*batch);
 }
 
@@ -433,7 +433,7 @@ void registerOutputFormatProcessorORC(FormatFactory & factory)
     factory.registerOutputFormatProcessor("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
-            FormatFactory::WriteCallback,
+            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);

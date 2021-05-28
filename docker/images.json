@@ -2,21 +2,19 @@
     "docker/packager/deb": {
         "name": "yandex/clickhouse-deb-builder",
         "dependent": [
-            "docker/test/stateless",
-            "docker/test/stateless_with_coverage",
-            "docker/test/stateless_pytest",
-            "docker/test/coverage"
+            "docker/packager/unbundled"
         ]
     },
     "docker/packager/binary": {
         "name": "yandex/clickhouse-binary-builder",
         "dependent": [
             "docker/test/split_build_smoke_test",
-            "docker/test/pvs"
+            "docker/test/pvs",
+            "docker/test/codebrowser"
         ]
     },
-    "docker/test/coverage": {
-        "name": "yandex/clickhouse-coverage",
+    "docker/packager/unbundled": {
+        "name": "yandex/clickhouse-unbundled-builder",
         "dependent": []
     },
     "docker/test/compatibility/centos": {
@@ -39,29 +37,30 @@
         "name": "yandex/clickhouse-performance-comparison",
         "dependent": []
     },
-    "docker/test/stateful": {
-        "name": "yandex/clickhouse-stateful-test",
-        "dependent": [
-            "docker/test/stress"
-        ]
-    },
-    "docker/test/stateful_with_coverage": {
-        "name": "yandex/clickhouse-stateful-test-with-coverage",
+    "docker/test/pvs": {
+        "name": "yandex/clickhouse-pvs-test",
         "dependent": []
     },
     "docker/test/stateless": {
         "name": "yandex/clickhouse-stateless-test",
         "dependent": [
             "docker/test/stateful",
-            "docker/test/stateful_with_coverage"
+            "docker/test/coverage",
+            "docker/test/unit"
         ]
     },
     "docker/test/stateless_pytest": {
         "name": "yandex/clickhouse-stateless-pytest",
         "dependent": []
     },
-    "docker/test/stateless_with_coverage": {
-        "name": "yandex/clickhouse-stateless-test-with-coverage",
+    "docker/test/stateful": {
+        "name": "yandex/clickhouse-stateful-test",
+        "dependent": [
+            "docker/test/stress"
+        ]
+    },
+    "docker/test/coverage": {
+        "name": "yandex/clickhouse-test-coverage",
         "dependent": []
     },
     "docker/test/unit": {
@@ -92,6 +91,10 @@
         "name": "yandex/clickhouse-fasttest",
         "dependent": []
     },
+    "docker/test/style": {
+        "name": "yandex/clickhouse-style-test",
+        "dependent": []
+    },
     "docker/test/integration/s3_proxy": {
         "name": "yandex/clickhouse-s3-proxy",
         "dependent": []
@@ -102,6 +105,64 @@
     },
     "docker/test/integration/helper_container": {
         "name": "yandex/clickhouse-integration-helper",
+        "dependent": []
+    },
+    "docker/test/integration/mysql_golang_client": {
+        "name": "yandex/clickhouse-mysql-golang-client",
+        "dependent": []
+    },
+    "docker/test/integration/mysql_java_client": {
+        "name": "yandex/clickhouse-mysql-java-client",
+        "dependent": []
+    },
+    "docker/test/integration/mysql_js_client": {
+        "name": "yandex/clickhouse-mysql-js-client",
+        "dependent": []
+    },
+    "docker/test/integration/mysql_php_client": {
+        "name": "yandex/clickhouse-mysql-php-client",
+        "dependent": []
+    },
+    "docker/test/integration/postgresql_java_client": {
+        "name": "yandex/clickhouse-postgresql-java-client",
+        "dependent": []
+    },
+    "docker/test/integration/kerberos_kdc": {
+        "name": "yandex/clickhouse-kerberos-kdc",
+        "dependent": []
+    },
+    "docker/test/base": {
+         "name": "yandex/clickhouse-test-base",
+         "dependent": [
+            "docker/test/stateless",
+            "docker/test/stateless_unbundled",
+            "docker/test/stateless_pytest",
+            "docker/test/integration/base",
+            "docker/test/fuzzer",
+            "docker/test/keeper-jepsen"
+         ]
+    },
+    "docker/packager/unbundled": {
+         "name": "yandex/clickhouse-unbundled-builder",
+         "dependent": [
+            "docker/test/stateless_unbundled"
+         ]
+    },
+    "docker/test/stateless_unbundled": {
+         "name": "yandex/clickhouse-stateless-unbundled-test",
+         "dependent": [
+         ]
+    },
+    "docker/test/integration/kerberized_hadoop": {
+        "name": "yandex/clickhouse-kerberized-hadoop",
+        "dependent": []
+    },
+    "docker/test/sqlancer": {
+        "name": "yandex/clickhouse-sqlancer-test",
+        "dependent": []
+    },
+    "docker/test/keeper-jepsen": {
+        "name": "yandex/clickhouse-keeper-jepsen-test",
         "dependent": []
     }
 }

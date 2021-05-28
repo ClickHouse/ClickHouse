@@ -10,7 +10,7 @@ SELECT
     1 OR 2 OR 4
 ;
 
-SELECT 
+SELECT
     toUInt8(bitAnd(number, 4)) AS a,
     toUInt8(bitAnd(number, 2)) AS b,
     toUInt8(bitAnd(number, 1)) AS c,

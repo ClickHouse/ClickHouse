@@ -3,11 +3,13 @@
 #include <cmath>
 #include <type_traits>
 #include <Common/Exception.h>
+#include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
+
 
 namespace DB
 {
@@ -49,7 +51,17 @@ template <typename A, typename B>
 inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
-    return a / b;
+
+    if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
+        return static_cast<B>(a) / b;
+    else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
+        return a / static_cast<A>(b);
+    else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
+        return static_cast<A>(a / b);
+    else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
+        return static_cast<A>(B(a) / b);
+    else
+        return a / b;
 }
 
 
@@ -64,13 +76,41 @@ struct DivideIntegralImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
+        using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+        using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
-        if constexpr (is_integral_v<A> && is_integral_v<B> && (is_signed_v<A> || is_signed_v<B>))
-            return checkedDivision(std::make_signed_t<A>(a),
-                sizeof(A) > sizeof(B) ? std::make_signed_t<A>(b) : std::make_signed_t<B>(b));
+        if constexpr (is_integer_v<A> && is_integer_v<B> && (is_signed_v<A> || is_signed_v<B>))
+        {
+            using SignedCastA = make_signed_t<CastA>;
+            using SignedCastB = std::conditional_t<sizeof(A) <= sizeof(B), make_signed_t<CastB>, SignedCastA>;
+
+            return static_cast<Result>(checkedDivision(static_cast<SignedCastA>(a), static_cast<SignedCastB>(b)));
+        }
         else
-            return checkedDivision(a, b);
+        {
+            /// Comparisons are not strict to avoid rounding issues when operand is implicitly casted to float.
+
+            if constexpr (std::is_floating_point_v<A>)
+                if (isNaN(a) || a >= std::numeric_limits<CastA>::max() || a <= std::numeric_limits<CastA>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            if constexpr (std::is_floating_point_v<B>)
+                if (isNaN(b) || b >= std::numeric_limits<CastB>::max() || b <= std::numeric_limits<CastB>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            auto res = checkedDivision(CastA(a), CastB(b));
+
+            if constexpr (std::is_floating_point_v<decltype(res)>)
+                if (isNaN(res) || res >= static_cast<double>(std::numeric_limits<Result>::max()) || res <= std::numeric_limits<Result>::lowest())
+                    throw Exception("Cannot perform integer division, because it will produce infinite or too large number",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            return static_cast<Result>(res);
+        }
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -82,6 +122,9 @@ template <typename A, typename B>
 struct ModuloImpl
 {
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
+    using IntegerAType = typename NumberTraits::ToInteger<A>::Type;
+    using IntegerBType = typename NumberTraits::ToInteger<B>::Type;
+
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
@@ -90,12 +133,37 @@ struct ModuloImpl
         if constexpr (std::is_floating_point_v<ResultType>)
         {
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
-            return ResultType(a) - trunc(ResultType(a) / ResultType(b)) * ResultType(b);
+            return static_cast<ResultType>(a) - trunc(static_cast<ResultType>(a) / static_cast<ResultType>(b)) * static_cast<ResultType>(b);
         }
         else
         {
-            throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-            return typename NumberTraits::ToInteger<A>::Type(a) % typename NumberTraits::ToInteger<B>::Type(b);
+            if constexpr (std::is_floating_point_v<A>)
+                if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            if constexpr (std::is_floating_point_v<B>)
+                if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
+
+            if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
+            {
+                using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
+                using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
+
+                CastA int_a(a);
+                CastB int_b(b);
+
+                if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
+                    return static_cast<Result>(static_cast<CastB>(int_a) % int_b);
+                else
+                    return static_cast<Result>(int_a % static_cast<CastA>(int_b));
+            }
+            else
+                return IntegerAType(a) % IntegerBType(b);
         }
     }
 

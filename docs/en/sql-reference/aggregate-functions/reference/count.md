@@ -7,10 +7,11 @@ toc_priority: 1
 Counts the number of rows or not-NULL values.
 
 ClickHouse supports the following syntaxes for `count`:
-- `count(expr)` or `COUNT(DISTINCT expr)`.
-- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
 
-**Parameters**
+-   `count(expr)` or `COUNT(DISTINCT expr)`.
+-   `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
+
+**Arguments**
 
 The function can take:
 
@@ -26,7 +27,7 @@ In both cases the type of the returned value is [UInt64](../../../sql-reference/
 
 **Details**
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count\_distinct\_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact) function.
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact) function.
 
 The `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses a small column from the table and counts the number of values in it.
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS insert_values_parametrized";
 $CLICKHOUSE_CLIENT --query="CREATE TABLE insert_values_parametrized (n UInt8, s String, a Array(Float32)) ENGINE = Memory";

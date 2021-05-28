@@ -1,3 +1,8 @@
+---
+toc_priority: 37
+toc_title: "Логические функции"
+---
+
 # Логические функции {#logicheskie-funktsii}
 
 Логические функции принимают любые числовые типы, а возвращают число типа UInt8, равное 0 или 1.
@@ -12,4 +17,3 @@
 
 ## xor {#xor}
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/logical_functions/) <!--hide-->

@@ -30,7 +30,7 @@ IOutputFormat::Status IOutputFormat::prepare()
         if (!input.hasData())
             return Status::NeedData;
 
-        current_chunk = input.pull();
+        current_chunk = input.pull(true);
         current_block_kind = kind;
         has_input = true;
         return Status::Ready;
@@ -44,8 +44,33 @@ IOutputFormat::Status IOutputFormat::prepare()
     return Status::Finished;
 }
 
+static Chunk prepareTotals(Chunk chunk)
+{
+    if (!chunk.hasRows())
+        return {};
+
+    if (chunk.getNumRows() > 1)
+    {
+        /// This may happen if something like ARRAY JOIN was executed on totals.
+        /// Skip rows except the first one.
+        auto columns = chunk.detachColumns();
+        for (auto & column : columns)
+            column = column->cut(0, 1);
+
+        chunk.setColumns(std::move(columns), 1);
+    }
+
+    return chunk;
+}
+
 void IOutputFormat::work()
 {
+    if (!prefix_written)
+    {
+        doWritePrefix();
+        prefix_written = true;
+    }
+
     if (finished && !finalized)
     {
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
@@ -64,7 +89,8 @@ void IOutputFormat::work()
             consume(std::move(current_chunk));
             break;
         case Totals:
-            consumeTotals(std::move(current_chunk));
+            if (auto totals = prepareTotals(std::move(current_chunk)))
+                consumeTotals(std::move(totals));
             break;
         case Extremes:
             consumeExtremes(std::move(current_chunk));

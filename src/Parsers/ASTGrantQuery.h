@@ -19,20 +19,18 @@ class ASTRolesOrUsersSet;
 class ASTGrantQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    using Kind = AccessRightsElementWithOptions::Kind;
-    Kind kind = Kind::GRANT;
-    bool attach = false;
+    bool attach_mode = false;
+    bool is_revoke = false;
     AccessRightsElements access_rights_elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
-    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
-    bool grant_option = false;
     bool admin_option = false;
+    std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    void replaceEmptyDatabaseWithCurrent(const String & current_database);
-    void replaceCurrentUserTagWithName(const String & current_user_name) const;
+    void replaceEmptyDatabase(const String & current_database);
+    void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
 };
 }

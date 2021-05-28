@@ -45,7 +45,7 @@ select 12 as p, geohashEncode(longitude, latitude, p) as actual, if(actual = enc
 
 -- Here results are floats, and hence may not be compared for equality directly.
 -- We select all values that are off by some reasonable value:
--- each byte of encoded string provides 5 bits of precison, (roughly 2.5 for lon and lat)
+-- each byte of encoded string provides 5 bits of precision, (roughly 2.5 for lon and lat)
 -- each bit of precision divides value range by 2.
 -- hence max error is roughly value range 2.5 times divided by 2 for each precision bit.
 -- initial value range is [-90..90] for latitude and [-180..180] for longitude.

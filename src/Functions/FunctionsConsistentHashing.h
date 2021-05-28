@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ class FunctionConsistentHashImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionConsistentHashImpl<Impl>>();
     }
@@ -65,10 +66,10 @@ public:
         return {1};
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        if (isColumnConst(*block.getByPosition(arguments[1]).column))
-            executeConstBuckets(block, arguments, result);
+        if (isColumnConst(*arguments[1].column))
+            return executeConstBuckets(arguments);
         else
             throw Exception(
                 "The second argument of function " + getName() + " (number of buckets) must be constant", ErrorCodes::BAD_ARGUMENTS);
@@ -93,9 +94,9 @@ private:
         return static_cast<BucketsType>(buckets);
     }
 
-    void executeConstBuckets(Block & block, const ColumnNumbers & arguments, size_t result) const
+    ColumnPtr executeConstBuckets(const ColumnsWithTypeAndName & arguments) const
     {
-        Field buckets_field = (*block.getByPosition(arguments[1]).column)[0];
+        Field buckets_field = (*arguments[1].column)[0];
         BucketsType num_buckets;
 
         if (buckets_field.getType() == Field::Types::Int64)
@@ -106,8 +107,8 @@ private:
             throw Exception("Illegal type " + String(buckets_field.getTypeName()) + " of the second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const auto & hash_col = block.getByPosition(arguments[0]).column;
-        const IDataType * hash_type = block.getByPosition(arguments[0]).type.get();
+        const auto & hash_col = arguments[0].column;
+        const IDataType * hash_type = arguments[0].type.get();
         auto res_col = ColumnVector<ResultType>::create();
 
         WhichDataType which(hash_type);
@@ -132,7 +133,7 @@ private:
             throw Exception("Illegal type " + hash_type->getName() + " of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        block.getByPosition(result).column = std::move(res_col);
+        return res_col;
     }
 
     template <typename CurrentHashType>

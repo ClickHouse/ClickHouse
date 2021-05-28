@@ -47,7 +47,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     const auto storage_settings = storage.getSettings();
     check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
-    task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -71,7 +71,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                 bool old_val = false;
                 if (storage.is_readonly.compare_exchange_strong(old_val, true))
+                {
+                    incr_readonly = true;
                     CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+                }
 
                 partialShutdown();
             }
@@ -80,7 +83,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             {
                 try
                 {
-                    storage.setZooKeeper(storage.global_context.getZooKeeper());
+                    storage.setZooKeeper();
                 }
                 catch (const Coordination::Exception &)
                 {
@@ -112,7 +115,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 
             bool old_val = true;
             if (storage.is_readonly.compare_exchange_strong(old_val, false))
+            {
+                incr_readonly = false;
                 CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+            }
 
             first_time = false;
         }
@@ -226,14 +232,32 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     String quorum_str;
     if (zookeeper->tryGet(storage.zookeeper_path + "/quorum/status", quorum_str))
     {
-        ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.fromString(quorum_str);
+        ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
         if (!quorum_entry.replicas.count(storage.replica_name)
-            && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
+            && storage.getActiveContainingPart(quorum_entry.part_name))
         {
             LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
-            storage.updateQuorum(quorum_entry.part_name);
+            storage.updateQuorum(quorum_entry.part_name, false);
+        }
+    }
+
+    Strings part_names;
+    String parallel_quorum_parts_path = storage.zookeeper_path + "/quorum/parallel";
+    if (zookeeper->tryGetChildren(parallel_quorum_parts_path, part_names) == Coordination::Error::ZOK)
+    {
+        for (auto & part_name : part_names)
+        {
+            if (zookeeper->tryGet(parallel_quorum_parts_path + "/" + part_name, quorum_str))
+            {
+                ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
+                if (!quorum_entry.replicas.count(storage.replica_name)
+                    && storage.getActiveContainingPart(part_name))
+                {
+                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", part_name);
+                    storage.updateQuorum(part_name, true);
+                }
+            }
         }
     }
 }
@@ -330,6 +354,13 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
     need_stop = true;
     task->deactivate();
     LOG_TRACE(log, "Restarting thread finished");
+
+    /// For detach table query, we should reset the ReadonlyReplica metric.
+    if (incr_readonly)
+    {
+        CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+        incr_readonly = false;
+    }
 
     /// Stop other tasks.
     partialShutdown();

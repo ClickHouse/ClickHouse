@@ -10,7 +10,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -29,6 +29,9 @@ namespace DB
   * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns index of any match or zero if none;
   * multiMatchAllIndices(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns an array of matched indices in any order;
   *
+  * countSubstrings(haystack, needle) -- count number of occurrences of needle in haystack.
+  * countSubstringsCaseInsensitive(haystack, needle)
+  *
   * Applies regexp re2 and pulls:
   * - the first subpattern, if the regexp has a subpattern;
   * - the zero subpattern (the match part, otherwise);
@@ -38,8 +41,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template <typename Impl, typename Name>
@@ -47,23 +51,37 @@ class FunctionsStringSearch : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringSearch>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return Impl::supports_start_pos; }
+
+    size_t getNumberOfArguments() const override
+    {
+        if (Impl::supports_start_pos)
+            return 0;
+        return 2;
+    }
 
     bool useDefaultImplementationForConstants() const override { return Impl::use_default_implementation_for_constants; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
-        return Impl::use_default_implementation_for_constants
-            ? ColumnNumbers{1, 2}
-            : ColumnNumbers{};
+        if (!Impl::use_default_implementation_for_constants)
+            return ColumnNumbers{};
+        if (!Impl::supports_start_pos)
+            return ColumnNumbers{1, 2};
+        return ColumnNumbers{1, 2, 3};
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (arguments.size() < 2 || 3 < arguments.size())
+            throw Exception("Number of arguments for function " + String(Name::name) + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2 or 3.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         if (!isStringOrFixedString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -72,28 +90,49 @@ public:
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+        if (arguments.size() >= 3)
+        {
+            if (!isUnsignedInteger(arguments[2]))
+                throw Exception(
+                    "Illegal type " + arguments[2]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
-        const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
+        const ColumnPtr & column_haystack = arguments[0].column;
+        const ColumnPtr & column_needle = arguments[1].column;
+
+        ColumnPtr column_start_pos = nullptr;
+        if (arguments.size() >= 3)
+            column_start_pos = arguments[2].column;
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
 
         if constexpr (!Impl::use_default_implementation_for_constants)
         {
+            bool is_col_start_pos_const = column_start_pos == nullptr || isColumnConst(*column_start_pos);
             if (col_haystack_const && col_needle_const)
             {
-                ResultType res{};
-                Impl::constantConstant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
-                block.getByPosition(result).column
-                    = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
-                return;
+                auto col_res = ColumnVector<ResultType>::create();
+                typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+                vec_res.resize(is_col_start_pos_const ? 1 : column_start_pos->size());
+
+                Impl::constantConstant(
+                    col_haystack_const->getValue<String>(),
+                    col_needle_const->getValue<String>(),
+                    column_start_pos,
+                    vec_res);
+
+                if (is_col_start_pos_const)
+                    return result_type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
+                else
+                    return col_res;
             }
         }
 
@@ -112,23 +151,35 @@ public:
                 col_haystack_vector->getOffsets(),
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
+                column_start_pos,
                 vec_res);
         else if (col_haystack_vector && col_needle_const)
             Impl::vectorConstant(
-                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), col_needle_const->getValue<String>(), vec_res);
+                col_haystack_vector->getChars(),
+                col_haystack_vector->getOffsets(),
+                col_needle_const->getValue<String>(),
+                column_start_pos,
+                vec_res);
         else if (col_haystack_vector_fixed && col_needle_const)
             Impl::vectorFixedConstant(
-                col_haystack_vector_fixed->getChars(), col_haystack_vector_fixed->getN(), col_needle_const->getValue<String>(), vec_res);
+                col_haystack_vector_fixed->getChars(),
+                col_haystack_vector_fixed->getN(),
+                col_needle_const->getValue<String>(),
+                vec_res);
         else if (col_haystack_const && col_needle_vector)
             Impl::constantVector(
-                col_haystack_const->getValue<String>(), col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
+                col_haystack_const->getValue<String>(),
+                col_needle_vector->getChars(),
+                col_needle_vector->getOffsets(),
+                column_start_pos,
+                vec_res);
         else
             throw Exception(
-                "Illegal columns " + block.getByPosition(arguments[0]).column->getName() + " and "
-                    + block.getByPosition(arguments[1]).column->getName() + " of arguments of function " + getName(),
+                "Illegal columns " + arguments[0].column->getName() + " and "
+                    + arguments[1].column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = std::move(col_res);
+        return col_res;
     }
 };
 

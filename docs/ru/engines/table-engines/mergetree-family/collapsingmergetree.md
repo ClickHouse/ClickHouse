@@ -1,3 +1,8 @@
+---
+toc_priority: 36
+toc_title: CollapsingMergeTree
+---
+
 # CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 Движок наследует функциональность от [MergeTree](mergetree.md) и добавляет в алгоритм слияния кусков данных логику сворачивания (удаления) строк.
@@ -299,4 +304,3 @@ select * FROM UAct
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/collapsingmergetree/) <!--hide-->

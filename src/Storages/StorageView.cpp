@@ -6,7 +6,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -15,12 +14,11 @@
 #include <Common/typeid_cast.h>
 
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/ConvertingTransform.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -52,17 +50,32 @@ StorageView::StorageView(
 }
 
 
-Pipes StorageView::read(
+Pipe StorageView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
 {
-    Pipes pipes;
+    QueryPlan plan;
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
+}
 
+void StorageView::read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        const size_t /*max_block_size*/,
+        const unsigned /*num_streams*/)
+{
     ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
 
     if (query_info.view_query)
@@ -73,31 +86,34 @@ Pipes StorageView::read(
     }
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
-
-    auto pipeline = interpreter.execute().pipeline;
+    interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    pipeline.addSimpleTransform([](const Block & header)
-    {
-        return std::make_shared<MaterializingTransform>(header);
-    });
+    auto materializing_actions = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    materializing_actions->addMaterializingOutputActions();
+
+    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
+    materializing->setStepDescription("Materialize constants after VIEW subquery");
+    query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    pipeline.addSimpleTransform([&](const Block & header)
-    {
-        return std::make_shared<ConvertingTransform>(
-            header, metadata_snapshot->getSampleBlockForColumns(
-                column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
-    });
+    auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
 
-    pipes = std::move(pipeline).getPipes();
-
-    return pipes;
+    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
+    converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
+    query_plan.addStep(std::move(converting));
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
+    if (!select_query.tables() || select_query.tables()->children.empty())
+        throw Exception("Logical error: no table expression in view select AST", ErrorCodes::LOGICAL_ERROR);
+
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
@@ -111,7 +127,13 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)
-        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+    {
+        // If it's a view table function, add a fake db.table name.
+        if (table_expression->table_function && table_expression->table_function->as<ASTFunction>()->name == "view")
+            table_expression->database_and_table_name = std::make_shared<ASTIdentifier>("__view");
+        else
+            throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+    }
 
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
     String alias = db_table.alias.empty() ? db_table.table : db_table.alias;

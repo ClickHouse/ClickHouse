@@ -32,8 +32,8 @@ namespace ErrorCodes
   * randConstant - service function, produces a constant column with a random value.
   *
   * The time is used as the seed.
-  * Note: it is reinitialized for each block.
-  * This means that the timer must be of sufficient resolution to give different values to each block.
+  * Note: it is reinitialized for each columns.
+  * This means that the timer must be of sufficient resolution to give different values to each columns.
   */
 
 DECLARE_MULTITARGET_CODE(
@@ -74,7 +74,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create();
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
@@ -83,7 +83,7 @@ public:
         vec_to.resize(size);
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
-        block.getByPosition(result).column = std::move(col_to);
+        return col_to;
     }
 };
 
@@ -91,7 +91,7 @@ template <typename ToType, typename Name>
 class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
 {
 public:
-    explicit FunctionRandom(const Context & context) : selector(context)
+    explicit FunctionRandom(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
@@ -102,12 +102,12 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionRandom<ToType, Name>>(context);
     }

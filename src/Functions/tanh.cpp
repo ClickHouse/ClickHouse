@@ -3,13 +3,13 @@
 
 namespace DB
 {
+namespace
+{
 
 struct TanhName { static constexpr auto name = "tanh"; };
 
 #if USE_FASTOPS
 
-namespace
-{
     struct Impl
     {
         static constexpr auto name = TanhName::name;
@@ -22,19 +22,20 @@ namespace
             NFastOps::Tanh<>(src, size, dst);
         }
     };
-}
 
 using FunctionTanh = FunctionMathUnary<Impl>;
 
 #else
 
-static double tanh(double x)
+double tanh(double x)
 {
     return 2 / (1.0 + exp(-2 * x)) - 1;
 }
 
 using FunctionTanh = FunctionMathUnary<UnaryFunctionVectorized<TanhName, tanh>>;
 #endif
+
+}
 
 void registerFunctionTanh(FunctionFactory & factory)
 {

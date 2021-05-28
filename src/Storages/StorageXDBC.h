@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <Common/XDBCBridgeHelper.h>
+#include <Bridge/XDBCBridgeHelper.h>
 
 
 namespace DB
@@ -15,11 +15,11 @@ namespace DB
 class StorageXDBC : public IStorageURLBase
 {
 public:
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
-        const Context & context,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -29,11 +29,12 @@ public:
         const std::string & remote_database_name,
         const std::string & remote_table_name,
         const ColumnsDescription & columns_,
-        const Context & context_,
+        ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
+    std::string getName() const override;
 private:
 
     BridgeHelperPtr bridge_helper;
@@ -48,7 +49,7 @@ private:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
@@ -56,13 +57,11 @@ private:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
     Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const override;
-
-    std::string getName() const override;
 };
 
 }

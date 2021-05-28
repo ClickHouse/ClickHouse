@@ -16,7 +16,7 @@ struct FixedHashMapCell
     bool full;
     Mapped mapped;
 
-    FixedHashMapCell() {}
+    FixedHashMapCell() {} //-V730
     FixedHashMapCell(const Key &, const State &) : full(true) {}
     FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) {}
 
@@ -31,7 +31,7 @@ struct FixedHashMapCell
     ///  Note that we have to assemble a continuous layout for the value_type on each call of getValue().
     struct CellExt
     {
-        CellExt() {}
+        CellExt() {} //-V730
         CellExt(Key && key_, const FixedHashMapCell * ptr_) : key(key_), ptr(const_cast<FixedHashMapCell *>(ptr_)) {}
         void update(Key && key_, const FixedHashMapCell * ptr_)
         {
@@ -76,7 +76,7 @@ struct FixedHashMapImplicitZeroCell
     ///  Note that we have to assemble a continuous layout for the value_type on each call of getValue().
     struct CellExt
     {
-        CellExt() {}
+        CellExt() {} //-V730
         CellExt(Key && key_, const FixedHashMapImplicitZeroCell * ptr_) : key(key_), ptr(const_cast<FixedHashMapImplicitZeroCell *>(ptr_)) {}
         void update(Key && key_, const FixedHashMapImplicitZeroCell * ptr_)
         {
@@ -94,11 +94,16 @@ struct FixedHashMapImplicitZeroCell
 };
 
 
-template <typename Key, typename Mapped, typename Cell = FixedHashMapCell<Key, Mapped>, typename Allocator = HashTableAllocator>
-class FixedHashMap : public FixedHashTable<Key, Cell, Allocator>
+template <
+    typename Key,
+    typename Mapped,
+    typename Cell = FixedHashMapCell<Key, Mapped>,
+    typename Size = FixedHashTableStoredSize<Cell>,
+    typename Allocator = HashTableAllocator>
+class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, Cell, Allocator>;
+    using Base = FixedHashTable<Key, Cell, Size, Allocator>;
     using Self = FixedHashMap;
     using LookupResult = typename Base::LookupResult;
 
@@ -155,5 +160,19 @@ public:
     }
 };
 
-template <typename Key, typename Mapped, typename Cell = FixedHashMapImplicitZeroCell<Key, Mapped>, typename Allocator = HashTableAllocator>
-using FixedImplicitZeroHashMap = FixedHashMap<Key, Mapped, Cell, Allocator>;
+
+template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
+using FixedImplicitZeroHashMap = FixedHashMap<
+    Key,
+    Mapped,
+    FixedHashMapImplicitZeroCell<Key, Mapped>,
+    FixedHashTableStoredSize<FixedHashMapImplicitZeroCell<Key, Mapped>>,
+    Allocator>;
+
+template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
+using FixedImplicitZeroHashMapWithCalculatedSize = FixedHashMap<
+    Key,
+    Mapped,
+    FixedHashMapImplicitZeroCell<Key, Mapped>,
+    FixedHashTableCalculatedSize<FixedHashMapImplicitZeroCell<Key, Mapped>>,
+    Allocator>;

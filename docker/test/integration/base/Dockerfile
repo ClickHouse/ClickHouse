@@ -1,14 +1,13 @@
 # docker build -t yandex/clickhouse-integration-test .
-FROM ubuntu:19.10
+FROM yandex/clickhouse-test-base
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install \
         tzdata \
-        python \
+        python3 \
         libreadline-dev \
         libicu-dev \
         bsdutils \
-        llvm-9 \
         gdb \
         unixodbc \
         odbcinst \
@@ -17,7 +16,11 @@ RUN apt-get update \
         odbc-postgresql \
         sqlite3 \
         curl \
-        tar
+        tar \
+        krb5-user \
+        iproute2 \
+        lsof \
+        g++
 RUN rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -30,8 +33,3 @@ RUN curl 'https://cdn.mysql.com//Downloads/Connector-ODBC/8.0/mysql-connector-od
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Sanitizer options
-RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
-    echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
-    echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
-    ln -s /usr/lib/llvm-9/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;

@@ -1,14 +1,12 @@
 ---
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 toc_title: ARRAY JOIN
 ---
 
 # ARRAY JOIN子句 {#select-array-join-clause}
 
-对于包含数组列的表来说，这是一种常见的操作，用于生成一个新表，该表具有包含该初始列的每个单独数组元素的列，而其他列的值将被重复。 这是什么基本情况 `ARRAY JOIN` 子句有
+对于包含数组列的表来说是一种常见的操作，用于生成一个新表，该表具有包含该初始列中的每个单独数组元素的列，而其他列的值将被重复显示。 这是 `ARRAY JOIN` 语句最基本的场景。
 
-它的名字来自这样一个事实，即它可以被视为执行 `JOIN` 具有数组或嵌套数据结构。 意图类似于 [arrayJoin](../../../sql-reference/functions/array-join.md#functions_arrayjoin) 功能，但该子句功能更广泛。
+它可以被视为执行 `JOIN` 并具有数组或嵌套数据结构。 类似于 [arrayJoin](../../../sql-reference/functions/array-join.md#functions_arrayjoin) 功能，但该子句功能更广泛。
 
 语法:
 
@@ -20,16 +18,16 @@ FROM <left_subquery>
 ...
 ```
 
-您只能指定一个 `ARRAY JOIN` a中的条款 `SELECT` 查询。
+您只能在 `SELECT` 查询指定一个 `ARRAY JOIN` 。
 
-支持的类型 `ARRAY JOIN` 下面列出:
+ `ARRAY JOIN` 支持的类型有:
 
--   `ARRAY JOIN` -在基本情况下，空数组不包括在结果中 `JOIN`.
--   `LEFT ARRAY JOIN` -的结果 `JOIN` 包含具有空数组的行。 空数组的值设置为数组元素类型的默认值（通常为0、空字符串或NULL）。
+-   `ARRAY JOIN` - 一般情况下，空数组不包括在结果中 `JOIN`.
+-   `LEFT ARRAY JOIN` - 的结果 `JOIN` 包含具有空数组的行。 空数组的值设置为数组元素类型的默认值（通常为0、空字符串或NULL）。
 
-## 基本数组连接示例 {#basic-array-join-examples}
+## 基本 ARRAY JOIN 示例 {#basic-array-join-examples}
 
-下面的例子演示的用法 `ARRAY JOIN` 和 `LEFT ARRAY JOIN` 条款 让我们创建一个表 [阵列](../../../sql-reference/data-types/array.md) 键入column并在其中插入值:
+下面的例子展示 `ARRAY JOIN` 和 `LEFT ARRAY JOIN` 的用法，让我们创建一个表包含一个 [Array](../../../sql-reference/data-types/array.md) 的列并插入值:
 
 ``` sql
 CREATE TABLE arrays_test
@@ -50,7 +48,7 @@ VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
 └─────────────┴─────────┘
 ```
 
-下面的例子使用 `ARRAY JOIN` 条款:
+下面的例子使用 `ARRAY JOIN` 子句:
 
 ``` sql
 SELECT s, arr
@@ -68,7 +66,7 @@ ARRAY JOIN arr;
 └───────┴─────┘
 ```
 
-下一个示例使用 `LEFT ARRAY JOIN` 条款:
+下一个示例使用 `LEFT ARRAY JOIN` 子句:
 
 ``` sql
 SELECT s, arr
@@ -89,7 +87,7 @@ LEFT ARRAY JOIN arr;
 
 ## 使用别名 {#using-aliases}
 
-可以为数组中的别名指定 `ARRAY JOIN` 条款 在这种情况下，数组项目可以通过此别名访问，但数组本身可以通过原始名称访问。 示例:
+在使用`ARRAY JOIN` 时可以为数组指定别名，数组元素可以通过此别名访问，但数组本身则通过原始名称访问。 示例:
 
 ``` sql
 SELECT s, arr, a
@@ -107,7 +105,7 @@ ARRAY JOIN arr AS a;
 └───────┴─────────┴───┘
 ```
 
-使用别名，您可以执行 `ARRAY JOIN` 与外部阵列。 例如:
+可以使用别名与外部数组执行 `ARRAY JOIN` 。 例如:
 
 ``` sql
 SELECT s, arr_external
@@ -129,7 +127,7 @@ ARRAY JOIN [1, 2, 3] AS arr_external;
 └─────────────┴──────────────┘
 ```
 
-多个数组可以在逗号分隔 `ARRAY JOIN` 条款 在这种情况下, `JOIN` 与它们同时执行（直接和，而不是笛卡尔积）。 请注意，所有数组必须具有相同的大小。 示例:
+在 `ARRAY JOIN` 中，多个数组可以用逗号分隔, 在这例子中 `JOIN` 与它们同时执行（直接sum，而不是笛卡尔积）。 请注意，所有数组必须具有相同的大小。 示例:
 
 ``` sql
 SELECT s, arr, a, num, mapped
@@ -242,7 +240,7 @@ ARRAY JOIN `nest.x`;
 └───────┴────────┴────────────┘
 ```
 
-可以将别名用于嵌套数据结构，以便选择 `JOIN` 结果或源数组。 示例:
+可以将别名用于嵌套数据结构，以便选择 `JOIN` 结果或源数组。 例如:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
@@ -260,7 +258,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-使用的例子 [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) 功能:
+使用功能 [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) 的例子:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -278,6 +276,6 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-## 实施细节 {#implementation-details}
+## 实现细节 {#implementation-details}
 
 运行时优化查询执行顺序 `ARRAY JOIN`. 虽然 `ARRAY JOIN` 必须始终之前指定 [WHERE](../../../sql-reference/statements/select/where.md)/[PREWHERE](../../../sql-reference/statements/select/prewhere.md) 子句中的查询，从技术上讲，它们可以以任何顺序执行，除非结果 `ARRAY JOIN` 用于过滤。 处理顺序由查询优化器控制。
