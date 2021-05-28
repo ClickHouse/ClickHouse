@@ -117,3 +117,4 @@ Performance will not decrease if:
 -   Data is added in real time.
 -   You upload data that is usually sorted by time.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->

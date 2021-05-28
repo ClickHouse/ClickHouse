@@ -39,16 +39,12 @@ public:
         /// Relative to <path> from server config (possibly <path> of some <disk> of some <volume> for *MergeTree)
         const String & relative_data_path;
         const StorageID & table_id;
-        ContextWeakPtr local_context;
-        ContextWeakPtr context;
+        Context & local_context;
+        Context & context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         bool attach;
         bool has_force_restore_data_flag;
-        const String & comment;
-
-        ContextPtr getContext() const;
-        ContextPtr getLocalContext() const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -57,7 +53,6 @@ public:
     {
         bool supports_settings = false;
         bool supports_skipping_indices = false;
-        bool supports_projections = false;
         bool supports_sort_order = false;
         bool supports_ttl = false;
         /// See also IStorage::supportsReplication()
@@ -81,8 +76,8 @@ public:
     StoragePtr get(
         const ASTCreateQuery & query,
         const String & relative_data_path,
-        ContextPtr local_context,
-        ContextPtr context,
+        Context & local_context,
+        Context & context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         bool has_force_restore_data_flag) const;
@@ -92,7 +87,6 @@ public:
     void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
         .supports_settings = false,
         .supports_skipping_indices = false,
-        .supports_projections = false,
         .supports_sort_order = false,
         .supports_ttl = false,
         .supports_replication = false,

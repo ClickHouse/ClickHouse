@@ -1,15 +1,15 @@
 ---
 toc_priority: 67
-toc_title: "Функции для шифрования"
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438 \u0434\u043b\u044f \u0448\u0438\u0444\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
 ---
 
 # Функции шифрования {#encryption-functions}
 
-Данные функции реализуют шифрование и расшифровку данных с помощью AES (Advanced Encryption Standard) алгоритма.
+Даннвые функции реализуют шифрование и расшифровку данных с помощью AES (Advanced Encryption Standard) алгоритма.
 
 Длина ключа зависит от режима шифрования. Он может быть длинной в 16, 24 и 32 байта для режимов шифрования `-128-`, `-196-` и `-256-` соответственно.
 
-Длина инициализирующего вектора всегда 16 байт (лишние байты игнорируются). 
+Длина инициализирующего вектора всегда 16 байт (лишнии байты игнорируются). 
 
 Обратите внимание, что до версии Clickhouse 21.1 эти функции работали медленно.
 
@@ -31,7 +31,7 @@ toc_title: "Функции для шифрования"
 encrypt('mode', 'plaintext', 'key' [, iv, aad])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `mode` — режим шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — текст, который будет зашифрован. [String](../../sql-reference/data-types/string.md#string).
@@ -127,7 +127,7 @@ SELECT comment, hex(secret) FROM encryption_test WHERE comment LIKE '%gcm%';
 aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `mode` — режим шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `plaintext` — текст, который будет зашифрован. [String](../../sql-reference/data-types/string.md#string).
@@ -236,13 +236,13 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `mode` — режим шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — зашифрованный текст, который будет расшифрован. [String](../../sql-reference/data-types/string.md#string).
 -   `key` — ключ шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `iv` — инициализирующий вектор. Обязателен для `-gcm` режимов, для остальных режимов опциональный. [String](../../sql-reference/data-types/string.md#string).
--   `aad` — дополнительные аутентифицированные данные. Текст не будет расшифрован, если это значение неверно. Работает только с `-gcm` режимами. Для остальных вызовет исключение. [String](../../sql-reference/data-types/string.md#string).
+-   `aad` —  дополнительные аутентифицированные данные. Текст не будет расшифрован, если это значение неверно. Работает только с `-gcm` режимами. Для остальных вызовет исключение. [String](../../sql-reference/data-types/string.md#string).
 
 **Возвращаемое значение**
 
@@ -316,7 +316,7 @@ SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920
 aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `mode` — режим шифрования. [String](../../sql-reference/data-types/string.md#string).
 -   `ciphertext` — зашифрованный текст, который будет расшифрован. [String](../../sql-reference/data-types/string.md#string).

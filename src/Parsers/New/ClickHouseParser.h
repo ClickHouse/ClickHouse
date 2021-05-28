@@ -91,7 +91,7 @@ public:
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
-  ~ClickHouseParser() override;
+  ~ClickHouseParser();
 
   virtual std::string getGrammarFileName() const override;
   virtual const antlr4::atn::ATN& getATN() const override { return _atn; };

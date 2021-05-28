@@ -15,16 +15,14 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE b (x UInt8) ENGINE = MergeTree ORDER BY
 
 function thread1()
 {
-    while true; do
-        # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
+    while true; do 
         seq 1 100 | awk '{ print "SELECT x FROM a WHERE x IN (SELECT toUInt8(count()) FROM system.tables);" }' | $CLICKHOUSE_CLIENT -n
     done
 }
 
 function thread2()
 {
-    while true; do
-        # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
+    while true; do 
         seq 1 100 | awk '{ print "SELECT x FROM b WHERE x IN (SELECT toUInt8(count()) FROM system.tables);" }' | $CLICKHOUSE_CLIENT -n
     done
 }

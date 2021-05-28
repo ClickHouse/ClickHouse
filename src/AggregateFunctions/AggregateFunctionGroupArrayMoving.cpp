@@ -21,7 +21,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// TODO Proper support for Decimal256.
 template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {

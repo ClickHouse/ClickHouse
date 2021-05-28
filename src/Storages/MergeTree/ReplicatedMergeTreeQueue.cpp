@@ -144,7 +144,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     else
         queue.push_front(entry);
 
-    if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
+    if (entry->type == LogEntry::GET_PART)
     {
         inserts_by_time.insert(entry);
 
@@ -183,7 +183,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     std::unique_lock<std::mutex> & state_lock)
 {
     /// Update insert times.
-    if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
+    if (entry->type == LogEntry::GET_PART)
     {
         inserts_by_time.erase(entry);
 
@@ -561,7 +561,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                     replica_path + "/queue/queue-", res.data, zkutil::CreateMode::PersistentSequential));
 
                 const auto & entry = *copied_entries.back();
-                if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
+                if (entry.type == LogEntry::GET_PART)
                 {
                     std::lock_guard state_lock(state_mutex);
                     if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
@@ -869,12 +869,7 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
             if (it0 == merge_entry)
                 break;
 
-            const auto t = (*it0)->type;
-
-            if ((t == LogEntry::MERGE_PARTS ||
-                 t == LogEntry::GET_PART  ||
-                 t == LogEntry::ATTACH_PART ||
-                 t == LogEntry::MUTATE_PART)
+            if (((*it0)->type == LogEntry::MERGE_PARTS || (*it0)->type == LogEntry::GET_PART || (*it0)->type == LogEntry::MUTATE_PART)
                 && parts_for_merge.count((*it0)->new_part_name))
             {
                 queue.splice(queue.end(), queue, it0, it);
@@ -931,12 +926,9 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     {
         auto type = (*it)->type;
 
-        bool is_simple_producing_op = type == LogEntry::GET_PART ||
-                                      type == LogEntry::ATTACH_PART ||
-                                      type == LogEntry::MERGE_PARTS ||
-                                      type == LogEntry::MUTATE_PART;
-        bool simple_op_covered = is_simple_producing_op && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version));
-        if (simple_op_covered || checkReplaceRangeCanBeRemoved(part_info, *it, current))
+        if (((type == LogEntry::GET_PART || type == LogEntry::MERGE_PARTS || type == LogEntry::MUTATE_PART)
+             && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version)))
+            || checkReplaceRangeCanBeRemoved(part_info, *it, current))
         {
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
@@ -1035,7 +1027,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     /// some other entry which is currently executing, then we can postpone this entry.
     if (entry.type == LogEntry::MERGE_PARTS
         || entry.type == LogEntry::GET_PART
-        || entry.type == LogEntry::ATTACH_PART
         || entry.type == LogEntry::MUTATE_PART)
     {
         for (const String & new_part_name : entry.getBlockingPartNames(format_version))
@@ -1046,8 +1037,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     }
 
     /// Check that fetches pool is not overloaded
-    if ((entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
-        && !storage.canExecuteFetch(entry, out_postpone_reason))
+    if (entry.type == LogEntry::GET_PART && !storage.canExecuteFetch(entry, out_postpone_reason))
     {
         /// Don't print log message about this, because we can have a lot of fetches,
         /// for example during replica recovery.
@@ -1607,7 +1597,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
         if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
             res.queue_oldest_time = entry->create_time;
 
-        if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
+        if (entry->type == LogEntry::GET_PART)
         {
             ++res.inserts_in_queue;
 
@@ -1803,17 +1793,6 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
     merges_version = queue_.pullLogsToQueue(zookeeper);
 
-    {
-        /// We avoid returning here a version to be used in a lightweight transaction.
-        ///
-        /// When pinned parts set is changed a log entry is added to the queue in the same transaction.
-        /// The log entry serves as a synchronization point, and it also increments `merges_version`.
-        ///
-        /// If pinned parts are fetched after logs are pulled then we can safely say that it contains all locks up to `merges_version`.
-        String s = zookeeper->get(queue.zookeeper_path + "/pinned_part_uuids");
-        pinned_part_uuids.fromString(s);
-    }
-
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (quorum_status_response.error == Coordination::Error::ZOK)
     {
@@ -1882,13 +1861,6 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
-        if (pinned_part_uuids.part_uuids.contains(part->uuid))
-        {
-            if (out_reason)
-                *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
-            return false;
-        }
-
         if (part->name == inprogress_quorum_part)
         {
             if (out_reason)
@@ -1977,20 +1949,13 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
         return false;
     }
 
-    return MergeTreeData::partsContainSameProjections(left, right);
+    return true;
 }
 
 bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
-    if (pinned_part_uuids.part_uuids.contains(part->uuid))
-    {
-        if (out_reason)
-            *out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
-        return false;
-    }
-
     if (part->name == inprogress_quorum_part)
     {
         if (out_reason)

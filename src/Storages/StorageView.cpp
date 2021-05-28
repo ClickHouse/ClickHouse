@@ -17,8 +17,6 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -31,12 +29,13 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
-    const StorageID & table_id_, const ASTCreateQuery & query, const ColumnsDescription & columns_, const String & comment)
+    const StorageID & table_id_,
+    const ASTCreateQuery & query,
+    const ColumnsDescription & columns_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setComment(comment);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -53,16 +52,14 @@ Pipe StorageView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
 }
 
 void StorageView::read(
@@ -70,7 +67,7 @@ void StorageView::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
         const unsigned /*num_streams*/)
@@ -172,7 +169,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_id, args.query, args.columns, args.comment);
+        return StorageView::create(args.table_id, args.query, args.columns);
     });
 }
 

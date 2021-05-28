@@ -10,8 +10,6 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
-#include <Poco/Event.h>
 
 namespace DB
 {
@@ -97,7 +95,8 @@ public:
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
 
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
+        segmentator_thread = ThreadFromGlobalPool(
+            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
     }
 
     ~ParallelParsingInputFormat() override
@@ -200,9 +199,6 @@ private:
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
 
-    Poco::Event first_parser_finished;
-
-    std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
 
     /// There are multiple "parsers", that's why we use thread pool.
@@ -254,9 +250,6 @@ private:
         {
             parserThreadFunction(group, ticket_number);
         });
-        /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
-        if (ticket_number == 0)
-            first_parser_finished.wait();
     }
 
     void finishAndWait()

@@ -28,8 +28,6 @@ public:
         return argument_types.front();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void create(AggregateDataPtr) const override
     {
     }
