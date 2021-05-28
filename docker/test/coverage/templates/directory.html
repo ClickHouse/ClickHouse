@@ -1,0 +1,23 @@
+{% extends "page.html" %}
+{% block content %}
+
+<table class="table table-bordered table-sm">
+    <thead>
+        <tr>
+            <th scope="col">Directory</th>
+            <th scope="col">Lines coverage</th>
+            <th scope="col">Functions coverage</th>
+            <th scope="col">Tests coverage</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in special_entries %}
+            <tr class="table-active"> {% include "entry.html" %} <tr>
+        {% endfor %}
+        {% for entry in entries %}
+            <tr> {% include "entry.html" %} <tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

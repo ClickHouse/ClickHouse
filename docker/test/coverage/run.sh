@@ -110,4 +110,4 @@ kill_clickhouse
 
 cp /report.ccr "${OUTPUT_DIR}"/report.ccr
 
-python3 ccr_converter.py /report.ccr --html ${GENHTML_REPORT_DIR}
+python3 ccr_converter.py /report.ccr ${GENHTML_REPORT_DIR}
