@@ -53,7 +53,7 @@ ColumnGathererStream::ColumnGathererStream(
 Block ColumnGathererStream::readImpl()
 {
     /// Special case: single source and there are no skipped rows
-    if (children.size() == 1 && row_sources_buf.eof())
+    if (children.size() == 1 && row_sources_buf.eof() && !source_to_fully_copy)
         return children[0]->read();
 
     if (!source_to_fully_copy && row_sources_buf.eof())
