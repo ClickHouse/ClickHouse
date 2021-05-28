@@ -1149,7 +1149,7 @@ size_t MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     if (sampling.read_nothing)
         return 0;
 
-    /// Do not init. Ther are not used (cause skip index is ignored)
+    /// Do not init. It is not used (cause skip index is ignored)
     MergeTreeReaderSettings reader_settings;
 
     auto parts_with_ranges = filterPartsByPrimaryKeyAndSkipIndexes(
