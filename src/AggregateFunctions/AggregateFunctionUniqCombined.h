@@ -21,6 +21,7 @@
 
 namespace DB
 {
+struct Settings;
 namespace detail
 {
     /** Hash function for uniqCombined/uniqCombined64 (based on Ret).

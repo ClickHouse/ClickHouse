@@ -315,11 +315,13 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_sample_by("SAMPLE BY");
     ParserKeyword s_ttl("TTL");
     ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_comment("COMMENT");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserTTLExpressionList parser_ttl_list;
+    ParserStringLiteral string_literal_parser;
 
     ASTPtr engine;
     ASTPtr partition_by;
@@ -328,6 +330,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr sample_by;
     ASTPtr ttl_table;
     ASTPtr settings;
+    ASTPtr comment_expression;
 
     if (!s_engine.ignore(pos, expected))
         return false;
@@ -385,6 +388,13 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        if (s_comment.ignore(pos, expected))
+        {
+            /// should be followed by a string literal
+            if (!string_literal_parser.parse(pos, comment_expression, expected))
+                return false;
+        }
+
         break;
     }
 
@@ -397,6 +407,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->ttl_table, ttl_table);
 
     storage->set(storage->settings, settings);
+
+    storage->set(storage->comment, comment_expression);
 
     node = storage;
     return true;
