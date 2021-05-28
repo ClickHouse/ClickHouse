@@ -18,7 +18,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const Block & header_,
         CompressionCodecPtr default_codec_,
-        const MergeTreeIndices & indices_to_recalc_,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
         WrittenOffsetColumns * offset_columns_ = nullptr,
         const MergeTreeIndexGranularity & index_granularity = {},
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
@@ -27,7 +27,7 @@ public:
     void write(const Block & block) override;
     void writeSuffix() override;
     MergeTreeData::DataPart::Checksums
-    writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums, bool sync = false);
+    writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
 private:
     Block header;

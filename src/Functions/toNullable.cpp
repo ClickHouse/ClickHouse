@@ -7,8 +7,6 @@
 
 namespace DB
 {
-namespace
-{
 
 /// If value is not Nullable or NULL, wraps it to Nullable.
 class FunctionToNullable : public IFunction
@@ -16,7 +14,7 @@ class FunctionToNullable : public IFunction
 public:
     static constexpr auto name = "toNullable";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionToNullable>();
     }
@@ -35,13 +33,12 @@ public:
         return makeNullable(arguments[0]);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        return makeNullable(arguments[0].column);
+        block.getByPosition(result).column = makeNullable(block.getByPosition(arguments[0]).column);
     }
 };
 
-}
 
 void registerFunctionToNullable(FunctionFactory & factory)
 {

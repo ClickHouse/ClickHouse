@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+#include <Common/LRUCache.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
@@ -15,8 +16,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -108,9 +107,9 @@ static ColumnData getColumnData(const IColumn * column)
 static void applyFunction(IFunctionBase & function, Field & value)
 {
     const auto & type = function.getArgumentTypes().at(0);
-    ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
-    auto col = function.execute(args, function.getResultType(), 1);
-    col->get(0, value);
+    Block block = {{ type->createColumnConst(1, value), type, "x" }, { nullptr, function.getReturnType(), "y" }};
+    function.execute(block, {0}, 1, 1);
+    block.safeGetByPosition(1).column->get(0, value);
 }
 
 static llvm::TargetMachine * getNativeMachine()
@@ -276,9 +275,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t block_size) const override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
-        auto col_res = result_type->createColumn();
+        auto col_res = block.getByPosition(result).type->createColumn();
 
         if (block_size)
         {
@@ -291,16 +290,16 @@ public:
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                const auto * column = arguments[i].column.get();
+                const auto * column = block.getByPosition(arguments[i]).column.get();
                 if (!column)
-                    throw Exception("Column " + arguments[i].name + " is missing", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
             columns[arguments.size()] = getColumnData(col_res.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
 
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -323,7 +322,7 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
     for (size_t i = 0; i <= arg_types.size(); ++i)
     {
-        const auto & type = i == arg_types.size() ? f.getResultType() : arg_types[i];
+        const auto & type = i == arg_types.size() ? f.getReturnType() : arg_types[i];
         auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(type))->getPointerTo());
         columns[i].null_init = type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
@@ -429,7 +428,7 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
         for (const auto & arg : args)
             input.push_back([&]() { return arg(builder, inputs); });
         auto * result = f.compile(builder, input);
-        if (result->getType() != toNativeType(builder, f.getResultType()))
+        if (result->getType() != toNativeType(builder, f.getReturnType()))
             throw Exception("Function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
         return result;
     };
@@ -442,55 +441,33 @@ struct LLVMModuleState
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
 };
 
-LLVMFunction::LLVMFunction(const CompileDAG & dag)
-    : name(dag.dump())
+LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const Block & sample_block)
+    : name(actions.back().result_name)
     , module_state(std::make_unique<LLVMModuleState>())
 {
     LLVMContext context;
-    std::vector<CompilableExpression> expressions;
-    expressions.reserve(dag.size());
-
-    for (const auto & node : dag)
+    for (const auto & c : sample_block)
+        /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
+        if (c.column && getNativeValue(toNativeType(context.builder, c.type), *c.column, 0))
+            subexpressions[c.name] = subexpression(c.column, c.type);
+    for (const auto & action : actions)
     {
-        switch (node.type)
+        const auto & names = action.argument_names;
+        const auto & types = action.function_base->getArgumentTypes();
+        std::vector<CompilableExpression> args;
+        for (size_t i = 0; i < names.size(); ++i)
         {
-            case CompileNode::NodeType::CONSTANT:
+            auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
+            if (inserted.second)
             {
-                const auto * col = typeid_cast<const ColumnConst *>(node.column.get());
-
-                /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
-                if (!getNativeValue(toNativeType(context.builder, node.result_type), col->getDataColumn(), 0))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                    "Cannot compile constant of type {} = {}",
-                                    node.result_type->getName(),
-                                    applyVisitor(FieldVisitorToString(), col->getDataColumn()[0]));
-
-                expressions.emplace_back(subexpression(col->getDataColumnPtr(), node.result_type));
-                break;
+                arg_names.push_back(names[i]);
+                arg_types.push_back(types[i]);
             }
-            case CompileNode::NodeType::FUNCTION:
-            {
-                std::vector<CompilableExpression> args;
-                args.reserve(node.arguments.size());
-
-                for (auto arg : node.arguments)
-                    args.emplace_back(expressions[arg]);
-
-                originals.push_back(node.function);
-                expressions.emplace_back(subexpression(*node.function, std::move(args)));
-                break;
-            }
-            case CompileNode::NodeType::INPUT:
-            {
-                expressions.emplace_back(subexpression(arg_types.size()));
-                arg_types.push_back(node.result_type);
-                break;
-            }
+            args.push_back(inserted.first->second);
         }
+        subexpressions[action.result_name] = subexpression(*action.function_base, std::move(args));
+        originals.push_back(action.function_base);
     }
-
-    expression = std::move(expressions.back());
-
     compileFunctionToLLVMByteCode(context, *this);
     context.compileAllFunctionsToNativeCode();
 
@@ -501,10 +478,13 @@ LLVMFunction::LLVMFunction(const CompileDAG & dag)
 
 llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const
 {
-    return expression(builder, values);
+    auto it = subexpressions.find(name);
+    if (subexpressions.end() == it)
+        throw Exception("Cannot find subexpression " + name + " in LLVMFunction", ErrorCodes::LOGICAL_ERROR);
+    return it->second(builder, values);
 }
 
-ExecutableFunctionImplPtr LLVMFunction::prepare(const ColumnsWithTypeAndName &) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
+ExecutableFunctionImplPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
 
 bool LLVMFunction::isDeterministic() const
 {
@@ -530,7 +510,7 @@ bool LLVMFunction::isSuitableForConstantFolding() const
     return true;
 }
 
-bool LLVMFunction::isInjective(const ColumnsWithTypeAndName & sample_block) const
+bool LLVMFunction::isInjective(const Block & sample_block) const
 {
     for (const auto & f : originals)
         if (!f->isInjective(sample_block))
@@ -568,7 +548,7 @@ LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType
                 applyFunction(*originals[i], right_mut);
             if (!m.is_positive)
                 std::swap(left_mut, right_mut);
-            type_ptr = originals[i]->getResultType().get();
+            type_ptr = originals[i]->getReturnType().get();
         }
     }
     return result;
@@ -577,7 +557,7 @@ LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType
 
 static bool isCompilable(const IFunctionBase & function)
 {
-    if (!canBeNativeType(*function.getResultType()))
+    if (!canBeNativeType(*function.getReturnType()))
         return false;
     for (const auto & type : function.getArgumentTypes())
         if (!canBeNativeType(*type))
@@ -585,164 +565,71 @@ static bool isCompilable(const IFunctionBase & function)
     return function.isCompilable();
 }
 
-static bool isCompilableConstant(const ActionsDAG::Node & node)
+static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type) && node.allow_constant_folding;
-}
-
-static bool isCompilableFunction(const ActionsDAG::Node & node)
-{
-    return node.type == ActionsDAG::ActionType::FUNCTION && isCompilable(*node.function_base);
-}
-
-static LLVMFunction::CompileDAG getCompilableDAG(
-    const ActionsDAG::Node * root,
-    ActionsDAG::NodeRawConstPtrs & children,
-    const std::unordered_set<const ActionsDAG::Node *> & used_in_result)
-{
-    LLVMFunction::CompileDAG dag;
-
-    std::unordered_map<const ActionsDAG::Node *, size_t> positions;
-    struct Frame
+    /// an empty optional is a poisoned value prohibiting the column's producer from being removed
+    /// (which it could be, if it was inlined into every dependent function).
+    std::unordered_map<std::string, std::unordered_set<std::optional<size_t>>> current_dependents;
+    for (const auto & name : output_columns)
+        current_dependents[name].emplace();
+    /// a snapshot of each compilable function's dependents at the time of its execution.
+    std::vector<std::unordered_set<std::optional<size_t>>> dependents(actions.size());
+    for (size_t i = actions.size(); i--;)
     {
-        const ActionsDAG::Node * node;
-        size_t next_child_to_visit = 0;
-    };
-
-    std::stack<Frame> stack;
-    stack.push(Frame{.node = root});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-        bool is_const = isCompilableConstant(*frame.node);
-        bool can_inline = stack.size() == 1 || !used_in_result.count(frame.node);
-        bool is_compilable_function = !is_const && can_inline && isCompilableFunction(*frame.node);
-
-        while (is_compilable_function && frame.next_child_to_visit < frame.node->children.size())
+        switch (actions[i].type)
         {
-            const auto * child = frame.node->children[frame.next_child_to_visit];
+            case ExpressionAction::REMOVE_COLUMN:
+                current_dependents.erase(actions[i].source_name);
+                /// poison every other column used after this point so that inlining chains do not cross it.
+                for (auto & dep : current_dependents)
+                    dep.second.emplace();
+                break;
 
-            if (positions.count(child))
-                ++frame.next_child_to_visit;
-            else
+            case ExpressionAction::PROJECT:
+                current_dependents.clear();
+                for (const auto & proj : actions[i].projection)
+                    current_dependents[proj.first].emplace();
+                break;
+
+            case ExpressionAction::ADD_ALIASES:
+                for (const auto & proj : actions[i].projection)
+                    current_dependents[proj.first].emplace();
+                break;
+
+            case ExpressionAction::ADD_COLUMN:
+            case ExpressionAction::COPY_COLUMN:
+            case ExpressionAction::ARRAY_JOIN:
+            case ExpressionAction::JOIN:
             {
-                stack.emplace(Frame{.node = child});
+                Names columns = actions[i].getNeededColumns();
+                for (const auto & column : columns)
+                    current_dependents[column].emplace();
                 break;
             }
-        }
 
-        if (!is_compilable_function || frame.next_child_to_visit == frame.node->children.size())
-        {
-            LLVMFunction::CompileNode node;
-            node.function = frame.node->function_base;
-            node.result_type = frame.node->result_type;
-            node.type = is_const ? LLVMFunction::CompileNode::NodeType::CONSTANT
-                                 : (is_compilable_function ? LLVMFunction::CompileNode::NodeType::FUNCTION
-                                                           : LLVMFunction::CompileNode::NodeType::INPUT);
-
-            if (node.type == LLVMFunction::CompileNode::NodeType::FUNCTION)
-                for (const auto * child : frame.node->children)
-                    node.arguments.push_back(positions[child]);
-
-            if (node.type == LLVMFunction::CompileNode::NodeType::CONSTANT)
-                node.column = frame.node->column;
-
-            if (node.type == LLVMFunction::CompileNode::NodeType::INPUT)
-                children.emplace_back(frame.node);
-
-            positions[frame.node] = dag.size();
-            dag.push_back(std::move(node));
-            stack.pop();
-        }
-    }
-
-    return dag;
-}
-
-std::string LLVMFunction::CompileDAG::dump() const
-{
-    WriteBufferFromOwnString out;
-    bool first = true;
-    for (const auto & node : *this)
-    {
-        if (!first)
-            out << " ; ";
-        first = false;
-
-        switch (node.type)
-        {
-            case CompileNode::NodeType::CONSTANT:
+            case ExpressionAction::APPLY_FUNCTION:
             {
-                const auto * column = typeid_cast<const ColumnConst *>(node.column.get());
-                const auto & data = column->getDataColumn();
-                out << node.result_type->getName() << " = " << applyVisitor(FieldVisitorToString(), data[0]);
-                break;
-            }
-            case CompileNode::NodeType::FUNCTION:
-            {
-                out << node.result_type->getName() << " = ";
-                out << node.function->getName() << "(";
-
-                for (size_t i = 0; i < node.arguments.size(); ++i)
+                dependents[i] = current_dependents[actions[i].result_name];
+                const bool compilable = isCompilable(*actions[i].function_base);
+                for (const auto & name : actions[i].argument_names)
                 {
-                    if (i)
-                        out << ", ";
-
-                    out << node.arguments[i];
+                    if (compilable)
+                        current_dependents[name].emplace(i);
+                    else
+                        current_dependents[name].emplace();
                 }
-
-                out << ")";
-                break;
-            }
-            case CompileNode::NodeType::INPUT:
-            {
-                out << node.result_type->getName();
                 break;
             }
         }
     }
-
-    return out.str();
+    return dependents;
 }
 
-UInt128 LLVMFunction::CompileDAG::hash() const
-{
-    SipHash hash;
-    for (const auto & node : *this)
-    {
-        hash.update(node.type);
-        hash.update(node.result_type->getName());
-
-        switch (node.type)
-        {
-            case CompileNode::NodeType::CONSTANT:
-            {
-                typeid_cast<const ColumnConst *>(node.column.get())->getDataColumn().updateHashWithValue(0, hash);
-                break;
-            }
-            case CompileNode::NodeType::FUNCTION:
-            {
-                hash.update(node.function->getName());
-                for (size_t arg : node.arguments)
-                    hash.update(arg);
-
-                break;
-            }
-            case CompileNode::NodeType::INPUT:
-            {
-                break;
-            }
-        }
-    }
-
-    UInt128 result;
-    hash.get128(result.low, result.high);
-    return result;
-}
-
-static FunctionBasePtr compile(
-    const LLVMFunction::CompileDAG & dag,
+void compileFunctions(
+    ExpressionActions::Actions & actions,
+    const Names & output_columns,
+    const Block & sample_block,
+    std::shared_ptr<CompiledExpressionCache> compilation_cache,
     size_t min_count_to_compile_expression)
 {
     static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
@@ -760,163 +647,63 @@ static FunctionBasePtr compile(
 
     static LLVMTargetInitializer initializer;
 
-    auto hash_key = dag.hash();
+    auto dependents = getActionsDependents(actions, output_columns);
+    std::vector<ExpressionActions::Actions> fused(actions.size());
+    for (size_t i = 0; i < actions.size(); ++i)
     {
-        std::lock_guard lock(mutex);
-        if (counter[hash_key]++ < min_count_to_compile_expression)
-            return nullptr;
-    }
-
-    FunctionBasePtr fn;
-    if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-    {
-        std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&dag] ()
-        {
-            Stopwatch watch;
-            FunctionBasePtr result_fn;
-            result_fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(dag));
-            ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-            return result_fn;
-        });
-    }
-    else
-    {
-        Stopwatch watch;
-        fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(dag));
-        ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-    }
-
-    return fn;
-}
-
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
-{
-    struct Data
-    {
-        bool is_compilable = false;
-        bool all_parents_compilable = true;
-        size_t num_inlineable_nodes = 0;
-    };
-
-    std::unordered_map<const Node *, Data> data;
-    std::unordered_set<const Node *> used_in_result;
-
-    for (const auto & node : nodes)
-        data[&node].is_compilable = isCompilableConstant(node) || isCompilableFunction(node);
-
-    for (const auto & node : nodes)
-        if (!data[&node].is_compilable)
-            for (const auto * child : node.children)
-                data[child].all_parents_compilable = false;
-
-    for (const auto * node : index)
-        used_in_result.insert(node);
-
-    struct Frame
-    {
-        const Node * node;
-        size_t next_child_to_visit = 0;
-    };
-
-    std::stack<Frame> stack;
-    std::unordered_set<const Node *> visited;
-
-    for (auto & node : nodes)
-    {
-        if (visited.count(&node))
+        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function_base))
             continue;
 
-        stack.emplace(Frame{.node = &node});
-        while (!stack.empty())
+        fused[i].push_back(actions[i]);
+        if (dependents[i].find({}) != dependents[i].end())
         {
-            auto & frame = stack.top();
+            /// the result of compiling one function in isolation is pretty much the same as its `execute` method.
+            if (fused[i].size() == 1)
+                continue;
 
-            while (frame.next_child_to_visit < frame.node->children.size())
+            auto hash_key = ExpressionActions::ActionsHash{}(fused[i]);
             {
-                const auto * child = frame.node->children[frame.next_child_to_visit];
-
-                if (visited.count(child))
-                    ++frame.next_child_to_visit;
-                else
-                {
-                    stack.emplace(Frame{.node = child});
-                    break;
-                }
+                std::lock_guard lock(mutex);
+                if (counter[hash_key]++ < min_count_to_compile_expression)
+                    continue;
             }
 
-            if (frame.next_child_to_visit == frame.node->children.size())
+            FunctionBasePtr fn;
+            if (compilation_cache)
             {
-                auto & cur = data[frame.node];
-                if (cur.is_compilable)
+                std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&inlined_func=std::as_const(fused[i]), &sample_block] ()
                 {
-                    cur.num_inlineable_nodes = 1;
-
-                    if (!isCompilableConstant(*frame.node))
-                        for (const auto * child : frame.node->children)
-                            if (!used_in_result.count(child))
-                                cur.num_inlineable_nodes += data[child].num_inlineable_nodes;
-
-                    /// Check if we should inline current node.
-                    bool should_compile = true;
-
-                    /// Inline parents instead of node is possible.
-                    if (!used_in_result.count(frame.node) && cur.all_parents_compilable)
-                        should_compile = false;
-
-                    /// There is no reason to inline single node.
-                    /// The result of compiling function in isolation is pretty much the same as its `execute` method.
-                    if (cur.num_inlineable_nodes <= 1)
-                        should_compile = false;
-
-                    if (should_compile)
-                    {
-                        NodeRawConstPtrs new_children;
-                        auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
-
-                        if (auto fn = compile(dag, min_count_to_compile_expression))
-                        {
-                            /// Replace current node to compilable function.
-
-                            ColumnsWithTypeAndName arguments;
-                            arguments.reserve(new_children.size());
-                            for (const auto * child : new_children)
-                                arguments.emplace_back(child->column, child->result_type, child->result_name);
-
-                            auto * frame_node = const_cast<Node *>(frame.node);
-                            frame_node->type = ActionsDAG::ActionType::FUNCTION;
-                            frame_node->function_base = fn;
-                            frame_node->function = fn->prepare(arguments);
-                            frame_node->children.swap(new_children);
-                            frame_node->is_function_compiled = true;
-                            frame_node->column = nullptr; /// Just in case.
-                        }
-                    }
-                }
-
-                visited.insert(frame.node);
-                stack.pop();
+                    Stopwatch watch;
+                    FunctionBasePtr result_fn;
+                    result_fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(inlined_func, sample_block));
+                    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+                    return result_fn;
+                });
             }
+            else
+            {
+                Stopwatch watch;
+                fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(fused[i], sample_block));
+                ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+            }
+
+            actions[i].function_base = fn;
+            actions[i].argument_names = typeid_cast<const LLVMFunction *>(typeid_cast<const FunctionBaseAdaptor *>(fn.get())->getImpl())->getArgumentNames();
+            actions[i].is_function_compiled = true;
+
+            continue;
         }
+
+        /// TODO: determine whether it's profitable to inline the function if there's more than one dependent.
+        for (const auto & dep : dependents[i])
+            fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
-}
 
-CompiledExpressionCacheFactory & CompiledExpressionCacheFactory::instance()
-{
-    static CompiledExpressionCacheFactory factory;
-    return factory;
-}
-
-void CompiledExpressionCacheFactory::init(size_t cache_size)
-{
-    if (cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompiledExpressionCache was already initialized");
-
-    cache = std::make_unique<CompiledExpressionCache>(cache_size);
-}
-
-CompiledExpressionCache * CompiledExpressionCacheFactory::tryGetCache()
-{
-    return cache.get();
+    for (auto & action : actions)
+    {
+        if (action.type == ExpressionAction::APPLY_FUNCTION && action.is_function_compiled)
+            action.function = action.function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
+    }
 }
 
 }

@@ -9,7 +9,7 @@
 #include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
-#include <IO/Operators.h>
+#include <sstream>
 
 
 namespace DB
@@ -32,9 +32,12 @@ namespace
         {
             if (names_and_types_set.find(column) == names_and_types_set.end())
             {
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
-                                column.name, column.type->getName(), backQuote(dictionary_name),
-                                StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types));
+                std::string message = "Not found column ";
+                message += column.name + " " + column.type->getName();
+                message += " in dictionary " + backQuote(dictionary_name) + ". ";
+                message += "There are only columns ";
+                message += StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types);
+                throw Exception(message, ErrorCodes::THERE_IS_NO_COLUMN);
             }
         }
     }
@@ -78,7 +81,7 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 
 String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
 {
-    WriteBufferFromOwnString ss;
+    std::stringstream ss;
     bool first = true;
     for (const auto & name_and_type : list)
     {
@@ -87,6 +90,13 @@ String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesLi
         ss << name_and_type.name << ' ' << name_and_type.type->getName();
     }
     return ss.str();
+}
+
+String StorageDictionary::resolvedDictionaryName() const
+{
+    if (location == Location::SameDatabaseAndNameAsDictionary)
+        return dictionary_name;
+    return DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
 }
 
 StorageDictionary::StorageDictionary(
@@ -114,26 +124,21 @@ StorageDictionary::StorageDictionary(
 void StorageDictionary::checkTableCanBeDropped() const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
-        throw Exception("Cannot drop/detach dictionary " + backQuote(dictionary_name) + " as table, use DROP DICTIONARY or DETACH DICTIONARY query instead", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+        throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
     if (location == Location::DictionaryDatabase)
-        throw Exception("Cannot drop/detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
-}
-
-void StorageDictionary::checkTableCanBeDetached() const
-{
-    checkTableCanBeDropped();
+        throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
 Pipe StorageDictionary::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(resolvedDictionaryName());
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
     /// TODO: update dictionary interface for processors.
     return Pipe(std::make_shared<SourceFromInputStream>(stream));
@@ -148,12 +153,13 @@ void registerStorageDictionary(StorageFactory & factory)
             throw Exception("Storage Dictionary requires single parameter: name of dictionary",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.getLocalContext());
+        args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
         String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         if (!args.attach)
         {
-            const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
+            auto resolved = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(resolved);
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }

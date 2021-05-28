@@ -1,9 +1,8 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
-#include <Core/Types.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB

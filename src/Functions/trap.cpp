@@ -32,16 +32,16 @@ namespace ErrorCodes
 class FunctionTrap : public IFunction
 {
 private:
-    ContextPtr context;
+    const Context & context;
 
 public:
     static constexpr auto name = "trap";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionTrap>(context);
     }
 
-    FunctionTrap(ContextPtr context_) : context(context_) {}
+    FunctionTrap(const Context & context_) : context(context_) {}
 
     String getName() const override
     {
@@ -61,10 +61,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    [[clang::optnone]]
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & block, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[clang::optnone]] void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        if (const ColumnConst * column = checkAndGetColumnConst<ColumnString>(block[0].column.get()))
+        if (const ColumnConst * column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             String mode = column->getValue<String>();
 
@@ -136,15 +135,6 @@ public:
             {
                 (void)context.getCurrentQueryId();
             }
-            else if (mode == "stack overflow")
-            {
-                executeImpl(block, result_type, input_rows_count);
-            }
-            else if (mode == "harmful function")
-            {
-                double res = drand48();
-                (void)res;
-            }
             else if (mode == "mmap many")
             {
                 std::vector<void *> maps;
@@ -170,7 +160,7 @@ public:
         else
             throw Exception("The only argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
-        return result_type->createColumnConst(input_rows_count, 0ULL);
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, 0ULL);
     }
 };
 

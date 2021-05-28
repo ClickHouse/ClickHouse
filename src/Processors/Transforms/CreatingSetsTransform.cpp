@@ -1,5 +1,6 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 
+#include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
@@ -21,27 +22,39 @@ namespace ErrorCodes
 
 
 CreatingSetsTransform::CreatingSetsTransform(
-    Block in_header_,
     Block out_header_,
-    SubqueryForSet subquery_for_set_,
+    SubqueriesForSets subqueries_for_sets_,
     SizeLimits network_transfer_limits_,
-    ContextPtr context_)
-    : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
-    , WithContext(context_)
-    , subquery(std::move(subquery_for_set_))
+    const Context & context_)
+    : IProcessor({}, {std::move(out_header_)})
+    , subqueries_for_sets(std::move(subqueries_for_sets_))
+    , cur_subquery(subqueries_for_sets.begin())
     , network_transfer_limits(std::move(network_transfer_limits_))
+    , context(context_)
 {
 }
 
-void CreatingSetsTransform::work()
+IProcessor::Status CreatingSetsTransform::prepare()
 {
-    if (!is_initialized)
-        init();
+    auto & output = outputs.front();
 
-    IAccumulatingTransform::work();
+    if (finished)
+    {
+        output.finish();
+        return Status::Finished;
+    }
+
+    /// Check can output.
+    if (output.isFinished())
+        return Status::Finished;
+
+    if (!output.canPush())
+        return Status::PortFull;
+
+    return Status::Ready;
 }
 
-void CreatingSetsTransform::startSubquery()
+void CreatingSetsTransform::startSubquery(SubqueryForSet & subquery)
 {
     if (subquery.set)
         LOG_TRACE(log, "Creating set.");
@@ -50,8 +63,10 @@ void CreatingSetsTransform::startSubquery()
     if (subquery.table)
         LOG_TRACE(log, "Filling temporary table.");
 
+    elapsed_nanoseconds = 0;
+
     if (subquery.table)
-        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext());
+        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), context);
 
     done_with_set = !subquery.set;
     done_with_join = !subquery.join;
@@ -64,46 +79,94 @@ void CreatingSetsTransform::startSubquery()
         table_out->writePrefix();
 }
 
-void CreatingSetsTransform::finishSubquery()
+void CreatingSetsTransform::finishSubquery(SubqueryForSet & subquery)
 {
-    if (read_rows != 0)
+    size_t head_rows = 0;
+    const BlockStreamProfileInfo & profile_info = subquery.source->getProfileInfo();
+
+    head_rows = profile_info.rows;
+
+    subquery.setTotals();
+
+    if (head_rows != 0)
     {
-        auto seconds = watch.elapsedNanoseconds() / 1e9;
+        auto seconds = elapsed_nanoseconds / 1e9;
 
         if (subquery.set)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), read_rows, seconds);
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), head_rows, seconds);
         if (subquery.join)
-            LOG_DEBUG(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), read_rows, seconds);
+            LOG_DEBUG(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), head_rows, seconds);
         if (subquery.table)
-            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
+            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", head_rows, seconds);
     }
     else
     {
         LOG_DEBUG(log, "Subquery has empty result.");
     }
-
-    if (totals)
-        subquery.setTotals(getInputPort().getHeader().cloneWithColumns(totals.detachColumns()));
-    else
-        /// Set empty totals anyway, it is needed for MergeJoin.
-        subquery.setTotals({});
 }
 
 void CreatingSetsTransform::init()
 {
     is_initialized = true;
 
-    if (subquery.set)
-        subquery.set->setHeader(getInputPort().getHeader());
-
-    watch.restart();
-    startSubquery();
+    for (auto & elem : subqueries_for_sets)
+        if (elem.second.source && elem.second.set)
+            elem.second.set->setHeader(elem.second.source->getHeader());
 }
 
-void CreatingSetsTransform::consume(Chunk chunk)
+void CreatingSetsTransform::work()
 {
-    read_rows += chunk.getNumRows();
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    if (!is_initialized)
+        init();
+
+    Stopwatch watch;
+
+    while (cur_subquery != subqueries_for_sets.end() && cur_subquery->second.source == nullptr)
+        ++cur_subquery;
+
+    if (cur_subquery == subqueries_for_sets.end())
+    {
+        finished = true;
+        return;
+    }
+
+    SubqueryForSet & subquery = cur_subquery->second;
+
+    if (!started_cur_subquery)
+    {
+        startSubquery(subquery);
+        started_cur_subquery = true;
+    }
+
+    auto finish_current_subquery = [&]()
+    {
+        if (subquery.set)
+            subquery.set->finishInsert();
+
+        if (table_out)
+            table_out->writeSuffix();
+
+        watch.stop();
+        elapsed_nanoseconds += watch.elapsedNanoseconds();
+
+        finishSubquery(subquery);
+
+        ++cur_subquery;
+        started_cur_subquery = false;
+
+        while (cur_subquery != subqueries_for_sets.end() && cur_subquery->second.source == nullptr)
+            ++cur_subquery;
+
+        if (cur_subquery == subqueries_for_sets.end())
+            finished = true;
+    };
+
+    auto block = subquery.source->read();
+    if (!block)
+    {
+        finish_current_subquery();
+        return;
+    }
 
     if (!done_with_set)
     {
@@ -131,19 +194,26 @@ void CreatingSetsTransform::consume(Chunk chunk)
     }
 
     if (done_with_set && done_with_join && done_with_table)
-        finishConsume();
+    {
+        subquery.source->cancel(false);
+        finish_current_subquery();
+    }
+    else
+        elapsed_nanoseconds += watch.elapsedNanoseconds();
 }
 
-Chunk CreatingSetsTransform::generate()
+void CreatingSetsTransform::setProgressCallback(const ProgressCallback & callback)
 {
-    if (subquery.set)
-        subquery.set->finishInsert();
+    for (auto & elem : subqueries_for_sets)
+        if (elem.second.source)
+            elem.second.source->setProgressCallback(callback);
+}
 
-    if (table_out)
-        table_out->writeSuffix();
-
-    finishSubquery();
-    return {};
+void CreatingSetsTransform::setProcessListElement(QueryStatus * status)
+{
+    for (auto & elem : subqueries_for_sets)
+        if (elem.second.source)
+            elem.second.source->setProcessListElement(status);
 }
 
 }

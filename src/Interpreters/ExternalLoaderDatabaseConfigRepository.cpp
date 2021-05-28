@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
     String trimDatabaseName(const std::string & loadable_definition_name, const String & database_name,
-                            const IDatabase & database, ContextPtr global_context)
+                            const IDatabase & database, const Context & global_context)
     {
         bool is_atomic_database = database.getUUID() != UUIDHelpers::Nil;
         if (is_atomic_database)
@@ -42,8 +42,8 @@ namespace
 }
 
 
-ExternalLoaderDatabaseConfigRepository::ExternalLoaderDatabaseConfigRepository(IDatabase & database_, ContextPtr context_)
-    : WithContext(context_->getGlobalContext())
+ExternalLoaderDatabaseConfigRepository::ExternalLoaderDatabaseConfigRepository(IDatabase & database_, const Context & global_context_)
+    : global_context(global_context_.getGlobalContext())
     , database_name(database_.getDatabaseName())
     , database(database_)
 {
@@ -51,19 +51,19 @@ ExternalLoaderDatabaseConfigRepository::ExternalLoaderDatabaseConfigRepository(I
 
 LoadablesConfigurationPtr ExternalLoaderDatabaseConfigRepository::load(const std::string & loadable_definition_name)
 {
-    auto dict_name = trimDatabaseName(loadable_definition_name, database_name, database, getContext());
+    auto dict_name = trimDatabaseName(loadable_definition_name, database_name, database, global_context);
     return database.getDictionaryConfiguration(dict_name);
 }
 
 bool ExternalLoaderDatabaseConfigRepository::exists(const std::string & loadable_definition_name)
 {
-    auto dict_name = trimDatabaseName(loadable_definition_name, database_name, database, getContext());
+    auto dict_name = trimDatabaseName(loadable_definition_name, database_name, database, global_context);
     return database.isDictionaryExist(dict_name);
 }
 
 Poco::Timestamp ExternalLoaderDatabaseConfigRepository::getUpdateTime(const std::string & loadable_definition_name)
 {
-    auto dict_name = trimDatabaseName(loadable_definition_name, database_name, database, getContext());
+    auto dict_name = trimDatabaseName(loadable_definition_name, database_name, database, global_context);
     return database.getObjectMetadataModificationTime(dict_name);
 }
 

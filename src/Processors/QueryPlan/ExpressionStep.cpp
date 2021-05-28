@@ -1,53 +1,36 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPipeline.h>
-#include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Interpreters/JoinSwitcher.h>
 
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions)
+static ITransformingStep::Traits getTraits(const ExpressionActionsPtr & expression)
 {
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = !actions->hasArrayJoin(),
+            .preserves_distinct_columns = !expression->hasJoinOrArrayJoin(),
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = !actions->hasArrayJoin(),
+            .preserves_sorting = !expression->hasJoinOrArrayJoin(),
         },
         {
-            .preserves_number_of_rows = !actions->hasArrayJoin(),
+            .preserves_number_of_rows = !expression->hasJoinOrArrayJoin(),
         }
     };
 }
 
-static ITransformingStep::Traits getJoinTraits()
-{
-    return ITransformingStep::Traits
-    {
-        {
-            .preserves_distinct_columns = false,
-            .returns_single_stream = false,
-            .preserves_number_of_streams = true,
-            .preserves_sorting = false,
-        },
-        {
-            .preserves_number_of_rows = false,
-        }
-    };
-}
-
-ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_)
+ExpressionStep::ExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_)
     : ITransformingStep(
         input_stream_,
-        Transform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_dag_, ExpressionActionsSettings{})),
-        getTraits(actions_dag_))
-    , actions_dag(std::move(actions_dag_))
+        Transform::transformHeader(input_stream_.header, expression_),
+        getTraits(expression_))
+    , expression(std::move(expression_))
 {
     /// Some columns may be removed by expression.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
@@ -56,8 +39,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr a
 void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = keep_header ? std::move(output_stream->header)
-                                   : Transform::transformHeader(input_stream.header,
-                                                                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{}));
+                                   : Transform::transformHeader(input_stream.header, expression);
     output_stream = createOutputStream(
             input_stream,
             std::move(out_header),
@@ -67,35 +49,29 @@ void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header
     input_streams.emplace_back(std::move(input_stream));
 }
 
-void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
+void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
-        return std::make_shared<Transform>(header, expression);
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+        return std::make_shared<Transform>(header, expression, on_totals);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
     {
-        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                pipeline.getHeader().getColumnsWithTypeAndName(),
-                output_stream->header.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
-
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<ExpressionTransform>(header, convert_actions);
+            return std::make_shared<ConvertingTransform>(header, output_stream->header,
+                                                         ConvertingTransform::MatchColumnsMode::Name);
         });
     }
 }
 
-void ExpressionStep::describeActions(FormatSettings & settings) const
+static void doDescribeActions(const ExpressionActionsPtr & expression, IQueryPlanStep::FormatSettings & settings)
 {
     String prefix(settings.offset, ' ');
     bool first = true;
 
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
     for (const auto & action : expression->getActions())
     {
         settings.out << prefix << (first ? "Actions: "
@@ -103,25 +79,23 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
         first = false;
         settings.out << action.toString() << '\n';
     }
-
-    settings.out << prefix << "Positions:";
-    for (const auto & pos : expression->getResultPositions())
-        settings.out << ' ' << pos;
-    settings.out << '\n';
 }
 
-JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_, bool has_non_joined_rows_, size_t max_block_size_)
+void ExpressionStep::describeActions(FormatSettings & settings) const
+{
+    doDescribeActions(expression, settings);
+}
+
+InflatingExpressionStep::InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_)
     : ITransformingStep(
         input_stream_,
-        Transform::transformHeader(input_stream_.header, join_),
-        getJoinTraits())
-    , join(std::move(join_))
-    , has_non_joined_rows(has_non_joined_rows_)
-    , max_block_size(max_block_size_)
+        Transform::transformHeader(input_stream_.header, expression_),
+        getTraits(expression_))
+    , expression(std::move(expression_))
 {
 }
 
-void JoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void InflatingExpressionStep::transformPipeline(QueryPipeline & pipeline)
 {
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool add_default_totals = false;
@@ -134,23 +108,13 @@ void JoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipel
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
-        return std::make_shared<Transform>(header, join, on_totals, add_default_totals);
+        return std::make_shared<Transform>(header, expression, on_totals, add_default_totals);
     });
+}
 
-    if (has_non_joined_rows)
-    {
-        const Block & join_result_sample = pipeline.getHeader();
-        auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, max_block_size);
-        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-
-        source->setQueryPlanStep(this);
-        pipeline.addDelayedStream(source);
-
-        /// Now, after adding delayed stream, it has implicit dependency on other port.
-        /// Here we add resize processor to remove this dependency.
-        /// Otherwise, if we add MergeSorting + MergingSorted transform to pipeline, we could get `Pipeline stuck`
-        pipeline.resize(pipeline.getNumStreams(), true);
-    }
+void InflatingExpressionStep::describeActions(FormatSettings & settings) const
+{
+    doDescribeActions(expression, settings);
 }
 
 }

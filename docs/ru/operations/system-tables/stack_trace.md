@@ -82,6 +82,7 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 -   [Функции интроспекции](../../sql-reference/functions/introspection.md) — Что такое функции интроспекции и как их использовать.
 -   [system.trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) — Содержит трассировки стека, собранные профилировщиком выборочных запросов.
--   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — Описание и пример использования функции `arrayMap`.
--   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — Описание и пример использования функции `arrayFilter`.
+-   [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) — Описание и пример использования функции `arrayMap`.
+-   [arrayFilter](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-filter) — Описание и пример использования функции `arrayFilter`.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/stack_trace) <!--hide-->

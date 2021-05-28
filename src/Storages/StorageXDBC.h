@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <Common/XDBCBridgeHelper.h>
 
 
 namespace DB
@@ -18,8 +18,8 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
+        const SelectQueryInfo & query_info,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -29,12 +29,11 @@ public:
         const std::string & remote_database_name,
         const std::string & remote_table_name,
         const ColumnsDescription & columns_,
-        ContextPtr context_,
+        const Context & context_,
         BridgeHelperPtr bridge_helper_);
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
-    std::string getName() const override;
 private:
 
     BridgeHelperPtr bridge_helper;
@@ -49,7 +48,7 @@ private:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
@@ -57,11 +56,13 @@ private:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
     Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const override;
+
+    std::string getName() const override;
 };
 
 }

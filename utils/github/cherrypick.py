@@ -14,10 +14,7 @@ Second run checks PR from previous run to be merged or at least being mergeable.
 Third run creates PR from backport branch (with merged previous PR) to release branch.
 '''
 
-try:
-    from clickhouse.utils.github.query import Query as RemoteRepo
-except:
-    from .query import Query as RemoteRepo
+from clickhouse.utils.github.query import Query as RemoteRepo
 
 import argparse
 from enum import Enum

@@ -25,8 +25,7 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    auto symbol_index_ptr = SymbolIndex::instance();
-    const SymbolIndex & symbol_index = *symbol_index_ptr;
+    const SymbolIndex & symbol_index = SymbolIndex::instance();
 
     for (const auto & elem : symbol_index.symbols())
         std::cout << elem.name << ": " << elem.address_begin << " ... " << elem.address_end << "\n";
@@ -47,11 +46,10 @@ int main(int argc, char ** argv)
         std::cerr << "dladdr: Not found\n";
 
     const auto * object = symbol_index.findObject(getAddress());
-    Dwarf dwarf(object->elf);
+    Dwarf dwarf(*object->elf);
 
     Dwarf::LocationInfo location;
-    std::vector<Dwarf::SymbolizedFrame> frames;
-    if (dwarf.findAddress(uintptr_t(address) - uintptr_t(info.dli_fbase), location, Dwarf::LocationInfoMode::FAST, frames))
+    if (dwarf.findAddress(uintptr_t(address) - uintptr_t(info.dli_fbase), location, Dwarf::LocationInfoMode::FAST))
         std::cerr << location.file.toString() << ":" << location.line << "\n";
     else
         std::cerr << "Dwarf: Not found\n";

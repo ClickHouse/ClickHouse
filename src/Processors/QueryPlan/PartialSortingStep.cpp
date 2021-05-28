@@ -42,11 +42,11 @@ void PartialSortingStep::updateLimit(size_t limit_)
     if (limit_ && (limit == 0 || limit_ < limit))
     {
         limit = limit_;
-        transform_traits.preserves_number_of_rows = false;
+        transform_traits.preserves_number_of_rows = limit == 0;
     }
 }
 
-void PartialSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
@@ -56,8 +56,8 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline, const Build
         return std::make_shared<PartialSortingTransform>(header, sort_description, limit);
     });
 
-    StreamLocalLimits limits;
-    limits.mode = LimitsMode::LIMITS_CURRENT;
+    IBlockInputStream::LocalLimits limits;
+    limits.mode = IBlockInputStream::LIMITS_CURRENT;
     limits.size_limits = size_limits;
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr

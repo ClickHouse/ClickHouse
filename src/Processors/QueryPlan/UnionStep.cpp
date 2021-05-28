@@ -1,30 +1,13 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Sources/NullSource.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-static Block checkHeaders(const DataStreams & input_streams)
-{
-    if (input_streams.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite an empty set of query plan steps");
-
-    Block res = input_streams.front().header;
-    for (const auto & stream : input_streams)
-        assertBlocksHaveEqualStructure(stream.header, res, "UnionStep");
-
-    return res;
-}
-
-UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
-    : header(checkHeaders(input_streams_))
+UnionStep::UnionStep(DataStreams input_streams_, Block result_header, size_t max_threads_)
+    : header(std::move(result_header))
     , max_threads(max_threads_)
 {
     input_streams = std::move(input_streams_);
@@ -35,7 +18,7 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
         output_stream = DataStream{.header = header};
 }
 
-QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
+QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
 {
     auto pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
@@ -47,7 +30,7 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines, const Build
         return pipeline;
     }
 
-    *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), max_threads);
+    *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header ,max_threads);
 
     processors = collector.detachProcessors();
     return pipeline;

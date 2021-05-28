@@ -14,7 +14,6 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -99,40 +98,38 @@ void buildLayoutConfiguration(
     root->appendChild(layout_element);
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
-
-    if (layout->parameters)
-        for (const auto & param : layout->parameters->children)
+    for (const auto & param : layout->parameters->children)
+    {
+        const ASTPair * pair = param->as<ASTPair>();
+        if (!pair)
         {
-            const ASTPair * pair = param->as<ASTPair>();
-            if (!pair)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
-                    param->formatForErrorMessage());
-            }
-
-            const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
-            if (!value_literal)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be a literal, got '{}' instead",
-                    pair->second->formatForErrorMessage());
-            }
-
-            const auto value_field = value_literal->value;
-
-            if (value_field.getType() != Field::Types::UInt64
-                && value_field.getType() != Field::Types::String)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
-                    value_field.getTypeName());
-            }
-
-            AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-            AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
-            layout_type_parameter_element->appendChild(value_to_append);
-            layout_type_element->appendChild(layout_type_parameter_element);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
+                param->formatForErrorMessage());
         }
+
+        const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
+        if (!value_literal)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be a literal, got '{}' instead",
+                pair->second->formatForErrorMessage());
+        }
+
+        const auto value_field = value_literal->value;
+
+        if (value_field.getType() != Field::Types::UInt64
+            && value_field.getType() != Field::Types::String)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                value_field.getTypeName());
+        }
+
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        layout_type_parameter_element->appendChild(value_to_append);
+        layout_type_element->appendChild(layout_type_parameter_element);
+    }
 }
 
 /*
@@ -175,7 +172,7 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     for (size_t index = 0; index != children.size(); ++index)
     {
         const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
-        result.push_back(key_part->name());
+        result.push_back(key_part->name);
     }
     return result;
 }
@@ -299,8 +296,8 @@ void buildPrimaryKeyConfiguration(
     if (!complex)
     {
         if (key_names.size() != 1)
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                "Primary key for simple dictionary must contain exactly one element");
+            throw Exception("Primary key for simple dictionary must contain exactly one element",
+                ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
         AutoPtr<Element> id_element(doc->createElement("id"));
         root->appendChild(id_element);
@@ -332,8 +329,8 @@ void buildPrimaryKeyConfiguration(
     else
     {
         if (children.size() < key_names.size())
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                "Primary key fields count is more, than dictionary attributes count.");
+            throw Exception(
+                "Primary key fields count is more, than dictionary attributes count.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
         AutoPtr<Element> key_element(doc->createElement("key"));
         root->appendChild(key_element);
@@ -351,9 +348,8 @@ void buildPrimaryKeyConfiguration(
                 }
             }
             if (!found)
-                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                    "Primary key field '{}' not found among attributes.",
-                    key_name);
+                throw Exception(
+                    "Primary key field '" + key_name + "' not found among attributes.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
         }
     }
 }
@@ -374,7 +370,7 @@ NamesToTypeNames buildDictionaryAttributesConfiguration(
     {
         const ASTDictionaryAttributeDeclaration * dict_attr = child->as<const ASTDictionaryAttributeDeclaration>();
         if (!dict_attr->type)
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Dictionary attribute must has type");
+            throw Exception("Dictionary attribute must has type", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
         attributes_names_and_types.emplace(dict_attr->name, queryToString(dict_attr->type));
         if (std::find(key_columns.begin(), key_columns.end(), dict_attr->name) == key_columns.end())
@@ -389,8 +385,7 @@ NamesToTypeNames buildDictionaryAttributesConfiguration(
 void buildConfigurationFromFunctionWithKeyValueArguments(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
-    const ASTExpressionList * ast_expr_list,
-    ContextPtr context)
+    const ASTExpressionList * ast_expr_list)
 {
     const auto & children = ast_expr_list->children;
     for (size_t i = 0; i != children.size(); ++i)
@@ -399,41 +394,25 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
-        if (const auto * identifier = pair->second->as<const ASTIdentifier>())
+        if (const auto * identifier = pair->second->as<const ASTIdentifier>(); identifier)
         {
-            AutoPtr<Text> value(doc->createTextNode(identifier->name()));
+            AutoPtr<Text> value(doc->createTextNode(identifier->name));
             current_xml_element->appendChild(value);
         }
-        else if (const auto * literal = pair->second->as<const ASTLiteral>())
+        else if (const auto * literal = pair->second->as<const ASTLiteral>(); literal)
         {
             AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
             current_xml_element->appendChild(value);
         }
-        else if (const auto * list = pair->second->as<const ASTExpressionList>())
+        else if (const auto * list = pair->second->as<const ASTExpressionList>(); list)
         {
-            buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list, context);
-        }
-        else if (const auto * func = pair->second->as<ASTFunction>())
-        {
-            auto builder = FunctionFactory::instance().tryGet(func->name, context);
-            auto function = builder->build({});
-            function->prepare({});
-
-            /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
-            /// Such functions will return column with size equal to input_rows_count.
-            size_t input_rows_count = 1;
-            auto result = function->execute({}, function->getResultType(), input_rows_count);
-
-            Field value;
-            result->get(0, value);
-
-            AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
-            current_xml_element->appendChild(text_value);
+            buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list);
         }
         else
         {
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                "Incorrect ASTPair contains wrong value, should be literal, identifier or list");
+            throw Exception(
+                "Incorrect ASTPair contains wrong value, should be literal, identifier or list",
+                ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
         }
     }
 }
@@ -456,14 +435,13 @@ void buildSourceConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTFunctionWithKeyValueArguments * source,
-    const ASTDictionarySettings * settings,
-    ContextPtr context)
+    const ASTDictionarySettings * settings)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
     outer_element->appendChild(source_element);
-    buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>(), context);
+    buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>());
 
     if (settings != nullptr)
     {
@@ -485,24 +463,24 @@ void buildSourceConfiguration(
 void checkAST(const ASTCreateQuery & query)
 {
     if (!query.is_dictionary || query.dictionary == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot convert dictionary to configuration from non-dictionary AST.");
+        throw Exception("Cannot convert dictionary to configuration from non-dictionary AST.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary_attributes_list == nullptr || query.dictionary_attributes_list->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty attributes list");
+        throw Exception("Cannot create dictionary with empty attributes list", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->layout == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty layout");
+        throw Exception("Cannot create dictionary with empty layout", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     const auto is_direct_layout = !strcasecmp(query.dictionary->layout->layout_type.data(), "direct") ||
                                 !strcasecmp(query.dictionary->layout->layout_type.data(), "complex_key_direct");
     if (query.dictionary->lifetime == nullptr && !is_direct_layout)
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty lifetime");
+        throw Exception("Cannot create dictionary with empty lifetime", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->primary_key == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary without primary key");
+        throw Exception("Cannot create dictionary without primary key", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->source == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty source");
+        throw Exception("Cannot create dictionary with empty source", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     /// Range can be empty
 }
@@ -511,14 +489,13 @@ void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs
 {
     for (const auto & key_attr : key_attrs)
         if (all_attrs.count(key_attr) == 0)
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown key attribute '{}'", key_attr);
+            throw Exception("Unknown key attribute '" + key_attr + "'", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 }
 
 }
 
 
-DictionaryConfigurationPtr
-getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
+DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const std::string & database_)
 {
     checkAST(query);
 
@@ -562,7 +539,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
+    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

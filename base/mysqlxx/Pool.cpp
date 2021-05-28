@@ -20,8 +20,8 @@ void Pool::Entry::incrementRefCount()
 {
     if (!data)
         return;
-    /// First reference, initialize thread
-    if (data->ref_count.fetch_add(1) == 0)
+    ++data->ref_count;
+    if (data->ref_count == 1)
         mysql_thread_init();
 }
 
@@ -30,10 +30,12 @@ void Pool::Entry::decrementRefCount()
 {
     if (!data)
         return;
-
-    /// We were the last user of this thread, deinitialize it
-    if (data->ref_count.fetch_sub(1) == 1)
-        mysql_thread_end();
+    if (data->ref_count > 0)
+    {
+        --data->ref_count;
+        if (data->ref_count == 0)
+            mysql_thread_end();
+    }
 }
 
 
@@ -174,11 +176,9 @@ Pool::Entry Pool::tryGet()
         /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
         if (connection_ptr->ref_count == 0)
         {
-            {
-                Entry res(connection_ptr, this);
-                if (res.tryForceConnected())  /// Tries to reestablish connection as well
-                    return res;
-            }
+            Entry res(connection_ptr, this);
+            if (res.tryForceConnected())  /// Tries to reestablish connection as well
+                return res;
 
             logger.debug("(%s): Idle connection to MySQL server cannot be recovered, dropping it.", getDescription());
 

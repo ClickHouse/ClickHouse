@@ -2,24 +2,6 @@
     <profiles>
         <default>
             <max_execution_time>10</max_execution_time>
-            <!--
-                Don't let the fuzzer change this setting (I've actually seen it
-                do this before).
-            -->
-            <constraints>
-                <max_execution_time>
-                    <max>10</max>
-                </max_execution_time>
-
-                <max_memory_usage>
-                    <max>10G</max>
-                </max_memory_usage>
-
-                <!-- Not ready for production -->
-                <compile_expressions>
-                    <readonly />
-                </compile_expressions>
-            </constraints>
         </default>
     </profiles>
 </yandex>

@@ -14,7 +14,7 @@ SET group_by_two_level_threshold = 2;
 
 SELECT count() FROM
 (
-    SELECT
+    SELECT 
         arrayJoin(arrayMap(i -> (i + 1), range(2))) AS index, 
         number
     FROM numbers_mt(100000)

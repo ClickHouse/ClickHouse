@@ -3,7 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -60,7 +59,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 
     if (settings_ast)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SETTINGS " << (settings.hilite ? hilite_none : "");
         settings_ast->formatImpl(settings, state, frame);
     }
 }
