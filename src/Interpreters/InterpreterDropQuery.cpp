@@ -1,5 +1,3 @@
-#include <Poco/File.h>
-
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>

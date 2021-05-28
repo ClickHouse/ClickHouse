@@ -11,6 +11,7 @@
 #include <common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
+#include <Common/FileSystemHelpers.h>
 
 
 namespace DB
@@ -429,16 +430,13 @@ void IDiskRemote::listFiles(const String & path, std::vector<String> & file_name
 
 void IDiskRemote::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    fs::last_write_time(fs::path(metadata_path) / path,
-            static_cast<fs::file_time_type>(std::chrono::microseconds(timestamp.epochMicroseconds())));
+    FS::setModificationTime(fs::path(metadata_path) / path, timestamp.epochTime());
 }
 
 
 Poco::Timestamp IDiskRemote::getLastModified(const String & path)
 {
-    fs::file_time_type fs_time = fs::last_write_time(fs::path(metadata_path) / path);
-    auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
-    return Poco::Timestamp(micro_sec.count());
+    return FS::getModificationTimestamp(fs::path(metadata_path) / path);
 }
 
 

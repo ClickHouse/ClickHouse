@@ -1,10 +1,12 @@
-#include "createFile.h"
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <utime.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
+#include <Poco/Timestamp.h>
+#include <Common/FileSystemHelpers.h>
 
 namespace DB
 {
@@ -61,4 +63,25 @@ bool canWrite(const std::string & path)
     DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
+time_t getModificationTime(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+        return st.st_mtime;
+    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+Poco::Timestamp getModificationTimestamp(const std::string & path)
+{
+    return Poco::Timestamp::fromEpochTime(getModificationTime(path));
+}
+
+void setModificationTime(const std::string & path, time_t time)
+{
+    struct utimbuf tb;
+    tb.actime  = time;
+    tb.modtime = time;
+    if (utime(path.c_str(), &tb) != 0)
+        DB::throwFromErrnoWithPath("Cannot set modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
 }

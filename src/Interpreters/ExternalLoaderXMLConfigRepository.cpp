@@ -3,11 +3,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
-
 #include <Poco/Glob.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
+#include <Common/FileSystemHelpers.h>
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -21,9 +20,7 @@ ExternalLoaderXMLConfigRepository::ExternalLoaderXMLConfigRepository(
 
 Poco::Timestamp ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
 {
-    fs::file_time_type fs_time = fs::last_write_time(definition_entity_name);
-    auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
-    return Poco::Timestamp(micro_sec.count());
+    return FS::getModificationTimestamp(definition_entity_name);
 }
 
 std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefinitionNames()

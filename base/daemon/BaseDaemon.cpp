@@ -57,7 +57,6 @@
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
-#include <Poco/File.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)

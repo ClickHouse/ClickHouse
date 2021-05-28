@@ -7,8 +7,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 #include <IO/createReadBufferFromFileBase.h>
-#include <Poco/File.h>
-#include <Common/createFile.h>
+#include <Common/FileSystemHelpers.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -260,14 +259,12 @@ void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
 
 void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    fs::last_write_time(fs::path(disk_path) / path, static_cast<fs::file_time_type>(std::chrono::microseconds(timestamp.epochMicroseconds())));
+    FS::setModificationTime(fs::path(disk_path) / path, timestamp.epochTime());
 }
 
 Poco::Timestamp DiskLocal::getLastModified(const String & path)
 {
-    fs::file_time_type fs_time = fs::last_write_time(fs::path(disk_path) / path);
-    auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
-    return Poco::Timestamp(micro_sec.count());
+    return FS::getModificationTimestamp(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)

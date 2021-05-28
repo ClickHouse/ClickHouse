@@ -25,7 +25,6 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
-#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -88,7 +87,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/ProgressBar.h>
 #include <filesystem>
-#include <Common/createFile.h>
+#include <Common/FileSystemHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>

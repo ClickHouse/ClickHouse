@@ -1,9 +1,5 @@
 #include "FileDictionarySource.h"
-
 #include <filesystem>
-
-#include <Poco/File.h>
-
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -14,6 +10,8 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
+#include <Common/FileSystemHelpers.h>
+
 
 namespace fs = std::filesystem;
 
@@ -70,9 +68,7 @@ std::string FileDictionarySource::toString() const
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
-    fs::file_time_type fs_time = fs::last_write_time(filepath);
-    auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
-    return Poco::Timestamp(micro_sec.count());
+    return FS::getModificationTimestamp(filepath);
 }
 
 

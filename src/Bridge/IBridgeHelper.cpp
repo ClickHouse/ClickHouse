@@ -3,7 +3,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/Path.h>
 #include <Poco/URI.h>
 #include <filesystem>
 
