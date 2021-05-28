@@ -228,7 +228,9 @@
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/ClickHouse-Extras/datasketches-cpp.git
-
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
+[submodule "contrib/cld2"]
+    path = contrib/cld2
+    url = https://github.com/CLD2Owners/cld2.git
