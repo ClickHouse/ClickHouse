@@ -10,9 +10,8 @@ from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True,
-                             main_configs=['configs/openssl.xml', 'configs/odbc_logging.xml',
-                                           'configs/enable_dictionaries.xml',
-                                           'configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml',
+                             main_configs=['configs/openssl.xml', 'configs/odbc_logging.xml'],
+                             dictionaries=['configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml',
                                            'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml',
                                            'configs/dictionaries/postgres_odbc_hashed_dictionary.xml'], stay_alive=True)
 
