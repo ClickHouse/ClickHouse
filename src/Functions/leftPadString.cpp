@@ -1,22 +1,12 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnsNumber.h>
+
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
-#include <Functions/castTypeToEither.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
-
-#include <IO/WriteHelpers.h>
-
-#include <Core/DecimalFunctions.h>
-#include <common/DateLUTImpl.h>
-#include <common/find_symbols.h>
-
 #include <type_traits>
-
 
 namespace DB
 {
@@ -43,7 +33,7 @@ namespace
             res_data.resize((length + 1 /* zero terminator */) * size);
             res_offsets.resize(size);
 
-            size_t padstr_size = padstr.size();
+            const size_t padstr_size = padstr.size();
 
             ColumnString::Offset prev_offset = 0;
             ColumnString::Offset res_prev_offset = 0;
@@ -54,8 +44,7 @@ namespace
                 {
                     for (size_t j = 0; j < length - data_length; ++j)
                         res_data[res_prev_offset + j] = padstr[j % padstr_size];
-                    for (size_t j = length - data_length; j < length; ++j)
-                        res_data[res_prev_offset + j] = data[prev_offset + j - length + data_length];
+                    memcpy(&res_data[res_prev_offset + length - data_length], &data[prev_offset], data_length);
                 }
                 else
                 {
@@ -68,18 +57,27 @@ namespace
             }
         }
 
-        static void
-        vectorFixed(const ColumnString::Chars & data, const size_t n, const size_t length, const String & padstr, ColumnString::Chars & res_data)
+        static void vectorFixed(
+            const ColumnFixedString::Chars & data,
+            const size_t n,
+            const size_t length,
+            const String & padstr,
+            ColumnFixedString::Chars & res_data)
         {
-            res_data.resize(data.size());
-            size_t size = data.size() / n;
+            const size_t padstr_size = padstr.size();
+            const size_t size = data.size() / n;
+            res_data.resize(length * size);
             for (size_t i = 0; i < size; ++i)
             {
-                if (length < size)
+                if (length < n)
                 {
+                    memcpy(&res_data[i * length], &data[i * n], length);
                 }
                 else
                 {
+                    for (size_t j = 0; j < length - n; ++j)
+                        res_data[i * length + j] = padstr[j % padstr_size];
+                    memcpy(&res_data[i * length + length - n], &data[i * n], n);
                 }
             }
         }
@@ -126,9 +124,9 @@ namespace
             return arguments[0];
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
         {
-            const ColumnConst * len_column = checkAndGetColumnConst<Column>(arguments[1].column.get());
+            const ColumnConst * len_column = checkAndGetColumnConst<ColumnUInt32>(arguments[1].column.get());
             if (!len_column)
                 throw Exception(
                     "Illegal column " + arguments[1].column->getName() + " of first ('len') argument of function " + getName()
@@ -157,12 +155,12 @@ namespace
                     strings->getChars(), strings->getOffsets(), len, padstr, col_res->getChars(), col_res->getOffsets());
                 return col_res;
             }
-//            else if (const ColumnFixedString * strings_fixed = checkAndGetColumn<ColumnFixedString>(str_column.get()))
-//            {
-//                auto col_res = ColumnFixedString::create(strings_fixed->getN());
-//                LeftPadStringImpl::vectorFixed(strings_fixed->getChars(), strings_fixed->getN(), len, padstr, col_res->getChars());
-//                return col_res;
-//            }
+            else if (const ColumnFixedString * strings_fixed = checkAndGetColumn<ColumnFixedString>(str_column.get()))
+            {
+                auto col_res = ColumnFixedString::create(strings_fixed->getN());
+                LeftPadStringImpl::vectorFixed(strings_fixed->getChars(), strings_fixed->getN(), len, padstr, col_res->getChars());
+                return col_res;
+            }
             else
                 throw Exception(
                     "Illegal column " + arguments[0].column->getName() + " of first ('str') argument of function " + getName()
