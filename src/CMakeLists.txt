@@ -350,7 +350,7 @@ dbms_target_link_libraries (
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         lz4
-        cld2
+        #        cld2
         Poco::JSON
         Poco::MongoDB
         string_utils
