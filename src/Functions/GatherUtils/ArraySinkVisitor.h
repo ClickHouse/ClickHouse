@@ -14,7 +14,7 @@ struct GenericArraySink;
 template <typename ArraySink>
 struct NullableArraySink;
 
-using NumericArraySinks = typename TypeListMap<NumericArraySink, TypeListNumbersAndUInt128>::Type;
+using NumericArraySinks = typename TypeListMap<NumericArraySink, TypeListNumbersAndUUID>::Type;
 using BasicArraySinks = typename AppendToTypeList<GenericArraySink, NumericArraySinks>::Type;
 using NullableArraySinks = typename TypeListMap<NullableArraySink, BasicArraySinks>::Type;
 using TypeListArraySinks = typename TypeListConcat<BasicArraySinks, NullableArraySinks>::Type;

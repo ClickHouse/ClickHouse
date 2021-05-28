@@ -33,7 +33,7 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
     StoragePtr table = StorageLog::create(
-        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, false, 1048576);
+        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, String{}, false, 1048576);
 
     table->startup();
 
@@ -53,7 +53,7 @@ public:
 
     void TearDown() override
     {
-        table->shutdown();
+        table->flushAndShutdown();
         destroyDisk<T>(disk);
     }
 
@@ -118,7 +118,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 
     SelectQueryInfo query_info;
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
-        context, QueryProcessingStage::Complete, query_info);
+        context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
     QueryPipeline pipeline;
     pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));

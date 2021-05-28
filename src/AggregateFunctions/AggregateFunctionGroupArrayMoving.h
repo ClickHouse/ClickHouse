@@ -22,6 +22,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -38,7 +39,7 @@ struct MovingData
     using Array = PODArray<T, 32, Allocator>;
 
     Array value;    /// Prefix sums.
-    T sum = 0;
+    T sum{};
 
     void NO_SANITIZE_UNDEFINED add(T val, Arena * arena)
     {
@@ -69,9 +70,9 @@ struct MovingAvgData : public MovingData<T>
     T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
-            return this->value[idx] / window_size;
+            return this->value[idx] / T(window_size);
         else
-            return (this->value[idx] - this->value[idx - window_size]) / window_size;
+            return (this->value[idx] - this->value[idx - window_size]) / T(window_size);
     }
 };
 
