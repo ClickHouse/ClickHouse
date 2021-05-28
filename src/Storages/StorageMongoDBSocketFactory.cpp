@@ -1,5 +1,9 @@
 #include "StorageMongoDBSocketFactory.h"
 
+#if !defined(ARCADIA_BUILD)
+#   include <Common/config.h>
+#endif
+
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 
