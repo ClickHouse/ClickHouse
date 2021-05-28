@@ -188,7 +188,10 @@ void CSVRowInputFormat::readPrefix()
             return;
         }
         else
+        {
             skipRow(in, format_settings.csv, num_columns);
+            setupAllColumnsByTableSchema();
+        }
     }
 
     /// The default: map each column of the file to the column of the table with
