@@ -19,7 +19,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
 #include <filesystem>
-#include <Common/createFile.h>
+#include <Common/FileSystemHelpers.h>
 
 namespace fs = std::filesystem;
 
@@ -542,10 +542,7 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
     String table_metadata_path = getObjectMetadataPath(object_name);
 
     if (fs::exists(table_metadata_path))
-    {
-        fs::file_time_type fs_time = fs::last_write_time(table_metadata_path);
-        return fs::file_time_type::clock::to_time_t(fs_time);
-    }
+        return FS::getModificationTime(table_metadata_path);
     else
         return static_cast<time_t>(0);
 }

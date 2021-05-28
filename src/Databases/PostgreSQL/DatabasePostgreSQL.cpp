@@ -14,7 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
-#include <Common/createFile.h>
+#include <Common/FileSystemHelpers.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

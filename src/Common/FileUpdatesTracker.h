@@ -3,6 +3,7 @@
 #include <Poco/Timestamp.h>
 #include <string>
 #include <filesystem>
+#include <Common/FileSystemHelpers.h>
 
 namespace fs = std::filesystem;
 
@@ -31,8 +32,6 @@ public:
 private:
     Poco::Timestamp getLastModificationTime() const
     {
-        fs::file_time_type fs_time = fs::last_write_time(path);
-        auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
-        return Poco::Timestamp(micro_sec.count());
+        return FS::getModificationTimestamp(path);
     }
 };

@@ -3,13 +3,12 @@
 #include <vector>
 
 #include <common/types.h>
-
-#include <Poco/File.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
+
 
 namespace DB
 {

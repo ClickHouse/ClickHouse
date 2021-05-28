@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <optional>
 
-#include <Poco/File.h>
 #include <Poco/DirectoryIterator.h>
 
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>

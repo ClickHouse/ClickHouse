@@ -5,7 +5,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
@@ -18,6 +17,7 @@
 #include <common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
+#include <Common/FileSystemHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -782,8 +782,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         addUUIDMapping(table_id.uuid);
-        fs::file_time_type fs_time = fs::last_write_time(dropped_metadata_path);
-        drop_time = fs::file_time_type::clock::to_time_t(fs_time);
+        drop_time = FS::getModificationTime(dropped_metadata_path);
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
