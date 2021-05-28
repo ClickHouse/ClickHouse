@@ -90,7 +90,7 @@ public:
             S2Point point = cell_id.ToPoint();
             S2LatLng ll(point);
             
-            vec_res_first[row] = ll.lat().degrees();
+            vec_res_first[row] = ll.lng().degrees();
             vec_res_second[row] = ll.lat().degrees();
         }
 
