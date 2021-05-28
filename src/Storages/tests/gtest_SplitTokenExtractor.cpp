@@ -61,12 +61,12 @@ TEST_P(SplitTokenExtractorTest, next)
     for (const auto & expected_token : param.tokens)
     {
         SCOPED_TRACE(++i);
-        ASSERT_TRUE(token_extractor.next(data->data(), data->size(), &pos, &token_start, &token_len));
+        ASSERT_TRUE(token_extractor.nextInColumn(data->data(), data->size(), &pos, &token_start, &token_len));
 
         EXPECT_EQ(expected_token, std::string_view(data->data() + token_start, token_len))
                 << " token_start:" << token_start << " token_len: " << token_len;
     }
-    ASSERT_FALSE(token_extractor.next(data->data(), data->size(), &pos, &token_start, &token_len))
+    ASSERT_FALSE(token_extractor.nextInColumn(data->data(), data->size(), &pos, &token_start, &token_len))
             << "\n\t=> \"" << param.source.substr(token_start, token_len) << "\""
             << "\n\t" << token_start << ", " << token_len << ", " << pos << ", " << data->size();
 }
@@ -177,7 +177,7 @@ INSTANTIATE_TEST_SUITE_P(SIMD_Cases,
             {"abcdef"}
         },
         {
-            "Token crosses bounday of 16-byte chunk",
+            "Token crosses boundary of 16-byte chunk",
             "            abcdef",
             {"abcdef"}
         },

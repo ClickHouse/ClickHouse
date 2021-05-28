@@ -56,9 +56,187 @@ toc_title: ORDER BY
 
 ## Поддержка collation {#collation-support}
 
-Для сортировки по значениям типа String есть возможность указать collation (сравнение). Пример: `ORDER BY SearchPhrase COLLATE 'tr'` - для сортировки по поисковой фразе, по возрастанию, с учётом турецкого алфавита, регистронезависимо, при допущении, что строки в кодировке UTF-8. `COLLATE` может быть указан или не указан для каждого выражения в ORDER BY независимо. Если есть `ASC` или `DESC`, то `COLLATE` указывается после них. При использовании `COLLATE` сортировка всегда регистронезависима.
+Для сортировки по значениям типа [String](../../../sql-reference/data-types/string.md) есть возможность указать collation (сравнение). Пример: `ORDER BY SearchPhrase COLLATE 'tr'` - для сортировки по поисковой фразе, по возрастанию, с учётом турецкого алфавита, регистронезависимо, при допущении, что строки в кодировке UTF-8. `COLLATE` может быть указан или не указан для каждого выражения в ORDER BY независимо. Если есть `ASC` или `DESC`, то `COLLATE` указывается после них. При использовании `COLLATE` сортировка всегда регистронезависима.
+
+Сравнение поддерживается при использовании типов [LowCardinality](../../../sql-reference/data-types/lowcardinality.md), [Nullable](../../../sql-reference/data-types/nullable.md), [Array](../../../sql-reference/data-types/array.md) и [Tuple](../../../sql-reference/data-types/tuple.md).
 
 Рекомендуется использовать `COLLATE` только для окончательной сортировки небольшого количества строк, так как производительность сортировки с указанием `COLLATE` меньше, чем обычной сортировки по байтам.
+
+## Примеры с использованием сравнения {#collation-examples}
+
+Пример с значениями типа [String](../../../sql-reference/data-types/string.md):
+
+Входная таблица:
+
+``` text
+┌─x─┬─s────┐
+│ 1 │ bca  │
+│ 2 │ ABC  │
+│ 3 │ 123a │
+│ 4 │ abc  │
+│ 5 │ BCA  │
+└───┴──────┘
+```
+
+Запрос:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Результат:
+
+``` text
+┌─x─┬─s────┐
+│ 3 │ 123a │
+│ 4 │ abc  │
+│ 2 │ ABC  │
+│ 1 │ bca  │
+│ 5 │ BCA  │
+└───┴──────┘
+```
+
+Пример со строками типа [Nullable](../../../sql-reference/data-types/nullable.md):
+
+Входная таблица:
+
+``` text
+┌─x─┬─s────┐
+│ 1 │ bca  │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │ ABC  │
+│ 4 │ 123a │
+│ 5 │ abc  │
+│ 6 │ ᴺᵁᴸᴸ │
+│ 7 │ BCA  │
+└───┴──────┘
+```
+
+Запрос:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Результат:
+
+``` text
+┌─x─┬─s────┐
+│ 4 │ 123a │
+│ 5 │ abc  │
+│ 3 │ ABC  │
+│ 1 │ bca  │
+│ 7 │ BCA  │
+│ 6 │ ᴺᵁᴸᴸ │
+│ 2 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+Пример со строками в [Array](../../../sql-reference/data-types/array.md):
+
+Входная таблица:
+
+``` text
+┌─x─┬─s─────────────┐
+│ 1 │ ['Z']         │
+│ 2 │ ['z']         │
+│ 3 │ ['a']         │
+│ 4 │ ['A']         │
+│ 5 │ ['z','a']     │
+│ 6 │ ['z','a','a'] │
+│ 7 │ ['']          │
+└───┴───────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Результат:
+
+``` text
+┌─x─┬─s─────────────┐
+│ 7 │ ['']          │
+│ 3 │ ['a']         │
+│ 4 │ ['A']         │
+│ 2 │ ['z']         │
+│ 5 │ ['z','a']     │
+│ 6 │ ['z','a','a'] │
+│ 1 │ ['Z']         │
+└───┴───────────────┘
+```
+
+Пример со строками типа [LowCardinality](../../../sql-reference/data-types/lowcardinality.md):
+
+Входная таблица:
+
+```text
+┌─x─┬─s───┐
+│ 1 │ Z   │
+│ 2 │ z   │
+│ 3 │ a   │
+│ 4 │ A   │
+│ 5 │ za  │
+│ 6 │ zaa │
+│ 7 │     │
+└───┴─────┘
+```
+
+Запрос:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Результат:
+
+```text
+┌─x─┬─s───┐
+│ 7 │     │
+│ 3 │ a   │
+│ 4 │ A   │
+│ 2 │ z   │
+│ 1 │ Z   │
+│ 5 │ za  │
+│ 6 │ zaa │
+└───┴─────┘
+```
+
+Пример со строками в [Tuple](../../../sql-reference/data-types/tuple.md):
+
+```text
+┌─x─┬─s───────┐
+│ 1 │ (1,'Z') │
+│ 2 │ (1,'z') │
+│ 3 │ (1,'a') │
+│ 4 │ (2,'z') │
+│ 5 │ (1,'A') │
+│ 6 │ (2,'Z') │
+│ 7 │ (2,'A') │
+└───┴─────────┘
+```
+
+Запрос:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Результат:
+
+```text
+┌─x─┬─s───────┐
+│ 3 │ (1,'a') │
+│ 5 │ (1,'A') │
+│ 2 │ (1,'z') │
+│ 1 │ (1,'Z') │
+│ 7 │ (2,'A') │
+│ 4 │ (2,'z') │
+│ 6 │ (2,'Z') │
+└───┴─────────┘
+```
 
 ## Деталь реализации {#implementation-details}
 
@@ -69,6 +247,25 @@ toc_title: ORDER BY
 На выполнение запроса может расходоваться больше памяти, чем `max_bytes_before_external_sort`. Поэтому, значение этой настройки должно быть существенно меньше, чем `max_memory_usage`. Для примера, если на вашем сервере 128 GB оперативки, и вам нужно выполнить один запрос, то выставите `max_memory_usage` в 100 GB, а `max_bytes_before_external_sort` в 80 GB.
 
 Внешняя сортировка работает существенно менее эффективно, чем сортировка в оперативке.
+
+## Оптимизация чтения данных {#optimize_read_in_order}
+
+ Если в списке выражений в секции `ORDER BY` первыми указаны те поля, по которым проиндексирована таблица, по которой строится выборка, такой запрос можно оптимизировать — для этого используйте настройку [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order).  
+ 
+ Когда настройка `optimize_read_in_order` включена, при выполнении запроса сервер использует табличные индексы и считывает данные в том порядке, который задан списком выражений `ORDER BY`. Поэтому если в запросе установлен [LIMIT](../../../sql-reference/statements/select/limit.md), сервер не станет считывать лишние данные. Таким образом, запросы к большим таблицам, но имеющие ограничения по числу записей, выполняются быстрее.
+
+Оптимизация работает при любом порядке сортировки `ASC` или `DESC`, но не работает при использовании группировки [GROUP BY](../../../sql-reference/statements/select/group-by.md) и модификатора [FINAL](../../../sql-reference/statements/select/from.md#select-from-final).
+
+Когда настройка `optimize_read_in_order` отключена, при выполнении запросов `SELECT` табличные индексы не используются.
+
+Для запросов с сортировкой `ORDER BY`, большим значением `LIMIT` и условиями отбора [WHERE](../../../sql-reference/statements/select/where.md), требующими чтения больших объемов данных, рекомендуется отключать `optimize_read_in_order` вручную.
+
+Оптимизация чтения данных поддерживается в следующих движках:
+
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
+- [Merge](../../../engines/table-engines/special/merge.md), [Buffer](../../../engines/table-engines/special/buffer.md) и [MaterializedView](../../../engines/table-engines/special/materializedview.md), работающими с таблицами `MergeTree`
+
+В движке `MaterializedView` оптимизация поддерживается при работе с сохраненными запросами (представлениями) вида `SELECT ... FROM merge_tree_table ORDER BY pk`. Но оптимизация не поддерживается для запросов вида `SELECT ... FROM view ORDER BY pk`, если в сохраненном запросе нет секции `ORDER BY`.
 
 ## Модификатор ORDER BY expr WITH FILL  {#orderby-with-fill}
 

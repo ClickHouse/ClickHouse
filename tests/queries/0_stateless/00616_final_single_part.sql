@@ -1,3 +1,5 @@
+SET optimize_on_insert = 0;
+
 DROP TABLE IF EXISTS test_00616;
 DROP TABLE IF EXISTS replacing_00616;
 

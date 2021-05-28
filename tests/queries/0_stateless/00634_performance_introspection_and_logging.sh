@@ -5,7 +5,8 @@ set -e
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 cur_name=$(basename "${BASH_SOURCE[0]}")
 server_logs_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
@@ -28,7 +29,7 @@ $CLICKHOUSE_CLIENT $settings -n -q "
 SELECT count() FROM null_00634;
 DROP TABLE null_00634;"
 
-(( `cat "$server_logs_file" | wc -l` >= 110 )) || echo Fail
+(( $(cat "$server_logs_file" | wc -l) >= 110 )) || echo Fail
 
 
 # Check ProfileEvents in query_log
@@ -47,32 +48,8 @@ SELECT
     threads_realtime >= threads_time_user_system_io,
     any(length(thread_ids)) >= 1
     FROM
-        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND type=2 ORDER BY event_time DESC LIMIT 1)
+        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-2 AND current_database = currentDatabase() AND type=2 ORDER BY event_time DESC LIMIT 1)
     ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
-
-# Check per-thread and per-query ProfileEvents consistency
-
-$CLICKHOUSE_CLIENT $settings --any_join_distinct_right_table_keys=1 -q "
-SELECT PN, PVq, PVt FROM
-(
-    SELECT PN, sum(PV) AS PVt
-    FROM system.query_thread_log
-    ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-    WHERE event_date >= today()-1 AND query_id='$query_id'
-    GROUP BY PN
-) js1
-ANY INNER JOIN
-(
-    SELECT PN, PV AS PVq
-    FROM system.query_log
-    ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-    WHERE event_date >= today()-1 AND query_id='$query_id'
-) js2
-USING PN
-WHERE
-    NOT PN IN ('ContextLock') AND
-    NOT (PVq <= PVt AND PVt <= 1.1 * PVq)
-"
 
 # Clean
 rm "$server_logs_file"

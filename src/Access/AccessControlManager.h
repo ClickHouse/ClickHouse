@@ -2,6 +2,7 @@
 
 #include <Access/MultipleAccessStorage.h>
 #include <Common/SettingsChanges.h>
+#include <Common/ZooKeeper/Common.h>
 #include <boost/container/flat_set.hpp>
 #include <memory>
 
@@ -46,11 +47,59 @@ class AccessControlManager : public MultipleAccessStorage
 {
 public:
     AccessControlManager();
-    ~AccessControlManager();
+    ~AccessControlManager() override;
 
-    void setLocalDirectory(const String & directory);
-    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
-    void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
+    /// Parses access entities from a configuration loaded from users.xml.
+    /// This function add UsersConfigAccessStorage if it wasn't added before.
+    void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_);
+
+    /// Adds UsersConfigAccessStorage.
+    void addUsersConfigStorage(const Poco::Util::AbstractConfiguration & users_config_);
+
+    void addUsersConfigStorage(const String & storage_name_,
+                               const Poco::Util::AbstractConfiguration & users_config_);
+
+    void addUsersConfigStorage(const String & users_config_path_,
+                               const String & include_from_path_,
+                               const String & preprocessed_dir_,
+                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
+
+    void addUsersConfigStorage(const String & storage_name_,
+                               const String & users_config_path_,
+                               const String & include_from_path_,
+                               const String & preprocessed_dir_,
+                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
+
+    void reloadUsersConfigs();
+    void startPeriodicReloadingUsersConfigs();
+
+    /// Loads access entities from the directory on the local disk.
+    /// Use that directory to keep created users/roles/etc.
+    void addDiskStorage(const String & directory_, bool readonly_ = false);
+    void addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_ = false);
+
+    /// Adds MemoryAccessStorage which keeps access entities in memory.
+    void addMemoryStorage();
+    void addMemoryStorage(const String & storage_name_);
+
+    /// Adds LDAPAccessStorage which allows querying remote LDAP server for user info.
+    void addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_);
+
+    /// Adds storages from <users_directories> config.
+    void addStoragesFromUserDirectoriesConfig(const Poco::Util::AbstractConfiguration & config,
+                                              const String & key,
+                                              const String & config_dir,
+                                              const String & dbms_dir,
+                                              const String & include_from_path,
+                                              const zkutil::GetZooKeeper & get_zookeeper_function);
+
+    /// Adds storages from the main config.
+    void addStoragesFromMainConfig(const Poco::Util::AbstractConfiguration & config,
+                                   const String & config_path,
+                                   const zkutil::GetZooKeeper & get_zookeeper_function);
+
+    /// Sets the default profile's name.
+    /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
 
     /// Sets prefixes which should be used for custom settings.
@@ -60,9 +109,12 @@ public:
     bool isSettingNameAllowed(const std::string_view & name) const;
     void checkSettingNameIsAllowed(const std::string_view & name) const;
 
+    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
-        const boost::container::flat_set<UUID> & current_roles,
+        const std::vector<UUID> & current_roles,
         bool use_default_roles,
         const Settings & settings,
         const String & current_database,
@@ -71,8 +123,8 @@ public:
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
-        const boost::container::flat_set<UUID> & current_roles,
-        const boost::container::flat_set<UUID> & current_roles_with_admin_option) const;
+        const std::vector<UUID> & current_roles,
+        const std::vector<UUID> & current_roles_with_admin_option) const;
 
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(
         const UUID & user_id,
@@ -83,6 +135,7 @@ public:
         const String & user_name,
         const boost::container::flat_set<UUID> & enabled_roles,
         const Poco::Net::IPAddress & address,
+        const String & forwarded_address,
         const String & custom_quota_key) const;
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
@@ -96,8 +149,10 @@ public:
 
     const ExternalAuthenticators & getExternalAuthenticators() const;
 
-private: class ContextAccessCache;
+private:
+    class ContextAccessCache;
     class CustomSettingsPrefixes;
+
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
     std::unique_ptr<RowPolicyCache> row_policy_cache;

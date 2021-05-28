@@ -1,3 +1,8 @@
+---
+toc_priority: 36
+toc_title: "Функции сравнения"
+---
+
 # Функции сравнения {#funktsii-sravneniia}
 
 Функции сравнения возвращают всегда 0 или 1 (UInt8).
@@ -29,4 +34,3 @@
 
 ## greaterOrEquals, оператор `>=` {#function-greaterorequals}
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/comparison_functions/) <!--hide-->

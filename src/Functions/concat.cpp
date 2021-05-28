@@ -25,14 +25,16 @@ namespace ErrorCodes
 
 using namespace GatherUtils;
 
+namespace
+{
 
 template <typename Name, bool is_injective>
 class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatImpl(const Context & context_) : context(context_) {}
-    static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(context); }
+    explicit ConcatImpl(ContextPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
 
@@ -40,7 +42,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const Block &) const override { return is_injective; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -70,25 +72,25 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
         /// Though, benchmarks are really close, for most examples we saw executeBinary is slightly faster (0-3%).
         /// For 3 and more arguments FormatImpl is much faster (up to 50-60%).
         if (arguments.size() == 2)
-            executeBinary(block, arguments, result, input_rows_count);
+            return executeBinary(arguments, input_rows_count);
         else
-            executeFormatImpl(block, arguments, result, input_rows_count);
+            return executeFormatImpl(arguments, input_rows_count);
     }
 
 private:
-    const Context & context;
+    ContextWeakPtr context;
 
-    void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
+    ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
-        const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
-        const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
+        const IColumn * c0 = arguments[0].column.get();
+        const IColumn * c1 = arguments[1].column.get();
 
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
@@ -106,14 +108,13 @@ private:
         else
         {
             /// Fallback: use generic implementation for not very important cases.
-            executeFormatImpl(block, arguments, result, input_rows_count);
-            return;
+            return executeFormatImpl(arguments, input_rows_count);
         }
 
-        block.getByPosition(result).column = std::move(c_res);
+        return c_res;
     }
 
-    void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
+    ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
         assert(num_arguments >= 2);
@@ -127,7 +128,7 @@ private:
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)
         {
-            const ColumnPtr & column = block.getByPosition(arguments[i]).column;
+            const ColumnPtr & column = arguments[i].column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
                 has_column_string = true;
@@ -167,7 +168,7 @@ private:
             c_res->getOffsets(),
             input_rows_count);
 
-        block.getByPosition(result).column = std::move(c_res);
+        return c_res;
     }
 };
 
@@ -190,9 +191,9 @@ class ConcatOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ConcatOverloadResolver>(context); }
+    static FunctionOverloadResolverImplPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    explicit ConcatOverloadResolver(const Context & context_) : context(context_) {}
+    explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -222,9 +223,10 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
+}
 
 void registerFunctionsConcat(FunctionFactory & factory)
 {

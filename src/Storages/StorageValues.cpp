@@ -1,7 +1,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageValues.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Pipe.h>
 
@@ -21,23 +20,24 @@ StorageValues::StorageValues(
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipes StorageValues::read(
+Pipe StorageValues::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    Pipes pipes;
+    /// Get only required columns.
+    Block block;
+    for (const auto & name : column_names)
+        block.insert(res_block.getByName(name));
 
-    Chunk chunk(res_block.getColumns(), res_block.rows());
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(res_block.cloneEmpty(), std::move(chunk)));
-
-    return pipes;
+    Chunk chunk(block.getColumns(), block.rows());
+    return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));
 }
 
 }

@@ -1,5 +1,5 @@
 ---
-toc_priority: 2
+toc_priority: 36
 toc_title: TABLE
 ---
 
@@ -16,18 +16,20 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
 
 Creates a table named `name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
-The structure of the table is a list of column descriptions, secondary indexes and constraints . If primary key is supported by the engine, it will be indicated as parameter for the table engine.
+The structure of the table is a list of column descriptions, secondary indexes and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 
 Expressions can also be defined for default values (see below).
+
+If necessary, primary key can be specified, with one or more key expressions.
 
 ### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
 
@@ -37,23 +39,50 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
-## From a Table Function {#from-a-table-function}
+### From a Table Function {#from-a-table-function}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Creates a table with the structure and data returned by a [table function](../../../sql-reference/table-functions/index.md#table-functions).
+Creates a table with the same result as that of the [table function](../../../sql-reference/table-functions/index.md#table-functions) specified. The created table will also work in the same way as the corresponding table function that was specified.
+
+### From SELECT query {#from-select-query}
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
-Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from SELECT.
+Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from `SELECT`. Also you can explicitly specify columns description.
 
-In all cases, if `IF NOT EXISTS` is specified, the query won’t return an error if the table already exists. In this case, the query won’t do anything.
+If the table already exists and `IF NOT EXISTS` is specified, the query won’t do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+Result:
+
+```text
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
+
+## NULL Or NOT NULL Modifiers {#null-modifiers}
+
+`NULL` and `NOT NULL` modifiers after data type in column definition allow or do not allow it to be [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable).
+
+If the type is not `Nullable` and if `NULL` is specified, it will be treated as `Nullable`; if `NOT NULL` is specified, then no. For example, `INT NULL` is the same as `Nullable(INT)`. If the type is `Nullable` and `NULL` or `NOT NULL` modifiers are specified, the exception will be thrown.
+
+See also [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable) setting.
 
 ## Default Values {#create-default-values}
 
@@ -97,6 +126,35 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
+## Primary Key {#primary-key}
+
+You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways:
+
+- Inside the column list
+
+``` sql
+CREATE TABLE db.table_name
+(
+    name1 type1, name2 type2, ...,
+    PRIMARY KEY(expr1[, expr2,...])]
+)
+ENGINE = engine;
+```
+
+- Outside the column list
+
+``` sql
+CREATE TABLE db.table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+PRIMARY KEY(expr1[, expr2,...]);
+```
+
+!!! warning "Warning"
+    You can't combine both ways in one query.
+
 ## Constraints {#constraints}
 
 Along with columns descriptions constraints could be defined:
@@ -121,7 +179,9 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Column Compression Codecs {#codecs}
 
-By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration. You can also define the compression method for each individual column in the `CREATE TABLE` query.
+By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration.
+
+You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
 ``` sql
 CREATE TABLE codec_example
@@ -136,7 +196,18 @@ ENGINE = <Engine>
 ...
 ```
 
-If a codec is specified, the default codec doesn’t apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
+The `Default` codec can be specified to reference default compression which may depend on different settings (and properties of data) in runtime.
+Example: `value UInt64 CODEC(Default)` — the same as lack of codec specification.
+
+Also you can remove current CODEC from the column and use default compression from config.xml:
+
+``` sql
+ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
+```
+
+Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
+
+To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article. One thing to note is that codec can't be applied for ALIAS column type.
 
 !!! warning "Warning"
     You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
@@ -208,3 +279,78 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections
 
 It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engines/special/memory.md) instead of temporary tables.
+
+## REPLACE TABLE {#replace-table-query}
+
+'REPLACE' query allows you to update the table atomically.
+
+!!!note "Note"
+    This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
+
+If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that doesn't retrieve unwanted data, then drop the old table and rename the new one:
+
+```sql
+CREATE TABLE myNewTable AS myOldTable;
+INSERT INTO myNewTable SELECT * FROM myOldTable WHERE CounterID <12345;
+DROP TABLE myOldTable;
+RENAME TABLE myNewTable TO myOldTable;
+```
+
+Instead of above, you can use the following:
+
+```sql
+REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
+```
+
+### Syntax
+
+``` sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
+
+All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
+
+### Examples:
+
+Consider the table:
+
+```sql
+CREATE DATABASE base ENGINE = Atomic;
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (1, 'test');
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┬─s────┐
+│ 1 │ test │
+└───┴──────┘
+```
+
+Using `REPLACE` query to clear all data:
+
+```sql
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (2, null);
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┬─s──┐
+│ 2 │ \N │
+└───┴────┘
+```
+
+Using `REPLACE` query to change table structure:
+
+```sql
+REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (3);
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┐
+│ 3 │
+└───┘
+```

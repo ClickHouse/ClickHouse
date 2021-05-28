@@ -12,26 +12,6 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & data_part)
-{
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->getColumns())
-    {
-        if (header.has(name_type.name))
-        {
-            auto & elem = header.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    return std::move(header);
-}
-
 MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -50,7 +30,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        replaceTypes(metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()), owned_data_part_),
+        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
         storage_, metadata_snapshot_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
@@ -64,12 +44,11 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     for (const auto & range : all_mark_ranges)
         total_marks_count += range.end - range.begin;
 
-    size_t total_rows = data_part->index_granularity.getTotalRows();
+    size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
-        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {}, up to {} rows starting from {}",
+        LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
-            data_part->index_granularity.getRowsCountInRanges(all_mark_ranges),
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
     addTotalRowsApprox(total_rows);
@@ -83,9 +62,9 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     column_name_set = NameSet{column_names.begin(), column_names.end()};
 
     if (use_uncompressed_cache)
-        owned_uncompressed_cache = storage.global_context.getUncompressedCache();
+        owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
 
-    owned_mark_cache = storage.global_context.getMarkCache();
+    owned_mark_cache = storage.getContext()->getMarkCache();
 
     reader = data_part->getReader(task_columns.columns, metadata_snapshot,
         all_mark_ranges, owned_uncompressed_cache.get(),

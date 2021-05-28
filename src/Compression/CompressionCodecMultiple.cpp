@@ -3,6 +3,8 @@
 #include <Common/PODArray.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -16,33 +18,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int BAD_ARGUMENTS;
 }
 
-CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_, bool sanity_check)
+CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
 {
-    if (sanity_check)
-    {
-        /// It does not make sense to apply any transformations after generic compression algorithm
-        /// So, generic compression can be only one and only at the end.
-        bool has_generic_compression = false;
-        for (const auto & codec : codecs)
-        {
-            if (codec->isNone())
-                throw Exception("It does not make sense to have codec NONE along with other compression codecs: " + getCodecDescImpl()
-                    + ". (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
-                    ErrorCodes::BAD_ARGUMENTS);
-
-            if (has_generic_compression)
-                throw Exception("The combination of compression codecs " + getCodecDescImpl() + " is meaningless,"
-                    " because it does not make sense to apply any transformations after generic compression algorithm."
-                    " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
-
-            if (codec->isGenericCompression())
-                has_generic_compression = true;
-        }
-    }
+    ASTs arguments;
+    for (const auto & codec : codecs)
+        arguments.push_back(codec->getCodecDesc());
+    /// Special case, codec doesn't have name and contain list of codecs.
+    setCodecDescription("", arguments);
 }
 
 uint8_t CompressionCodecMultiple::getMethodByte() const
@@ -50,22 +35,10 @@ uint8_t CompressionCodecMultiple::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Multiple);
 }
 
-String CompressionCodecMultiple::getCodecDesc() const
+void CompressionCodecMultiple::updateHash(SipHash & hash) const
 {
-    return getCodecDescImpl();
-}
-
-String CompressionCodecMultiple::getCodecDescImpl() const
-{
-    WriteBufferFromOwnString out;
-    for (size_t idx = 0; idx < codecs.size(); ++idx)
-    {
-        if (idx != 0)
-            out << ", ";
-
-        out << codecs[idx]->getCodecDesc();
-    }
-    return out.str();
+    for (const auto & codec : codecs)
+        codec->updateHash(hash);
 }
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -103,12 +76,6 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     return 1 + codecs.size() + source_size;
 }
 
-void CompressionCodecMultiple::useInfoAboutType(const DataTypePtr & data_type)
-{
-    for (auto & codec : codecs)
-        codec->useInfoAboutType(data_type);
-}
-
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
 {
     if (source_size < 1 || !source[0])
@@ -141,6 +108,15 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
     }
 
     memcpy(dest, compressed_buf.data(), decompressed_size);
+}
+
+std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
+{
+    std::vector<uint8_t> result;
+    uint8_t compression_methods_size = source[0];
+    for (size_t i = 0; i < compression_methods_size; ++i)
+        result.push_back(source[1 + i]);
+    return result;
 }
 
 bool CompressionCodecMultiple::isCompression() const

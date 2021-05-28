@@ -30,9 +30,8 @@ def build_redirect_html(args, base_prefix, lang, output_dir, from_path, to_path)
         output_dir, lang,
         from_path.replace('/index.md', '/index.html').replace('.md', '/index.html')
     )
-    version_prefix = f'/{args.version_prefix}/' if args.version_prefix else '/'
     target_path = to_path.replace('/index.md', '/').replace('.md', '/')
-    to_url = f'/{base_prefix}{version_prefix}{lang}/{target_path}'
+    to_url = f'/{base_prefix}/{lang}/{target_path}'
     to_url = to_url.strip()
     write_redirect_html(out_path, to_url)
 

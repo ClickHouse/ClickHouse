@@ -1,5 +1,8 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+
 #include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -38,7 +41,7 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
     return res;
 }
 
-ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context & context,
+ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
     ConstraintsExpressions res;

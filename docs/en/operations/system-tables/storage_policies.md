@@ -1,4 +1,4 @@
-# system.storage\_policies {#system_tables-storage_policies}
+# system.storage_policies {#system_tables-storage_policies}
 
 Contains information about storage policies and volumes defined in the [server configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
@@ -10,5 +10,8 @@ Columns:
 -   `disks` ([Array(String)](../../sql-reference/data-types/array.md)) — Disk names, defined in the storage policy.
 -   `max_data_part_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
 -   `move_factor` ([Float64](../../sql-reference/data-types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
+-   `prefer_not_to_merge` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Value of the `prefer_not_to_merge` setting. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/storage_policies) <!--hide-->

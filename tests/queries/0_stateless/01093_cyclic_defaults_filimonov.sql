@@ -1,7 +1,7 @@
 CREATE TABLE test
 (
-    `a1` UInt64 DEFAULT a + 1,
-    `a1` UInt64 DEFAULT a + 1,
+    `a0` UInt64 DEFAULT a1 + 1,
+    `a1` UInt64 DEFAULT a0 + 1,
     `a2` UInt64 DEFAULT a3 + a4,
     `a3` UInt64 DEFAULT a2 + 1,
     `a4` UInt64 ALIAS a3 + 1

@@ -23,7 +23,7 @@ def check_predictions(test_name, target, pred_python, pred_ch, acc_threshold):
 
     acc = 1 - np.sum(np.abs(ch_class - np.array(target))) / (len(target) + .0)
     assert acc >= acc_threshold
-    print test_name, 'accuracy: {:.10f}'.format(acc)
+    print(test_name, 'accuracy: {:.10f}'.format(acc))
 
 
 def test_apply_float_features_only():
@@ -52,9 +52,9 @@ def test_apply_float_features_only():
     train_target = get_target(train_df)
     test_target = get_target(test_df)
 
-    print
-    print 'train target', train_target
-    print 'test target', test_target
+    print()
+    print('train target', train_target)
+    print('test target', test_target)
 
     params = {
         'iterations': 4,
@@ -71,8 +71,8 @@ def test_apply_float_features_only():
     with server:
         pred_ch = (np.array(server.apply_model(name, test_df, [])) > 0).astype(int)
 
-    print 'python predictions', pred_python
-    print 'clickhouse predictions', pred_ch
+    print('python predictions', pred_python)
+    print('clickhouse predictions', pred_ch)
 
     check_predictions(name, test_target, pred_python, pred_ch, 0.9)
 
@@ -105,9 +105,9 @@ def test_apply_float_features_with_string_cat_features():
     train_target = get_target(train_df)
     test_target = get_target(test_df)
 
-    print
-    print 'train target', train_target
-    print 'test target', test_target
+    print()
+    print('train target', train_target)
+    print('test target', test_target)
 
     params = {
         'iterations': 6,
@@ -124,8 +124,8 @@ def test_apply_float_features_with_string_cat_features():
     with server:
         pred_ch = (np.array(server.apply_model(name, test_df, [])) > 0).astype(int)
 
-    print 'python predictions', pred_python
-    print 'clickhouse predictions', pred_ch
+    print('python predictions', pred_python)
+    print('clickhouse predictions', pred_ch)
 
     check_predictions(name, test_target, pred_python, pred_ch, 0.9)
 
@@ -158,9 +158,9 @@ def test_apply_float_features_with_int_cat_features():
     train_target = get_target(train_df)
     test_target = get_target(test_df)
 
-    print
-    print 'train target', train_target
-    print 'test target', test_target
+    print()
+    print('train target', train_target)
+    print('test target', test_target)
 
     params = {
         'iterations': 6,
@@ -177,8 +177,8 @@ def test_apply_float_features_with_int_cat_features():
     with server:
         pred_ch = (np.array(server.apply_model(name, test_df, [])) > 0).astype(int)
 
-    print 'python predictions', pred_python
-    print 'clickhouse predictions', pred_ch
+    print('python predictions', pred_python)
+    print('clickhouse predictions', pred_ch)
 
     check_predictions(name, test_target, pred_python, pred_ch, 0.9)
 
@@ -211,9 +211,9 @@ def test_apply_float_features_with_mixed_cat_features():
     train_target = get_target(train_df)
     test_target = get_target(test_df)
 
-    print
-    print 'train target', train_target
-    print 'test target', test_target
+    print()
+    print('train target', train_target)
+    print('test target', test_target)
 
     params = {
         'iterations': 6,
@@ -230,8 +230,8 @@ def test_apply_float_features_with_mixed_cat_features():
     with server:
         pred_ch = (np.array(server.apply_model(name, test_df, [])) > 0).astype(int)
 
-    print 'python predictions', pred_python
-    print 'clickhouse predictions', pred_ch
+    print('python predictions', pred_python)
+    print('clickhouse predictions', pred_ch)
 
     check_predictions(name, test_target, pred_python, pred_ch, 0.9)
 
@@ -269,9 +269,9 @@ def test_apply_multiclass():
     train_target = get_target(train_df)
     test_target = get_target(test_df)
 
-    print
-    print 'train target', train_target
-    print 'test target', test_target
+    print()
+    print('train target', train_target)
+    print('test target', test_target)
 
     params = {
         'iterations': 10,
@@ -288,7 +288,7 @@ def test_apply_multiclass():
     with server:
         pred_ch = np.argmax(np.array(server.apply_model(name, test_df, [])), axis=1)
 
-    print 'python predictions', pred_python
-    print 'clickhouse predictions', pred_ch
+    print('python predictions', pred_python)
+    print('clickhouse predictions', pred_ch)
 
     check_predictions(name, test_target, pred_python, pred_ch, 0.9)

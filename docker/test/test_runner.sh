@@ -2,17 +2,19 @@
 
 set -e -x
 
+# Not sure why shellcheck complains that rc is not assigned before it is referenced.
+# shellcheck disable=SC2154
 trap 'rc=$?; echo EXITED WITH: $rc; exit $rc' EXIT
 
 # CLI option to prevent rebuilding images, just re-run tests with images leftover from previuos time
 readonly NO_REBUILD_FLAG="--no-rebuild"
 
-readonly CLICKHOUSE_DOCKER_DIR="$(realpath ${1})"
+readonly CLICKHOUSE_DOCKER_DIR="$(realpath "${1}")"
 readonly CLICKHOUSE_PACKAGES_ARG="${2}"
 CLICKHOUSE_SERVER_IMAGE="${3}"
 
-if [ ${CLICKHOUSE_PACKAGES_ARG} != ${NO_REBUILD_FLAG} ]; then
-    readonly CLICKHOUSE_PACKAGES_DIR="$(realpath ${2})" # or --no-rebuild
+if [ "${CLICKHOUSE_PACKAGES_ARG}" != "${NO_REBUILD_FLAG}" ]; then
+    readonly CLICKHOUSE_PACKAGES_DIR="$(realpath "${2}")" # or --no-rebuild
 fi
 
 
@@ -25,7 +27,7 @@ fi
 
 # TODO: optionally mount most recent clickhouse-test and queries directory from local machine
 
-if [ ${CLICKHOUSE_PACKAGES_ARG} != ${NO_REBUILD_FLAG} ]; then
+if [ "${CLICKHOUSE_PACKAGES_ARG}" != "${NO_REBUILD_FLAG}" ]; then
     docker build --network=host \
         -f "${CLICKHOUSE_DOCKER_DIR}/test/stateless/clickhouse-statelest-test-runner.Dockerfile" \
         --target clickhouse-test-runner-base \
@@ -49,7 +51,7 @@ fi
 if [ -z "${CLICKHOUSE_SERVER_IMAGE}" ]; then
     CLICKHOUSE_SERVER_IMAGE="yandex/clickhouse-server:local"
 
-    if [ ${CLICKHOUSE_PACKAGES_ARG} != ${NO_REBUILD_FLAG} ]; then
+    if [ "${CLICKHOUSE_PACKAGES_ARG}" != "${NO_REBUILD_FLAG}" ]; then
         docker build --network=host \
             -f "${CLICKHOUSE_DOCKER_DIR}/server/local.Dockerfile" \
             --target clickhouse-server-base \

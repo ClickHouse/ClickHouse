@@ -20,14 +20,14 @@
     </ul>
 
     <div class="tab-content" id="install-tab-content">
-        <div class="tab-pane show active" id="deb" role="tabpanel" aria-labelledby="deb-tab">
-            {% highlight "bash" %}{% include "install/deb.sh" %}{% endhighlight %}
+        <div class="tab-pane show active syntax p-3 my-3" id="deb" role="tabpanel" aria-labelledby="deb-tab">
+            <pre>{% include "install/deb.sh" %}</pre>
         </div>
-        <div class="tab-pane" id="rpm" role="tabpanel" aria-labelledby="rpm-tab">
-            {% highlight "bash" %}{% include "install/rpm.sh" %}{% endhighlight %}
+        <div class="tab-pane syntax p-3 my-3" id="rpm" role="tabpanel" aria-labelledby="rpm-tab">
+            <pre>{% include "install/rpm.sh" %}</pre>
         </div>
-        <div class="tab-pane" id="tgz" role="tabpanel" aria-labelledby="thz-tab">
-            {% highlight "bash" %}{% include "install/tgz.sh" %}{% endhighlight %}
+        <div class="tab-pane syntax p-3 my-3" id="tgz" role="tabpanel" aria-labelledby="tgz-tab">
+            <pre>{% include "install/tgz.sh" %}</pre>
         </div>
     </div>
 
@@ -36,7 +36,7 @@
            target="_blank">
             official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.tech/docs/en/getting-started/">option</a> though.
         Alternatively, you can easily get a running ClickHouse instance or cluster at
-        <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link1" rel="external nofollow noreferrer" target="_blank">
+        <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&amp;utm_medium=clickhouseofficialsite&amp;utm_campaign=link1" rel="external nofollow noreferrer" target="_blank">
             Yandex Managed Service for ClickHouse</a>.
     </p>
 

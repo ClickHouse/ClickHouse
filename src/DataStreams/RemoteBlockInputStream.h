@@ -6,7 +6,6 @@
 
 #include <DataStreams/IBlockInputStream.h>
 #include <Common/Throttler.h>
-#include <Interpreters/Context.h>
 #include <Client/ConnectionPool.h>
 #include <Client/MultiplexedConnections.h>
 #include <Interpreters/Cluster.h>
@@ -16,32 +15,31 @@
 namespace DB
 {
 
+class Context;
+
 /** This class allows one to launch queries on remote replicas of one shard and get results
   */
 class RemoteBlockInputStream : public IBlockInputStream
 {
 public:
     /// Takes already set connection.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             Connection & connection,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, ContextPtr context_,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             std::vector<IConnectionPool::Entry> && connections,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, ContextPtr context_,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             const ConnectionPoolWithFailoverPtr & pool,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, ContextPtr context_,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 

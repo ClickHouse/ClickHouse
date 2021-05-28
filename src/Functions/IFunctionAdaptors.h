@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Functions/IFunctionImpl.h>
 
 namespace DB
@@ -14,7 +15,7 @@ public:
 
     String getName() const final { return impl->getName(); }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) final;
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const final;
 
     void createLowCardinalityResultCache(size_t cache_size) override;
 
@@ -24,14 +25,14 @@ private:
     /// Cache is created by function createLowCardinalityResultCache()
     ExecutableFunctionLowCardinalityResultCachePtr low_cardinality_result_cache;
 
-    bool defaultImplementationForConstantArguments(
-            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
+    ColumnPtr defaultImplementationForConstantArguments(
+            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    bool defaultImplementationForNulls(
-            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
+    ColumnPtr defaultImplementationForNulls(
+            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    void executeWithoutLowCardinalityColumns(
-            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
+    ColumnPtr executeWithoutLowCardinalityColumns(
+            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 };
 
 class FunctionBaseAdaptor final : public IFunctionBase
@@ -42,18 +43,18 @@ public:
     String getName() const final { return impl->getName(); }
 
     const DataTypes & getArgumentTypes() const final { return impl->getArgumentTypes(); }
-    const DataTypePtr & getReturnType() const final { return impl->getReturnType(); }
+    const DataTypePtr & getResultType() const final { return impl->getResultType(); }
 
-    ExecutableFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const final
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const final
     {
-        return std::make_shared<ExecutableFunctionAdaptor>(impl->prepare(sample_block, arguments, result));
+        return std::make_shared<ExecutableFunctionAdaptor>(impl->prepare(arguments));
     }
 
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const final { return impl->isCompilable(); }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
     {
         return impl->compile(builder, std::move(values));
     }
@@ -63,12 +64,12 @@ public:
     bool isStateful() const final { return impl->isStateful(); }
     bool isSuitableForConstantFolding() const final { return impl->isSuitableForConstantFolding(); }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const final
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const final
     {
-        return impl->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments);
+        return impl->getResultIfAlwaysReturnsConstantAndHasArguments(arguments);
     }
 
-    bool isInjective(const Block & sample_block) const final { return impl->isInjective(sample_block); }
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const final { return impl->isInjective(sample_columns); }
     bool isDeterministic() const final { return impl->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
     bool hasInformationAboutMonotonicity() const final { return impl->hasInformationAboutMonotonicity(); }
@@ -96,7 +97,7 @@ public:
 
     bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
 
-    bool isInjective(const Block & block) const final { return impl->isInjective(block); }
+    bool isInjective(const ColumnsWithTypeAndName & columns) const final { return impl->isInjective(columns); }
 
     bool isStateful() const final { return impl->isStateful(); }
 
@@ -129,6 +130,8 @@ public:
         return impl->getArgumentsThatDontImplyNullableReturnType(number_of_arguments);
     }
 
+    using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
+    static DataTypePtr getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments, const DefaultReturnTypeGetter & getter);
 private:
     FunctionOverloadResolverImplPtr impl;
 
@@ -147,13 +150,13 @@ public:
     String getName() const override { return function->getName(); }
 
 protected:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
     {
-        return function->executeImpl(block, arguments, result, input_rows_count);
+        return function->executeImpl(arguments, result_type, input_rows_count);
     }
-    void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    ColumnPtr executeDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
     {
-        return function->executeImplDryRun(block, arguments, result, input_rows_count);
+        return function->executeImplDryRun(arguments, result_type, input_rows_count);
     }
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
@@ -168,36 +171,39 @@ private:
 class DefaultFunction final : public IFunctionBaseImpl
 {
 public:
-    DefaultFunction(std::shared_ptr<IFunction> function_, DataTypes arguments_, DataTypePtr return_type_)
-            : function(std::move(function_)), arguments(std::move(arguments_)), return_type(std::move(return_type_)) {}
+    DefaultFunction(std::shared_ptr<IFunction> function_, DataTypes arguments_, DataTypePtr result_type_)
+            : function(std::move(function_)), arguments(std::move(arguments_)), result_type(std::move(result_type_)) {}
 
     String getName() const override { return function->getName(); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
-    const DataTypePtr & getReturnType() const override { return return_type; }
+    const DataTypePtr & getResultType() const override { return result_type; }
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override { return function->isCompilable(arguments); }
+    bool isCompilable() const override { return function->isCompilable(getArgumentTypes()); }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return function->compile(builder, arguments, std::move(values)); }
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
+    {
+        return function->compile(builder, getArgumentTypes(), std::move(values));
+    }
 
 #endif
 
-    ExecutableFunctionImplPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return std::make_unique<DefaultExecutable>(function);
     }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments_) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments_) const override
     {
-        return function->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments_);
+        return function->getResultIfAlwaysReturnsConstantAndHasArguments(arguments_);
     }
 
     bool isStateful() const override { return function->isStateful(); }
 
-    bool isInjective(const Block & sample_block) const override { return function->isInjective(sample_block); }
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
     bool isDeterministic() const override { return function->isDeterministic(); }
 
@@ -213,7 +219,7 @@ public:
 private:
     std::shared_ptr<IFunction> function;
     DataTypes arguments;
-    DataTypePtr return_type;
+    DataTypePtr result_type;
 };
 
 class DefaultOverloadResolver : public IFunctionOverloadResolverImpl
@@ -223,7 +229,7 @@ public:
 
     bool isDeterministic() const override { return function->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
-    bool isInjective(const Block &block) const override { return function->isInjective(block); }
+    bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }
@@ -243,12 +249,12 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
             data_types[i] = arguments[i].type;
-        return std::make_unique<DefaultFunction>(function, data_types, return_type);
+        return std::make_unique<DefaultFunction>(function, data_types, result_type);
     }
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override { function->getLambdaArgumentTypes(arguments); }

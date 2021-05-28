@@ -10,3 +10,20 @@
 (1,1)
 (3,2)
 (5,2)
+-------finalizeAggregation should not be stateful (issue #14847)-------
+2	62
+3	87
+4	112
+5	137
+SELECT
+    n,
+    `finalizeAggregation(s)`
+FROM 
+(
+    SELECT
+        n,
+        finalizeAggregation(s)
+    FROM test_00808_push_down_with_finalizeAggregation
+    WHERE (n <= 5) AND (n >= 2)
+)
+WHERE (n >= 2) AND (n <= 5)

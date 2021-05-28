@@ -6,14 +6,14 @@
 namespace DB
 {
 
-AllMergeSelector::PartsInPartition AllMergeSelector::select(
-    const Partitions & partitions,
+AllMergeSelector::PartsRange AllMergeSelector::select(
+    const PartsRanges & parts_ranges,
     const size_t /*max_total_size_to_merge*/)
 {
     size_t min_partition_size = 0;
-    Partitions::const_iterator best_partition;
+    PartsRanges::const_iterator best_partition;
 
-    for (auto it = partitions.begin(); it != partitions.end(); ++it)
+    for (auto it = parts_ranges.begin(); it != parts_ranges.end(); ++it)
     {
         if (it->size() <= 1)
             continue;

@@ -40,7 +40,7 @@ MergingAggregatedStep::MergingAggregatedStep(
         output_stream->distinct_columns.insert(params->params.intermediate_header.getByPosition(key).name);
 }
 
-void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
+void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     if (!memory_efficient_aggregation)
     {
@@ -59,21 +59,18 @@ void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
                                  ? static_cast<size_t>(memory_efficient_merge_threads)
                                  : static_cast<size_t>(max_threads);
 
-        auto pipe = createMergingAggregatedMemoryEfficientPipe(
-                pipeline.getHeader(),
-                params,
-                pipeline.getNumStreams(),
-                num_merge_threads);
-
-        pipeline.addPipe(std::move(pipe));
+        pipeline.addMergingAggregatedMemoryEfficientTransform(params, num_merge_threads);
     }
-
-    pipeline.enableQuotaForCurrentStreams();
 }
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
     return params->params.explain(settings.out, settings.offset);
+}
+
+void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    params->params.explain(map);
 }
 
 }

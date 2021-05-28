@@ -18,4 +18,33 @@
             </s3>
         </policies>
     </storage_configuration>
+
+    <merge_tree>
+        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+        <allow_s3_zero_copy_replication>0</allow_s3_zero_copy_replication>
+    </merge_tree>
+
+    <remote_servers>
+        <cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+
+    <macros>
+        <shard>0</shard>
+    </macros>
+
 </yandex>

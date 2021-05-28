@@ -48,11 +48,21 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
     switch (quota->key_type)
     {
         case KeyType::NONE:
+        {
             return "";
+        }
         case KeyType::USER_NAME:
+        {
             return params.user_name;
+        }
         case KeyType::IP_ADDRESS:
+        {
             return params.client_address.toString();
+        }
+        case KeyType::FORWARDED_IP_ADDRESS:
+        {
+            return params.forwarded_address;
+        }
         case KeyType::CLIENT_KEY:
         {
             if (!params.client_key.empty())
@@ -170,7 +180,7 @@ QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
 QuotaCache::~QuotaCache() = default;
 
 
-std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & client_key)
+std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & forwarded_address, const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
@@ -180,6 +190,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & use
     params.user_name = user_name;
     params.enabled_roles = enabled_roles;
     params.client_address = client_address;
+    params.forwarded_address = forwarded_address;
     params.client_key = client_key;
     auto it = enabled_quotas.find(params);
     if (it != enabled_quotas.end())

@@ -9,6 +9,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** buildId() - returns the compiler build id of the running binary.
   */
@@ -16,7 +18,7 @@ class FunctionBuildId : public IFunction
 {
 public:
     static constexpr auto name = "buildId";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBuildId>();
     }
@@ -36,12 +38,13 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance().getBuildIDHex());
+        return DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance()->getBuildIDHex());
     }
 };
 
+}
 
 void registerFunctionBuildId(FunctionFactory & factory)
 {

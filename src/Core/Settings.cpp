@@ -13,11 +13,10 @@ namespace ErrorCodes
 {
     extern const int THERE_IS_NO_PROFILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-
 IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
-
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
     * The profile can also be set using the `set` functions, like the `profile` setting.
@@ -65,7 +64,7 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
 
     size_t count = 0;
 
-    for (auto setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
+    for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
     {
         if (column_names)
         {
@@ -95,7 +94,7 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
 
 void Settings::addProgramOptions(boost::program_options::options_description & options)
 {
-    for (auto field : all())
+    for (const auto & field : all())
     {
         const std::string_view name = field.getName();
         auto on_program_option
@@ -106,4 +105,29 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
             field.getDescription())));
     }
 }
+
+void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
+{
+    if (config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    Settings settings;
+    for (auto setting : settings.all())
+    {
+        const auto & name = setting.getName();
+        if (config.has(name))
+        {
+            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
+                " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
+                " You can add it to <profiles><default> if you want to change default value of this setting."
+                " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
+                " in the main configuration file.",
+                name, config_path),
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        }
+    }
+}
+
+IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)
+
 }

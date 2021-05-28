@@ -1,29 +1,30 @@
 #pragma once
 
+#include <Core/UUID.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
-#include <Core/UUID.h>
 
 
 namespace DB
 {
+
 class ASTGrantQuery;
 struct User;
 struct Role;
 
-
-class InterpreterGrantQuery : public IInterpreter
+class InterpreterGrantQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterGrantQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
+    InterpreterGrantQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
     static void updateUserFromQuery(User & user, const ASTGrantQuery & query);
     static void updateRoleFromQuery(Role & role, const ASTGrantQuery & query);
+    void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, ContextPtr) const override;
 
 private:
     ASTPtr query_ptr;
-    Context & context;
 };
+
 }

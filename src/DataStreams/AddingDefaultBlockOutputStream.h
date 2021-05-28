@@ -2,11 +2,14 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Columns/ColumnConst.h>
-#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
 {
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Context;
 
@@ -14,6 +17,7 @@ class Context;
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)
   * 2. Columns, that are missed inside request, but present in table with defaults (columns with default values)
   * 3. Columns that materialized from other columns (materialized columns)
+  * Also the stream can substitute NULL into DEFAULT value in case of INSERT SELECT query (null_as_default) if according setting is 1.
   * All three types of columns are materialized (not constants).
   */
 class AddingDefaultBlockOutputStream : public IBlockOutputStream
@@ -22,13 +26,9 @@ public:
     AddingDefaultBlockOutputStream(
         const BlockOutputStreamPtr & output_,
         const Block & header_,
-        const Block & output_block_,
-        const ColumnDefaults & column_defaults_,
-        const Context & context_)
-        : output(output_), header(header_), output_block(output_block_),
-          column_defaults(column_defaults_), context(context_)
-    {
-    }
+        const ColumnsDescription & columns_,
+        ContextPtr context_,
+        bool null_as_default_ = false);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -41,10 +41,7 @@ public:
 private:
     BlockOutputStreamPtr output;
     const Block header;
-    /// Blocks after this stream should have this structure
-    const Block output_block;
-    const ColumnDefaults column_defaults;
-    const Context & context;
+    ExpressionActionsPtr adding_defaults_actions;
 };
 
 

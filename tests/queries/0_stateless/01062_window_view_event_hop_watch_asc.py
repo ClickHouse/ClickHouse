@@ -36,7 +36,6 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(prompt)
     
     client1.send('WATCH test.wv')
-    client1.expect(r'Progress')
     client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:00');")
     client2.expect(prompt)
     client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:05');")

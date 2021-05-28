@@ -13,7 +13,7 @@ struct FixedClearableHashTableCell
     using mapped_type = VoidMapped;
     UInt32 version;
 
-    FixedClearableHashTableCell() {}
+    FixedClearableHashTableCell() {} //-V730
     FixedClearableHashTableCell(const Key &, const State & state) : version(state.version) {}
 
     const VoidKey getKey() const { return {}; }
@@ -34,10 +34,11 @@ struct FixedClearableHashTableCell
 
 
 template <typename Key, typename Allocator = HashTableAllocator>
-class FixedClearableHashSet : public FixedHashTable<Key, FixedClearableHashTableCell<Key>, Allocator>
+class FixedClearableHashSet : public FixedHashTable<
+    Key, FixedClearableHashTableCell<Key>, FixedHashTableStoredSize<FixedClearableHashTableCell<Key>>, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, FixedClearableHashTableCell<Key>, Allocator>;
+    using Base = FixedHashTable<Key, FixedClearableHashTableCell<Key>, FixedHashTableStoredSize<FixedClearableHashTableCell<Key>>, Allocator>;
     using LookupResult = typename Base::LookupResult;
 
     void clear()

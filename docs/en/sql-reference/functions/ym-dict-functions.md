@@ -15,12 +15,12 @@ ClickHouse supports working with multiple alternative geobases (regional hierarc
 
 The ‘clickhouse-server’ config specifies the file with the regional hierarchy::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
 
-Besides this file, it also searches for files nearby that have the \_ symbol and any suffix appended to the name (before the file extension).
+Besides this file, it also searches for files nearby that have the _ symbol and any suffix appended to the name (before the file extension).
 For example, it will also find the file `/opt/geo/regions_hierarchy_ua.txt`, if present.
 
 `ua` is called the dictionary key. For a dictionary without a suffix, the key is an empty string.
 
-All the dictionaries are re-loaded in runtime (once every certain number of seconds, as defined in the builtin\_dictionaries\_reload\_interval config parameter, or once an hour by default). However, the list of available dictionaries is defined one time, when the server starts.
+All the dictionaries are re-loaded in runtime (once every certain number of seconds, as defined in the builtin_dictionaries_reload_interval config parameter, or once an hour by default). However, the list of available dictionaries is defined one time, when the server starts.
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Example:
@@ -105,17 +105,17 @@ Example: `regionToCountry(toUInt32(213)) = 225` converts Moscow (213) to Russia 
 Converts a region to a continent. In every other way, this function is the same as ‘regionToCity’.
 Example: `regionToContinent(toUInt32(213)) = 10001` converts Moscow (213) to Eurasia (10001).
 
-### regionToTopContinent (\#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
+### regionToTopContinent (#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
 
 Finds the highest continent in the hierarchy for the region.
 
 **Syntax**
 
 ``` sql
-regionToTopContinent(id[, geobase]);
+regionToTopContinent(id[, geobase])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `id` — Region ID from the Yandex geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
 -   `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
@@ -150,4 +150,3 @@ Accepts a UInt32 number – the region ID from the Yandex geobase. A string with
 
 `ua` and `uk` both mean Ukrainian.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->

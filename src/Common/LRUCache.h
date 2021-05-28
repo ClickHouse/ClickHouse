@@ -67,7 +67,7 @@ public:
     /// produce it, saves the result in the cache and returns it.
     /// Only one of several concurrent threads calling getOrSet() will call load_func(),
     /// others will wait for that call to complete and will use its result (this helps prevent cache stampede).
-    /// Exceptions occuring in load_func will be propagated to the caller. Another thread from the
+    /// Exceptions occurring in load_func will be propagated to the caller. Another thread from the
     /// set of concurrent threads will then try to call its load_func etc.
     ///
     /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
@@ -143,6 +143,11 @@ public:
     {
         std::lock_guard lock(mutex);
         return cells.size();
+    }
+
+    size_t maxSize() const
+    {
+        return max_size;
     }
 
     void reset()
@@ -271,16 +276,23 @@ private:
 
     void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
-        auto res = cells.emplace(std::piecewise_construct,
+        auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
             std::forward_as_tuple());
 
-        Cell & cell = res.first->second;
-        bool inserted = res.second;
+        Cell & cell = it->second;
 
         if (inserted)
         {
-            cell.queue_iterator = queue.insert(queue.end(), key);
+            try
+            {
+                cell.queue_iterator = queue.insert(queue.end(), key);
+            }
+            catch (...)
+            {
+                cells.erase(it);
+                throw;
+            }
         }
         else
         {

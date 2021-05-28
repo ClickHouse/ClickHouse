@@ -22,6 +22,7 @@ struct AsynchronousMetricLogElement
 {
     UInt16 event_date;
     time_t event_time;
+    Decimal64 event_time_microseconds;
     std::string metric_name;
     double value;
 

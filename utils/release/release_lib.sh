@@ -48,11 +48,12 @@ function gen_revision_author {
                 VERSION_REVISION=$(($VERSION_REVISION + 1))
                 VERSION_MAJOR=$(($VERSION_MAJOR + 1))
                 VERSION_MINOR=1
-                VERSION_PATCH=0
+                # Version cannot be zero, otherwise is breaks CMake
+                VERSION_PATCH=1
             elif [ "$TYPE" == "minor" ] || [ "$TYPE" == "" ]; then
                 VERSION_REVISION=$(($VERSION_REVISION + 1))
                 VERSION_MINOR=$(($VERSION_MINOR + 1))
-                VERSION_PATCH=0
+                VERSION_PATCH=1
             elif [ "$TYPE" == "patch" ] || [ "$TYPE" == "bugfix" ]; then
                 # VERSION_REVISION not incremented in new scheme.
                 if [ "$VERSION_MAJOR" -eq "1" ] && [ "$VERSION_MINOR" -eq "1" ]; then
@@ -90,9 +91,12 @@ function gen_revision_author {
 
             git_describe=`git describe`
             git_hash=`git rev-parse HEAD`
+            VERSION_DATE=`git show -s --format=%cs $git_hash`
+
             sed -i -e "s/SET(VERSION_REVISION [^) ]*/SET(VERSION_REVISION $VERSION_REVISION/g;" \
                 -e "s/SET(VERSION_DESCRIBE [^) ]*/SET(VERSION_DESCRIBE $git_describe/g;" \
                 -e "s/SET(VERSION_GITHASH [^) ]*/SET(VERSION_GITHASH $git_hash/g;" \
+                -e "s/SET(VERSION_DATE [^) ]*/SET(VERSION_DATE $VERSION_DATE/g;" \
                 -e "s/SET(VERSION_MAJOR [^) ]*/SET(VERSION_MAJOR $VERSION_MAJOR/g;" \
                 -e "s/SET(VERSION_MINOR [^) ]*/SET(VERSION_MINOR $VERSION_MINOR/g;" \
                 -e "s/SET(VERSION_PATCH [^) ]*/SET(VERSION_PATCH $VERSION_PATCH/g;" \
@@ -124,15 +128,6 @@ function gen_revision_author {
                         exit 1
                     fi
                 fi
-            fi
-
-
-            # Reset testing branch to current commit.
-            git checkout testing
-            git reset --hard "$tag"
-
-            if [ -z $NO_PUSH ]; then
-                git push
             fi
 
         else
@@ -253,8 +248,8 @@ function make_rpm {
     TARGET=noarch
     deb_unpack
     mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
-    echo "Requires: python2" >> ${PACKAGE}-$VERSION_FULL-2.spec
-    #echo "Requires: python2-termcolor" >> ${PACKAGE}-$VERSION-2.spec
+    echo "Requires: python3" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    #echo "Requires: python3-termcolor" >> ${PACKAGE}-$VERSION-2.spec
     cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
     rpm_pack
 

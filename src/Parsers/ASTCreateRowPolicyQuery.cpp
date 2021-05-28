@@ -5,7 +5,7 @@
 #include <Common/quoteString.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/transform.hpp>
-#include <sstream>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -62,13 +62,13 @@ namespace
     void formatForClauses(const std::vector<std::pair<ConditionType, ASTPtr>> & conditions, bool alter, const IAST::FormatSettings & settings)
     {
         std::vector<std::pair<ConditionType, String>> conditions_as_strings;
-        std::stringstream temp_sstream;
-        IAST::FormatSettings temp_settings(temp_sstream, settings);
+        WriteBufferFromOwnString temp_buf;
+        IAST::FormatSettings temp_settings(temp_buf, settings);
         for (const auto & [condition_type, condition] : conditions)
         {
             formatConditionalExpression(condition, temp_settings);
-            conditions_as_strings.emplace_back(condition_type, temp_sstream.str());
-            temp_sstream.str("");
+            conditions_as_strings.emplace_back(condition_type, temp_buf.str());
+            temp_buf.restart();
         }
 
         boost::container::flat_set<std::string_view> commands;
@@ -169,15 +169,15 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 }
 
 
-void ASTCreateRowPolicyQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
+void ASTCreateRowPolicyQuery::replaceCurrentUserTag(const String & current_user_name) const
 {
     if (roles)
-        roles->replaceCurrentUserTagWithName(current_user_name);
+        roles->replaceCurrentUserTag(current_user_name);
 }
 
-void ASTCreateRowPolicyQuery::replaceEmptyDatabaseWithCurrent(const String & current_database) const
+void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const String & current_database) const
 {
     if (names)
-        names->replaceEmptyDatabaseWithCurrent(current_database);
+        names->replaceEmptyDatabase(current_database);
 }
 }

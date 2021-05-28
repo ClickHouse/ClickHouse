@@ -61,6 +61,54 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 └──────────────────────────────────────┘
 ```
 
+## toUUIDOrNull (x) {#touuidornull-x}
+
+It takes an argument of type String and tries to parse it into UUID. If failed, returns NULL.
+
+``` sql
+toUUIDOrNull(String)
+```
+
+**Returned value**
+
+The Nullable(UUID) type value.
+
+**Usage example**
+
+``` sql
+SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
+```
+
+``` text
+┌─uuid─┐
+│ ᴺᵁᴸᴸ │
+└──────┘
+```
+
+## toUUIDOrZero (x) {#touuidorzero-x}
+
+It takes an argument of type String and tries to parse it into UUID. If failed, returns zero UUID.
+
+``` sql
+toUUIDOrZero(String)
+```
+
+**Returned value**
+
+The UUID type value.
+
+**Usage example**
+
+``` sql
+SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
+```
+
+``` text
+┌─────────────────────────────────uuid─┐
+│ 00000000-0000-0000-0000-000000000000 │
+└──────────────────────────────────────┘
+```
+
 ## UUIDStringToNum {#uuidstringtonum}
 
 Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns it as a set of bytes in a [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
@@ -117,4 +165,3 @@ SELECT
 
 -   [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->

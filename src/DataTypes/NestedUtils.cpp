@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeNested.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -70,22 +71,11 @@ std::pair<std::string, std::string> splitName(const std::string & name)
     return {{ begin, first_end }, { second_begin, end }};
 }
 
-std::string createCommaSeparatedStringFrom(const Names & names)
-{
-    std::ostringstream ss;
-    if (!names.empty())
-    {
-        std::copy(names.begin(), std::prev(names.end()), std::ostream_iterator<std::string>(ss, ", "));
-        ss << names.back();
-    }
-    return ss.str();
-}
-
 
 std::string extractTableName(const std::string & nested_name)
 {
-    auto splitted = splitName(nested_name);
-    return splitted.first;
+    auto split = splitName(nested_name);
+    return split.first;
 }
 
 
@@ -95,7 +85,8 @@ Block flatten(const Block & block)
 
     for (const auto & elem : block)
     {
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get()))
+        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get());
+        if (type_arr)
         {
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
             if (type_tuple && type_tuple->haveExplicitNames())
@@ -139,32 +130,67 @@ Block flatten(const Block & block)
     return res;
 }
 
+namespace
+{
+
+using NameToDataType = std::map<String, DataTypePtr>;
+
+NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
+{
+    std::unordered_map<String, NamesAndTypesList> nested;
+    for (const auto & name_type : names_and_types)
+    {
+        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
+
+        /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
+        if (!isNested(name_type.type) && type_arr)
+        {
+            auto split = splitName(name_type.name);
+            if (!split.second.empty())
+                nested[split.first].emplace_back(split.second, type_arr->getNestedType());
+        }
+    }
+
+    std::map<String, DataTypePtr> nested_types;
+
+    for (const auto & [name, elems] : nested)
+        nested_types.emplace(name, createNested(elems.getTypes(), elems.getNames()));
+
+    return nested_types;
+}
+
+}
 
 NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
 {
     NamesAndTypesList res;
+    auto nested_types = getSubcolumnsOfNested(names_and_types);
 
-    std::map<std::string, NamesAndTypesList> nested;
     for (const auto & name_type : names_and_types)
-    {
-        bool collected = false;
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
-        {
-            auto splitted = splitName(name_type.name);
-            if (!splitted.second.empty())
-            {
-                nested[splitted.first].emplace_back(splitted.second, type_arr->getNestedType());
-                collected = true;
-            }
-        }
-
-        if (!collected)
+        if (!nested_types.count(splitName(name_type.name).first))
             res.push_back(name_type);
-    }
 
-    for (const auto & name_elems : nested)
-        res.emplace_back(name_elems.first, std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeTuple>(name_elems.second.getTypes(), name_elems.second.getNames())));
+    for (const auto & name_type : nested_types)
+        res.emplace_back(name_type.first, name_type.second);
+
+    return res;
+}
+
+NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
+{
+    auto nested_types = getSubcolumnsOfNested(names_and_types);
+    auto res = names_and_types;
+
+    for (auto & name_type : res)
+    {
+        auto split = splitName(name_type.name);
+        if (name_type.isSubcolumn() || split.second.empty())
+            continue;
+
+        auto it = nested_types.find(split.first);
+        if (it != nested_types.end())
+            name_type = NameAndTypePair{split.first, split.second, it->second, it->second->getSubcolumnType(split.second)};
+    }
 
     return res;
 }
@@ -184,12 +210,12 @@ void validateArraySizes(const Block & block)
             if (!typeid_cast<const ColumnArray *>(elem.column.get()))
                 throw Exception("Column with Array type is not represented by ColumnArray column: " + elem.column->dumpStructure(), ErrorCodes::ILLEGAL_COLUMN);
 
-            auto splitted = splitName(elem.name);
+            auto split = splitName(elem.name);
 
             /// Is it really a column of Nested data structure.
-            if (!splitted.second.empty())
+            if (!split.second.empty())
             {
-                auto [it, inserted] = nested.emplace(splitted.first, i);
+                auto [it, inserted] = nested.emplace(split.first, i);
 
                 /// It's not the first column of Nested data structure.
                 if (!inserted)
@@ -200,7 +226,7 @@ void validateArraySizes(const Block & block)
                     if (!first_array_column.hasEqualOffsets(another_array_column))
                         throw Exception("Elements '" + block.getByPosition(it->second).name
                             + "' and '" + elem.name
-                            + "' of Nested data structure '" + splitted.first
+                            + "' of Nested data structure '" + split.first
                             + "' (Array columns) have different array sizes.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }
             }

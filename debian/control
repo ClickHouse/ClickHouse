@@ -5,13 +5,12 @@ Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake | cmake3,
                ninja-build,
-               gcc-9 [amd64 i386] | gcc-8 [amd64 i386], g++-9 [amd64 i386] | g++-8 [amd64 i386],
-               clang-8 [arm64 armhf] | clang-7 [arm64 armhf] | clang-6.0 [arm64 armhf],
+               clang-11,
+               llvm-11,
                libc6-dev,
                libicu-dev,
                libreadline-dev,
                gperf,
-               python,
                tzdata
 Standards-Version: 3.9.8
 
@@ -63,5 +62,5 @@ Description: debugging symbols for clickhouse-common-static
 Package: clickhouse-test
 Priority: optional
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, python-requests, curl, perl, sudo, openssl, netcat-openbsd, telnet, brotli, bsdutils
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python3, python3-lxml, python3-termcolor, python3-requests, curl, perl, sudo, openssl, netcat-openbsd, telnet, brotli, bsdutils
 Description: ClickHouse tests

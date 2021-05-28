@@ -16,18 +16,22 @@ RUN apt-get update \
     iproute2 \
     module-init-tools \
     cgroupfs-mount \
-    python-pip \
+    python3-pip \
     tzdata \
     libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
-    python-pika \
+    python3-pika \
     liblua5.1-dev \
     luajit \
     libssl-dev \
     libcurl4-openssl-dev \
     gdb \
+    software-properties-common \
+    libkrb5-dev \
+    krb5-user \
+    g++ \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -37,29 +41,46 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry grpcio grpcio-tools cassandra-driver
-
 ENV DOCKER_CHANNEL stable
-ENV DOCKER_VERSION 17.09.1-ce
+ENV DOCKER_VERSION 5:19.03.13~3-0~ubuntu-bionic
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
 
-RUN set -eux; \
-  \
-# this "case" statement is generated via "update.sh"
-  \
-  if ! wget -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
-    echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${x86_64}'"; \
-    exit 1; \
-  fi; \
-  \
-  tar --extract \
-    --file docker.tgz \
-    --strip-components 1 \
-    --directory /usr/local/bin/ \
-  ; \
-  rm docker.tgz; \
-  \
-  dockerd --version; \
-  docker --version
+RUN apt-get update \
+    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+        docker-ce \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/* \
+    && apt-get clean
+
+RUN dockerd --version; docker --version
+
+RUN python3 -m pip install \
+    PyMySQL \
+    aerospike==4.0.0 \
+    avro \
+    cassandra-driver \
+    confluent-kafka==1.5.0 \
+    dict2xml \
+    dicttoxml \
+    docker \
+    docker-compose==1.22.0 \
+    grpcio \
+    grpcio-tools \
+    kafka-python \
+    kazoo \
+    minio \
+    protobuf \
+    psycopg2-binary==2.7.5 \
+    pymongo \
+    pytest \
+    pytest-timeout \
+    redis \
+    tzlocal \
+    urllib3 \
+    requests-kerberos
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

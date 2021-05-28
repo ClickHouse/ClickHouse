@@ -163,6 +163,11 @@ public:
         return res;
     }
 
+    const char * skipSerializedInArena(const char * pos) const override
+    {
+        return data->skipSerializedInArena(pos);
+    }
+
     void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
@@ -187,6 +192,11 @@ public:
         return data->byteSize() + sizeof(s);
     }
 
+    size_t byteSizeAt(size_t) const override
+    {
+        return data->byteSizeAt(0);
+    }
+
     size_t allocatedBytes() const override
     {
         return data->allocatedBytes() + sizeof(s);
@@ -199,11 +209,9 @@ public:
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override
-    {
-        return data->compareColumn(rhs, rhs_row_num, row_indexes,
-                                   compare_results, direction, nan_direction_hint);
-    }
+                       int direction, int nan_direction_hint) const override;
+
+    bool hasEqualValues() const override { return true; }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
@@ -247,7 +255,9 @@ public:
 
     /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
-    T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
+    T getValue() const { return getField().safeGet<T>(); }
+
+    bool isCollationSupported() const override { return data->isCollationSupported(); }
 };
 
 }

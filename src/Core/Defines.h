@@ -11,6 +11,9 @@
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_SECURE_MS 100
 #define DBMS_DEFAULT_SEND_TIMEOUT_SEC 300
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC 300
+/// Timeouts for hedged requests.
+#define DBMS_DEFAULT_HEDGED_CONNECTION_TIMEOUT_MS 100
+#define DBMS_DEFAULT_RECEIVE_DATA_TIMEOUT_MS 2000
 /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus).
 #define DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC 5
 #define DBMS_DEFAULT_POLL_INTERVAL 10
@@ -36,6 +39,7 @@
 #define DEFAULT_MERGE_BLOCK_SIZE 8192
 
 #define DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC 5
+#define DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC 60
 #define DEFAULT_WINDOW_VIEW_CLEAN_INTERVAL_SEC 5
 #define DEFAULT_WINDOW_VIEW_HEARTBEAT_INTERVAL_SEC 15
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
@@ -66,12 +70,25 @@
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 #define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
 
-/// Mininum revision supporting SettingsBinaryFormat::STRINGS.
+/// Minimum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
-/// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
-#define DBMS_TCP_PROTOCOL_VERSION 54226
+/// Minimum revision supporting OpenTelemetry
+#define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
 
+
+#define DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION 1
+
+/// Minimum revision supporting interserver secret.
+#define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
+
+#define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
+#define DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO 54447
+
+/// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
+#define DBMS_TCP_PROTOCOL_VERSION 54448
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH 54448
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 

@@ -13,7 +13,7 @@ using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
 {
-    std::stringstream ss(xml_data);
+    std::stringstream ss(xml_data);         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
@@ -168,6 +168,26 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
     throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 }
 
+/// Wraps only identifiers with backticks.
+std::string wrapIdentifiersWithBackticks(const ASTPtr & root)
+{
+    if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(root))
+        return backQuote(identifier->name());
+
+    if (auto function = std::dynamic_pointer_cast<ASTFunction>(root))
+        return function->name + '(' + wrapIdentifiersWithBackticks(function->arguments) + ')';
+
+    if (auto expression_list = std::dynamic_pointer_cast<ASTExpressionList>(root))
+    {
+        Names function_arguments(expression_list->children.size());
+        for (size_t i = 0; i < expression_list->children.size(); ++i)
+            function_arguments[i] = wrapIdentifiersWithBackticks(expression_list->children[0]);
+        return boost::algorithm::join(function_arguments, ", ");
+    }
+
+    throw Exception("Primary key could be represented only as columns or functions from columns.", ErrorCodes::BAD_ARGUMENTS);
+}
+
 
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
 {
@@ -189,57 +209,47 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
                         ErrorCodes::BAD_ARGUMENTS);
 
     Names primary_key_columns;
-    Names sorting_key_columns;
     NameSet primary_key_columns_set;
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
+        /// Column name could be represented as a f_1(f_2(...f_n(column_name))).
+        /// Each f_i could take one or more parameters.
+        /// We will wrap identifiers with backticks to allow non-standart identifier names.
         String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
-        sorting_key_columns.push_back(sorting_key_column);
 
         if (i < primary_key_size)
         {
             String pk_column = primary_key_expr_list->children[i]->getColumnName();
             if (pk_column != sorting_key_column)
-                throw Exception("Primary key must be a prefix of the sorting key, but in position "
-                                + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
+                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
+                                + toString(i) + " is " + sorting_key_column +", not " + pk_column,
                                 ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
-            primary_key_columns.push_back(pk_column);
+            primary_key_columns.push_back(wrapIdentifiersWithBackticks(primary_key_expr_list->children[i]));
         }
     }
 
     return primary_key_columns;
 }
 
-String extractReplicatedTableZookeeperPath(const ASTPtr & storage_ast)
+bool isReplicatedTableEngine(const ASTPtr & storage_ast)
 {
-    String storage_str = queryToString(storage_ast);
-
     const auto & storage = storage_ast->as<ASTStorage &>();
     const auto & engine = storage.engine->as<ASTFunction &>();
 
     if (!endsWith(engine.name, "MergeTree"))
     {
+        String storage_str = queryToString(storage_ast);
         throw Exception(
                 "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
-    if (!startsWith(engine.name, "Replicated"))
-    {
-        return "";
-    }
-
-    auto replicated_table_arguments = engine.arguments->children;
-
-    auto zk_table_path_ast = replicated_table_arguments[0]->as<ASTLiteral &>();
-    auto zk_table_path_string = zk_table_path_ast.value.safeGet<String>();
-
-    return zk_table_path_string;
+    return startsWith(engine.name, "Replicated");
 }
 
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random)

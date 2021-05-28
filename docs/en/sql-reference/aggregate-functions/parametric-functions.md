@@ -17,10 +17,13 @@ histogram(number_of_bins)(values)
 
 The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function. In common case, the widths of bins are not equal.
 
+**Arguments**
+
+`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
+
 **Parameters**
 
 `number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
-`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
 
 **Returned values**
 
@@ -89,13 +92,15 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 !!! warning "Warning"
     Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 
-**Parameters**
-
--   `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+**Arguments**
 
 -   `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql-reference/data-types/int-uint.md) data types.
 
 -   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
+
+**Parameters**
+
+-   `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
 
 **Returned values**
 
@@ -176,13 +181,15 @@ Counts the number of event chains that matched the pattern. The function searche
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 ```
 
-**Parameters**
-
--   `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+**Arguments**
 
 -   `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql-reference/data-types/int-uint.md) data types.
 
 -   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
+
+**Parameters**
+
+-   `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
 
 **Returned values**
 
@@ -236,16 +243,21 @@ The function works according to the algorithm:
 **Syntax**
 
 ``` sql
-windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
+windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 ```
+
+**Arguments**
+
+-   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it’s value can’t exceed the Int64 maximum, which is 2^63 - 1).
+-   `cond` — Conditions or data describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
 
--   `window` — Length of the sliding window in seconds.
--   `mode` - It is an optional argument.
-    -   `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
--   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it’s value can’t exceed the Int64 maximum, which is 2^63 - 1).
--   `cond` — Conditions or data describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `window` — Length of the sliding window, it is the time interval between first condition and last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
+-   `mode` — It is an optional argument. One or more modes can be set.
+    -   `'strict'` — If same condition holds for sequence of events then such non-unique events would be skipped. 
+    -   `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
+    -   `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
 
 **Returned value**
 
@@ -324,16 +336,16 @@ The conditions, except the first, apply in pairs: the result of the second will 
 retention(cond1, cond2, ..., cond32);
 ```
 
-**Parameters**
+**Arguments**
 
--   `cond` — an expression that returns a `UInt8` result (1 or 0).
+-   `cond` — An expression that returns a `UInt8` result (1 or 0).
 
 **Returned value**
 
 The array of 1 or 0.
 
--   1 — condition was met for the event.
--   0 — condition wasn’t met for the event.
+-   1 — Condition was met for the event.
+-   0 — Condition wasn’t met for the event.
 
 Type: `UInt8`.
 
@@ -490,8 +502,7 @@ Problem: Generate a report that shows only keywords that produced at least 5 uni
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered(keys\_to\_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered(keys_to_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
 Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.

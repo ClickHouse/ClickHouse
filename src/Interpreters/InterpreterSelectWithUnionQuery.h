@@ -1,60 +1,54 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/IInterpreter.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Parsers/IAST_fwd.h>
+#include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
 namespace DB
 {
 
-class Context;
 class InterpreterSelectQuery;
 class QueryPlan;
 
-/** Interprets one or multiple SELECT queries inside UNION ALL chain.
+/** Interprets one or multiple SELECT queries inside UNION/UNION ALL/UNION DISTINCT chain.
   */
-class InterpreterSelectWithUnionQuery : public IInterpreter
+class InterpreterSelectWithUnionQuery : public IInterpreterUnionOrSelectQuery
 {
 public:
+    using IInterpreterUnionOrSelectQuery::getSampleBlock;
+
     InterpreterSelectWithUnionQuery(
         const ASTPtr & query_ptr_,
-        const Context & context_,
+        ContextPtr context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {});
 
     ~InterpreterSelectWithUnionQuery() override;
 
     /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan);
+    virtual void buildQueryPlan(QueryPlan & query_plan) override;
 
     BlockIO execute() override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
-    Block getSampleBlock();
-
     static Block getSampleBlock(
         const ASTPtr & query_ptr_,
-        const Context & context_);
+        ContextPtr context_,
+        bool is_subquery = false);
 
-    void ignoreWithTotals();
-
-    ASTPtr getQuery() const { return query_ptr; }
+    virtual void ignoreWithTotals() override;
 
 private:
-    SelectQueryOptions options;
-    ASTPtr query_ptr;
-    std::shared_ptr<Context> context;
-
-    std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
-
-    Block result_header;
-
-    size_t max_streams = 1;
+    std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 
     static Block getCommonHeaderForUnion(const Blocks & headers);
+
+    Block getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names);
+
+    std::unique_ptr<IInterpreterUnionOrSelectQuery>
+    buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names);
+
 };
 
 }

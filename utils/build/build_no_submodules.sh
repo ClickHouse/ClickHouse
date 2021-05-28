@@ -11,7 +11,7 @@ ROOT_DIR=${CUR_DIR}/../../build_no_submodules
 mkdir -p $ROOT_DIR
 cd $ROOT_DIR
 URL=`git remote get-url origin | sed 's/.git$//'`
-wget -O ch.zip $URL/archive/${BRANCH}.zip
+wget -nv -O ch.zip $URL/archive/${BRANCH}.zip
 unzip -ou ch.zip
 
 # TODO: make disableable lz4 zstd

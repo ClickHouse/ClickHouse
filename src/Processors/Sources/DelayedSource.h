@@ -19,19 +19,25 @@ class DelayedSource : public IProcessor
 public:
     using Creator = std::function<Pipe()>;
 
-    DelayedSource(const Block & header, Creator processors_creator);
+    DelayedSource(const Block & header, Creator processors_creator, bool add_totals_port, bool add_extremes_port);
     String getName() const override { return "Delayed"; }
 
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
 
-    enum PortKind { Main = 0, Totals = 1, Extremes = 2 };
-    OutputPort & getPort(PortKind kind) { return *std::next(outputs.begin(), kind); }
+    OutputPort & getPort() { return *main; }
+    OutputPort * getTotalsPort() { return totals; }
+    OutputPort * getExtremesPort() { return extremes; }
 
 private:
     Creator creator;
     Processors processors;
+
+    /// Outputs for DelayedSource.
+    OutputPort * main = nullptr;
+    OutputPort * totals = nullptr;
+    OutputPort * extremes = nullptr;
 
     /// Outputs from returned pipe.
     OutputPort * main_output = nullptr;
@@ -40,6 +46,6 @@ private:
 };
 
 /// Creates pipe from DelayedSource.
-Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_creator);
+Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port);
 
 }

@@ -1,4 +1,4 @@
-# Cловари полигонов {#slovari-polygonov}
+# Cловари полигонов {#polygon-dictionaries}
 
 Словари полигонов позволяют эффективно искать полигон, в который попадают данные точки, среди множества полигонов.
 Для примера: определение района города по географическим координатам.
@@ -34,7 +34,7 @@
 </dictionary>
 ```
 
-Соответствущий [DDL-запрос](../../../sql-reference/statements/create.md#create-dictionary-query):
+Соответствущий [DDL-запрос](../../../sql-reference/statements/create/dictionary.md#create-dictionary-query):
 ``` sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),

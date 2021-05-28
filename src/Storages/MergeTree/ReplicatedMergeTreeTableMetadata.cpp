@@ -18,15 +18,18 @@ static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    std::stringstream ss;
-    formatAST(*ast, ss, false, true);
-    return ss.str();
+    WriteBufferFromOwnString buf;
+    formatAST(*ast, buf, false, true);
+    return buf.str();
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
+    {
+        auto minmax_idx_column_names = data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+        date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
+    }
 
     const auto data_settings = data.getSettings();
     sampling_expression = formattedAST(metadata_snapshot->getSamplingKeyAST());
@@ -53,6 +56,9 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     ttl_table = formattedAST(metadata_snapshot->getTableTTLs().definition_ast);
 
     skip_indices = metadata_snapshot->getSecondaryIndices().toString();
+
+    projections = metadata_snapshot->getProjections().toString();
+
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = data_settings->index_granularity_bytes;
     else
@@ -85,6 +91,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!skip_indices.empty())
         out << "indices: " << skip_indices << "\n";
+
+    if (!projections.empty())
+        out << "projections: " << projections << "\n";
 
     if (index_granularity_bytes != 0)
         out << "granularity bytes: " << index_granularity_bytes << "\n";
@@ -127,6 +136,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
 
+    if (checkString("projections: ", in))
+        in >> projections >> "\n";
+
     if (checkString("granularity bytes: ", in))
     {
         in >> index_granularity_bytes >> "\n";
@@ -165,11 +177,6 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
             ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (sampling_expression != from_zk.sampling_expression)
-        throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
-            " Stored in ZooKeeper: " + from_zk.sampling_expression + ", local: " + sampling_expression,
-            ErrorCodes::METADATA_MISMATCH);
-
     if (index_granularity != from_zk.index_granularity)
         throw Exception("Existing table metadata in ZooKeeper differs in index granularity."
             " Stored in ZooKeeper: " + DB::toString(from_zk.index_granularity) + ", local: " + DB::toString(index_granularity),
@@ -207,10 +214,15 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
 
 }
 
-void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, const Context & context) const
+void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
 
     checkImmutableFieldsEquals(from_zk);
+
+    if (sampling_expression != from_zk.sampling_expression)
+        throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
+            " Stored in ZooKeeper: " + from_zk.sampling_expression + ", local: " + sampling_expression,
+            ErrorCodes::METADATA_MISMATCH);
 
     if (sorting_key != from_zk.sorting_key)
     {
@@ -237,6 +249,17 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
                 " Stored in ZooKeeper: " + from_zk.skip_indices +
                 ", parsed from ZooKeeper: " + parsed_zk_skip_indices +
                 ", local: " + skip_indices,
+                ErrorCodes::METADATA_MISMATCH);
+    }
+
+    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
+    if (projections != parsed_zk_projections)
+    {
+        throw Exception(
+                "Existing table metadata in ZooKeeper differs in projections."
+                " Stored in ZooKeeper: " + from_zk.projections +
+                ", parsed from ZooKeeper: " + parsed_zk_projections +
+                ", local: " + projections,
                 ErrorCodes::METADATA_MISMATCH);
     }
 
@@ -272,6 +295,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
         diff.new_sorting_key = from_zk.sorting_key;
     }
 
+    if (sampling_expression != from_zk.sampling_expression)
+    {
+        diff.sampling_expression_changed = true;
+        diff.new_sampling_expression = from_zk.sampling_expression;
+    }
+
     if (ttl_table != from_zk.ttl_table)
     {
         diff.ttl_table_changed = true;
@@ -282,6 +311,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     {
         diff.skip_indices_changed = true;
         diff.new_skip_indices = from_zk.skip_indices;
+    }
+
+    if (projections != from_zk.projections)
+    {
+        diff.projections_changed = true;
+        diff.new_projections = from_zk.projections;
     }
 
     if (constraints != from_zk.constraints)

@@ -1,0 +1,6 @@
+version: '2.3'
+services:
+  php1:
+    image: yandex/clickhouse-mysql-php-client:${DOCKER_MYSQL_PHP_CLIENT_TAG:-latest}
+    # to keep container running
+    command: sleep infinity

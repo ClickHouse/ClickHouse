@@ -13,6 +13,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int CANNOT_SCHEDULE_TASK;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -52,6 +53,13 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     max_threads = value;
+}
+
+template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getMaxThreads() const
+{
+    std::lock_guard lock(mutex);
+    return max_threads;
 }
 
 template <typename Thread>
@@ -198,8 +206,16 @@ size_t ThreadPoolImpl<Thread>::active() const
 }
 
 template <typename Thread>
+bool ThreadPoolImpl<Thread>::finished() const
+{
+    std::unique_lock lock(mutex);
+    return shutdown;
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
 
@@ -215,7 +231,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                job = jobs.top().job;
+                /// std::priority_queue does not provide interface for getting non-const reference to an element
+                /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
+                job = std::move(const_cast<Job &>(jobs.top().job));
                 jobs.pop();
             }
             else
@@ -229,13 +247,21 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         {
             try
             {
+                ALLOW_ALLOCATIONS_IN_SCOPE;
                 CurrentMetrics::Increment metric_active_threads(
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
                 job();
+                /// job should be reset before decrementing scheduled_jobs to
+                /// ensure that the Job destroyed before wait() returns.
+                job = {};
             }
             catch (...)
             {
+                /// job should be reset before decrementing scheduled_jobs to
+                /// ensure that the Job destroyed before wait() returns.
+                job = {};
+
                 {
                     std::unique_lock lock(mutex);
                     if (!first_exception)
@@ -276,7 +302,11 @@ std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
 void GlobalThreadPool::initialize(size_t max_threads)
 {
-    assert(!the_instance);
+    if (the_instance)
+    {
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+            "The global thread pool is initialized twice");
+    }
 
     the_instance.reset(new GlobalThreadPool(max_threads,
         1000 /*max_free_threads*/, 10000 /*max_queue_size*/,

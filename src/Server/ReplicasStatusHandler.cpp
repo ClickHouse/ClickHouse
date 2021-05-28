@@ -1,17 +1,18 @@
-#include "ReplicasStatusHandler.h"
+#include <Server/ReplicasStatusHandler.h>
 
-#include <Interpreters/Context.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/HTMLForm.h>
-#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
+#include <Interpreters/Context.h>
+#include <Server/HTTP/HTMLForm.h>
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPHandlerRequestFilter.h>
+#include <Server/IServer.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/typeid_cast.h>
 
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPHandlerRequestFilter.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ ReplicasStatusHandler::ReplicasStatusHandler(IServer & server)
 }
 
 
-void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -33,18 +34,18 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = params.get("verbose", "") == "1";
 
-        const MergeTreeSettings & settings = context.getMergeTreeSettings();
+        const MergeTreeSettings & settings = context->getReplicatedMergeTreeSettings();
 
         bool ok = true;
-        std::stringstream message;
+        WriteBufferFromOwnString message;
 
         auto databases = DatabaseCatalog::instance().getDatabases();
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
         {
-            /// Lazy database can not contain replicated tables
-            if (db.second->getEngineName() == "Lazy")
+            /// Check if database can contain replicated tables
+            if (!db.second->canContainMergeTreeTables())
                 continue;
 
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -72,18 +73,21 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
             }
         }
 
-        const auto & config = context.getConfigRef();
+        const auto & config = context->getConfigRef();
         setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
-        if (ok && !verbose)
+        if (!ok)
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+            verbose = true;
+        }
+
+        if (verbose)
+            *response.send() << message.str();
+        else
         {
             const char * data = "Ok.\n";
             response.sendBuffer(data, strlen(data));
-        }
-        else
-        {
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
-            response.send() << message.rdbuf();
         }
     }
     catch (...)
@@ -97,7 +101,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
             if (!response.sent())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                response.send() << getCurrentExceptionMessage(false) << std::endl;
+                *response.send() << getCurrentExceptionMessage(false) << std::endl;
             }
         }
         catch (...)
@@ -107,9 +111,11 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
     }
 }
 
-Poco::Net::HTTPRequestHandlerFactory * createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>(server), server.config(), config_prefix);
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
+    factory->addFiltersFromConfig(server.config(), config_prefix);
+    return factory;
 }
 
 }

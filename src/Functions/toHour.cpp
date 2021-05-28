@@ -12,6 +12,9 @@ using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToHourIm
 void registerFunctionToHour(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToHour>();
+
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToHour>("HOUR", FunctionFactory::CaseInsensitive);
 }
 
 }

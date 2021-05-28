@@ -18,9 +18,9 @@
 namespace DB
 {
 
-FunctionPtr FunctionModelEvaluate::create(const Context & context)
+FunctionPtr FunctionModelEvaluate::create(ContextPtr context)
 {
-    return std::make_shared<FunctionModelEvaluate>(context.getExternalModelsLoader());
+    return std::make_shared<FunctionModelEvaluate>(context->getExternalModelsLoader());
 }
 
 namespace ErrorCodes
@@ -69,30 +69,30 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
     return type;
 }
 
-void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+ColumnPtr FunctionModelEvaluate::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
-    const auto * name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+    const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!name_col)
         throw Exception("First argument of function " + getName() + " must be a constant string",
                         ErrorCodes::ILLEGAL_COLUMN);
 
     auto model = models_loader.getModel(name_col->getValue<String>());
 
-    ColumnRawPtrs columns;
+    ColumnRawPtrs column_ptrs;
     Columns materialized_columns;
     ColumnPtr null_map;
 
-    columns.reserve(arguments.size());
+    column_ptrs.reserve(arguments.size());
     for (auto arg : ext::range(1, arguments.size()))
     {
-        auto & column = block.getByPosition(arguments[arg]).column;
-        columns.push_back(column.get());
+        const auto & column = arguments[arg].column;
+        column_ptrs.push_back(column.get());
         if (auto full_column = column->convertToFullColumnIfConst())
         {
             materialized_columns.push_back(full_column);
-            columns.back() = full_column.get();
+            column_ptrs.back() = full_column.get();
         }
-        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*columns.back()))
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column_ptrs.back()))
         {
             if (!null_map)
                 null_map = col_nullable->getNullMapColumnPtr();
@@ -110,11 +110,11 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
                 null_map = std::move(mut_null_map);
             }
 
-            columns.back() = &col_nullable->getNestedColumn();
+            column_ptrs.back() = &col_nullable->getNestedColumn();
         }
     }
 
-    auto res = model->evaluate(columns);
+    auto res = model->evaluate(column_ptrs);
 
     if (null_map)
     {
@@ -130,7 +130,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
             res = ColumnNullable::create(res, null_map);
     }
 
-    block.getByPosition(result).column = res;
+    return res;
 }
 
 void registerFunctionsExternalModels(FunctionFactory & factory)

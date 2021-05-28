@@ -9,7 +9,7 @@ toc_title: "Linux\u4E0A\u3067ClickHouse\u3092\u69CB\u7BC9\u3059\u308B\u65B9\u6CD
 
 次のチュートリアルはUbuntu Linuxシステムに基づいています。
 適切な変更により、他のLinuxディストリビューションでも動作するはずです。
-サポートされるプラットフォーム:x86\_64およびAArch64。 Power9のサポートは実験的です。
+サポートされるプラットフォーム:x86_64およびAArch64。 Power9のサポートは実験的です。
 
 ## Git、CMake、Pythonと忍者をインストールします {#install-git-cmake-python-and-ninja}
 
@@ -19,28 +19,17 @@ $ sudo apt-get install git cmake python ninja-build
 
 古いシステムではcmakeの代わりにcmake3。
 
-## GCC9のインストール {#install-gcc-9}
+## Clang 11 のインストール
 
-これを行うにはいくつかの方法があります。
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-### PPAパッケージからインストール {#install-from-a-ppa-package}
-
-``` bash
-$ sudo apt-get install software-properties-common
-$ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
-$ sudo apt-get update
-$ sudo apt-get install gcc-9 g++-9
+```bash
+sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
-### ソースからインスト {#install-from-sources}
-
-見て [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
-
-## ビルドにGCC9を使用する {#use-gcc-9-for-builds}
-
 ``` bash
-$ export CC=gcc-9
-$ export CXX=g++-9
+$ export CC=clang
+$ export CXX=clang++
 ```
 
 ## ﾂつｨﾂ姪"ﾂ債ﾂつｹ {#checkout-clickhouse-sources}
@@ -76,7 +65,7 @@ $ cd ..
 -   Git（ソースをチェックアウトするためにのみ使用され、ビルドには必要ありません)
 -   CMake3.10以降
 -   忍者（推奨）または作る
--   C++コンパイラ:gcc9またはclang8以降
+-   C++コンパイラ:clang11以降
 -   リンカ:lldまたはgold(古典的なGNU ldは動作しません)
 -   Python(LLVMビルド内でのみ使用され、オプションです)
 
@@ -102,7 +91,7 @@ OpenSUSEタンブルウィードの例:
 Fedora Rawhideの例:
 
     sudo yum update
-    yum --nogpg install git cmake make gcc-c++ python2
+    yum --nogpg install git cmake make gcc-c++ python3
     git clone --recursive https://github.com/ClickHouse/ClickHouse.git
     mkdir build && cd build
     cmake ../ClickHouse

@@ -30,7 +30,7 @@ class StorageDistributed;
  *  If the Distributed table uses more than one shard, then in order to support the write,
  *  when creating the table, an additional parameter must be specified for ENGINE - the sharding key.
  *  Sharding key is an arbitrary expression from the columns. For example, rand() or UserID.
- *  When writing, the data block is splitted by the remainder of the division of the sharding key by the total weight of the shards,
+ *  When writing, the data block is split by the remainder of the division of the sharding key by the total weight of the shards,
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
@@ -38,13 +38,14 @@ class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
     DistributedBlockOutputStream(
-        const Context & context_,
+        ContextPtr context_,
         StorageDistributed & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const ASTPtr & query_ast_,
         const ClusterPtr & cluster_,
         bool insert_sync_,
-        UInt64 insert_timeout_);
+        UInt64 insert_timeout_,
+        StorageID main_table_);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -62,10 +63,10 @@ private:
 
     void writeSplitAsync(const Block & block);
 
-    void writeAsyncImpl(const Block & block, const size_t shard_id = 0);
+    void writeAsyncImpl(const Block & block, size_t shard_id = 0);
 
     /// Increments finished_writings_count after each repeat.
-    void writeToLocal(const Block & block, const size_t repeats);
+    void writeToLocal(const Block & block, size_t repeats);
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
@@ -73,18 +74,17 @@ private:
     /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
     void writeSync(const Block & block);
 
-    void initWritingJobs(const Block & first_block);
+    void initWritingJobs(const Block & first_block, size_t start, size_t end);
 
     struct JobReplica;
-    ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block);
+    ThreadPool::Job runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards);
 
     void waitForJobs();
 
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
-private:
-    const Context & context;
+    ContextPtr context;
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
@@ -97,6 +97,7 @@ private:
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
+    StorageID main_table;
     Stopwatch watch;
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
@@ -115,7 +116,7 @@ private:
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        std::unique_ptr<Context> local_context;
+        ContextPtr local_context;
         BlockOutputStreamPtr stream;
 
         UInt64 blocks_written = 0;

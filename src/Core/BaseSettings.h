@@ -2,7 +2,6 @@
 
 #include <Core/SettingsFields.h>
 #include <Common/SettingsChanges.h>
-#include <Common/FieldVisitors.h>
 #include <ext/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>
@@ -104,13 +103,10 @@ public:
 
     private:
         friend class BaseSettings;
-        SettingFieldRef(const typename Traits::Data & data_, const typename Traits::Accessor & accessor_, size_t index_) : data(&data_), accessor(&accessor_), index(index_) {}
-        SettingFieldRef(const CustomSettingMap::mapped_type & custom_setting_);
-
-        const typename Traits::Data * data = nullptr;
-        const typename Traits::Accessor * accessor = nullptr;
-        size_t index = 0;
-        std::conditional_t<Traits::allow_custom_settings, const CustomSettingMap::mapped_type*, boost::blank> custom_setting = {};
+        const BaseSettings * settings;
+        const typename Traits::Accessor * accessor;
+        size_t index;
+        std::conditional_t<Traits::allow_custom_settings, const CustomSettingMap::mapped_type*, boost::blank> custom_setting;
     };
 
     enum SkipFlags
@@ -128,7 +124,7 @@ public:
     public:
         Iterator & operator++();
         Iterator operator++(int);
-        SettingFieldRef operator *() const;
+        const SettingFieldRef & operator *() const { return field_ref; }
 
         bool operator ==(const Iterator & other) const;
         bool operator !=(const Iterator & other) const { return !(*this == other); }
@@ -137,10 +133,9 @@ public:
         friend class BaseSettings;
         Iterator(const BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_);
         void doSkip();
+        void setPointerToCustomSetting();
 
-        const BaseSettings * settings = nullptr;
-        const typename Traits::Accessor * accessor = nullptr;
-        size_t index;
+        SettingFieldRef field_ref;
         std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::const_iterator, boost::blank> custom_settings_iterator;
         SkipFlags skip_flags;
     };
@@ -394,13 +389,21 @@ String BaseSettings<Traits_>::valueToStringUtil(const std::string_view & name, c
 template <typename Traits_>
 Field BaseSettings<Traits_>::stringToValueUtil(const std::string_view & name, const String & str)
 {
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        return accessor.stringToValueUtil(index, str);
-    if constexpr (Traits::allow_custom_settings)
-        return Field::restoreFromDump(str);
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    try
+    {
+        const auto & accessor = Traits::Accessor::instance();
+        if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+            return accessor.stringToValueUtil(index, str);
+        if constexpr (Traits::allow_custom_settings)
+            return Field::restoreFromDump(str);
+        else
+            BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while parsing value '{}' for setting '{}'", str, name);
+        throw;
+    }
 }
 
 template <typename Traits_>
@@ -557,13 +560,20 @@ const SettingFieldCustom * BaseSettings<Traits_>::tryGetCustomSetting(const std:
 
 template <typename Traits_>
 BaseSettings<Traits_>::Iterator::Iterator(const BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_)
-    : settings(&settings_), accessor(&accessor_), skip_flags(skip_flags_)
+    : skip_flags(skip_flags_)
 {
+    field_ref.settings = &settings_;
+    field_ref.accessor = &accessor_;
+    auto & index = field_ref.index;
+
     if (skip_flags == SKIP_ALL)
     {
-        index = accessor->size();
+        index = accessor_.size();
         if constexpr (Traits::allow_custom_settings)
-            custom_settings_iterator = settings->custom_settings_map.end();
+        {
+            custom_settings_iterator = settings_.custom_settings_map.end();
+            field_ref.custom_setting = nullptr;
+        }
         return;
     }
 
@@ -575,25 +585,28 @@ BaseSettings<Traits_>::Iterator::Iterator(const BaseSettings & settings_, const 
     }
 
     if (skip_flags & SKIP_BUILTIN)
-        index = accessor->size();
+        index = accessor_.size();
     else
         index = 0;
 
     if constexpr (Traits::allow_custom_settings)
     {
         if (skip_flags & SKIP_CUSTOM)
-            custom_settings_iterator = settings->custom_settings_map.end();
+            custom_settings_iterator = settings_.custom_settings_map.end();
         else
-            custom_settings_iterator = settings->custom_settings_map.begin();
+            custom_settings_iterator = settings_.custom_settings_map.begin();
     }
 
     doSkip();
+    setPointerToCustomSetting();
 }
 
 template <typename Traits_>
 typename BaseSettings<Traits_>::Iterator & BaseSettings<Traits_>::Iterator::operator++()
 {
-    if (index != accessor->size())
+    const auto & accessor = *field_ref.accessor;
+    auto & index = field_ref.index;
+    if (index != accessor.size())
         ++index;
     else
     {
@@ -601,6 +614,7 @@ typename BaseSettings<Traits_>::Iterator & BaseSettings<Traits_>::Iterator::oper
             ++custom_settings_iterator;
     }
     doSkip();
+    setPointerToCustomSetting();
     return *this;
 }
 
@@ -613,28 +627,35 @@ typename BaseSettings<Traits_>::Iterator BaseSettings<Traits_>::Iterator::operat
 }
 
 template <typename Traits_>
-typename BaseSettings<Traits_>::SettingFieldRef BaseSettings<Traits_>::Iterator::operator*() const
-{
-    if constexpr (Traits::allow_custom_settings)
-    {
-        if (index == accessor->size())
-            return {custom_settings_iterator->second};
-    }
-    return {*settings, *accessor, index};
-}
-
-template <typename Traits_>
 void BaseSettings<Traits_>::Iterator::doSkip()
 {
+    const auto & accessor = *field_ref.accessor;
+    const auto & settings = *field_ref.settings;
+    auto & index = field_ref.index;
     if (skip_flags & SKIP_CHANGED)
     {
-        while ((index != accessor->size()) && accessor->isValueChanged(*settings, index))
+        while ((index != accessor.size()) && accessor.isValueChanged(settings, index))
             ++index;
     }
     else if (skip_flags & SKIP_UNCHANGED)
     {
-        while ((index != accessor->size()) && !accessor->isValueChanged(*settings, index))
+        while ((index != accessor.size()) && !accessor.isValueChanged(settings, index))
             ++index;
+    }
+}
+
+template <typename Traits_>
+void BaseSettings<Traits_>::Iterator::setPointerToCustomSetting()
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        const auto & accessor = *field_ref.accessor;
+        const auto & settings = *field_ref.settings;
+        const auto & index = field_ref.index;
+        if ((index == accessor.size()) && (custom_settings_iterator != settings.custom_settings_map.end()))
+            field_ref.custom_setting = &custom_settings_iterator->second;
+        else
+            field_ref.custom_setting = nullptr;
     }
 }
 
@@ -646,14 +667,7 @@ bool BaseSettings<Traits_>::Iterator::operator ==(const typename BaseSettings<Tr
         if (custom_settings_iterator != other.custom_settings_iterator)
             return false;
     }
-    return ((index == other.index) && (settings == other.settings));
-}
-
-template <typename Traits_>
-BaseSettings<Traits_>::SettingFieldRef::SettingFieldRef(const CustomSettingMap::mapped_type & custom_setting_)
-{
-    if constexpr (Traits_::allow_custom_settings)
-        custom_setting = &custom_setting_;
+    return ((field_ref.index == other.field_ref.index) && (field_ref.settings == other.field_ref.settings));
 }
 
 template <typename Traits_>
@@ -675,7 +689,7 @@ Field BaseSettings<Traits_>::SettingFieldRef::getValue() const
         if (custom_setting)
             return static_cast<Field>(custom_setting->second);
     }
-    return accessor->getValue(*data, index);
+    return accessor->getValue(*settings, index);
 }
 
 template <typename Traits_>
@@ -686,7 +700,7 @@ String BaseSettings<Traits_>::SettingFieldRef::getValueString() const
         if (custom_setting)
             return custom_setting->second.toString();
     }
-    return accessor->getValueString(*data, index);
+    return accessor->getValueString(*settings, index);
 }
 
 template <typename Traits_>
@@ -697,7 +711,7 @@ bool BaseSettings<Traits_>::SettingFieldRef::isValueChanged() const
         if (custom_setting)
             return true;
     }
-    return accessor->isValueChanged(*data, index);
+    return accessor->isValueChanged(*settings, index);
 }
 
 template <typename Traits_>

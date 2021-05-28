@@ -3,7 +3,6 @@ add_library (mysqlxx
     Exception.cpp
     Query.cpp
     ResultBase.cpp
-    StoreQueryResult.cpp
     UseQueryResult.cpp
     Row.cpp
     Value.cpp
@@ -15,8 +14,8 @@ add_library (mysqlxx
 target_include_directories (mysqlxx PUBLIC ..)
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
-    target_include_directories (mysqlxx PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include)
-    target_include_directories (mysqlxx PUBLIC ${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c/include)
+    target_include_directories (mysqlxx PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include")
+    target_include_directories (mysqlxx PUBLIC "${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c/include")
 else ()
     set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
 
@@ -48,6 +47,14 @@ target_link_libraries(mysqlxx PRIVATE ${PLATFORM_LIBRARIES})
 
 if (NOT USE_INTERNAL_MYSQL_LIBRARY AND OPENSSL_INCLUDE_DIR)
     target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
+endif ()
+
+if (NOT USE_INTERNAL_MYSQL_LIBRARY AND USE_STATIC_LIBRARIES)
+   message(WARNING "Statically linking with system mysql/mariadb only works "
+           "if mysql client libraries are built with same openssl version as "
+           "we are going to use now. It wouldn't work if GnuTLS is used. "
+           "Try -D\"USE_INTERNAL_MYSQL_LIBRARY\"=ON or -D\"ENABLE_MYSQL\"=OFF or "
+           "-D\"USE_STATIC_LIBRARIES\"=OFF")
 endif ()
 
 if (ENABLE_TESTS)

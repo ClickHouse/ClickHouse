@@ -3,6 +3,7 @@
 #include <errno.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/MemoryTracker.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -59,7 +60,7 @@ WriteBufferFromFile::WriteBufferFromFile(
 
 /// Use pre-opened file descriptor.
 WriteBufferFromFile::WriteBufferFromFile(
-    int fd_,
+    int & fd_,
     const std::string & original_file_name,
     size_t buf_size,
     char * existing_memory,
@@ -68,6 +69,7 @@ WriteBufferFromFile::WriteBufferFromFile(
     WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment),
     file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
+    fd_ = -1;
 }
 
 
@@ -76,14 +78,10 @@ WriteBufferFromFile::~WriteBufferFromFile()
     if (fd < 0)
         return;
 
-    try
-    {
-        next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+
+    next();
 
     ::close(fd);
 }
@@ -92,6 +90,9 @@ WriteBufferFromFile::~WriteBufferFromFile()
 /// Close file before destruction of object.
 void WriteBufferFromFile::close()
 {
+    if (fd < 0)
+        return;
+
     next();
 
     if (0 != ::close(fd))

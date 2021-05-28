@@ -2,7 +2,9 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
+#include <Storages/SetSettings.h>
 
 
 namespace DB
@@ -21,20 +23,23 @@ class StorageSetOrJoinBase : public IStorage
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
 
 protected:
     StorageSetOrJoinBase(
+        DiskPtr disk_,
         const String & relative_path_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_);
+        bool persistent_);
 
-    String base_path;
+    DiskPtr disk;
     String path;
+    bool persistent;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
@@ -67,7 +72,10 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
+
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
     SetPtr set;
@@ -78,11 +86,12 @@ private:
 
 protected:
     StorageSet(
+        DiskPtr disk_,
         const String & relative_path_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_);
+        bool persistent_);
 };
 
 }

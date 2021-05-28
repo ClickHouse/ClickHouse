@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "\u0420\u0443\u043A\u043E\u0432\u043E\u0434\u0441\u0442\u0432\u0430"
+toc_folder_title: "Руководства"
 toc_priority: 38
-toc_title: "\u041E\u0431\u0437\u043E\u0440"
+toc_title: "Обзор"
 ---
 
 # Руководства {#rukovodstva}

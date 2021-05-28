@@ -22,24 +22,26 @@ public:
     {
         return name;
     }
+    bool hasStaticStructure() const override { return true; }
 
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
-        const Context & context,
-        const std::string & table_name) const override;
-
-    static StoragePtr getStorage(
-        const String & source,
-        const String & access_key_id,
-        const String & secret_access_key,
-        const String & format,
-        const ColumnsDescription & columns,
-        Context & global_context,
+        ContextPtr context,
         const std::string & table_name,
-        const String & compression_method);
+        ColumnsDescription cached_columns) const override;
 
     const char * getStorageTypeName() const override { return "S3"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    String filename;
+    String format;
+    String structure;
+    String access_key_id;
+    String secret_access_key;
+    String compression_method = "auto";
 };
 
 class TableFunctionCOS : public TableFunctionS3

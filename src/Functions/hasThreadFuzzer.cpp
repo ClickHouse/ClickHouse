@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /** Returns whether Thread Fuzzer is effective.
   * It can be used in tests to prevent too long runs.
@@ -14,7 +16,7 @@ class FunctionHasThreadFuzzer : public IFunction
 {
 public:
     static constexpr auto name = "hasThreadFuzzer";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionHasThreadFuzzer>();
     }
@@ -34,12 +36,13 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, ThreadFuzzer::instance().isEffective());
+        return DataTypeUInt8().createColumnConst(input_rows_count, ThreadFuzzer::instance().isEffective());
     }
 };
 
+}
 
 void registerFunctionHasThreadFuzzer(FunctionFactory & factory)
 {

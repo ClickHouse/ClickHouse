@@ -4,6 +4,7 @@
 
 namespace DB::GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySlice
@@ -42,5 +43,6 @@ struct GenericValueSlice
     static constexpr size_t size = 1;
 };
 
+#pragma GCC visibility pop
 }
 

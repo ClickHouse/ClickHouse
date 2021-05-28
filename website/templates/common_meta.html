@@ -32,15 +32,15 @@
 <meta name="keywords"
       content="ClickHouse, DBMS, OLAP, SQL, {{ _('open-source') }}, {{ _('relational') }}, {{ _('analytics') }}, {{ _('analytical') }}, {{ _('Big Data') }}, {{ _('web-analytics') }}" />
 {% endif %}
-{% if config and (config.extra.single_page or config.extra.version_prefix) %}
+{% if config and config.extra.single_page %}
 <meta name="robots" content="noindex,follow" />
 {% endif %}
 
 {% if config and page and not is_blog %}
     {% for code, name in config.extra.languages.items() %}
-    <link rel="alternate" hreflang="{{ code }}" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}" />
+    <link rel="alternate" hreflang="{{ code }}" href="{{ config.extra.website_url }}/docs/{{ code }}/{{ page.url }}" />
     {% endfor %}
-    <link rel="alternate" hreflang="x-default" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}en/{{ page.url }}" />
+    <link rel="alternate" hreflang="x-default" href="{{ config.extra.website_url }}/docs/en/{{ page.url }}" />
 {% endif %}
 
 {% for prefetch_item in prefetch_items %}

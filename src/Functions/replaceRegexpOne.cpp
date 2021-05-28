@@ -5,6 +5,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct NameReplaceRegexpOne
 {
@@ -12,6 +14,8 @@ struct NameReplaceRegexpOne
 };
 
 using FunctionReplaceRegexpOne = FunctionStringReplace<ReplaceRegexpImpl<true>, NameReplaceRegexpOne>;
+
+}
 
 void registerFunctionReplaceRegexpOne(FunctionFactory & factory)
 {

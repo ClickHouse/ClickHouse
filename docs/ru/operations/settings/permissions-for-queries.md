@@ -1,3 +1,8 @@
+---
+toc_priority: 58
+toc_title: "Разрешения для запросов"
+---
+
 # Разрешения для запросов {#permissions_for_queries}
 
 Запросы в ClickHouse можно разделить на несколько типов:
@@ -11,7 +16,7 @@
 Разрешения пользователя по типу запроса регулируются параметрами:
 
 -   [readonly](#settings_readonly) — ограничивает разрешения для всех типов запросов, кроме DDL.
--   [allow\_ddl](#settings_allow_ddl) — ограничивает разрешения для DDL запросов.
+-   [allow_ddl](#settings_allow_ddl) — ограничивает разрешения для DDL запросов.
 
 `KILL QUERY` выполняется с любыми настройками.
 
@@ -37,7 +42,7 @@
 
 0
 
-## allow\_ddl {#settings_allow_ddl}
+## allow_ddl {#settings_allow_ddl}
 
 Разрешает/запрещает [DDL](https://ru.wikipedia.org/wiki/Data_Definition_Language) запросы.
 
@@ -54,4 +59,3 @@
 
 1
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/permissions_for_queries/) <!--hide-->

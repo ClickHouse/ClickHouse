@@ -1,6 +1,6 @@
-# system.graphite\_retentions {#system-graphite-retentions}
+# system.graphite_retentions {#system-graphite-retentions}
 
-Contains information about parameters [graphite\_rollup](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) which are used in tables with [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md) engines.
+Contains information about parameters [graphite_rollup](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) which are used in tables with [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md) engines.
 
 Columns:
 
@@ -13,3 +13,5 @@ Columns:
 -   `is_default` (UInt8) - Whether the pattern is the default.
 -   `Tables.database` (Array(String)) - Array of names of database tables that use the `config_name` parameter.
 -   `Tables.table` (Array(String)) - Array of table names that use the `config_name` parameter.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/graphite_retentions) <!--hide-->

@@ -5,7 +5,7 @@
 export DH_VERBOSE=1
 
 # -pie only for static mode
-export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
+export DEB_BUILD_MAINT_OPTIONS=hardening=-all
 
 # because copy_headers.sh have hardcoded path to build/include_directories.txt
 BUILDDIR = obj-$(DEB_HOST_GNU_TYPE)
@@ -36,8 +36,8 @@ endif
 
 CMAKE_FLAGS += -DENABLE_UTILS=0
 
-DEB_CC ?= $(shell which gcc-9 gcc-8 gcc | head -n1)
-DEB_CXX ?= $(shell which g++-9 g++-8 g++ | head -n1)
+DEB_CC ?= $(shell which gcc-10 gcc-9 gcc | head -n1)
+DEB_CXX ?= $(shell which g++-10 g++-9 g++ | head -n1)
 
 ifdef DEB_CXX
     DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
@@ -62,7 +62,7 @@ ifndef DISABLE_NINJA
     NINJA=$(shell which ninja)
 ifneq ($(NINJA),)
         CMAKE_FLAGS += -GNinja
-        export MAKE=$(NINJA)
+        export MAKE=$(NINJA) $(NINJA_FLAGS)
 endif
 endif
 
@@ -93,7 +93,7 @@ override_dh_auto_build:
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -E with_server
+	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V
 endif
 
 override_dh_clean:
@@ -112,9 +112,6 @@ override_dh_install:
 
 	ln -sf clickhouse-server.docs debian/clickhouse-client.docs
 	ln -sf clickhouse-server.docs debian/clickhouse-common-static.docs
-
-	mkdir -p $(DESTDIR)/etc/security/limits.d
-	cp debian/clickhouse.limits $(DESTDIR)/etc/security/limits.d/clickhouse.conf
 
 	# systemd compatibility
 	mkdir -p $(DESTDIR)/etc/systemd/system/

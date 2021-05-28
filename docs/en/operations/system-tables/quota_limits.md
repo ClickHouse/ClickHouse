@@ -1,4 +1,4 @@
-# system.quota\_limits {#system_tables-quota_limits}
+# system.quota_limits {#system_tables-quota_limits}
 
 Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to one quota.
 
@@ -9,6 +9,8 @@ Columns:
 - `0` — Interval is not randomized.
 - `1` — Interval is randomized.
 - `max_queries` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of queries.
+- `max_query_selects` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of select queries.
+- `max_query_inserts` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of insert queries.
 - `max_errors` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of errors.
 - `max_result_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of result rows.
 - `max_result_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of RAM volume in bytes used to store a queries result.

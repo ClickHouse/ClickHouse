@@ -1,15 +1,17 @@
 import pytest
 
-import helpers.client as client
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1',
-    with_zookeeper=False, image='yandex/clickhouse-server:19.16.9.37', stay_alive=True, with_installed_binary=True)
+                             with_zookeeper=False, image='yandex/clickhouse-server', tag='19.16.9.37', stay_alive=True,
+                             with_installed_binary=True)
 node2 = cluster.add_instance('node2',
-    with_zookeeper=False, image='yandex/clickhouse-server:19.16.9.37', stay_alive=True, with_installed_binary=True)
+                             with_zookeeper=False, image='yandex/clickhouse-server', tag='19.16.9.37', stay_alive=True,
+                             with_installed_binary=True)
 node3 = cluster.add_instance('node3', with_zookeeper=False)
 node4 = cluster.add_instance('node4', with_zookeeper=False)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -19,6 +21,7 @@ def start_cluster():
 
     finally:
         cluster.shutdown()
+
 
 # We will test that serialization of internal state of "avg" function is compatible between different versions.
 # TODO Implement versioning of serialization format for aggregate function states.
@@ -35,18 +38,18 @@ def test_backward_compatability(start_cluster):
     node3.query("INSERT INTO tab VALUES (3)")
     node4.query("INSERT INTO tab VALUES (4)")
 
-    assert(node1.query("SELECT avg(x) FROM remote('node{1..4}', default, tab)") == '2.5\n')
-    assert(node2.query("SELECT avg(x) FROM remote('node{1..4}', default, tab)") == '2.5\n')
-    assert(node3.query("SELECT avg(x) FROM remote('node{1..4}', default, tab)") == '2.5\n')
-    assert(node4.query("SELECT avg(x) FROM remote('node{1..4}', default, tab)") == '2.5\n')
+    assert (node1.query("SELECT avg(x) FROM remote('node{1..4}', default, tab)") == '2.5\n')
+    assert (node2.query("SELECT avg(x) FROM remote('node{1..4}', default, tab)") == '2.5\n')
+    assert (node3.query("SELECT avg(x) FROM remote('node{1..4}', default, tab)") == '2.5\n')
+    assert (node4.query("SELECT avg(x) FROM remote('node{1..4}', default, tab)") == '2.5\n')
 
     # Also check with persisted aggregate function state
 
     node1.query("create table state (x AggregateFunction(avg, UInt64)) engine = Log")
     node1.query("INSERT INTO state SELECT avgState(arrayJoin(CAST([1, 2, 3, 4] AS Array(UInt64))))")
 
-    assert(node1.query("SELECT avgMerge(x) FROM state") == '2.5\n')
+    assert (node1.query("SELECT avgMerge(x) FROM state") == '2.5\n')
 
     node1.restart_with_latest_version()
 
-    assert(node1.query("SELECT avgMerge(x) FROM state") == '2.5\n')
+    assert (node1.query("SELECT avgMerge(x) FROM state") == '2.5\n')

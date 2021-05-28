@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <limits>
 
+#include <common/extended_types.h>
 
 // Also defined in Core/Defines.h
 #if !defined(NO_SANITIZE_UNDEFINED)
@@ -14,7 +15,7 @@
 #endif
 
 
-/// On overlow, the function returns unspecified value.
+/// On overflow, the function returns unspecified value.
 inline NO_SANITIZE_UNDEFINED uint64_t intExp2(int x)
 {
     return 1ULL << x;
@@ -89,49 +90,136 @@ constexpr inline int64_t exp10_i64(int x)
     return values[x];
 }
 
-constexpr inline __int128 exp10_i128(int x)
+constexpr inline Int128 exp10_i128(int x)
 {
-    constexpr __int128 values[] =
+    constexpr Int128 values[] =
     {
-        static_cast<__int128>(1LL),
-        static_cast<__int128>(10LL),
-        static_cast<__int128>(100LL),
-        static_cast<__int128>(1000LL),
-        static_cast<__int128>(10000LL),
-        static_cast<__int128>(100000LL),
-        static_cast<__int128>(1000000LL),
-        static_cast<__int128>(10000000LL),
-        static_cast<__int128>(100000000LL),
-        static_cast<__int128>(1000000000LL),
-        static_cast<__int128>(10000000000LL),
-        static_cast<__int128>(100000000000LL),
-        static_cast<__int128>(1000000000000LL),
-        static_cast<__int128>(10000000000000LL),
-        static_cast<__int128>(100000000000000LL),
-        static_cast<__int128>(1000000000000000LL),
-        static_cast<__int128>(10000000000000000LL),
-        static_cast<__int128>(100000000000000000LL),
-        static_cast<__int128>(1000000000000000000LL),
-        static_cast<__int128>(1000000000000000000LL) * 10LL,
-        static_cast<__int128>(1000000000000000000LL) * 100LL,
-        static_cast<__int128>(1000000000000000000LL) * 1000LL,
-        static_cast<__int128>(1000000000000000000LL) * 10000LL,
-        static_cast<__int128>(1000000000000000000LL) * 100000LL,
-        static_cast<__int128>(1000000000000000000LL) * 1000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 10000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 100000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 1000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 10000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 100000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 1000000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 10000000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 100000000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 1000000000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 10000000000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 100000000000000000LL,
-        static_cast<__int128>(1000000000000000000LL) * 100000000000000000LL * 10LL,
-        static_cast<__int128>(1000000000000000000LL) * 100000000000000000LL * 100LL,
-        static_cast<__int128>(1000000000000000000LL) * 100000000000000000LL * 1000LL
+        static_cast<Int128>(1LL),
+        static_cast<Int128>(10LL),
+        static_cast<Int128>(100LL),
+        static_cast<Int128>(1000LL),
+        static_cast<Int128>(10000LL),
+        static_cast<Int128>(100000LL),
+        static_cast<Int128>(1000000LL),
+        static_cast<Int128>(10000000LL),
+        static_cast<Int128>(100000000LL),
+        static_cast<Int128>(1000000000LL),
+        static_cast<Int128>(10000000000LL),
+        static_cast<Int128>(100000000000LL),
+        static_cast<Int128>(1000000000000LL),
+        static_cast<Int128>(10000000000000LL),
+        static_cast<Int128>(100000000000000LL),
+        static_cast<Int128>(1000000000000000LL),
+        static_cast<Int128>(10000000000000000LL),
+        static_cast<Int128>(100000000000000000LL),
+        static_cast<Int128>(1000000000000000000LL),
+        static_cast<Int128>(1000000000000000000LL) * 10LL,
+        static_cast<Int128>(1000000000000000000LL) * 100LL,
+        static_cast<Int128>(1000000000000000000LL) * 1000LL,
+        static_cast<Int128>(1000000000000000000LL) * 10000LL,
+        static_cast<Int128>(1000000000000000000LL) * 100000LL,
+        static_cast<Int128>(1000000000000000000LL) * 1000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 10000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 100000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 1000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 10000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 100000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 1000000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 10000000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 100000000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 1000000000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 10000000000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 100000000000000000LL,
+        static_cast<Int128>(1000000000000000000LL) * 100000000000000000LL * 10LL,
+        static_cast<Int128>(1000000000000000000LL) * 100000000000000000LL * 100LL,
+        static_cast<Int128>(1000000000000000000LL) * 100000000000000000LL * 1000LL
+    };
+    return values[x];
+}
+
+
+inline Int256 exp10_i256(int x)
+{
+    using Int256 = Int256;
+    static constexpr Int256 i10e18{1000000000000000000ll};
+    static const Int256 values[] = {
+        static_cast<Int256>(1ll),
+        static_cast<Int256>(10ll),
+        static_cast<Int256>(100ll),
+        static_cast<Int256>(1000ll),
+        static_cast<Int256>(10000ll),
+        static_cast<Int256>(100000ll),
+        static_cast<Int256>(1000000ll),
+        static_cast<Int256>(10000000ll),
+        static_cast<Int256>(100000000ll),
+        static_cast<Int256>(1000000000ll),
+        static_cast<Int256>(10000000000ll),
+        static_cast<Int256>(100000000000ll),
+        static_cast<Int256>(1000000000000ll),
+        static_cast<Int256>(10000000000000ll),
+        static_cast<Int256>(100000000000000ll),
+        static_cast<Int256>(1000000000000000ll),
+        static_cast<Int256>(10000000000000000ll),
+        static_cast<Int256>(100000000000000000ll),
+        i10e18,
+        i10e18 * 10ll,
+        i10e18 * 100ll,
+        i10e18 * 1000ll,
+        i10e18 * 10000ll,
+        i10e18 * 100000ll,
+        i10e18 * 1000000ll,
+        i10e18 * 10000000ll,
+        i10e18 * 100000000ll,
+        i10e18 * 1000000000ll,
+        i10e18 * 10000000000ll,
+        i10e18 * 100000000000ll,
+        i10e18 * 1000000000000ll,
+        i10e18 * 10000000000000ll,
+        i10e18 * 100000000000000ll,
+        i10e18 * 1000000000000000ll,
+        i10e18 * 10000000000000000ll,
+        i10e18 * 100000000000000000ll,
+        i10e18 * 100000000000000000ll * 10ll,
+        i10e18 * 100000000000000000ll * 100ll,
+        i10e18 * 100000000000000000ll * 1000ll,
+        i10e18 * 100000000000000000ll * 10000ll,
+        i10e18 * 100000000000000000ll * 100000ll,
+        i10e18 * 100000000000000000ll * 1000000ll,
+        i10e18 * 100000000000000000ll * 10000000ll,
+        i10e18 * 100000000000000000ll * 100000000ll,
+        i10e18 * 100000000000000000ll * 1000000000ll,
+        i10e18 * 100000000000000000ll * 10000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000ll,
+        i10e18 * 100000000000000000ll * 1000000000000ll,
+        i10e18 * 100000000000000000ll * 10000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000ll,
+        i10e18 * 100000000000000000ll * 1000000000000000ll,
+        i10e18 * 100000000000000000ll * 10000000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 10ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 1000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 10000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 1000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 10000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 1000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 10000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 1000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 10000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 1000000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 10000000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll * 10ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll * 100ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll * 1000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll * 10000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll * 100000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll * 1000000ll,
+        i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll * 10000000ll,
     };
     return values[x];
 }
@@ -145,6 +233,8 @@ constexpr inline T intExp10OfSize(int x)
 {
     if constexpr (sizeof(T) <= 8)
         return intExp10(x);
-    else
+    else if constexpr (sizeof(T) <= 16)
         return common::exp10_i128(x);
+    else
+        return common::exp10_i256(x);
 }

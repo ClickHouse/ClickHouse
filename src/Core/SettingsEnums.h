@@ -47,15 +47,6 @@ enum class JoinAlgorithm
 DECLARE_SETTING_ENUM(JoinAlgorithm)
 
 
-enum class SpecialSort
-{
-    NOT_SPECIFIED = 0,
-    OPENCL_BITONIC,
-};
-
-DECLARE_SETTING_ENUM(SpecialSort)
-
-
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
 {
@@ -92,6 +83,7 @@ DECLARE_SETTING_ENUM(DistributedProductMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
 enum class LogsLevel
 {
@@ -126,4 +118,43 @@ enum class DefaultDatabaseEngine
 };
 
 DECLARE_SETTING_ENUM(DefaultDatabaseEngine)
+
+
+enum class MySQLDataTypesSupport
+{
+    DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
+    DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
+    // ENUM
+};
+
+DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
+
+enum class UnionMode
+{
+    Unspecified = 0, // Query UNION without UnionMode will throw exception
+    ALL, // Query UNION without UnionMode -> SELECT ... UNION ALL SELECT ...
+    DISTINCT // Query UNION without UnionMode -> SELECT ... UNION DISTINCT SELECT ...
+};
+
+DECLARE_SETTING_ENUM(UnionMode)
+
+enum class DistributedDDLOutputMode
+{
+    NONE,
+    THROW,
+    NULL_STATUS_ON_TIMEOUT,
+    NEVER_THROW,
+};
+
+DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
+
+enum class HandleKafkaErrorMode
+{
+    DEFAULT = 0, // Ignore errors whit threshold.
+    STREAM, // Put errors to stream in the virtual column named ``_error.
+    /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likey system.kafka_errors. This is not implemented now.  */
+    /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
+};
+
+DECLARE_SETTING_ENUM(HandleKafkaErrorMode)
 }

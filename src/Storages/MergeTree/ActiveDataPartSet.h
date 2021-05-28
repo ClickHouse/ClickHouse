@@ -1,12 +1,15 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <map>
+#include <vector>
 
 
 namespace DB
 {
+
+using Strings = std::vector<String>;
 
 /** Supports multiple names of active parts of data.
   * Repeats part of the MergeTreeData functionality.

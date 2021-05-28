@@ -32,7 +32,9 @@ public:
     void resetParser() override;
 
 private:
-    bool deserializeField(const DataTypePtr & type, IColumn & column, size_t file_column);
+    bool deserializeField(const DataTypePtr & type,
+        const SerializationPtr & serialization, IColumn & column, size_t file_column);
+
     void skipField(ColumnFormat col_format);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
 
@@ -43,6 +45,7 @@ private:
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
+
     bool isGarbageAfterField(size_t after_col_idx, ReadBuffer::Position pos) override;
     void writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim);
 

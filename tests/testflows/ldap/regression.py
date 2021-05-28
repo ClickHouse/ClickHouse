@@ -2,55 +2,33 @@
 import sys
 from testflows.core import *
 
-append_path(sys.path, "..") 
+append_path(sys.path, "..")
 
-from helpers.cluster import Cluster
+from helpers.common import Pool, join, run_scenario
 from helpers.argparser import argparser
-from ldap.requirements import *
 
-# Cross-outs of known fails
-xfails = {
-    "connection protocols/tls/tls_require_cert='try'":
-     [(Fail, "can't be tested with self-signed certificates")],
-    "connection protocols/tls/tls_require_cert='demand'":
-     [(Fail, "can't be tested with self-signed certificates")],
-    "connection protocols/starttls/tls_require_cert='try'":
-     [(Fail, "can't be tested with self-signed certificates")],
-    "connection protocols/starttls/tls_require_cert='demand'":
-     [(Fail, "can't be tested with self-signed certificates")],
-    "connection protocols/tls require cert default demand":
-     [(Fail, "can't be tested with self-signed certificates")],
-    "connection protocols/starttls with custom port":
-     [(Fail, "it seems that starttls is not enabled by default on custom plain-text ports in LDAP server")],
-    "connection protocols/tls cipher suite":
-     [(Fail, "can't get it to work")],
-    "connection protocols/tls minimum protocol version/:":
-     [(Fail, "can't get it to work")]
-}
-
-@TestFeature
-@Name("ldap authentication")
+@TestModule
+@Name("ldap")
 @ArgumentParser(argparser)
-@Requirements(
-    RQ_SRS_007_LDAP_Authentication("1.0")
-)
-@XFails(xfails)
-def regression(self, local, clickhouse_binary_path):
-    """ClickHouse integration with LDAP regression module.
+def regression(self, local, clickhouse_binary_path, parallel=None, stress=None):
+    """ClickHouse LDAP integration regression module.
     """
-    nodes = {
-        "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
-    }
- 
-    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
-        self.context.cluster = cluster
+    top().terminating = False
+    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path}
 
-        Scenario(run=load("ldap.tests.sanity", "scenario"))
-        Scenario(run=load("ldap.tests.multiple_servers", "scenario"))
-        Feature(run=load("ldap.tests.connections", "feature"))
-        Feature(run=load("ldap.tests.server_config", "feature"))
-        Feature(run=load("ldap.tests.user_config", "feature"))
-        Feature(run=load("ldap.tests.authentications", "feature"))
+    if stress is not None:
+        self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
+
+    tasks = []
+    with Pool(3) as pool:
+        try:
+            run_scenario(pool, tasks, Feature(test=load("ldap.authentication.regression", "regression")), args)
+            run_scenario(pool, tasks, Feature(test=load("ldap.external_user_directory.regression", "regression")), args)
+            run_scenario(pool, tasks, Feature(test=load("ldap.role_mapping.regression", "regression")), args)
+        finally:
+            join(tasks)
 
 if main():
     regression()

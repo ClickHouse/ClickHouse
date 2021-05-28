@@ -1,7 +1,10 @@
 #!/bin/bash
 
+set -eo pipefail
+shopt -s nullglob
+
 DO_CHOWN=1
-if [ "$CLICKHOUSE_DO_NOT_CHOWN" = 1 ]; then
+if [ "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]; then
     DO_CHOWN=0
 fi
 
@@ -9,10 +12,17 @@ CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
 CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
 
 # support --user
-if [ x"$UID" == x0 ]; then
+if [ "$(id -u)" = "0" ]; then
     USER=$CLICKHOUSE_UID
     GROUP=$CLICKHOUSE_GID
-    gosu="gosu $USER:$GROUP"
+    if command -v gosu &> /dev/null; then
+        gosu="gosu $USER:$GROUP"
+    elif command -v su-exec &> /dev/null; then
+        gosu="su-exec $USER:$GROUP"
+    else
+        echo "No gosu/su-exec detected!"
+        exit 1
+    fi
 else
     USER="$(id -u)"
     GROUP="$(id -g)"
@@ -23,22 +33,27 @@ fi
 # set some vars
 CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
 
-# port is needed to check if clickhouse-server is ready for connections
-HTTP_PORT="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=http_port)"
+if ! $gosu test -f "$CLICKHOUSE_CONFIG" -a -r "$CLICKHOUSE_CONFIG"; then
+    echo "Configuration file '$dir' isn't readable by user with id '$USER'"
+    exit 1
+fi
 
 # get CH directories locations
-DATA_DIR="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=path || true)"
-TMP_DIR="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=tmp_path || true)"
-USER_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=user_files_path || true)"
-LOG_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=logger.log || true)"
-LOG_DIR="$(dirname $LOG_PATH || true)"
-ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=logger.errorlog || true)"
-ERROR_LOG_DIR="$(dirname $ERROR_LOG_PATH || true)"
-FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=format_schema_path || true)"
+DATA_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=path || true)"
+TMP_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tmp_path || true)"
+USER_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=user_files_path || true)"
+LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.log || true)"
+LOG_DIR=""
+if [ -n "$LOG_PATH" ]; then LOG_DIR="$(dirname "$LOG_PATH")"; fi
+ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.errorlog || true)"
+ERROR_LOG_DIR=""
+if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
+FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
+CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
 
 for dir in "$DATA_DIR" \
   "$ERROR_LOG_DIR" \
@@ -58,8 +73,8 @@ do
     if [ "$DO_CHOWN" = "1" ]; then
         # ensure proper directories permissions
         chown -R "$USER:$GROUP" "$dir"
-    elif [ "$(stat -c %u "$dir")" != "$USER" ]; then
-        echo "Necessary directory '$dir' isn't owned by user with id '$USER'"
+    elif ! $gosu test -d "$dir" -a -w "$dir" -a -r "$dir"; then
+        echo "Necessary directory '$dir' isn't accessible by user with id '$USER'"
         exit 1
     fi
 done
@@ -82,6 +97,7 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
           </networks>
           <password>${CLICKHOUSE_PASSWORD}</password>
           <quota>default</quota>
+          <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
         </${CLICKHOUSE_USER}>
       </users>
     </yandex>
@@ -89,21 +105,26 @@ EOT
 fi
 
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
-    $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &
+    # port is needed to check if clickhouse-server is ready for connections
+    HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
+
+    # Listen only on localhost until the initialization is done
+    $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
     pid="$!"
 
     # check if clickhouse is ready to accept connections
-    # will try to send ping clickhouse via http_port (max 12 retries, with 1 sec delay)
-    if ! wget --spider --quiet --prefer-family=IPv6 --tries=12 --waitretry=1 --retry-connrefused "http://localhost:$HTTP_PORT/ping" ; then
-        echo >&2 'ClickHouse init process failed.'
-        exit 1
-    fi
+    # will try to send ping clickhouse via http_port (max 12 retries by default, with 1 sec timeout and 1 sec delay between retries)
+    tries=${CLICKHOUSE_INIT_TIMEOUT:-12}
+    while ! wget --spider -T 1 -q "http://127.0.0.1:$HTTP_PORT/ping" 2>/dev/null; do
+        if [ "$tries" -le "0" ]; then
+            echo >&2 'ClickHouse init process failed.'
+            exit 1
+        fi
+        tries=$(( tries-1 ))
+        sleep 1
+    done
 
-    if [ ! -z "$CLICKHOUSE_PASSWORD" ]; then
-        printf -v WITH_PASSWORD '%s %q' "--password" "$CLICKHOUSE_PASSWORD"
-    fi
-
-    clickhouseclient=( clickhouse-client --multiquery -u $CLICKHOUSE_USER $WITH_PASSWORD )
+    clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
 
     echo
 
@@ -121,10 +142,11 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
                     "$f"
                 else
                     echo "$0: sourcing $f"
+                    # shellcheck source=/dev/null
                     . "$f"
                 fi
                 ;;
-            *.sql)    echo "$0: running $f"; cat "$f" | "${clickhouseclient[@]}" ; echo ;;
+            *.sql)    echo "$0: running $f"; "${clickhouseclient[@]}" < "$f" ; echo ;;
             *.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${clickhouseclient[@]}"; echo ;;
             *)        echo "$0: ignoring $f" ;;
         esac
@@ -139,7 +161,7 @@ fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
-    exec $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG "$@"
+    exec $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

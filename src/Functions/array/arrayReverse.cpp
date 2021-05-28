@@ -24,7 +24,7 @@ class FunctionArrayReverse : public IFunction
 {
 public:
     static constexpr auto name = "arrayReverse";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayReverse>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReverse>(); }
 
     String getName() const override { return name; }
 
@@ -41,7 +41,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
 
 private:
     template <typename T>
@@ -53,11 +53,11 @@ private:
 };
 
 
-void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const
+ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!array)
-        throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+        throw Exception("Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
     auto res_ptr = array->cloneEmpty();
@@ -96,7 +96,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
                 + " of null map of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-    block.getByPosition(result).column = std::move(res_ptr);
+    return res_ptr;
 }
 
 

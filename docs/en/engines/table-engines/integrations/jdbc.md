@@ -1,5 +1,5 @@
 ---
-toc_priority: 2
+toc_priority: 3
 toc_title: JDBC
 ---
 
@@ -85,4 +85,4 @@ FROM jdbc_table
 
 -   [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/jdbc/) <!--hide-->

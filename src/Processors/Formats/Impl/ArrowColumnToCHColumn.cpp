@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <common/DateLUTImpl.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
@@ -50,7 +50,7 @@ namespace DB
             {arrow::Type::STRING, "String"},
             {arrow::Type::BINARY, "String"},
 
-            // TODO: add other types that are convertable to internal ones:
+            // TODO: add other types that are convertible to internal ones:
             // 0. ENUM?
             // 1. UUID -> String
             // 2. JSON -> String

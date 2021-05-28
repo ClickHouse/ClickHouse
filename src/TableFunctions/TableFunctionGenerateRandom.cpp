@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     ASTs & args_func = ast_function->children;
 
@@ -58,11 +58,7 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function,
     }
 
     /// Parsing first argument as table structure and creating a sample block
-    std::string structure = args[0]->as<const ASTLiteral &>().value.safeGet<String>();
-
-    UInt64 max_string_length = 10;
-    UInt64 max_array_length = 10;
-    std::optional<UInt64> random_seed;
+    structure = args[0]->as<const ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() >= 2)
     {
@@ -76,10 +72,16 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function,
 
     if (args.size() == 4)
         max_array_length = args[3]->as<const ASTLiteral &>().value.safeGet<UInt64>();
+}
 
+ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
+{
+    return parseColumnsListFromString(structure, context);
+}
 
-    ColumnsDescription columns = parseColumnsListFromString(structure, context);
-
+StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+{
+    auto columns = getActualTableStructure(context);
     auto res = StorageGenerateRandom::create(StorageID(getDatabaseName(), table_name), columns, max_array_length, max_string_length, random_seed);
     res->startup();
     return res;

@@ -2,9 +2,10 @@
 #include <AggregateFunctions/AggregateFunctionTopK.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include "registerAggregateFunctions.h"
+
 
 #define TOP_K_MAX_SIZE 0xFFFFFF
 
@@ -85,12 +86,12 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
             load_factor = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
 
             if (load_factor < 1)
-                throw Exception("Too small parameter for aggregate function " + name + ". Minimum: 1",
+                throw Exception("Too small parameter 'load_factor' for aggregate function " + name + ". Minimum: 1",
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
-        if (k > TOP_K_MAX_SIZE)
-            throw Exception("Too large parameter for aggregate function " + name + ". Maximum: " + toString(TOP_K_MAX_SIZE),
+        if (k > TOP_K_MAX_SIZE || load_factor > TOP_K_MAX_SIZE || k * load_factor > TOP_K_MAX_SIZE)
+            throw Exception("Too large parameter(s) for aggregate function " + name + ". Maximum: " + toString(TOP_K_MAX_SIZE),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (k == 0)

@@ -40,7 +40,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(timestamp_ns);
     columns[i++]->insert(signal);
@@ -49,11 +49,11 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(trace);
     columns[i++]->insert(trace_full);
     columns[i++]->insert(VERSION_FULL);
-    columns[i++]->insert(ClickHouseRevision::get());
+    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     String build_id_hex;
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    build_id_hex = SymbolIndex::instance().getBuildIDHex();
+    build_id_hex = SymbolIndex::instance()->getBuildIDHex();
 #endif
     columns[i++]->insert(build_id_hex);
 }

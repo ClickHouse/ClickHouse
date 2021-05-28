@@ -24,9 +24,9 @@ public:
     }
 
 protected:
-    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
+    // using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
+    // ISerialization::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
@@ -41,8 +41,6 @@ protected:
 
     VolumePtr volume;
     String part_path;
-
-    static Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 };

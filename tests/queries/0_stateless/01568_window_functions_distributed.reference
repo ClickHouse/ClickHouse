@@ -1,0 +1,52 @@
+-- { echo }
+set allow_experimental_window_functions = 1;
+select row_number() over (order by dummy) from (select * from remote('127.0.0.{1,2}', system, one));
+1
+2
+select row_number() over (order by dummy) from remote('127.0.0.{1,2}', system, one);
+1
+2
+select max(identity(dummy + 1)) over () from remote('127.0.0.{1,2}', system, one);
+1
+1
+drop table if exists t_01568;
+create table t_01568 engine Log as select intDiv(number, 3) p, number from numbers(9);
+select sum(number) over w, max(number) over w from t_01568 window w as (partition by p);
+3	2
+3	2
+3	2
+12	5
+12	5
+12	5
+21	8
+21	8
+21	8
+select sum(number) over w, max(number) over w from remote('127.0.0.{1,2}', '', t_01568) window w as (partition by p);
+6	2
+6	2
+6	2
+6	2
+6	2
+6	2
+24	5
+24	5
+24	5
+24	5
+24	5
+24	5
+42	8
+42	8
+42	8
+42	8
+42	8
+42	8
+select distinct sum(number) over w, max(number) over w from remote('127.0.0.{1,2}', '', t_01568) window w as (partition by p);
+6	2
+24	5
+42	8
+-- window functions + aggregation w/shards
+select groupArray(groupArray(number)) over (rows unbounded preceding) from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3);
+[[0,3,6,0,3,6]]
+[[0,3,6,0,3,6],[1,4,7,1,4,7]]
+[[0,3,6,0,3,6],[1,4,7,1,4,7],[2,5,8,2,5,8]]
+drop table t_01568;

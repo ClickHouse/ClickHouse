@@ -1,5 +1,6 @@
 #include "Suggest.h"
 
+#include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 
@@ -26,6 +27,8 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
                     connection_parameters.default_database,
                     connection_parameters.user,
                     connection_parameters.password,
+                    "" /* cluster */,
+                    "" /* cluster_secret */,
                     "client",
                     connection_parameters.compression,
                     connection_parameters.security);
@@ -78,13 +81,16 @@ Suggest::Suggest()
              "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
              "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
              "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
-             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "FOR",     "RANDOMIZED",
+             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
              "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE"};
 }
 
 void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
 {
-    std::stringstream query;
+    /// NOTE: Once you will update the completion list,
+    /// do not forget to update 01676_clickhouse_client_autocomplete.sh
+
+    std::stringstream query;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
         "SELECT name FROM system.functions"
         " UNION ALL "
@@ -101,6 +107,10 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
         "SELECT name FROM system.settings"
         " UNION ALL "
         "SELECT cluster FROM system.clusters"
+        " UNION ALL "
+        "SELECT macro FROM system.macros"
+        " UNION ALL "
+        "SELECT policy_name FROM system.storage_policies"
         " UNION ALL "
         "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
 
@@ -126,7 +136,7 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
 
 void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
-    connection.sendQuery(timeouts, query);
+    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete);
 
     while (true)
     {
@@ -156,7 +166,8 @@ void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts
                 return;
 
             default:
-                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                    packet.type, connection.getDescription());
         }
     }
 }

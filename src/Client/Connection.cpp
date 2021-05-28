@@ -1,5 +1,6 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -7,21 +8,25 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <IO/TimeoutSetter.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
-#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/OpenSSLHelpers.h>
+#include <Common/randomSeed.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <pcg_random.hpp>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -49,6 +54,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -69,6 +75,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
 #if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -98,6 +109,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        in->setAsyncCallback(std::move(async_callback));
+
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
@@ -127,6 +140,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
+    maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -161,17 +175,33 @@ void Connection::sendHello()
         || has_control_character(password))
         throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
-    auto client_revision = ClickHouseRevision::get();
-
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    writeVarUInt(client_revision, *out);
+    writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     writeStringBinary(default_database, *out);
-    writeStringBinary(user, *out);
-    writeStringBinary(password, *out);
+    /// If interserver-secret is used, one do not need password
+    /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
+    if (!cluster_secret.empty())
+    {
+        writeStringBinary(USER_INTERSERVER_MARKER, *out);
+        writeStringBinary("" /* password */, *out);
+
+#if USE_SSL
+        sendClusterNameAndSalt();
+#else
+        throw Exception(
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
+            ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+    }
+    else
+    {
+        writeStringBinary(user, *out);
+        writeStringBinary(password, *out);
+    }
 
     out->next();
 }
@@ -181,6 +211,12 @@ void Connection::receiveHello()
 {
     /// Receive hello packet.
     UInt64 packet_type = 0;
+
+    /// Prevent read after eof in readVarUInt in case of reset connection
+    /// (Poco should throw such exception while reading from socket but
+    /// sometimes it doesn't for unknown reason)
+    if (in->eof())
+        throw Poco::Net::NetException("Connection reset by peer");
 
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
@@ -287,6 +323,19 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
     }
 }
 
+#if USE_SSL
+void Connection::sendClusterNameAndSalt()
+{
+    pcg64_fast rng(randomSeed());
+    UInt64 rand = rng();
+
+    salt = encodeSHA256(&rand, sizeof(rand));
+
+    writeStringBinary(cluster, *out);
+    writeStringBinary(salt, *out);
+}
+#endif
+
 bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
@@ -375,7 +424,8 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        compression_codec = CompressionCodecFactory::instance().get(method, level, !settings->allow_suspicious_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
@@ -403,6 +453,37 @@ void Connection::sendQuery(
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
+
+    /// Interserver secret
+    if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
+    {
+        /// Hash
+        ///
+        /// Send correct hash only for !INITIAL_QUERY, due to:
+        /// - this will avoid extra protocol complexity for simplest cases
+        /// - there is no need in hash for the INITIAL_QUERY anyway
+        ///   (since there is no secure/unsecure changes)
+        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        {
+#if USE_SSL
+            std::string data(salt);
+            data += cluster_secret;
+            data += query;
+            data += query_id;
+            data += client_info->initial_user;
+            /// TODO: add source/target host/ip-address
+
+            std::string hash = encodeSHA256(data);
+            writeStringBinary(hash, *out);
+#else
+        throw Exception(
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
+            ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+        }
+        else
+            writeStringBinary("", *out);
+    }
 
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
@@ -463,10 +544,28 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
+void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
+    writeVectorBinary(uuids, *out);
+    out->next();
+}
+
+
+void Connection::sendReadTaskResponse(const String & response)
+{
+    writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
+    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+    writeStringBinary(response, *out);
+    out->next();
+}
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
+
+    if (input.eof())
+        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
 
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
@@ -581,13 +680,21 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
-        DB::connect(elem->pipe->getPort(), sink->getPort());
+        if (!elem->pipe)
+            elem->pipe = elem->creating_pipe_callback();
 
-        auto processors = std::move(*elem->pipe).detachProcessors();
-        processors.push_back(sink);
-
-        executor = std::make_shared<PipelineExecutor>(processors);
+        QueryPipeline pipeline;
+        pipeline.init(std::move(*elem->pipe));
+        elem->pipe.reset();
+        pipeline.resize(1);
+        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
+        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+        {
+            if (type != QueryPipeline::StreamType::Main)
+                return nullptr;
+            return sink;
+        });
+        executor = pipeline.execute();
         executor->execute(/*num_threads = */ 1);
 
         auto read_rows = sink->getNumReadRows();
@@ -709,6 +816,13 @@ Packet Connection::receivePacket()
             case Protocol::Server::EndOfStream:
                 return res;
 
+            case Protocol::Server::PartUUIDs:
+                readVectorBinary(res.part_uuids, *in);
+                return res;
+
+            case Protocol::Server::ReadTaskRequest:
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -719,6 +833,9 @@ Packet Connection::receivePacket()
     }
     catch (Exception & e)
     {
+        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
+        e.setRemoteException();
+
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -806,13 +923,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException()
+std::unique_ptr<Exception> Connection::receiveException() const
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -822,7 +939,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 }
 
 
-Progress Connection::receiveProgress()
+Progress Connection::receiveProgress() const
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -830,7 +947,7 @@ Progress Connection::receiveProgress()
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo()
+BlockStreamProfileInfo Connection::receiveProfileInfo() const
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
 import lxml.etree as etree
@@ -82,5 +82,5 @@ if __name__ == "__main__":
         result_path = args.result_dir
     else:
         result_path = os.path.dirname(junit_path)
-    print "junit_path: {}, result_path: {}, export cases:{}, export suites: {}".format(junit_path, result_path, args.export_cases, args.export_suites)
+    print("junit_path: {}, result_path: {}, export cases:{}, export suites: {}".format(junit_path, result_path, args.export_cases, args.export_suites))
     _convert_junit_to_html(junit_path, result_path, args.export_cases, args.export_suites)

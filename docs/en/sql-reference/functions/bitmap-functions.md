@@ -21,19 +21,19 @@ Build a bitmap from unsigned integer array.
 bitmapBuild(array)
 ```
 
-**Parameters**
+**Arguments**
 
--   `array` – unsigned integer array.
+-   `array` – Unsigned integer array.
 
 **Example**
 
 ``` sql
-SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
+SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 ```
 
 ``` text
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
-│     │ AggregateFunction(groupBitmap, UInt8)    │
+│     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
 ```
 
@@ -45,14 +45,14 @@ Convert bitmap to integer array.
 bitmapToArray(bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
+SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 ``` text
@@ -63,22 +63,22 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapSubsetInRange {#bitmap-functions-bitmapsubsetinrange}
 
-Return subset in specified range (not include the range\_end).
+Return subset in specified range (not include the range_end).
 
 ``` sql
 bitmapSubsetInRange(bitmap, range_start, range_end)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
--   `range_start` – range start point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `range_end` – range end point(excluded). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `range_start` – Range start point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `range_end` – Range end point (excluded). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
 ``` sql
-SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res;
 ```
 
 ``` text
@@ -97,7 +97,7 @@ Creates a subset of bitmap with n elements taken between `range_start` and `card
 bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
 -   `range_start` – The subset starting point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
@@ -114,7 +114,7 @@ Type: `Bitmap object`.
 Query:
 
 ``` sql
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res;
 ```
 
 Result:
@@ -133,7 +133,7 @@ Checks whether the bitmap contains an element.
 bitmapContains(haystack, needle)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
 -   `needle` – Value that the function searches. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
@@ -148,7 +148,7 @@ Type: `UInt8`.
 **Example**
 
 ``` sql
-SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
+SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res;
 ```
 
 ``` text
@@ -167,9 +167,9 @@ bitmapHasAny(bitmap1, bitmap2)
 
 If you are sure that `bitmap2` contains strictly one element, consider using the [bitmapContains](#bitmap_functions-bitmapcontains) function. It works more efficiently.
 
-**Parameters**
+**Arguments**
 
--   `bitmap*` – bitmap object.
+-   `bitmap*` – Bitmap object.
 
 **Return values**
 
@@ -179,7 +179,7 @@ If you are sure that `bitmap2` contains strictly one element, consider using the
 **Example**
 
 ``` sql
-SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 ``` text
@@ -197,14 +197,14 @@ If the second argument is an empty bitmap then returns 1.
 bitmapHasAll(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
 ``` text
@@ -221,14 +221,14 @@ Retrun bitmap cardinality of type UInt64.
 bitmapCardinality(bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
+SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 ``` text
@@ -239,23 +239,25 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapMin {#bitmapmin}
 
-Retrun the smallest value of type UInt64 in the set, UINT32\_MAX if the set is empty.
+Retrun the smallest value of type UInt64 in the set, UINT32_MAX if the set is empty.
 
     bitmapMin(bitmap)
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
+SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
-    ┌─res─┐
-    │   1 │
-    └─────┘
+``` text
+ ┌─res─┐
+ │   1 │
+ └─────┘
+```
 
 ## bitmapMax {#bitmapmax}
 
@@ -263,19 +265,21 @@ Retrun the greatest value of type UInt64 in the set, 0 if the set is empty.
 
     bitmapMax(bitmap)
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
+SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
-    ┌─res─┐
-    │   5 │
-    └─────┘
+``` text
+ ┌─res─┐
+ │   5 │
+ └─────┘
+```
 
 ## bitmapTransform {#bitmaptransform}
 
@@ -283,21 +287,23 @@ Transform an array of values in a bitmap to another array of values, the result 
 
     bitmapTransform(bitmap, from_array, to_array)
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
--   `from_array` – UInt32 array. For idx in range \[0, from\_array.size()), if bitmap contains from\_array\[idx\], then replace it with to\_array\[idx\]. Note that the result depends on array ordering if there are common elements between from\_array and to\_array.
--   `to_array` – UInt32 array, its size shall be the same to from\_array.
+-   `bitmap` – Bitmap object.
+-   `from_array` – UInt32 array. For idx in range \[0, from_array.size()), if bitmap contains from_array\[idx\], then replace it with to_array\[idx\]. Note that the result depends on array ordering if there are common elements between from_array and to_array.
+-   `to_array` – UInt32 array, its size shall be the same to from_array.
 
 **Example**
 
 ``` sql
-SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)))) AS res
+SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)))) AS res;
 ```
 
-    ┌─res───────────────────┐
-    │ [1,3,4,6,7,8,9,10,20] │
-    └───────────────────────┘
+``` text
+ ┌─res───────────────────┐
+ │ [1,3,4,6,7,8,9,10,20] │
+ └───────────────────────┘
+```
 
 ## bitmapAnd {#bitmapand}
 
@@ -307,14 +313,14 @@ Two bitmap and calculation, the result is a new bitmap.
 bitmapAnd(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
+SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 ``` text
@@ -331,14 +337,14 @@ Two bitmap or calculation, the result is a new bitmap.
 bitmapOr(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
+SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 ``` text
@@ -355,14 +361,14 @@ Two bitmap xor calculation, the result is a new bitmap.
 bitmapXor(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
+SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 ``` text
@@ -379,14 +385,14 @@ Two bitmap andnot calculation, the result is a new bitmap.
 bitmapAndnot(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
 ``` sql
-SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
+SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res;
 ```
 
 ``` text
@@ -403,9 +409,9 @@ Two bitmap and calculation, return cardinality of type UInt64.
 bitmapAndCardinality(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
@@ -427,9 +433,9 @@ Two bitmap or calculation, return cardinality of type UInt64.
 bitmapOrCardinality(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
@@ -451,9 +457,9 @@ Two bitmap xor calculation, return cardinality of type UInt64.
 bitmapXorCardinality(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
@@ -475,9 +481,9 @@ Two bitmap andnot calculation, return cardinality of type UInt64.
 bitmapAndnotCardinality(bitmap,bitmap)
 ```
 
-**Parameters**
+**Arguments**
 
--   `bitmap` – bitmap object.
+-   `bitmap` – Bitmap object.
 
 **Example**
 
@@ -491,4 +497,3 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 └─────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/bitmap_functions/) <!--hide-->

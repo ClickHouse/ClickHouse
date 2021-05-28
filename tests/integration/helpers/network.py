@@ -1,11 +1,8 @@
-import os.path as p
+import os
 import subprocess
 import time
-import os
 
 import docker
-
-from .cluster import CLICKHOUSE_ROOT_DIR
 
 
 class PartitionManager:
@@ -22,7 +19,8 @@ class PartitionManager:
 
     def __init__(self):
         self._iptables_rules = []
-
+        self._netem_delayed_instances = []
+        _NetworkManager.get()
 
     def drop_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)
@@ -30,13 +28,11 @@ class PartitionManager:
         self._add_rule({'source': instance.ip_address, 'destination_port': 2181, 'action': action})
         self._add_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
 
-
     def restore_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)
 
         self._delete_rule({'source': instance.ip_address, 'destination_port': 2181, 'action': action})
         self._delete_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
-
 
     def partition_instances(self, left, right, port=None, action='DROP'):
         self._check_instance(left)
@@ -51,11 +47,17 @@ class PartitionManager:
         self._add_rule(create_rule(left, right))
         self._add_rule(create_rule(right, left))
 
+    def add_network_delay(self, instance, delay_ms):
+        self._add_tc_netem_delay(instance, delay_ms)
 
     def heal_all(self):
         while self._iptables_rules:
             rule = self._iptables_rules.pop()
             _NetworkManager.get().delete_iptables_rule(**rule)
+
+        while self._netem_delayed_instances:
+            instance = self._netem_delayed_instances.pop()
+            instance.exec_in_container(["bash", "-c", "tc qdisc del dev eth0 root netem"], user="root")
 
     def pop_rules(self):
         res = self._iptables_rules[:]
@@ -65,7 +67,6 @@ class PartitionManager:
     def push_rules(self, rules):
         for rule in rules:
             self._add_rule(rule)
-
 
     @staticmethod
     def _check_instance(instance):
@@ -79,6 +80,10 @@ class PartitionManager:
     def _delete_rule(self, rule):
         _NetworkManager.get().delete_iptables_rule(**rule)
         self._iptables_rules.remove(rule)
+
+    def _add_tc_netem_delay(self, instance, delay_ms):
+        instance.exec_in_container(["bash", "-c", "tc qdisc add dev eth0 root netem delay {}ms".format(delay_ms)], user="root")
+        self._netem_delayed_instances.append(instance)
 
     def __enter__(self):
         return self
@@ -152,7 +157,6 @@ class _NetworkManager:
             ret.extend(['-j'] + action.split())
         return ret
 
-
     def __init__(
             self,
             container_expire_timeout=50, container_exit_timeout=60):
@@ -169,13 +173,33 @@ class _NetworkManager:
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
 
-            if self._container is not None:
-                try:
-                    self._container.remove(force=True)
-                except docker.errors.NotFound:
-                    pass
+            for i in range(5):
+                if self._container is not None:
+                    try:
+                        self._container.remove(force=True)
+                        break
+                    except docker.errors.NotFound:
+                        break
+                    except Exception as ex:
+                        print("Error removing network blocade container, will try again", str(ex))
+                        time.sleep(i)
 
-            self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper', auto_remove=True,
+            image = subprocess.check_output("docker images -q yandex/clickhouse-integration-helper 2>/dev/null", shell=True)
+            if not image.strip():
+                print("No network image helper, will try download")
+                # for some reason docker api may hang if image doesn't exist, so we download it
+                # before running
+                for i in range(5):
+                    try:
+                        subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                        break
+                    except:
+                        time.sleep(i)
+                else:
+                    raise Exception("Cannot pull yandex/clickhouse-integration-helper image")
+
+            self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper',
+                                                                 auto_remove=True,
                                                                  command=('sleep %s' % self.container_exit_timeout),
                                                                  detach=True, network_mode='host')
             container_id = self._container.id
@@ -191,7 +215,7 @@ class _NetworkManager:
         exit_code = self._docker_client.api.exec_inspect(handle)['ExitCode']
 
         if exit_code != 0:
-            print output
+            print(output)
             raise subprocess.CalledProcessError(exit_code, cmd)
 
         return output

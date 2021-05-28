@@ -17,87 +17,97 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
 
+    const auto message = fmt::format(
+        "The signature of table function {} could be the following:\n" \
+        " - url, format, structure\n" \
+        " - url, format, structure, compression_method\n" \
+        " - url, access_key_id, secret_access_key, format, structure\n" \
+        " - url, access_key_id, secret_access_key, format, structure, compression_method",
+        getName());
+
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = args_func.at(0)->children;
 
     if (args.size() < 3 || args.size() > 6)
-        throw Exception("Table function '" + getName() + "' requires 3 to 6 arguments: url, [access_key_id, secret_access_key,] format, structure and [compression_method].",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    String filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    String format;
-    String structure;
-    String access_key_id;
-    String secret_access_key;
-
-    if (args.size() < 5)
+    /// Size -> argument indexes
+    static auto size_to_args = std::map<size_t, std::map<String, size_t>>
     {
-        format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else
-    {
-        access_key_id = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        secret_access_key = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        format = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-    }
+        {3, {{"format", 1}, {"structure", 2}}},
+        {4, {{"format", 1}, {"structure", 2}, {"compression_method", 3}}},
+        {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}}},
+        {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
+    };
 
-    String compression_method;
-    if (args.size() == 4 || args.size() == 6)
-        compression_method = args.back()->as<ASTLiteral &>().value.safeGet<String>();
-    else
-        compression_method = "auto";
+    /// This argument is always the first
+    filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-    ColumnsDescription columns = parseColumnsListFromString(structure, context);
+    auto & args_to_idx = size_to_args[args.size()];
 
-    /// Create table
-    StoragePtr storage = getStorage(filename, access_key_id, secret_access_key, format, columns, const_cast<Context &>(context), table_name, compression_method);
+    if (args_to_idx.contains("format"))
+        format = args[args_to_idx["format"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("structure"))
+        structure = args[args_to_idx["structure"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("compression_method"))
+        compression_method = args[args_to_idx["compression_method"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("access_key_id"))
+        access_key_id = args[args_to_idx["access_key_id"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("secret_access_key"))
+        secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
+}
+
+ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
+{
+    return parseColumnsListFromString(structure, context);
+}
+
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+{
+    Poco::URI uri (filename);
+    S3::URI s3_uri (uri);
+    UInt64 s3_max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
+    UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
+    UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
+    UInt64 max_connections = context->getSettingsRef().s3_max_connections;
+
+    StoragePtr storage = StorageS3::create(
+            s3_uri,
+            access_key_id,
+            secret_access_key,
+            StorageID(getDatabaseName(), table_name),
+            format,
+            s3_max_single_read_retries,
+            min_upload_part_size,
+            max_single_part_upload_size,
+            max_connections,
+            getActualTableStructure(context),
+            ConstraintsDescription{},
+            context,
+            compression_method);
 
     storage->startup();
 
     return storage;
 }
 
-StoragePtr TableFunctionS3::getStorage(
-    const String & source,
-    const String & access_key_id,
-    const String & secret_access_key,
-    const String & format,
-    const ColumnsDescription & columns,
-    Context & global_context,
-    const std::string & table_name,
-    const String & compression_method)
-{
-    Poco::URI uri (source);
-    S3::URI s3_uri (uri);
-    UInt64 min_upload_part_size = global_context.getSettingsRef().s3_min_upload_part_size;
-    return StorageS3::create(
-        s3_uri,
-        access_key_id,
-        secret_access_key,
-        StorageID(getDatabaseName(), table_name),
-        format,
-        min_upload_part_size,
-        columns,
-        ConstraintsDescription{},
-        global_context,
-        compression_method);
-}
 
 void registerTableFunctionS3(TableFunctionFactory & factory)
 {

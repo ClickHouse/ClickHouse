@@ -15,7 +15,7 @@ class IAST;
 class WindowViewBlockInputStream;
 using ASTPtr = std::shared_ptr<IAST>;
 
-class StorageWindowView final : public ext::shared_ptr_helper<StorageWindowView>, public IStorage
+class StorageWindowView final : public ext::shared_ptr_helper<StorageWindowView>, public IStorage, WithContext
 {
     friend struct ext::shared_ptr_helper<StorageWindowView>;
     friend class TimestampTransformation;
@@ -25,7 +25,8 @@ class StorageWindowView final : public ext::shared_ptr_helper<StorageWindowView>
 public:
     ~StorageWindowView() override;
     String getName() const override { return "WindowView"; }
-
+    
+    bool isView() const override { return true; }
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
@@ -33,7 +34,7 @@ public:
 
     void drop() override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -41,7 +42,8 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
-        const Context & context) override;
+        const Names & deduplicate_by_columns,
+        ContextPtr context) override;
 
     void startup() override;
     void shutdown() override;
@@ -49,21 +51,20 @@ public:
     BlockInputStreams watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
     BlockInputStreamPtr getNewBlocksInputStreamPtr(UInt32 watermark);
 
-    static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context);
+    static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
 
 private:
     ASTPtr mergeable_query;
     ASTPtr final_query;
 
-    Context & global_context;
-    std::unique_ptr<Context> wv_context;
+    ContextPtr window_view_context;
     bool is_proctime{true};
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop
@@ -118,10 +119,10 @@ private:
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
     void eventTimeParser(const ASTCreateQuery & query);
 
-    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(
+    std::shared_ptr<ASTCreateQuery> getInnerTableCreateQuery(
         const ASTPtr & inner_query, ASTStorage * storage, const String & database_name, const String & table_name);
     UInt32 getCleanupBound();
-    ASTPtr generateCleanupQuery();
+    ASTPtr getCleanupQuery();
 
     UInt32 getWindowLowerBound(UInt32 time_sec);
     UInt32 getWindowUpperBound(UInt32 time_sec);
@@ -134,8 +135,6 @@ private:
     void addFireSignal(std::set<UInt32> & signals);
     void updateMaxWatermark(UInt32 watermark);
     void updateMaxTimestamp(UInt32 timestamp);
-
-    static Pipes blocksToPipes(BlocksList & blocks, Block & sample_block);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
     ASTPtr getFinalQuery() const { return final_query->clone(); }
@@ -153,7 +152,7 @@ private:
 
     StorageWindowView(
         const StorageID & table_id_,
-        Context & local_context,
+        ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns,
         bool attach_);

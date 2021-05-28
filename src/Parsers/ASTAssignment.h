@@ -10,21 +10,18 @@ class ASTAssignment : public IAST
 {
 public:
     String column_name;
-    ASTPtr expression;
+
+    ASTPtr expression() const
+    {
+        return children.at(0);
+    }
 
     String getID(char delim) const override { return "Assignment" + (delim + column_name); }
 
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTAssignment>(*this);
-        res->children.clear();
-
-        if (expression)
-        {
-            res->expression = expression->clone();
-            res->children.push_back(res->expression);
-        }
-
+        res->children = { expression()->clone() };
         return res;
     }
 
@@ -37,7 +34,7 @@ protected:
 
         settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
 
-        expression->formatImpl(settings, state, frame);
+        expression()->formatImpl(settings, state, frame);
     }
 };
 

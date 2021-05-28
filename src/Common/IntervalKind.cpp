@@ -51,10 +51,10 @@ IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
             return IntervalKind::Year;
         if (!(num_seconds % 7889238))
             return IntervalKind::Quarter;
-        if (!(num_seconds % 604800))
-            return IntervalKind::Week;
         if (!(num_seconds % 2629746))
             return IntervalKind::Month;
+        if (!(num_seconds % 604800))
+            return IntervalKind::Week;
         if (!(num_seconds % 86400))
             return IntervalKind::Day;
         if (!(num_seconds % 3600))
@@ -175,5 +175,51 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
             return "toYear";
     }
     __builtin_unreachable();
+}
+
+
+bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
+{
+    if ("second" == kind)
+    {
+        result = IntervalKind::Second;
+        return true;
+    }
+    if ("minute" == kind)
+    {
+        result = IntervalKind::Minute;
+        return true;
+    }
+    if ("hour" == kind)
+    {
+        result = IntervalKind::Hour;
+        return true;
+    }
+    if ("day" == kind)
+    {
+        result = IntervalKind::Day;
+        return true;
+    }
+    if ("week" == kind)
+    {
+        result = IntervalKind::Week;
+        return true;
+    }
+    if ("month" == kind)
+    {
+        result = IntervalKind::Month;
+        return true;
+    }
+    if ("quarter" == kind)
+    {
+        result = IntervalKind::Quarter;
+        return true;
+    }
+    if ("year" == kind)
+    {
+        result = IntervalKind::Year;
+        return true;
+    }
+    return false;
 }
 }

@@ -11,7 +11,7 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-
+#include <ext/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -67,9 +67,14 @@ public:
     /// Returns number of running and scheduled jobs.
     size_t active() const;
 
+    /// Returns true if the pool already terminated
+    /// (and any further scheduling will produce CANNOT_SCHEDULE_TASK exception)
+    bool finished() const;
+
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
+    size_t getMaxThreads() const;
 
 private:
     mutable std::mutex mutex;
@@ -161,21 +166,20 @@ public:
         GlobalThreadPool::instance().scheduleOrThrow([
             state = state,
             func = std::forward<Function>(func),
-            args = std::make_tuple(std::forward<Args>(args)...)]
+            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            try
-            {
-                /// Thread status holds raw pointer on query context, thus it always must be destroyed
-                /// before sending signal that permits to join this thread.
-                DB::ThreadStatus thread_status;
-                std::apply(func, args);
-            }
-            catch (...)
-            {
-                state->set();
-                throw;
-            }
-            state->set();
+            auto event = std::move(state);
+            SCOPE_EXIT(event->set());
+
+            /// This moves are needed to destroy function and arguments before exit.
+            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
+            auto function = std::move(func);
+            auto arguments = std::move(args);
+
+            /// Thread status holds raw pointer on query context, thus it always must be destroyed
+            /// before sending signal that permits to join this thread.
+            DB::ThreadStatus thread_status;
+            std::apply(function, arguments);
         });
     }
 
@@ -187,7 +191,7 @@ public:
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
         if (joinable())
-            std::terminate();
+            abort();
         state = std::move(rhs.state);
         return *this;
     }
@@ -195,13 +199,13 @@ public:
     ~ThreadFromGlobalPool()
     {
         if (joinable())
-            std::terminate();
+            abort();
     }
 
     void join()
     {
         if (!joinable())
-            std::terminate();
+            abort();
 
         state->wait();
         state.reset();
@@ -210,7 +214,7 @@ public:
     void detach()
     {
         if (!joinable())
-            std::terminate();
+            abort();
         state.reset();
     }
 

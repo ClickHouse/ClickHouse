@@ -1,7 +1,7 @@
-# SRS-006 ClickHouse Role Based Access Control<br>Software Requirements Specification
+# SRS-006 ClickHouse Role Based Access Control
+# Software Requirements Specification
 
 ## Table of Contents
-
 * 1 [Revision History](#revision-history)
 * 2 [Introduction](#introduction)
 * 3 [Terminology](#terminology)
@@ -9,433 +9,594 @@
 * 5 [Requirements](#requirements)
   * 5.1 [Generic](#generic)
     * 5.1.1 [RQ.SRS-006.RBAC](#rqsrs-006rbac)
-    * 5.1.2 [Login](#login)
-      * 5.1.2.1 [RQ.SRS-006.RBAC.Login](#rqsrs-006rbaclogin)
-      * 5.1.2.2 [RQ.SRS-006.RBAC.Login.DefaultUser](#rqsrs-006rbaclogindefaultuser)
-    * 5.1.3 [User](#user)
-      * 5.1.3.1 [RQ.SRS-006.RBAC.User](#rqsrs-006rbacuser)
-      * 5.1.3.2 [RQ.SRS-006.RBAC.User.Roles](#rqsrs-006rbacuserroles)
-      * 5.1.3.3 [RQ.SRS-006.RBAC.User.Privileges](#rqsrs-006rbacuserprivileges)
-      * 5.1.3.4 [RQ.SRS-006.RBAC.User.Variables](#rqsrs-006rbacuservariables)
-      * 5.1.3.5 [RQ.SRS-006.RBAC.User.Variables.Constraints](#rqsrs-006rbacuservariablesconstraints)
-      * 5.1.3.6 [RQ.SRS-006.RBAC.User.SettingsProfile](#rqsrs-006rbacusersettingsprofile)
-      * 5.1.3.7 [RQ.SRS-006.RBAC.User.Quotas](#rqsrs-006rbacuserquotas)
-      * 5.1.3.8 [RQ.SRS-006.RBAC.User.RowPolicies](#rqsrs-006rbacuserrowpolicies)
-      * 5.1.3.9 [RQ.SRS-006.RBAC.User.AccountLock](#rqsrs-006rbacuseraccountlock)
-      * 5.1.3.10 [RQ.SRS-006.RBAC.User.AccountLock.DenyAccess](#rqsrs-006rbacuseraccountlockdenyaccess)
-      * 5.1.3.11 [RQ.SRS-006.RBAC.User.DefaultRole](#rqsrs-006rbacuserdefaultrole)
-      * 5.1.3.12 [RQ.SRS-006.RBAC.User.RoleSelection](#rqsrs-006rbacuserroleselection)
-      * 5.1.3.13 [RQ.SRS-006.RBAC.User.ShowCreate](#rqsrs-006rbacusershowcreate)
-      * 5.1.3.14 [RQ.SRS-006.RBAC.User.ShowPrivileges](#rqsrs-006rbacusershowprivileges)
-    * 5.1.4 [Role](#role)
-      * 5.1.4.1 [RQ.SRS-006.RBAC.Role](#rqsrs-006rbacrole)
-      * 5.1.4.2 [RQ.SRS-006.RBAC.Role.Privileges](#rqsrs-006rbacroleprivileges)
-      * 5.1.4.3 [RQ.SRS-006.RBAC.Role.Variables](#rqsrs-006rbacrolevariables)
-      * 5.1.4.4 [RQ.SRS-006.RBAC.Role.SettingsProfile](#rqsrs-006rbacrolesettingsprofile)
-      * 5.1.4.5 [RQ.SRS-006.RBAC.Role.Quotas](#rqsrs-006rbacrolequotas)
-      * 5.1.4.6 [RQ.SRS-006.RBAC.Role.RowPolicies](#rqsrs-006rbacrolerowpolicies)
-    * 5.1.5 [Privileges](#privileges)
-      * 5.1.5.1 [RQ.SRS-006.RBAC.Privileges.Usage](#rqsrs-006rbacprivilegesusage)
-      * 5.1.5.2 [RQ.SRS-006.RBAC.Privileges.Select](#rqsrs-006rbacprivilegesselect)
-      * 5.1.5.3 [RQ.SRS-006.RBAC.Privileges.SelectColumns](#rqsrs-006rbacprivilegesselectcolumns)
-      * 5.1.5.4 [RQ.SRS-006.RBAC.Privileges.Insert](#rqsrs-006rbacprivilegesinsert)
-      * 5.1.5.5 [RQ.SRS-006.RBAC.Privileges.Delete](#rqsrs-006rbacprivilegesdelete)
-      * 5.1.5.6 [RQ.SRS-006.RBAC.Privileges.Alter](#rqsrs-006rbacprivilegesalter)
-      * 5.1.5.7 [RQ.SRS-006.RBAC.Privileges.Create](#rqsrs-006rbacprivilegescreate)
-      * 5.1.5.8 [RQ.SRS-006.RBAC.Privileges.Drop](#rqsrs-006rbacprivilegesdrop)
-      * 5.1.5.9 [RQ.SRS-006.RBAC.Privileges.All](#rqsrs-006rbacprivilegesall)
-      * 5.1.5.10 [RQ.SRS-006.RBAC.Privileges.All.GrantRevoke](#rqsrs-006rbacprivilegesallgrantrevoke)
-      * 5.1.5.11 [RQ.SRS-006.RBAC.Privileges.GrantOption](#rqsrs-006rbacprivilegesgrantoption)
-      * 5.1.5.12 [RQ.SRS-006.RBAC.Privileges.AdminOption](#rqsrs-006rbacprivilegesadminoption)
-    * 5.1.6 [Required Privileges](#required-privileges)
-      * 5.1.6.1 [RQ.SRS-006.RBAC.RequiredPrivileges.Insert](#rqsrs-006rbacrequiredprivilegesinsert)
-      * 5.1.6.2 [RQ.SRS-006.RBAC.RequiredPrivileges.Select](#rqsrs-006rbacrequiredprivilegesselect)
-      * 5.1.6.3 [RQ.SRS-006.RBAC.RequiredPrivileges.Create](#rqsrs-006rbacrequiredprivilegescreate)
-      * 5.1.6.4 [RQ.SRS-006.RBAC.RequiredPrivileges.Alter](#rqsrs-006rbacrequiredprivilegesalter)
-      * 5.1.6.5 [RQ.SRS-006.RBAC.RequiredPrivileges.Drop](#rqsrs-006rbacrequiredprivilegesdrop)
-      * 5.1.6.6 [RQ.SRS-006.RBAC.RequiredPrivileges.Drop.Table](#rqsrs-006rbacrequiredprivilegesdroptable)
-      * 5.1.6.7 [RQ.SRS-006.RBAC.RequiredPrivileges.GrantRevoke](#rqsrs-006rbacrequiredprivilegesgrantrevoke)
-      * 5.1.6.8 [RQ.SRS-006.RBAC.RequiredPrivileges.Use](#rqsrs-006rbacrequiredprivilegesuse)
-      * 5.1.6.9 [RQ.SRS-006.RBAC.RequiredPrivileges.Admin](#rqsrs-006rbacrequiredprivilegesadmin)
-    * 5.1.7 [Partial Revokes](#partial-revokes)
-      * 5.1.7.1 [RQ.SRS-006.RBAC.PartialRevokes](#rqsrs-006rbacpartialrevokes)
-    * 5.1.8 [Settings Profile](#settings-profile)
-      * 5.1.8.1 [RQ.SRS-006.RBAC.SettingsProfile](#rqsrs-006rbacsettingsprofile)
-      * 5.1.8.2 [RQ.SRS-006.RBAC.SettingsProfile.Constraints](#rqsrs-006rbacsettingsprofileconstraints)
-      * 5.1.8.3 [RQ.SRS-006.RBAC.SettingsProfile.ShowCreate](#rqsrs-006rbacsettingsprofileshowcreate)
-    * 5.1.9 [Quotas](#quotas)
-      * 5.1.9.1 [RQ.SRS-006.RBAC.Quotas](#rqsrs-006rbacquotas)
-      * 5.1.9.2 [RQ.SRS-006.RBAC.Quotas.Keyed](#rqsrs-006rbacquotaskeyed)
-      * 5.1.9.3 [RQ.SRS-006.RBAC.Quotas.Queries](#rqsrs-006rbacquotasqueries)
-      * 5.1.9.4 [RQ.SRS-006.RBAC.Quotas.Errors](#rqsrs-006rbacquotaserrors)
-      * 5.1.9.5 [RQ.SRS-006.RBAC.Quotas.ResultRows](#rqsrs-006rbacquotasresultrows)
-      * 5.1.9.6 [RQ.SRS-006.RBAC.Quotas.ReadRows](#rqsrs-006rbacquotasreadrows)
-      * 5.1.9.7 [RQ.SRS-006.RBAC.Quotas.ResultBytes](#rqsrs-006rbacquotasresultbytes)
-      * 5.1.9.8 [RQ.SRS-006.RBAC.Quotas.ReadBytes](#rqsrs-006rbacquotasreadbytes)
-      * 5.1.9.9 [RQ.SRS-006.RBAC.Quotas.ExecutionTime](#rqsrs-006rbacquotasexecutiontime)
-      * 5.1.9.10 [RQ.SRS-006.RBAC.Quotas.ShowCreate](#rqsrs-006rbacquotasshowcreate)
-    * 5.1.10 [Row Policy](#row-policy)
-      * 5.1.10.1 [RQ.SRS-006.RBAC.RowPolicy](#rqsrs-006rbacrowpolicy)
-      * 5.1.10.2 [RQ.SRS-006.RBAC.RowPolicy.Condition](#rqsrs-006rbacrowpolicycondition)
-      * 5.1.10.3 [RQ.SRS-006.RBAC.RowPolicy.ShowCreate](#rqsrs-006rbacrowpolicyshowcreate)
-  * 5.2 [Specific](#specific)
-      * 5.2.10.1 [RQ.SRS-006.RBAC.User.Use.DefaultRole](#rqsrs-006rbacuserusedefaultrole)
-      * 5.2.10.2 [RQ.SRS-006.RBAC.User.Use.AllRolesWhenNoDefaultRole](#rqsrs-006rbacuseruseallroleswhennodefaultrole)
-      * 5.2.10.3 [RQ.SRS-006.RBAC.User.Create](#rqsrs-006rbacusercreate)
-      * 5.2.10.4 [RQ.SRS-006.RBAC.User.Create.IfNotExists](#rqsrs-006rbacusercreateifnotexists)
-      * 5.2.10.5 [RQ.SRS-006.RBAC.User.Create.Replace](#rqsrs-006rbacusercreatereplace)
-      * 5.2.10.6 [RQ.SRS-006.RBAC.User.Create.Password.NoPassword](#rqsrs-006rbacusercreatepasswordnopassword)
-      * 5.2.10.7 [RQ.SRS-006.RBAC.User.Create.Password.NoPassword.Login](#rqsrs-006rbacusercreatepasswordnopasswordlogin)
-      * 5.2.10.8 [RQ.SRS-006.RBAC.User.Create.Password.PlainText](#rqsrs-006rbacusercreatepasswordplaintext)
-      * 5.2.10.9 [RQ.SRS-006.RBAC.User.Create.Password.PlainText.Login](#rqsrs-006rbacusercreatepasswordplaintextlogin)
-      * 5.2.10.10 [RQ.SRS-006.RBAC.User.Create.Password.Sha256Password](#rqsrs-006rbacusercreatepasswordsha256password)
-      * 5.2.10.11 [RQ.SRS-006.RBAC.User.Create.Password.Sha256Password.Login](#rqsrs-006rbacusercreatepasswordsha256passwordlogin)
-      * 5.2.10.12 [RQ.SRS-006.RBAC.User.Create.Password.Sha256Hash](#rqsrs-006rbacusercreatepasswordsha256hash)
-      * 5.2.10.13 [RQ.SRS-006.RBAC.User.Create.Password.Sha256Hash.Login](#rqsrs-006rbacusercreatepasswordsha256hashlogin)
-      * 5.2.10.14 [RQ.SRS-006.RBAC.User.Create.Password.DoubleSha1Password](#rqsrs-006rbacusercreatepassworddoublesha1password)
-      * 5.2.10.15 [RQ.SRS-006.RBAC.User.Create.Password.DoubleSha1Password.Login](#rqsrs-006rbacusercreatepassworddoublesha1passwordlogin)
-      * 5.2.10.16 [RQ.SRS-006.RBAC.User.Create.Password.DoubleSha1Hash](#rqsrs-006rbacusercreatepassworddoublesha1hash)
-      * 5.2.10.17 [RQ.SRS-006.RBAC.User.Create.Password.DoubleSha1Hash.Login](#rqsrs-006rbacusercreatepassworddoublesha1hashlogin)
-      * 5.2.10.18 [RQ.SRS-006.RBAC.User.Create.Host.Name](#rqsrs-006rbacusercreatehostname)
-      * 5.2.10.19 [RQ.SRS-006.RBAC.User.Create.Host.Regexp](#rqsrs-006rbacusercreatehostregexp)
-      * 5.2.10.20 [RQ.SRS-006.RBAC.User.Create.Host.IP](#rqsrs-006rbacusercreatehostip)
-      * 5.2.10.21 [RQ.SRS-006.RBAC.User.Create.Host.Any](#rqsrs-006rbacusercreatehostany)
-      * 5.2.10.22 [RQ.SRS-006.RBAC.User.Create.Host.None](#rqsrs-006rbacusercreatehostnone)
-      * 5.2.10.23 [RQ.SRS-006.RBAC.User.Create.Host.Local](#rqsrs-006rbacusercreatehostlocal)
-      * 5.2.10.24 [RQ.SRS-006.RBAC.User.Create.Host.Like](#rqsrs-006rbacusercreatehostlike)
-      * 5.2.10.25 [RQ.SRS-006.RBAC.User.Create.Host.Default](#rqsrs-006rbacusercreatehostdefault)
-      * 5.2.10.26 [RQ.SRS-006.RBAC.User.Create.DefaultRole](#rqsrs-006rbacusercreatedefaultrole)
-      * 5.2.10.27 [RQ.SRS-006.RBAC.User.Create.DefaultRole.None](#rqsrs-006rbacusercreatedefaultrolenone)
-      * 5.2.10.28 [RQ.SRS-006.RBAC.User.Create.DefaultRole.All](#rqsrs-006rbacusercreatedefaultroleall)
-      * 5.2.10.29 [RQ.SRS-006.RBAC.User.Create.Settings](#rqsrs-006rbacusercreatesettings)
-      * 5.2.10.30 [RQ.SRS-006.RBAC.User.Create.OnCluster](#rqsrs-006rbacusercreateoncluster)
-      * 5.2.10.31 [RQ.SRS-006.RBAC.User.Create.Syntax](#rqsrs-006rbacusercreatesyntax)
-      * 5.2.10.32 [RQ.SRS-006.RBAC.User.Alter](#rqsrs-006rbacuseralter)
-      * 5.2.10.33 [RQ.SRS-006.RBAC.User.Alter.OrderOfEvaluation](#rqsrs-006rbacuseralterorderofevaluation)
-      * 5.2.10.34 [RQ.SRS-006.RBAC.User.Alter.IfExists](#rqsrs-006rbacuseralterifexists)
-      * 5.2.10.35 [RQ.SRS-006.RBAC.User.Alter.Cluster](#rqsrs-006rbacuseraltercluster)
-      * 5.2.10.36 [RQ.SRS-006.RBAC.User.Alter.Rename](#rqsrs-006rbacuseralterrename)
-      * 5.2.10.37 [RQ.SRS-006.RBAC.User.Alter.Password.PlainText](#rqsrs-006rbacuseralterpasswordplaintext)
-      * 5.2.10.38 [RQ.SRS-006.RBAC.User.Alter.Password.Sha256Password](#rqsrs-006rbacuseralterpasswordsha256password)
-      * 5.2.10.39 [RQ.SRS-006.RBAC.User.Alter.Password.DoubleSha1Password](#rqsrs-006rbacuseralterpassworddoublesha1password)
-      * 5.2.10.40 [RQ.SRS-006.RBAC.User.Alter.Host.AddDrop](#rqsrs-006rbacuseralterhostadddrop)
-      * 5.2.10.41 [RQ.SRS-006.RBAC.User.Alter.Host.Local](#rqsrs-006rbacuseralterhostlocal)
-      * 5.2.10.42 [RQ.SRS-006.RBAC.User.Alter.Host.Name](#rqsrs-006rbacuseralterhostname)
-      * 5.2.10.43 [RQ.SRS-006.RBAC.User.Alter.Host.Regexp](#rqsrs-006rbacuseralterhostregexp)
-      * 5.2.10.44 [RQ.SRS-006.RBAC.User.Alter.Host.IP](#rqsrs-006rbacuseralterhostip)
-      * 5.2.10.45 [RQ.SRS-006.RBAC.User.Alter.Host.Like](#rqsrs-006rbacuseralterhostlike)
-      * 5.2.10.46 [RQ.SRS-006.RBAC.User.Alter.Host.Any](#rqsrs-006rbacuseralterhostany)
-      * 5.2.10.47 [RQ.SRS-006.RBAC.User.Alter.Host.None](#rqsrs-006rbacuseralterhostnone)
-      * 5.2.10.48 [RQ.SRS-006.RBAC.User.Alter.DefaultRole](#rqsrs-006rbacuseralterdefaultrole)
-      * 5.2.10.49 [RQ.SRS-006.RBAC.User.Alter.DefaultRole.All](#rqsrs-006rbacuseralterdefaultroleall)
-      * 5.2.10.50 [RQ.SRS-006.RBAC.User.Alter.DefaultRole.AllExcept](#rqsrs-006rbacuseralterdefaultroleallexcept)
-      * 5.2.10.51 [RQ.SRS-006.RBAC.User.Alter.Settings](#rqsrs-006rbacuseraltersettings)
-      * 5.2.10.52 [RQ.SRS-006.RBAC.User.Alter.Settings.Min](#rqsrs-006rbacuseraltersettingsmin)
-      * 5.2.10.53 [RQ.SRS-006.RBAC.User.Alter.Settings.Max](#rqsrs-006rbacuseraltersettingsmax)
-      * 5.2.10.54 [RQ.SRS-006.RBAC.User.Alter.Settings.Profile](#rqsrs-006rbacuseraltersettingsprofile)
-      * 5.2.10.55 [RQ.SRS-006.RBAC.User.Alter.Syntax](#rqsrs-006rbacuseraltersyntax)
-      * 5.2.10.56 [RQ.SRS-006.RBAC.SetDefaultRole](#rqsrs-006rbacsetdefaultrole)
-      * 5.2.10.57 [RQ.SRS-006.RBAC.SetDefaultRole.CurrentUser](#rqsrs-006rbacsetdefaultrolecurrentuser)
-      * 5.2.10.58 [RQ.SRS-006.RBAC.SetDefaultRole.All](#rqsrs-006rbacsetdefaultroleall)
-      * 5.2.10.59 [RQ.SRS-006.RBAC.SetDefaultRole.AllExcept](#rqsrs-006rbacsetdefaultroleallexcept)
-      * 5.2.10.60 [RQ.SRS-006.RBAC.SetDefaultRole.None](#rqsrs-006rbacsetdefaultrolenone)
-      * 5.2.10.61 [RQ.SRS-006.RBAC.SetDefaultRole.Syntax](#rqsrs-006rbacsetdefaultrolesyntax)
-      * 5.2.10.62 [RQ.SRS-006.RBAC.SetRole](#rqsrs-006rbacsetrole)
-      * 5.2.10.63 [RQ.SRS-006.RBAC.SetRole.Default](#rqsrs-006rbacsetroledefault)
-      * 5.2.10.64 [RQ.SRS-006.RBAC.SetRole.None](#rqsrs-006rbacsetrolenone)
-      * 5.2.10.65 [RQ.SRS-006.RBAC.SetRole.All](#rqsrs-006rbacsetroleall)
-      * 5.2.10.66 [RQ.SRS-006.RBAC.SetRole.AllExcept](#rqsrs-006rbacsetroleallexcept)
-      * 5.2.10.67 [RQ.SRS-006.RBAC.SetRole.Syntax](#rqsrs-006rbacsetrolesyntax)
-      * 5.2.10.68 [RQ.SRS-006.RBAC.User.ShowCreateUser](#rqsrs-006rbacusershowcreateuser)
-      * 5.2.10.69 [RQ.SRS-006.RBAC.User.ShowCreateUser.For](#rqsrs-006rbacusershowcreateuserfor)
-      * 5.2.10.70 [RQ.SRS-006.RBAC.User.ShowCreateUser.Syntax](#rqsrs-006rbacusershowcreateusersyntax)
-      * 5.2.10.71 [RQ.SRS-006.RBAC.User.Drop](#rqsrs-006rbacuserdrop)
-      * 5.2.10.72 [RQ.SRS-006.RBAC.User.Drop.IfExists](#rqsrs-006rbacuserdropifexists)
-      * 5.2.10.73 [RQ.SRS-006.RBAC.User.Drop.OnCluster](#rqsrs-006rbacuserdroponcluster)
-      * 5.2.10.74 [RQ.SRS-006.RBAC.User.Drop.Syntax](#rqsrs-006rbacuserdropsyntax)
-      * 5.2.10.75 [RQ.SRS-006.RBAC.Role.Create](#rqsrs-006rbacrolecreate)
-      * 5.2.10.76 [RQ.SRS-006.RBAC.Role.Create.IfNotExists](#rqsrs-006rbacrolecreateifnotexists)
-      * 5.2.10.77 [RQ.SRS-006.RBAC.Role.Create.Replace](#rqsrs-006rbacrolecreatereplace)
-      * 5.2.10.78 [RQ.SRS-006.RBAC.Role.Create.Settings](#rqsrs-006rbacrolecreatesettings)
-      * 5.2.10.79 [RQ.SRS-006.RBAC.Role.Create.Syntax](#rqsrs-006rbacrolecreatesyntax)
-      * 5.2.10.80 [RQ.SRS-006.RBAC.Role.Create.Effect](#rqsrs-006rbacrolecreateeffect)
-      * 5.2.10.81 [RQ.SRS-006.RBAC.Role.Alter](#rqsrs-006rbacrolealter)
-      * 5.2.10.82 [RQ.SRS-006.RBAC.Role.Alter.IfExists](#rqsrs-006rbacrolealterifexists)
-      * 5.2.10.83 [RQ.SRS-006.RBAC.Role.Alter.Cluster](#rqsrs-006rbacrolealtercluster)
-      * 5.2.10.84 [RQ.SRS-006.RBAC.Role.Alter.Rename](#rqsrs-006rbacrolealterrename)
-      * 5.2.10.85 [RQ.SRS-006.RBAC.Role.Alter.Settings](#rqsrs-006rbacrolealtersettings)
-      * 5.2.10.86 [RQ.SRS-006.RBAC.Role.Alter.Effect](#rqsrs-006rbacrolealtereffect)
-      * 5.2.10.87 [RQ.SRS-006.RBAC.Role.Alter.Syntax](#rqsrs-006rbacrolealtersyntax)
-      * 5.2.10.88 [RQ.SRS-006.RBAC.Role.Drop](#rqsrs-006rbacroledrop)
-      * 5.2.10.89 [RQ.SRS-006.RBAC.Role.Drop.IfExists](#rqsrs-006rbacroledropifexists)
-      * 5.2.10.90 [RQ.SRS-006.RBAC.Role.Drop.Cluster](#rqsrs-006rbacroledropcluster)
-      * 5.2.10.91 [RQ.SRS-006.RBAC.Role.Drop.Effect](#rqsrs-006rbacroledropeffect)
-      * 5.2.10.92 [RQ.SRS-006.RBAC.Role.Drop.Syntax](#rqsrs-006rbacroledropsyntax)
-      * 5.2.10.93 [RQ.SRS-006.RBAC.Role.ShowCreate](#rqsrs-006rbacroleshowcreate)
-      * 5.2.10.94 [RQ.SRS-006.RBAC.Role.ShowCreate.Syntax](#rqsrs-006rbacroleshowcreatesyntax)
-      * 5.2.10.95 [RQ.SRS-006.RBAC.Grant.Privilege.To](#rqsrs-006rbacgrantprivilegeto)
-      * 5.2.10.96 [RQ.SRS-006.RBAC.Grant.Privilege.To.Effect](#rqsrs-006rbacgrantprivilegetoeffect)
-      * 5.2.10.97 [RQ.SRS-006.RBAC.Grant.Privilege.ToCurrentUser](#rqsrs-006rbacgrantprivilegetocurrentuser)
-      * 5.2.10.98 [RQ.SRS-006.RBAC.Grant.Privilege.Select](#rqsrs-006rbacgrantprivilegeselect)
-      * 5.2.10.99 [RQ.SRS-006.RBAC.Grant.Privilege.Select.Effect](#rqsrs-006rbacgrantprivilegeselecteffect)
-      * 5.2.10.100 [RQ.SRS-006.RBAC.Grant.Privilege.SelectColumns](#rqsrs-006rbacgrantprivilegeselectcolumns)
-      * 5.2.10.101 [RQ.SRS-006.RBAC.Grant.Privilege.SelectColumns.Effect](#rqsrs-006rbacgrantprivilegeselectcolumnseffect)
-      * 5.2.10.102 [RQ.SRS-006.RBAC.Grant.Privilege.Insert](#rqsrs-006rbacgrantprivilegeinsert)
-      * 5.2.10.103 [RQ.SRS-006.RBAC.Grant.Privilege.Insert.Effect](#rqsrs-006rbacgrantprivilegeinserteffect)
-      * 5.2.10.104 [RQ.SRS-006.RBAC.Grant.Privilege.Alter](#rqsrs-006rbacgrantprivilegealter)
-      * 5.2.10.105 [RQ.SRS-006.RBAC.Grant.Privilege.Alter.Effect](#rqsrs-006rbacgrantprivilegealtereffect)
-      * 5.2.10.106 [RQ.SRS-006.RBAC.Grant.Privilege.Create](#rqsrs-006rbacgrantprivilegecreate)
-      * 5.2.10.107 [RQ.SRS-006.RBAC.Grant.Privilege.Create.Effect](#rqsrs-006rbacgrantprivilegecreateeffect)
-      * 5.2.10.108 [RQ.SRS-006.RBAC.Grant.Privilege.Drop](#rqsrs-006rbacgrantprivilegedrop)
-      * 5.2.10.109 [RQ.SRS-006.RBAC.Grant.Privilege.Drop.Effect](#rqsrs-006rbacgrantprivilegedropeffect)
-      * 5.2.10.110 [RQ.SRS-006.RBAC.Grant.Privilege.Truncate](#rqsrs-006rbacgrantprivilegetruncate)
-      * 5.2.10.111 [RQ.SRS-006.RBAC.Grant.Privilege.Truncate.Effect](#rqsrs-006rbacgrantprivilegetruncateeffect)
-      * 5.2.10.112 [RQ.SRS-006.RBAC.Grant.Privilege.Optimize](#rqsrs-006rbacgrantprivilegeoptimize)
-      * 5.2.10.113 [RQ.SRS-006.RBAC.Grant.Privilege.Optimize.Effect](#rqsrs-006rbacgrantprivilegeoptimizeeffect)
-      * 5.2.10.114 [RQ.SRS-006.RBAC.Grant.Privilege.Show](#rqsrs-006rbacgrantprivilegeshow)
-      * 5.2.10.115 [RQ.SRS-006.RBAC.Grant.Privilege.Show.Effect](#rqsrs-006rbacgrantprivilegeshoweffect)
-      * 5.2.10.116 [RQ.SRS-006.RBAC.Grant.Privilege.KillQuery](#rqsrs-006rbacgrantprivilegekillquery)
-      * 5.2.10.117 [RQ.SRS-006.RBAC.Grant.Privilege.KillQuery.Effect](#rqsrs-006rbacgrantprivilegekillqueryeffect)
-      * 5.2.10.118 [RQ.SRS-006.RBAC.Grant.Privilege.AccessManagement](#rqsrs-006rbacgrantprivilegeaccessmanagement)
-      * 5.2.10.119 [RQ.SRS-006.RBAC.Grant.Privilege.AccessManagement.Effect](#rqsrs-006rbacgrantprivilegeaccessmanagementeffect)
-      * 5.2.10.120 [RQ.SRS-006.RBAC.Grant.Privilege.System](#rqsrs-006rbacgrantprivilegesystem)
-      * 5.2.10.121 [RQ.SRS-006.RBAC.Grant.Privilege.System.Effect](#rqsrs-006rbacgrantprivilegesystemeffect)
-      * 5.2.10.122 [RQ.SRS-006.RBAC.Grant.Privilege.Introspection](#rqsrs-006rbacgrantprivilegeintrospection)
-      * 5.2.10.123 [RQ.SRS-006.RBAC.Grant.Privilege.Introspection.Effect](#rqsrs-006rbacgrantprivilegeintrospectioneffect)
-      * 5.2.10.124 [RQ.SRS-006.RBAC.Grant.Privilege.Sources](#rqsrs-006rbacgrantprivilegesources)
-      * 5.2.10.125 [RQ.SRS-006.RBAC.Grant.Privilege.Sources.Effect](#rqsrs-006rbacgrantprivilegesourceseffect)
-      * 5.2.10.126 [RQ.SRS-006.RBAC.Grant.Privilege.DictGet](#rqsrs-006rbacgrantprivilegedictget)
-      * 5.2.10.127 [RQ.SRS-006.RBAC.Grant.Privilege.DictGet.Effect](#rqsrs-006rbacgrantprivilegedictgeteffect)
-      * 5.2.10.128 [RQ.SRS-006.RBAC.Grant.Privilege.None](#rqsrs-006rbacgrantprivilegenone)
-      * 5.2.10.129 [RQ.SRS-006.RBAC.Grant.Privilege.None.Effect](#rqsrs-006rbacgrantprivilegenoneeffect)
-      * 5.2.10.130 [RQ.SRS-006.RBAC.Grant.Privilege.All](#rqsrs-006rbacgrantprivilegeall)
-      * 5.2.10.131 [RQ.SRS-006.RBAC.Grant.Privilege.All.Effect](#rqsrs-006rbacgrantprivilegealleffect)
-      * 5.2.10.132 [RQ.SRS-006.RBAC.Grant.Privilege.GrantOption](#rqsrs-006rbacgrantprivilegegrantoption)
-      * 5.2.10.133 [RQ.SRS-006.RBAC.Grant.Privilege.GrantOption.Effect](#rqsrs-006rbacgrantprivilegegrantoptioneffect)
-      * 5.2.10.134 [RQ.SRS-006.RBAC.Grant.Privilege.On](#rqsrs-006rbacgrantprivilegeon)
-      * 5.2.10.135 [RQ.SRS-006.RBAC.Grant.Privilege.On.Effect](#rqsrs-006rbacgrantprivilegeoneffect)
-      * 5.2.10.136 [RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns](#rqsrs-006rbacgrantprivilegeprivilegecolumns)
-      * 5.2.10.137 [RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns.Effect](#rqsrs-006rbacgrantprivilegeprivilegecolumnseffect)
-      * 5.2.10.138 [RQ.SRS-006.RBAC.Grant.Privilege.OnCluster](#rqsrs-006rbacgrantprivilegeoncluster)
-      * 5.2.10.139 [RQ.SRS-006.RBAC.Grant.Privilege.Syntax](#rqsrs-006rbacgrantprivilegesyntax)
-      * 5.2.10.140 [RQ.SRS-006.RBAC.Revoke.Privilege.Cluster](#rqsrs-006rbacrevokeprivilegecluster)
-      * 5.2.10.141 [RQ.SRS-006.RBAC.Revoke.Privilege.Cluster.Effect](#rqsrs-006rbacrevokeprivilegeclustereffect)
-      * 5.2.10.142 [RQ.SRS-006.RBAC.Revoke.Privilege.Any](#rqsrs-006rbacrevokeprivilegeany)
-      * 5.2.10.143 [RQ.SRS-006.RBAC.Revoke.Privilege.Any.Effect](#rqsrs-006rbacrevokeprivilegeanyeffect)
-      * 5.2.10.144 [RQ.SRS-006.RBAC.Revoke.Privilege.Select](#rqsrs-006rbacrevokeprivilegeselect)
-      * 5.2.10.145 [RQ.SRS-006.RBAC.Revoke.Privilege.Select.Effect](#rqsrs-006rbacrevokeprivilegeselecteffect)
-      * 5.2.10.146 [RQ.SRS-006.RBAC.Revoke.Privilege.Insert](#rqsrs-006rbacrevokeprivilegeinsert)
-      * 5.2.10.147 [RQ.SRS-006.RBAC.Revoke.Privilege.Insert.Effect](#rqsrs-006rbacrevokeprivilegeinserteffect)
-      * 5.2.10.148 [RQ.SRS-006.RBAC.Revoke.Privilege.Alter](#rqsrs-006rbacrevokeprivilegealter)
-      * 5.2.10.149 [RQ.SRS-006.RBAC.Revoke.Privilege.Alter.Effect](#rqsrs-006rbacrevokeprivilegealtereffect)
-      * 5.2.10.150 [RQ.SRS-006.RBAC.Revoke.Privilege.Create](#rqsrs-006rbacrevokeprivilegecreate)
-      * 5.2.10.151 [RQ.SRS-006.RBAC.Revoke.Privilege.Create.Effect](#rqsrs-006rbacrevokeprivilegecreateeffect)
-      * 5.2.10.152 [RQ.SRS-006.RBAC.Revoke.Privilege.Drop](#rqsrs-006rbacrevokeprivilegedrop)
-      * 5.2.10.153 [RQ.SRS-006.RBAC.Revoke.Privilege.Drop.Effect](#rqsrs-006rbacrevokeprivilegedropeffect)
-      * 5.2.10.154 [RQ.SRS-006.RBAC.Revoke.Privilege.Truncate](#rqsrs-006rbacrevokeprivilegetruncate)
-      * 5.2.10.155 [RQ.SRS-006.RBAC.Revoke.Privilege.Truncate.Effect](#rqsrs-006rbacrevokeprivilegetruncateeffect)
-      * 5.2.10.156 [RQ.SRS-006.RBAC.Revoke.Privilege.Optimize](#rqsrs-006rbacrevokeprivilegeoptimize)
-      * 5.2.10.157 [RQ.SRS-006.RBAC.Revoke.Privilege.Optimize.Effect](#rqsrs-006rbacrevokeprivilegeoptimizeeffect)
-      * 5.2.10.158 [RQ.SRS-006.RBAC.Revoke.Privilege.Show](#rqsrs-006rbacrevokeprivilegeshow)
-      * 5.2.10.159 [RQ.SRS-006.RBAC.Revoke.Privilege.Show.Effect](#rqsrs-006rbacrevokeprivilegeshoweffect)
-      * 5.2.10.160 [RQ.SRS-006.RBAC.Revoke.Privilege.KillQuery](#rqsrs-006rbacrevokeprivilegekillquery)
-      * 5.2.10.161 [RQ.SRS-006.RBAC.Revoke.Privilege.KillQuery.Effect](#rqsrs-006rbacrevokeprivilegekillqueryeffect)
-      * 5.2.10.162 [RQ.SRS-006.RBAC.Revoke.Privilege.AccessManagement](#rqsrs-006rbacrevokeprivilegeaccessmanagement)
-      * 5.2.10.163 [RQ.SRS-006.RBAC.Revoke.Privilege.AccessManagement.Effect](#rqsrs-006rbacrevokeprivilegeaccessmanagementeffect)
-      * 5.2.10.164 [RQ.SRS-006.RBAC.Revoke.Privilege.System](#rqsrs-006rbacrevokeprivilegesystem)
-      * 5.2.10.165 [RQ.SRS-006.RBAC.Revoke.Privilege.System.Effect](#rqsrs-006rbacrevokeprivilegesystemeffect)
-      * 5.2.10.166 [RQ.SRS-006.RBAC.Revoke.Privilege.Introspection](#rqsrs-006rbacrevokeprivilegeintrospection)
-      * 5.2.10.167 [RQ.SRS-006.RBAC.Revoke.Privilege.Introspection.Effect](#rqsrs-006rbacrevokeprivilegeintrospectioneffect)
-      * 5.2.10.168 [RQ.SRS-006.RBAC.Revoke.Privilege.Sources](#rqsrs-006rbacrevokeprivilegesources)
-      * 5.2.10.169 [RQ.SRS-006.RBAC.Revoke.Privilege.Sources.Effect](#rqsrs-006rbacrevokeprivilegesourceseffect)
-      * 5.2.10.170 [RQ.SRS-006.RBAC.Revoke.Privilege.DictGet](#rqsrs-006rbacrevokeprivilegedictget)
-      * 5.2.10.171 [RQ.SRS-006.RBAC.Revoke.Privilege.DictGet.Effect](#rqsrs-006rbacrevokeprivilegedictgeteffect)
-      * 5.2.10.172 [RQ.SRS-006.RBAC.Revoke.Privilege.PrivelegeColumns](#rqsrs-006rbacrevokeprivilegeprivelegecolumns)
-      * 5.2.10.173 [RQ.SRS-006.RBAC.Revoke.Privilege.PrivelegeColumns.Effect](#rqsrs-006rbacrevokeprivilegeprivelegecolumnseffect)
-      * 5.2.10.174 [RQ.SRS-006.RBAC.Revoke.Privilege.Multiple](#rqsrs-006rbacrevokeprivilegemultiple)
-      * 5.2.10.175 [RQ.SRS-006.RBAC.Revoke.Privilege.Multiple.Effect](#rqsrs-006rbacrevokeprivilegemultipleeffect)
-      * 5.2.10.176 [RQ.SRS-006.RBAC.Revoke.Privilege.All](#rqsrs-006rbacrevokeprivilegeall)
-      * 5.2.10.177 [RQ.SRS-006.RBAC.Revoke.Privilege.All.Effect](#rqsrs-006rbacrevokeprivilegealleffect)
-      * 5.2.10.178 [RQ.SRS-006.RBAC.Revoke.Privilege.None](#rqsrs-006rbacrevokeprivilegenone)
-      * 5.2.10.179 [RQ.SRS-006.RBAC.Revoke.Privilege.None.Effect](#rqsrs-006rbacrevokeprivilegenoneeffect)
-      * 5.2.10.180 [RQ.SRS-006.RBAC.Revoke.Privilege.On](#rqsrs-006rbacrevokeprivilegeon)
-      * 5.2.10.181 [RQ.SRS-006.RBAC.Revoke.Privilege.On.Effect](#rqsrs-006rbacrevokeprivilegeoneffect)
-      * 5.2.10.182 [RQ.SRS-006.RBAC.Revoke.Privilege.From](#rqsrs-006rbacrevokeprivilegefrom)
-      * 5.2.10.183 [RQ.SRS-006.RBAC.Revoke.Privilege.From.Effect](#rqsrs-006rbacrevokeprivilegefromeffect)
-      * 5.2.10.184 [RQ.SRS-006.RBAC.Revoke.Privilege.Syntax](#rqsrs-006rbacrevokeprivilegesyntax)
-      * 5.2.10.185 [RQ.SRS-006.RBAC.PartialRevoke.Syntax](#rqsrs-006rbacpartialrevokesyntax)
-      * 5.2.10.186 [RQ.SRS-006.RBAC.PartialRevoke.Effect](#rqsrs-006rbacpartialrevokeeffect)
-      * 5.2.10.187 [RQ.SRS-006.RBAC.Grant.Role](#rqsrs-006rbacgrantrole)
-      * 5.2.10.188 [RQ.SRS-006.RBAC.Grant.Role.Effect](#rqsrs-006rbacgrantroleeffect)
-      * 5.2.10.189 [RQ.SRS-006.RBAC.Grant.Role.CurrentUser](#rqsrs-006rbacgrantrolecurrentuser)
-      * 5.2.10.190 [RQ.SRS-006.RBAC.Grant.Role.CurrentUser.Effect](#rqsrs-006rbacgrantrolecurrentusereffect)
-      * 5.2.10.191 [RQ.SRS-006.RBAC.Grant.Role.AdminOption](#rqsrs-006rbacgrantroleadminoption)
-      * 5.2.10.192 [RQ.SRS-006.RBAC.Grant.Role.AdminOption.Effect](#rqsrs-006rbacgrantroleadminoptioneffect)
-      * 5.2.10.193 [RQ.SRS-006.RBAC.Grant.Role.OnCluster](#rqsrs-006rbacgrantroleoncluster)
-      * 5.2.10.194 [RQ.SRS-006.RBAC.Grant.Role.Syntax](#rqsrs-006rbacgrantrolesyntax)
-      * 5.2.10.195 [RQ.SRS-006.RBAC.Revoke.Role](#rqsrs-006rbacrevokerole)
-      * 5.2.10.196 [RQ.SRS-006.RBAC.Revoke.Role.Effect](#rqsrs-006rbacrevokeroleeffect)
-      * 5.2.10.197 [RQ.SRS-006.RBAC.Revoke.Role.Keywords](#rqsrs-006rbacrevokerolekeywords)
-      * 5.2.10.198 [RQ.SRS-006.RBAC.Revoke.Role.Keywords.Effect](#rqsrs-006rbacrevokerolekeywordseffect)
-      * 5.2.10.199 [RQ.SRS-006.RBAC.Revoke.Role.Cluster](#rqsrs-006rbacrevokerolecluster)
-      * 5.2.10.200 [RQ.SRS-006.RBAC.Revoke.Role.Cluster.Effect](#rqsrs-006rbacrevokeroleclustereffect)
-      * 5.2.10.201 [RQ.SRS-006.RBAC.Revoke.AdminOption](#rqsrs-006rbacrevokeadminoption)
-      * 5.2.10.202 [RQ.SRS-006.RBAC.Revoke.AdminOption.Effect](#rqsrs-006rbacrevokeadminoptioneffect)
-      * 5.2.10.203 [RQ.SRS-006.RBAC.Revoke.Role.Syntax](#rqsrs-006rbacrevokerolesyntax)
-      * 5.2.10.204 [RQ.SRS-006.RBAC.Show.Grants](#rqsrs-006rbacshowgrants)
-      * 5.2.10.205 [RQ.SRS-006.RBAC.Show.Grants.For](#rqsrs-006rbacshowgrantsfor)
-      * 5.2.10.206 [RQ.SRS-006.RBAC.Show.Grants.Syntax](#rqsrs-006rbacshowgrantssyntax)
-      * 5.2.10.207 [RQ.SRS-006.RBAC.SettingsProfile.Create](#rqsrs-006rbacsettingsprofilecreate)
-      * 5.2.10.208 [RQ.SRS-006.RBAC.SettingsProfile.Create.Effect](#rqsrs-006rbacsettingsprofilecreateeffect)
-      * 5.2.10.209 [RQ.SRS-006.RBAC.SettingsProfile.Create.IfNotExists](#rqsrs-006rbacsettingsprofilecreateifnotexists)
-      * 5.2.10.210 [RQ.SRS-006.RBAC.SettingsProfile.Create.Replace](#rqsrs-006rbacsettingsprofilecreatereplace)
-      * 5.2.10.211 [RQ.SRS-006.RBAC.SettingsProfile.Create.Variables](#rqsrs-006rbacsettingsprofilecreatevariables)
-      * 5.2.10.212 [RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Value](#rqsrs-006rbacsettingsprofilecreatevariablesvalue)
-      * 5.2.10.213 [RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Value.Effect](#rqsrs-006rbacsettingsprofilecreatevariablesvalueeffect)
-      * 5.2.10.214 [RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Constraints](#rqsrs-006rbacsettingsprofilecreatevariablesconstraints)
-      * 5.2.10.215 [RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Constraints.Effect](#rqsrs-006rbacsettingsprofilecreatevariablesconstraintseffect)
-      * 5.2.10.216 [RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment](#rqsrs-006rbacsettingsprofilecreateassignment)
-      * 5.2.10.217 [RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment.None](#rqsrs-006rbacsettingsprofilecreateassignmentnone)
-      * 5.2.10.218 [RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment.All](#rqsrs-006rbacsettingsprofilecreateassignmentall)
-      * 5.2.10.219 [RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment.AllExcept](#rqsrs-006rbacsettingsprofilecreateassignmentallexcept)
-      * 5.2.10.220 [RQ.SRS-006.RBAC.SettingsProfile.Create.Inherit](#rqsrs-006rbacsettingsprofilecreateinherit)
-      * 5.2.10.221 [RQ.SRS-006.RBAC.SettingsProfile.Create.OnCluster](#rqsrs-006rbacsettingsprofilecreateoncluster)
-      * 5.2.10.222 [RQ.SRS-006.RBAC.SettingsProfile.Create.Syntax](#rqsrs-006rbacsettingsprofilecreatesyntax)
-      * 5.2.10.223 [RQ.SRS-006.RBAC.SettingsProfile.Alter](#rqsrs-006rbacsettingsprofilealter)
-      * 5.2.10.224 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Effect](#rqsrs-006rbacsettingsprofilealtereffect)
-      * 5.2.10.225 [RQ.SRS-006.RBAC.SettingsProfile.Alter.IfExists](#rqsrs-006rbacsettingsprofilealterifexists)
-      * 5.2.10.226 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Rename](#rqsrs-006rbacsettingsprofilealterrename)
-      * 5.2.10.227 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables](#rqsrs-006rbacsettingsprofilealtervariables)
-      * 5.2.10.228 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Value](#rqsrs-006rbacsettingsprofilealtervariablesvalue)
-      * 5.2.10.229 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Value.Effect](#rqsrs-006rbacsettingsprofilealtervariablesvalueeffect)
-      * 5.2.10.230 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Constraints](#rqsrs-006rbacsettingsprofilealtervariablesconstraints)
-      * 5.2.10.231 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Constraints.Effect](#rqsrs-006rbacsettingsprofilealtervariablesconstraintseffect)
-      * 5.2.10.232 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment](#rqsrs-006rbacsettingsprofilealterassignment)
-      * 5.2.10.233 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.Effect](#rqsrs-006rbacsettingsprofilealterassignmenteffect)
-      * 5.2.10.234 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.None](#rqsrs-006rbacsettingsprofilealterassignmentnone)
-      * 5.2.10.235 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.All](#rqsrs-006rbacsettingsprofilealterassignmentall)
-      * 5.2.10.236 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.AllExcept](#rqsrs-006rbacsettingsprofilealterassignmentallexcept)
-      * 5.2.10.237 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.Inherit](#rqsrs-006rbacsettingsprofilealterassignmentinherit)
-      * 5.2.10.238 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.OnCluster](#rqsrs-006rbacsettingsprofilealterassignmentoncluster)
-      * 5.2.10.239 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Syntax](#rqsrs-006rbacsettingsprofilealtersyntax)
-      * 5.2.10.240 [RQ.SRS-006.RBAC.SettingsProfile.Drop](#rqsrs-006rbacsettingsprofiledrop)
-      * 5.2.10.241 [RQ.SRS-006.RBAC.SettingsProfile.Drop.Effect](#rqsrs-006rbacsettingsprofiledropeffect)
-      * 5.2.10.242 [RQ.SRS-006.RBAC.SettingsProfile.Drop.IfExists](#rqsrs-006rbacsettingsprofiledropifexists)
-      * 5.2.10.243 [RQ.SRS-006.RBAC.SettingsProfile.Drop.OnCluster](#rqsrs-006rbacsettingsprofiledroponcluster)
-      * 5.2.10.244 [RQ.SRS-006.RBAC.SettingsProfile.Drop.Syntax](#rqsrs-006rbacsettingsprofiledropsyntax)
-      * 5.2.10.245 [RQ.SRS-006.RBAC.SettingsProfile.ShowCreateSettingsProfile](#rqsrs-006rbacsettingsprofileshowcreatesettingsprofile)
-      * 5.2.10.246 [RQ.SRS-006.RBAC.Quota.Create](#rqsrs-006rbacquotacreate)
-      * 5.2.10.247 [RQ.SRS-006.RBAC.Quota.Create.Effect](#rqsrs-006rbacquotacreateeffect)
-      * 5.2.10.248 [RQ.SRS-006.RBAC.Quota.Create.IfNotExists](#rqsrs-006rbacquotacreateifnotexists)
-      * 5.2.10.249 [RQ.SRS-006.RBAC.Quota.Create.Replace](#rqsrs-006rbacquotacreatereplace)
-      * 5.2.10.250 [RQ.SRS-006.RBAC.Quota.Create.Cluster](#rqsrs-006rbacquotacreatecluster)
-      * 5.2.10.251 [RQ.SRS-006.RBAC.Quota.Create.Interval](#rqsrs-006rbacquotacreateinterval)
-      * 5.2.10.252 [RQ.SRS-006.RBAC.Quota.Create.Interval.Randomized](#rqsrs-006rbacquotacreateintervalrandomized)
-      * 5.2.10.253 [RQ.SRS-006.RBAC.Quota.Create.Queries](#rqsrs-006rbacquotacreatequeries)
-      * 5.2.10.254 [RQ.SRS-006.RBAC.Quota.Create.Errors](#rqsrs-006rbacquotacreateerrors)
-      * 5.2.10.255 [RQ.SRS-006.RBAC.Quota.Create.ResultRows](#rqsrs-006rbacquotacreateresultrows)
-      * 5.2.10.256 [RQ.SRS-006.RBAC.Quota.Create.ReadRows](#rqsrs-006rbacquotacreatereadrows)
-      * 5.2.10.257 [RQ.SRS-006.RBAC.Quota.Create.ResultBytes](#rqsrs-006rbacquotacreateresultbytes)
-      * 5.2.10.258 [RQ.SRS-006.RBAC.Quota.Create.ReadBytes](#rqsrs-006rbacquotacreatereadbytes)
-      * 5.2.10.259 [RQ.SRS-006.RBAC.Quota.Create.ExecutionTime](#rqsrs-006rbacquotacreateexecutiontime)
-      * 5.2.10.260 [RQ.SRS-006.RBAC.Quota.Create.NoLimits](#rqsrs-006rbacquotacreatenolimits)
-      * 5.2.10.261 [RQ.SRS-006.RBAC.Quota.Create.TrackingOnly](#rqsrs-006rbacquotacreatetrackingonly)
-      * 5.2.10.262 [RQ.SRS-006.RBAC.Quota.Create.KeyedBy](#rqsrs-006rbacquotacreatekeyedby)
-      * 5.2.10.263 [RQ.SRS-006.RBAC.Quota.Create.KeyedByOptions](#rqsrs-006rbacquotacreatekeyedbyoptions)
-      * 5.2.10.264 [RQ.SRS-006.RBAC.Quota.Create.Assignment](#rqsrs-006rbacquotacreateassignment)
-      * 5.2.10.265 [RQ.SRS-006.RBAC.Quota.Create.Assignment.None](#rqsrs-006rbacquotacreateassignmentnone)
-      * 5.2.10.266 [RQ.SRS-006.RBAC.Quota.Create.Assignment.All](#rqsrs-006rbacquotacreateassignmentall)
-      * 5.2.10.267 [RQ.SRS-006.RBAC.Quota.Create.Assignment.Except](#rqsrs-006rbacquotacreateassignmentexcept)
-      * 5.2.10.268 [RQ.SRS-006.RBAC.Quota.Create.Syntax](#rqsrs-006rbacquotacreatesyntax)
-      * 5.2.10.269 [RQ.SRS-006.RBAC.Quota.Alter](#rqsrs-006rbacquotaalter)
-      * 5.2.10.270 [RQ.SRS-006.RBAC.Quota.Alter.Effect](#rqsrs-006rbacquotaaltereffect)
-      * 5.2.10.271 [RQ.SRS-006.RBAC.Quota.Alter.IfExists](#rqsrs-006rbacquotaalterifexists)
-      * 5.2.10.272 [RQ.SRS-006.RBAC.Quota.Alter.Rename](#rqsrs-006rbacquotaalterrename)
-      * 5.2.10.273 [RQ.SRS-006.RBAC.Quota.Alter.Cluster](#rqsrs-006rbacquotaaltercluster)
-      * 5.2.10.274 [RQ.SRS-006.RBAC.Quota.Alter.Interval](#rqsrs-006rbacquotaalterinterval)
-      * 5.2.10.275 [RQ.SRS-006.RBAC.Quota.Alter.Interval.Randomized](#rqsrs-006rbacquotaalterintervalrandomized)
-      * 5.2.10.276 [RQ.SRS-006.RBAC.Quota.Alter.Queries](#rqsrs-006rbacquotaalterqueries)
-      * 5.2.10.277 [RQ.SRS-006.RBAC.Quota.Alter.Errors](#rqsrs-006rbacquotaaltererrors)
-      * 5.2.10.278 [RQ.SRS-006.RBAC.Quota.Alter.ResultRows](#rqsrs-006rbacquotaalterresultrows)
-      * 5.2.10.279 [RQ.SRS-006.RBAC.Quota.Alter.ReadRows](#rqsrs-006rbacquotaalterreadrows)
-      * 5.2.10.280 [RQ.SRS-006.RBAC.Quota.ALter.ResultBytes](#rqsrs-006rbacquotaalterresultbytes)
-      * 5.2.10.281 [RQ.SRS-006.RBAC.Quota.Alter.ReadBytes](#rqsrs-006rbacquotaalterreadbytes)
-      * 5.2.10.282 [RQ.SRS-006.RBAC.Quota.Alter.ExecutionTime](#rqsrs-006rbacquotaalterexecutiontime)
-      * 5.2.10.283 [RQ.SRS-006.RBAC.Quota.Alter.NoLimits](#rqsrs-006rbacquotaalternolimits)
-      * 5.2.10.284 [RQ.SRS-006.RBAC.Quota.Alter.TrackingOnly](#rqsrs-006rbacquotaaltertrackingonly)
-      * 5.2.10.285 [RQ.SRS-006.RBAC.Quota.Alter.KeyedBy](#rqsrs-006rbacquotaalterkeyedby)
-      * 5.2.10.286 [RQ.SRS-006.RBAC.Quota.Alter.KeyedByOptions](#rqsrs-006rbacquotaalterkeyedbyoptions)
-      * 5.2.10.287 [RQ.SRS-006.RBAC.Quota.Alter.Assignment](#rqsrs-006rbacquotaalterassignment)
-      * 5.2.10.288 [RQ.SRS-006.RBAC.Quota.Alter.Assignment.None](#rqsrs-006rbacquotaalterassignmentnone)
-      * 5.2.10.289 [RQ.SRS-006.RBAC.Quota.Alter.Assignment.All](#rqsrs-006rbacquotaalterassignmentall)
-      * 5.2.10.290 [RQ.SRS-006.RBAC.Quota.Alter.Assignment.Except](#rqsrs-006rbacquotaalterassignmentexcept)
-      * 5.2.10.291 [RQ.SRS-006.RBAC.Quota.Alter.Syntax](#rqsrs-006rbacquotaaltersyntax)
-      * 5.2.10.292 [RQ.SRS-006.RBAC.Quota.Drop](#rqsrs-006rbacquotadrop)
-      * 5.2.10.293 [RQ.SRS-006.RBAC.Quota.Drop.Effect](#rqsrs-006rbacquotadropeffect)
-      * 5.2.10.294 [RQ.SRS-006.RBAC.Quota.Drop.IfExists](#rqsrs-006rbacquotadropifexists)
-      * 5.2.10.295 [RQ.SRS-006.RBAC.Quota.Drop.Cluster](#rqsrs-006rbacquotadropcluster)
-      * 5.2.10.296 [RQ.SRS-006.RBAC.Quota.Drop.Syntax](#rqsrs-006rbacquotadropsyntax)
-      * 5.2.10.297 [RQ.SRS-006.RBAC.Quota.ShowQuotas](#rqsrs-006rbacquotashowquotas)
-      * 5.2.10.298 [RQ.SRS-006.RBAC.Quota.ShowQuotas.IntoOutfile](#rqsrs-006rbacquotashowquotasintooutfile)
-      * 5.2.10.299 [RQ.SRS-006.RBAC.Quota.ShowQuotas.Format](#rqsrs-006rbacquotashowquotasformat)
-      * 5.2.10.300 [RQ.SRS-006.RBAC.Quota.ShowQuotas.Settings](#rqsrs-006rbacquotashowquotassettings)
-      * 5.2.10.301 [RQ.SRS-006.RBAC.Quota.ShowQuotas.Syntax](#rqsrs-006rbacquotashowquotassyntax)
-      * 5.2.10.302 [RQ.SRS-006.RBAC.Quota.ShowCreateQuota.Name](#rqsrs-006rbacquotashowcreatequotaname)
-      * 5.2.10.303 [RQ.SRS-006.RBAC.Quota.ShowCreateQuota.Current](#rqsrs-006rbacquotashowcreatequotacurrent)
-      * 5.2.10.304 [RQ.SRS-006.RBAC.Quota.ShowCreateQuota.Syntax](#rqsrs-006rbacquotashowcreatequotasyntax)
-      * 5.2.10.305 [RQ.SRS-006.RBAC.RowPolicy.Create](#rqsrs-006rbacrowpolicycreate)
-      * 5.2.10.306 [RQ.SRS-006.RBAC.RowPolicy.Create.Effect](#rqsrs-006rbacrowpolicycreateeffect)
-      * 5.2.10.307 [RQ.SRS-006.RBAC.RowPolicy.Create.IfNotExists](#rqsrs-006rbacrowpolicycreateifnotexists)
-      * 5.2.10.308 [RQ.SRS-006.RBAC.RowPolicy.Create.Replace](#rqsrs-006rbacrowpolicycreatereplace)
-      * 5.2.10.309 [RQ.SRS-006.RBAC.RowPolicy.Create.OnCluster](#rqsrs-006rbacrowpolicycreateoncluster)
-      * 5.2.10.310 [RQ.SRS-006.RBAC.RowPolicy.Create.On](#rqsrs-006rbacrowpolicycreateon)
-      * 5.2.10.311 [RQ.SRS-006.RBAC.RowPolicy.Create.Access](#rqsrs-006rbacrowpolicycreateaccess)
-      * 5.2.10.312 [RQ.SRS-006.RBAC.RowPolicy.Create.Access.Permissive](#rqsrs-006rbacrowpolicycreateaccesspermissive)
-      * 5.2.10.313 [RQ.SRS-006.RBAC.RowPolicy.Create.Access.Restrictive](#rqsrs-006rbacrowpolicycreateaccessrestrictive)
-      * 5.2.10.314 [RQ.SRS-006.RBAC.RowPolicy.Create.ForSelect](#rqsrs-006rbacrowpolicycreateforselect)
-      * 5.2.10.315 [RQ.SRS-006.RBAC.RowPolicy.Create.Condition](#rqsrs-006rbacrowpolicycreatecondition)
-      * 5.2.10.316 [RQ.SRS-006.RBAC.RowPolicy.Create.Condition.Effect](#rqsrs-006rbacrowpolicycreateconditioneffect)
-      * 5.2.10.317 [RQ.SRS-006.RBAC.RowPolicy.Create.Assignment](#rqsrs-006rbacrowpolicycreateassignment)
-      * 5.2.10.318 [RQ.SRS-006.RBAC.RowPolicy.Create.Assignment.None](#rqsrs-006rbacrowpolicycreateassignmentnone)
-      * 5.2.10.319 [RQ.SRS-006.RBAC.RowPolicy.Create.Assignment.All](#rqsrs-006rbacrowpolicycreateassignmentall)
-      * 5.2.10.320 [RQ.SRS-006.RBAC.RowPolicy.Create.Assignment.AllExcept](#rqsrs-006rbacrowpolicycreateassignmentallexcept)
-      * 5.2.10.321 [RQ.SRS-006.RBAC.RowPolicy.Create.Syntax](#rqsrs-006rbacrowpolicycreatesyntax)
-      * 5.2.10.322 [RQ.SRS-006.RBAC.RowPolicy.Alter](#rqsrs-006rbacrowpolicyalter)
-      * 5.2.10.323 [RQ.SRS-006.RBAC.RowPolicy.Alter.Effect](#rqsrs-006rbacrowpolicyaltereffect)
-      * 5.2.10.324 [RQ.SRS-006.RBAC.RowPolicy.Alter.IfExists](#rqsrs-006rbacrowpolicyalterifexists)
-      * 5.2.10.325 [RQ.SRS-006.RBAC.RowPolicy.Alter.ForSelect](#rqsrs-006rbacrowpolicyalterforselect)
-      * 5.2.10.326 [RQ.SRS-006.RBAC.RowPolicy.Alter.OnCluster](#rqsrs-006rbacrowpolicyalteroncluster)
-      * 5.2.10.327 [RQ.SRS-006.RBAC.RowPolicy.Alter.On](#rqsrs-006rbacrowpolicyalteron)
-      * 5.2.10.328 [RQ.SRS-006.RBAC.RowPolicy.Alter.Rename](#rqsrs-006rbacrowpolicyalterrename)
-      * 5.2.10.329 [RQ.SRS-006.RBAC.RowPolicy.Alter.Access](#rqsrs-006rbacrowpolicyalteraccess)
-      * 5.2.10.330 [RQ.SRS-006.RBAC.RowPolicy.Alter.Access.Permissive](#rqsrs-006rbacrowpolicyalteraccesspermissive)
-      * 5.2.10.331 [RQ.SRS-006.RBAC.RowPolicy.Alter.Access.Restrictive](#rqsrs-006rbacrowpolicyalteraccessrestrictive)
-      * 5.2.10.332 [RQ.SRS-006.RBAC.RowPolicy.Alter.Condition](#rqsrs-006rbacrowpolicyaltercondition)
-      * 5.2.10.333 [RQ.SRS-006.RBAC.RowPolicy.Alter.Condition.Effect](#rqsrs-006rbacrowpolicyalterconditioneffect)
-      * 5.2.10.334 [RQ.SRS-006.RBAC.RowPolicy.Alter.Condition.None](#rqsrs-006rbacrowpolicyalterconditionnone)
-      * 5.2.10.335 [RQ.SRS-006.RBAC.RowPolicy.Alter.Assignment](#rqsrs-006rbacrowpolicyalterassignment)
-      * 5.2.10.336 [RQ.SRS-006.RBAC.RowPolicy.Alter.Assignment.None](#rqsrs-006rbacrowpolicyalterassignmentnone)
-      * 5.2.10.337 [RQ.SRS-006.RBAC.RowPolicy.Alter.Assignment.All](#rqsrs-006rbacrowpolicyalterassignmentall)
-      * 5.2.10.338 [RQ.SRS-006.RBAC.RowPolicy.Alter.Assignment.AllExcept](#rqsrs-006rbacrowpolicyalterassignmentallexcept)
-      * 5.2.10.339 [RQ.SRS-006.RBAC.RowPolicy.Alter.Syntax](#rqsrs-006rbacrowpolicyaltersyntax)
-      * 5.2.10.340 [RQ.SRS-006.RBAC.RowPolicy.Drop](#rqsrs-006rbacrowpolicydrop)
-      * 5.2.10.341 [RQ.SRS-006.RBAC.RowPolicy.Drop.Effect](#rqsrs-006rbacrowpolicydropeffect)
-      * 5.2.10.342 [RQ.SRS-006.RBAC.RowPolicy.Drop.IfExists](#rqsrs-006rbacrowpolicydropifexists)
-      * 5.2.10.343 [RQ.SRS-006.RBAC.RowPolicy.Drop.On](#rqsrs-006rbacrowpolicydropon)
-      * 5.2.10.344 [RQ.SRS-006.RBAC.RowPolicy.Drop.OnCluster](#rqsrs-006rbacrowpolicydroponcluster)
-      * 5.2.10.345 [RQ.SRS-006.RBAC.RowPolicy.Drop.Syntax](#rqsrs-006rbacrowpolicydropsyntax)
-      * 5.2.10.346 [RQ.SRS-006.RBAC.RowPolicy.ShowCreateRowPolicy](#rqsrs-006rbacrowpolicyshowcreaterowpolicy)
-      * 5.2.10.347 [RQ.SRS-006.RBAC.RowPolicy.ShowCreateRowPolicy.On](#rqsrs-006rbacrowpolicyshowcreaterowpolicyon)
-      * 5.2.10.348 [RQ.SRS-006.RBAC.RowPolicy.ShowCreateRowPolicy.Syntax](#rqsrs-006rbacrowpolicyshowcreaterowpolicysyntax)
-      * 5.2.10.349 [RQ.SRS-006.RBAC.RowPolicy.ShowRowPolicies](#rqsrs-006rbacrowpolicyshowrowpolicies)
-      * 5.2.10.350 [RQ.SRS-006.RBAC.RowPolicy.ShowRowPolicies.On](#rqsrs-006rbacrowpolicyshowrowpolicieson)
-      * 5.2.10.351 [RQ.SRS-006.RBAC.RowPolicy.ShowRowPolicies.Syntax](#rqsrs-006rbacrowpolicyshowrowpoliciessyntax)
+  * 5.2 [Login](#login)
+    * 5.2.1 [RQ.SRS-006.RBAC.Login](#rqsrs-006rbaclogin)
+    * 5.2.2 [RQ.SRS-006.RBAC.Login.DefaultUser](#rqsrs-006rbaclogindefaultuser)
+  * 5.3 [User](#user)
+    * 5.3.1 [RQ.SRS-006.RBAC.User](#rqsrs-006rbacuser)
+    * 5.3.2 [RQ.SRS-006.RBAC.User.Roles](#rqsrs-006rbacuserroles)
+    * 5.3.3 [RQ.SRS-006.RBAC.User.Privileges](#rqsrs-006rbacuserprivileges)
+    * 5.3.4 [RQ.SRS-006.RBAC.User.Variables](#rqsrs-006rbacuservariables)
+    * 5.3.5 [RQ.SRS-006.RBAC.User.Variables.Constraints](#rqsrs-006rbacuservariablesconstraints)
+    * 5.3.6 [RQ.SRS-006.RBAC.User.SettingsProfile](#rqsrs-006rbacusersettingsprofile)
+    * 5.3.7 [RQ.SRS-006.RBAC.User.Quotas](#rqsrs-006rbacuserquotas)
+    * 5.3.8 [RQ.SRS-006.RBAC.User.RowPolicies](#rqsrs-006rbacuserrowpolicies)
+    * 5.3.9 [RQ.SRS-006.RBAC.User.DefaultRole](#rqsrs-006rbacuserdefaultrole)
+    * 5.3.10 [RQ.SRS-006.RBAC.User.RoleSelection](#rqsrs-006rbacuserroleselection)
+    * 5.3.11 [RQ.SRS-006.RBAC.User.ShowCreate](#rqsrs-006rbacusershowcreate)
+    * 5.3.12 [RQ.SRS-006.RBAC.User.ShowPrivileges](#rqsrs-006rbacusershowprivileges)
+    * 5.3.13 [RQ.SRS-006.RBAC.User.Use.DefaultRole](#rqsrs-006rbacuserusedefaultrole)
+    * 5.3.14 [RQ.SRS-006.RBAC.User.Use.AllRolesWhenNoDefaultRole](#rqsrs-006rbacuseruseallroleswhennodefaultrole)
+    * 5.3.15 [Create User](#create-user)
+      * 5.3.15.1 [RQ.SRS-006.RBAC.User.Create](#rqsrs-006rbacusercreate)
+      * 5.3.15.2 [RQ.SRS-006.RBAC.User.Create.IfNotExists](#rqsrs-006rbacusercreateifnotexists)
+      * 5.3.15.3 [RQ.SRS-006.RBAC.User.Create.Replace](#rqsrs-006rbacusercreatereplace)
+      * 5.3.15.4 [RQ.SRS-006.RBAC.User.Create.Password.NoPassword](#rqsrs-006rbacusercreatepasswordnopassword)
+      * 5.3.15.5 [RQ.SRS-006.RBAC.User.Create.Password.NoPassword.Login](#rqsrs-006rbacusercreatepasswordnopasswordlogin)
+      * 5.3.15.6 [RQ.SRS-006.RBAC.User.Create.Password.PlainText](#rqsrs-006rbacusercreatepasswordplaintext)
+      * 5.3.15.7 [RQ.SRS-006.RBAC.User.Create.Password.PlainText.Login](#rqsrs-006rbacusercreatepasswordplaintextlogin)
+      * 5.3.15.8 [RQ.SRS-006.RBAC.User.Create.Password.Sha256Password](#rqsrs-006rbacusercreatepasswordsha256password)
+      * 5.3.15.9 [RQ.SRS-006.RBAC.User.Create.Password.Sha256Password.Login](#rqsrs-006rbacusercreatepasswordsha256passwordlogin)
+      * 5.3.15.10 [RQ.SRS-006.RBAC.User.Create.Password.Sha256Hash](#rqsrs-006rbacusercreatepasswordsha256hash)
+      * 5.3.15.11 [RQ.SRS-006.RBAC.User.Create.Password.Sha256Hash.Login](#rqsrs-006rbacusercreatepasswordsha256hashlogin)
+      * 5.3.15.12 [RQ.SRS-006.RBAC.User.Create.Password.DoubleSha1Password](#rqsrs-006rbacusercreatepassworddoublesha1password)
+      * 5.3.15.13 [RQ.SRS-006.RBAC.User.Create.Password.DoubleSha1Password.Login](#rqsrs-006rbacusercreatepassworddoublesha1passwordlogin)
+      * 5.3.15.14 [RQ.SRS-006.RBAC.User.Create.Password.DoubleSha1Hash](#rqsrs-006rbacusercreatepassworddoublesha1hash)
+      * 5.3.15.15 [RQ.SRS-006.RBAC.User.Create.Password.DoubleSha1Hash.Login](#rqsrs-006rbacusercreatepassworddoublesha1hashlogin)
+      * 5.3.15.16 [RQ.SRS-006.RBAC.User.Create.Host.Name](#rqsrs-006rbacusercreatehostname)
+      * 5.3.15.17 [RQ.SRS-006.RBAC.User.Create.Host.Regexp](#rqsrs-006rbacusercreatehostregexp)
+      * 5.3.15.18 [RQ.SRS-006.RBAC.User.Create.Host.IP](#rqsrs-006rbacusercreatehostip)
+      * 5.3.15.19 [RQ.SRS-006.RBAC.User.Create.Host.Any](#rqsrs-006rbacusercreatehostany)
+      * 5.3.15.20 [RQ.SRS-006.RBAC.User.Create.Host.None](#rqsrs-006rbacusercreatehostnone)
+      * 5.3.15.21 [RQ.SRS-006.RBAC.User.Create.Host.Local](#rqsrs-006rbacusercreatehostlocal)
+      * 5.3.15.22 [RQ.SRS-006.RBAC.User.Create.Host.Like](#rqsrs-006rbacusercreatehostlike)
+      * 5.3.15.23 [RQ.SRS-006.RBAC.User.Create.Host.Default](#rqsrs-006rbacusercreatehostdefault)
+      * 5.3.15.24 [RQ.SRS-006.RBAC.User.Create.DefaultRole](#rqsrs-006rbacusercreatedefaultrole)
+      * 5.3.15.25 [RQ.SRS-006.RBAC.User.Create.DefaultRole.None](#rqsrs-006rbacusercreatedefaultrolenone)
+      * 5.3.15.26 [RQ.SRS-006.RBAC.User.Create.DefaultRole.All](#rqsrs-006rbacusercreatedefaultroleall)
+      * 5.3.15.27 [RQ.SRS-006.RBAC.User.Create.Settings](#rqsrs-006rbacusercreatesettings)
+      * 5.3.15.28 [RQ.SRS-006.RBAC.User.Create.OnCluster](#rqsrs-006rbacusercreateoncluster)
+      * 5.3.15.29 [RQ.SRS-006.RBAC.User.Create.Syntax](#rqsrs-006rbacusercreatesyntax)
+    * 5.3.16 [Alter User](#alter-user)
+      * 5.3.16.1 [RQ.SRS-006.RBAC.User.Alter](#rqsrs-006rbacuseralter)
+      * 5.3.16.2 [RQ.SRS-006.RBAC.User.Alter.OrderOfEvaluation](#rqsrs-006rbacuseralterorderofevaluation)
+      * 5.3.16.3 [RQ.SRS-006.RBAC.User.Alter.IfExists](#rqsrs-006rbacuseralterifexists)
+      * 5.3.16.4 [RQ.SRS-006.RBAC.User.Alter.Cluster](#rqsrs-006rbacuseraltercluster)
+      * 5.3.16.5 [RQ.SRS-006.RBAC.User.Alter.Rename](#rqsrs-006rbacuseralterrename)
+      * 5.3.16.6 [RQ.SRS-006.RBAC.User.Alter.Password.PlainText](#rqsrs-006rbacuseralterpasswordplaintext)
+      * 5.3.16.7 [RQ.SRS-006.RBAC.User.Alter.Password.Sha256Password](#rqsrs-006rbacuseralterpasswordsha256password)
+      * 5.3.16.8 [RQ.SRS-006.RBAC.User.Alter.Password.DoubleSha1Password](#rqsrs-006rbacuseralterpassworddoublesha1password)
+      * 5.3.16.9 [RQ.SRS-006.RBAC.User.Alter.Host.AddDrop](#rqsrs-006rbacuseralterhostadddrop)
+      * 5.3.16.10 [RQ.SRS-006.RBAC.User.Alter.Host.Local](#rqsrs-006rbacuseralterhostlocal)
+      * 5.3.16.11 [RQ.SRS-006.RBAC.User.Alter.Host.Name](#rqsrs-006rbacuseralterhostname)
+      * 5.3.16.12 [RQ.SRS-006.RBAC.User.Alter.Host.Regexp](#rqsrs-006rbacuseralterhostregexp)
+      * 5.3.16.13 [RQ.SRS-006.RBAC.User.Alter.Host.IP](#rqsrs-006rbacuseralterhostip)
+      * 5.3.16.14 [RQ.SRS-006.RBAC.User.Alter.Host.Like](#rqsrs-006rbacuseralterhostlike)
+      * 5.3.16.15 [RQ.SRS-006.RBAC.User.Alter.Host.Any](#rqsrs-006rbacuseralterhostany)
+      * 5.3.16.16 [RQ.SRS-006.RBAC.User.Alter.Host.None](#rqsrs-006rbacuseralterhostnone)
+      * 5.3.16.17 [RQ.SRS-006.RBAC.User.Alter.DefaultRole](#rqsrs-006rbacuseralterdefaultrole)
+      * 5.3.16.18 [RQ.SRS-006.RBAC.User.Alter.DefaultRole.All](#rqsrs-006rbacuseralterdefaultroleall)
+      * 5.3.16.19 [RQ.SRS-006.RBAC.User.Alter.DefaultRole.AllExcept](#rqsrs-006rbacuseralterdefaultroleallexcept)
+      * 5.3.16.20 [RQ.SRS-006.RBAC.User.Alter.Settings](#rqsrs-006rbacuseraltersettings)
+      * 5.3.16.21 [RQ.SRS-006.RBAC.User.Alter.Settings.Min](#rqsrs-006rbacuseraltersettingsmin)
+      * 5.3.16.22 [RQ.SRS-006.RBAC.User.Alter.Settings.Max](#rqsrs-006rbacuseraltersettingsmax)
+      * 5.3.16.23 [RQ.SRS-006.RBAC.User.Alter.Settings.Profile](#rqsrs-006rbacuseraltersettingsprofile)
+      * 5.3.16.24 [RQ.SRS-006.RBAC.User.Alter.Syntax](#rqsrs-006rbacuseraltersyntax)
+    * 5.3.17 [Show Create User](#show-create-user)
+      * 5.3.17.1 [RQ.SRS-006.RBAC.User.ShowCreateUser](#rqsrs-006rbacusershowcreateuser)
+      * 5.3.17.2 [RQ.SRS-006.RBAC.User.ShowCreateUser.For](#rqsrs-006rbacusershowcreateuserfor)
+      * 5.3.17.3 [RQ.SRS-006.RBAC.User.ShowCreateUser.Syntax](#rqsrs-006rbacusershowcreateusersyntax)
+    * 5.3.18 [Drop User](#drop-user)
+      * 5.3.18.1 [RQ.SRS-006.RBAC.User.Drop](#rqsrs-006rbacuserdrop)
+      * 5.3.18.2 [RQ.SRS-006.RBAC.User.Drop.IfExists](#rqsrs-006rbacuserdropifexists)
+      * 5.3.18.3 [RQ.SRS-006.RBAC.User.Drop.OnCluster](#rqsrs-006rbacuserdroponcluster)
+      * 5.3.18.4 [RQ.SRS-006.RBAC.User.Drop.Syntax](#rqsrs-006rbacuserdropsyntax)
+  * 5.4 [Role](#role)
+    * 5.4.1 [RQ.SRS-006.RBAC.Role](#rqsrs-006rbacrole)
+    * 5.4.2 [RQ.SRS-006.RBAC.Role.Privileges](#rqsrs-006rbacroleprivileges)
+    * 5.4.3 [RQ.SRS-006.RBAC.Role.Variables](#rqsrs-006rbacrolevariables)
+    * 5.4.4 [RQ.SRS-006.RBAC.Role.SettingsProfile](#rqsrs-006rbacrolesettingsprofile)
+    * 5.4.5 [RQ.SRS-006.RBAC.Role.Quotas](#rqsrs-006rbacrolequotas)
+    * 5.4.6 [RQ.SRS-006.RBAC.Role.RowPolicies](#rqsrs-006rbacrolerowpolicies)
+    * 5.4.7 [Create Role](#create-role)
+      * 5.4.7.1 [RQ.SRS-006.RBAC.Role.Create](#rqsrs-006rbacrolecreate)
+      * 5.4.7.2 [RQ.SRS-006.RBAC.Role.Create.IfNotExists](#rqsrs-006rbacrolecreateifnotexists)
+      * 5.4.7.3 [RQ.SRS-006.RBAC.Role.Create.Replace](#rqsrs-006rbacrolecreatereplace)
+      * 5.4.7.4 [RQ.SRS-006.RBAC.Role.Create.Settings](#rqsrs-006rbacrolecreatesettings)
+      * 5.4.7.5 [RQ.SRS-006.RBAC.Role.Create.Syntax](#rqsrs-006rbacrolecreatesyntax)
+    * 5.4.8 [Alter Role](#alter-role)
+      * 5.4.8.1 [RQ.SRS-006.RBAC.Role.Alter](#rqsrs-006rbacrolealter)
+      * 5.4.8.2 [RQ.SRS-006.RBAC.Role.Alter.IfExists](#rqsrs-006rbacrolealterifexists)
+      * 5.4.8.3 [RQ.SRS-006.RBAC.Role.Alter.Cluster](#rqsrs-006rbacrolealtercluster)
+      * 5.4.8.4 [RQ.SRS-006.RBAC.Role.Alter.Rename](#rqsrs-006rbacrolealterrename)
+      * 5.4.8.5 [RQ.SRS-006.RBAC.Role.Alter.Settings](#rqsrs-006rbacrolealtersettings)
+      * 5.4.8.6 [RQ.SRS-006.RBAC.Role.Alter.Syntax](#rqsrs-006rbacrolealtersyntax)
+    * 5.4.9 [Drop Role](#drop-role)
+      * 5.4.9.1 [RQ.SRS-006.RBAC.Role.Drop](#rqsrs-006rbacroledrop)
+      * 5.4.9.2 [RQ.SRS-006.RBAC.Role.Drop.IfExists](#rqsrs-006rbacroledropifexists)
+      * 5.4.9.3 [RQ.SRS-006.RBAC.Role.Drop.Cluster](#rqsrs-006rbacroledropcluster)
+      * 5.4.9.4 [RQ.SRS-006.RBAC.Role.Drop.Syntax](#rqsrs-006rbacroledropsyntax)
+    * 5.4.10 [Show Create Role](#show-create-role)
+      * 5.4.10.1 [RQ.SRS-006.RBAC.Role.ShowCreate](#rqsrs-006rbacroleshowcreate)
+      * 5.4.10.2 [RQ.SRS-006.RBAC.Role.ShowCreate.Syntax](#rqsrs-006rbacroleshowcreatesyntax)
+  * 5.5 [Partial Revokes](#partial-revokes)
+    * 5.5.1 [RQ.SRS-006.RBAC.PartialRevokes](#rqsrs-006rbacpartialrevokes)
+    * 5.5.2 [RQ.SRS-006.RBAC.PartialRevoke.Syntax](#rqsrs-006rbacpartialrevokesyntax)
+  * 5.6 [Settings Profile](#settings-profile)
+    * 5.6.1 [RQ.SRS-006.RBAC.SettingsProfile](#rqsrs-006rbacsettingsprofile)
+    * 5.6.2 [RQ.SRS-006.RBAC.SettingsProfile.Constraints](#rqsrs-006rbacsettingsprofileconstraints)
+    * 5.6.3 [Create Settings Profile](#create-settings-profile)
+      * 5.6.3.1 [RQ.SRS-006.RBAC.SettingsProfile.Create](#rqsrs-006rbacsettingsprofilecreate)
+      * 5.6.3.2 [RQ.SRS-006.RBAC.SettingsProfile.Create.IfNotExists](#rqsrs-006rbacsettingsprofilecreateifnotexists)
+      * 5.6.3.3 [RQ.SRS-006.RBAC.SettingsProfile.Create.Replace](#rqsrs-006rbacsettingsprofilecreatereplace)
+      * 5.6.3.4 [RQ.SRS-006.RBAC.SettingsProfile.Create.Variables](#rqsrs-006rbacsettingsprofilecreatevariables)
+      * 5.6.3.5 [RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Value](#rqsrs-006rbacsettingsprofilecreatevariablesvalue)
+      * 5.6.3.6 [RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Constraints](#rqsrs-006rbacsettingsprofilecreatevariablesconstraints)
+      * 5.6.3.7 [RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment](#rqsrs-006rbacsettingsprofilecreateassignment)
+      * 5.6.3.8 [RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment.None](#rqsrs-006rbacsettingsprofilecreateassignmentnone)
+      * 5.6.3.9 [RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment.All](#rqsrs-006rbacsettingsprofilecreateassignmentall)
+      * 5.6.3.10 [RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment.AllExcept](#rqsrs-006rbacsettingsprofilecreateassignmentallexcept)
+      * 5.6.3.11 [RQ.SRS-006.RBAC.SettingsProfile.Create.Inherit](#rqsrs-006rbacsettingsprofilecreateinherit)
+      * 5.6.3.12 [RQ.SRS-006.RBAC.SettingsProfile.Create.OnCluster](#rqsrs-006rbacsettingsprofilecreateoncluster)
+      * 5.6.3.13 [RQ.SRS-006.RBAC.SettingsProfile.Create.Syntax](#rqsrs-006rbacsettingsprofilecreatesyntax)
+    * 5.6.4 [Alter Settings Profile](#alter-settings-profile)
+      * 5.6.4.1 [RQ.SRS-006.RBAC.SettingsProfile.Alter](#rqsrs-006rbacsettingsprofilealter)
+      * 5.6.4.2 [RQ.SRS-006.RBAC.SettingsProfile.Alter.IfExists](#rqsrs-006rbacsettingsprofilealterifexists)
+      * 5.6.4.3 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Rename](#rqsrs-006rbacsettingsprofilealterrename)
+      * 5.6.4.4 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables](#rqsrs-006rbacsettingsprofilealtervariables)
+      * 5.6.4.5 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Value](#rqsrs-006rbacsettingsprofilealtervariablesvalue)
+      * 5.6.4.6 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Constraints](#rqsrs-006rbacsettingsprofilealtervariablesconstraints)
+      * 5.6.4.7 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment](#rqsrs-006rbacsettingsprofilealterassignment)
+      * 5.6.4.8 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.None](#rqsrs-006rbacsettingsprofilealterassignmentnone)
+      * 5.6.4.9 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.All](#rqsrs-006rbacsettingsprofilealterassignmentall)
+      * 5.6.4.10 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.AllExcept](#rqsrs-006rbacsettingsprofilealterassignmentallexcept)
+      * 5.6.4.11 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.Inherit](#rqsrs-006rbacsettingsprofilealterassignmentinherit)
+      * 5.6.4.12 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.OnCluster](#rqsrs-006rbacsettingsprofilealterassignmentoncluster)
+      * 5.6.4.13 [RQ.SRS-006.RBAC.SettingsProfile.Alter.Syntax](#rqsrs-006rbacsettingsprofilealtersyntax)
+    * 5.6.5 [Drop Settings Profile](#drop-settings-profile)
+      * 5.6.5.1 [RQ.SRS-006.RBAC.SettingsProfile.Drop](#rqsrs-006rbacsettingsprofiledrop)
+      * 5.6.5.2 [RQ.SRS-006.RBAC.SettingsProfile.Drop.IfExists](#rqsrs-006rbacsettingsprofiledropifexists)
+      * 5.6.5.3 [RQ.SRS-006.RBAC.SettingsProfile.Drop.OnCluster](#rqsrs-006rbacsettingsprofiledroponcluster)
+      * 5.6.5.4 [RQ.SRS-006.RBAC.SettingsProfile.Drop.Syntax](#rqsrs-006rbacsettingsprofiledropsyntax)
+    * 5.6.6 [Show Create Settings Profile](#show-create-settings-profile)
+      * 5.6.6.1 [RQ.SRS-006.RBAC.SettingsProfile.ShowCreateSettingsProfile](#rqsrs-006rbacsettingsprofileshowcreatesettingsprofile)
+  * 5.7 [Quotas](#quotas)
+    * 5.7.1 [RQ.SRS-006.RBAC.Quotas](#rqsrs-006rbacquotas)
+    * 5.7.2 [RQ.SRS-006.RBAC.Quotas.Keyed](#rqsrs-006rbacquotaskeyed)
+    * 5.7.3 [RQ.SRS-006.RBAC.Quotas.Queries](#rqsrs-006rbacquotasqueries)
+    * 5.7.4 [RQ.SRS-006.RBAC.Quotas.Errors](#rqsrs-006rbacquotaserrors)
+    * 5.7.5 [RQ.SRS-006.RBAC.Quotas.ResultRows](#rqsrs-006rbacquotasresultrows)
+    * 5.7.6 [RQ.SRS-006.RBAC.Quotas.ReadRows](#rqsrs-006rbacquotasreadrows)
+    * 5.7.7 [RQ.SRS-006.RBAC.Quotas.ResultBytes](#rqsrs-006rbacquotasresultbytes)
+    * 5.7.8 [RQ.SRS-006.RBAC.Quotas.ReadBytes](#rqsrs-006rbacquotasreadbytes)
+    * 5.7.9 [RQ.SRS-006.RBAC.Quotas.ExecutionTime](#rqsrs-006rbacquotasexecutiontime)
+    * 5.7.10 [Create Quotas](#create-quotas)
+      * 5.7.10.1 [RQ.SRS-006.RBAC.Quota.Create](#rqsrs-006rbacquotacreate)
+      * 5.7.10.2 [RQ.SRS-006.RBAC.Quota.Create.IfNotExists](#rqsrs-006rbacquotacreateifnotexists)
+      * 5.7.10.3 [RQ.SRS-006.RBAC.Quota.Create.Replace](#rqsrs-006rbacquotacreatereplace)
+      * 5.7.10.4 [RQ.SRS-006.RBAC.Quota.Create.Cluster](#rqsrs-006rbacquotacreatecluster)
+      * 5.7.10.5 [RQ.SRS-006.RBAC.Quota.Create.Interval](#rqsrs-006rbacquotacreateinterval)
+      * 5.7.10.6 [RQ.SRS-006.RBAC.Quota.Create.Interval.Randomized](#rqsrs-006rbacquotacreateintervalrandomized)
+      * 5.7.10.7 [RQ.SRS-006.RBAC.Quota.Create.Queries](#rqsrs-006rbacquotacreatequeries)
+      * 5.7.10.8 [RQ.SRS-006.RBAC.Quota.Create.Errors](#rqsrs-006rbacquotacreateerrors)
+      * 5.7.10.9 [RQ.SRS-006.RBAC.Quota.Create.ResultRows](#rqsrs-006rbacquotacreateresultrows)
+      * 5.7.10.10 [RQ.SRS-006.RBAC.Quota.Create.ReadRows](#rqsrs-006rbacquotacreatereadrows)
+      * 5.7.10.11 [RQ.SRS-006.RBAC.Quota.Create.ResultBytes](#rqsrs-006rbacquotacreateresultbytes)
+      * 5.7.10.12 [RQ.SRS-006.RBAC.Quota.Create.ReadBytes](#rqsrs-006rbacquotacreatereadbytes)
+      * 5.7.10.13 [RQ.SRS-006.RBAC.Quota.Create.ExecutionTime](#rqsrs-006rbacquotacreateexecutiontime)
+      * 5.7.10.14 [RQ.SRS-006.RBAC.Quota.Create.NoLimits](#rqsrs-006rbacquotacreatenolimits)
+      * 5.7.10.15 [RQ.SRS-006.RBAC.Quota.Create.TrackingOnly](#rqsrs-006rbacquotacreatetrackingonly)
+      * 5.7.10.16 [RQ.SRS-006.RBAC.Quota.Create.KeyedBy](#rqsrs-006rbacquotacreatekeyedby)
+      * 5.7.10.17 [RQ.SRS-006.RBAC.Quota.Create.KeyedByOptions](#rqsrs-006rbacquotacreatekeyedbyoptions)
+      * 5.7.10.18 [RQ.SRS-006.RBAC.Quota.Create.Assignment](#rqsrs-006rbacquotacreateassignment)
+      * 5.7.10.19 [RQ.SRS-006.RBAC.Quota.Create.Assignment.None](#rqsrs-006rbacquotacreateassignmentnone)
+      * 5.7.10.20 [RQ.SRS-006.RBAC.Quota.Create.Assignment.All](#rqsrs-006rbacquotacreateassignmentall)
+      * 5.7.10.21 [RQ.SRS-006.RBAC.Quota.Create.Assignment.Except](#rqsrs-006rbacquotacreateassignmentexcept)
+      * 5.7.10.22 [RQ.SRS-006.RBAC.Quota.Create.Syntax](#rqsrs-006rbacquotacreatesyntax)
+    * 5.7.11 [Alter Quota](#alter-quota)
+      * 5.7.11.1 [RQ.SRS-006.RBAC.Quota.Alter](#rqsrs-006rbacquotaalter)
+      * 5.7.11.2 [RQ.SRS-006.RBAC.Quota.Alter.IfExists](#rqsrs-006rbacquotaalterifexists)
+      * 5.7.11.3 [RQ.SRS-006.RBAC.Quota.Alter.Rename](#rqsrs-006rbacquotaalterrename)
+      * 5.7.11.4 [RQ.SRS-006.RBAC.Quota.Alter.Cluster](#rqsrs-006rbacquotaaltercluster)
+      * 5.7.11.5 [RQ.SRS-006.RBAC.Quota.Alter.Interval](#rqsrs-006rbacquotaalterinterval)
+      * 5.7.11.6 [RQ.SRS-006.RBAC.Quota.Alter.Interval.Randomized](#rqsrs-006rbacquotaalterintervalrandomized)
+      * 5.7.11.7 [RQ.SRS-006.RBAC.Quota.Alter.Queries](#rqsrs-006rbacquotaalterqueries)
+      * 5.7.11.8 [RQ.SRS-006.RBAC.Quota.Alter.Errors](#rqsrs-006rbacquotaaltererrors)
+      * 5.7.11.9 [RQ.SRS-006.RBAC.Quota.Alter.ResultRows](#rqsrs-006rbacquotaalterresultrows)
+      * 5.7.11.10 [RQ.SRS-006.RBAC.Quota.Alter.ReadRows](#rqsrs-006rbacquotaalterreadrows)
+      * 5.7.11.11 [RQ.SRS-006.RBAC.Quota.ALter.ResultBytes](#rqsrs-006rbacquotaalterresultbytes)
+      * 5.7.11.12 [RQ.SRS-006.RBAC.Quota.Alter.ReadBytes](#rqsrs-006rbacquotaalterreadbytes)
+      * 5.7.11.13 [RQ.SRS-006.RBAC.Quota.Alter.ExecutionTime](#rqsrs-006rbacquotaalterexecutiontime)
+      * 5.7.11.14 [RQ.SRS-006.RBAC.Quota.Alter.NoLimits](#rqsrs-006rbacquotaalternolimits)
+      * 5.7.11.15 [RQ.SRS-006.RBAC.Quota.Alter.TrackingOnly](#rqsrs-006rbacquotaaltertrackingonly)
+      * 5.7.11.16 [RQ.SRS-006.RBAC.Quota.Alter.KeyedBy](#rqsrs-006rbacquotaalterkeyedby)
+      * 5.7.11.17 [RQ.SRS-006.RBAC.Quota.Alter.KeyedByOptions](#rqsrs-006rbacquotaalterkeyedbyoptions)
+      * 5.7.11.18 [RQ.SRS-006.RBAC.Quota.Alter.Assignment](#rqsrs-006rbacquotaalterassignment)
+      * 5.7.11.19 [RQ.SRS-006.RBAC.Quota.Alter.Assignment.None](#rqsrs-006rbacquotaalterassignmentnone)
+      * 5.7.11.20 [RQ.SRS-006.RBAC.Quota.Alter.Assignment.All](#rqsrs-006rbacquotaalterassignmentall)
+      * 5.7.11.21 [RQ.SRS-006.RBAC.Quota.Alter.Assignment.Except](#rqsrs-006rbacquotaalterassignmentexcept)
+      * 5.7.11.22 [RQ.SRS-006.RBAC.Quota.Alter.Syntax](#rqsrs-006rbacquotaaltersyntax)
+    * 5.7.12 [Drop Quota](#drop-quota)
+      * 5.7.12.1 [RQ.SRS-006.RBAC.Quota.Drop](#rqsrs-006rbacquotadrop)
+      * 5.7.12.2 [RQ.SRS-006.RBAC.Quota.Drop.IfExists](#rqsrs-006rbacquotadropifexists)
+      * 5.7.12.3 [RQ.SRS-006.RBAC.Quota.Drop.Cluster](#rqsrs-006rbacquotadropcluster)
+      * 5.7.12.4 [RQ.SRS-006.RBAC.Quota.Drop.Syntax](#rqsrs-006rbacquotadropsyntax)
+    * 5.7.13 [Show Quotas](#show-quotas)
+      * 5.7.13.1 [RQ.SRS-006.RBAC.Quota.ShowQuotas](#rqsrs-006rbacquotashowquotas)
+      * 5.7.13.2 [RQ.SRS-006.RBAC.Quota.ShowQuotas.IntoOutfile](#rqsrs-006rbacquotashowquotasintooutfile)
+      * 5.7.13.3 [RQ.SRS-006.RBAC.Quota.ShowQuotas.Format](#rqsrs-006rbacquotashowquotasformat)
+      * 5.7.13.4 [RQ.SRS-006.RBAC.Quota.ShowQuotas.Settings](#rqsrs-006rbacquotashowquotassettings)
+      * 5.7.13.5 [RQ.SRS-006.RBAC.Quota.ShowQuotas.Syntax](#rqsrs-006rbacquotashowquotassyntax)
+    * 5.7.14 [Show Create Quota](#show-create-quota)
+      * 5.7.14.1 [RQ.SRS-006.RBAC.Quota.ShowCreateQuota.Name](#rqsrs-006rbacquotashowcreatequotaname)
+      * 5.7.14.2 [RQ.SRS-006.RBAC.Quota.ShowCreateQuota.Current](#rqsrs-006rbacquotashowcreatequotacurrent)
+      * 5.7.14.3 [RQ.SRS-006.RBAC.Quota.ShowCreateQuota.Syntax](#rqsrs-006rbacquotashowcreatequotasyntax)
+  * 5.8 [Row Policy](#row-policy)
+    * 5.8.1 [RQ.SRS-006.RBAC.RowPolicy](#rqsrs-006rbacrowpolicy)
+    * 5.8.2 [RQ.SRS-006.RBAC.RowPolicy.Condition](#rqsrs-006rbacrowpolicycondition)
+    * 5.8.3 [RQ.SRS-006.RBAC.RowPolicy.Restriction](#rqsrs-006rbacrowpolicyrestriction)
+    * 5.8.4 [RQ.SRS-006.RBAC.RowPolicy.Nesting](#rqsrs-006rbacrowpolicynesting)
+    * 5.8.5 [Create Row Policy](#create-row-policy)
+      * 5.8.5.1 [RQ.SRS-006.RBAC.RowPolicy.Create](#rqsrs-006rbacrowpolicycreate)
+      * 5.8.5.2 [RQ.SRS-006.RBAC.RowPolicy.Create.IfNotExists](#rqsrs-006rbacrowpolicycreateifnotexists)
+      * 5.8.5.3 [RQ.SRS-006.RBAC.RowPolicy.Create.Replace](#rqsrs-006rbacrowpolicycreatereplace)
+      * 5.8.5.4 [RQ.SRS-006.RBAC.RowPolicy.Create.OnCluster](#rqsrs-006rbacrowpolicycreateoncluster)
+      * 5.8.5.5 [RQ.SRS-006.RBAC.RowPolicy.Create.On](#rqsrs-006rbacrowpolicycreateon)
+      * 5.8.5.6 [RQ.SRS-006.RBAC.RowPolicy.Create.Access](#rqsrs-006rbacrowpolicycreateaccess)
+      * 5.8.5.7 [RQ.SRS-006.RBAC.RowPolicy.Create.Access.Permissive](#rqsrs-006rbacrowpolicycreateaccesspermissive)
+      * 5.8.5.8 [RQ.SRS-006.RBAC.RowPolicy.Create.Access.Restrictive](#rqsrs-006rbacrowpolicycreateaccessrestrictive)
+      * 5.8.5.9 [RQ.SRS-006.RBAC.RowPolicy.Create.ForSelect](#rqsrs-006rbacrowpolicycreateforselect)
+      * 5.8.5.10 [RQ.SRS-006.RBAC.RowPolicy.Create.Condition](#rqsrs-006rbacrowpolicycreatecondition)
+      * 5.8.5.11 [RQ.SRS-006.RBAC.RowPolicy.Create.Assignment](#rqsrs-006rbacrowpolicycreateassignment)
+      * 5.8.5.12 [RQ.SRS-006.RBAC.RowPolicy.Create.Assignment.None](#rqsrs-006rbacrowpolicycreateassignmentnone)
+      * 5.8.5.13 [RQ.SRS-006.RBAC.RowPolicy.Create.Assignment.All](#rqsrs-006rbacrowpolicycreateassignmentall)
+      * 5.8.5.14 [RQ.SRS-006.RBAC.RowPolicy.Create.Assignment.AllExcept](#rqsrs-006rbacrowpolicycreateassignmentallexcept)
+      * 5.8.5.15 [RQ.SRS-006.RBAC.RowPolicy.Create.Syntax](#rqsrs-006rbacrowpolicycreatesyntax)
+    * 5.8.6 [Alter Row Policy](#alter-row-policy)
+      * 5.8.6.1 [RQ.SRS-006.RBAC.RowPolicy.Alter](#rqsrs-006rbacrowpolicyalter)
+      * 5.8.6.2 [RQ.SRS-006.RBAC.RowPolicy.Alter.IfExists](#rqsrs-006rbacrowpolicyalterifexists)
+      * 5.8.6.3 [RQ.SRS-006.RBAC.RowPolicy.Alter.ForSelect](#rqsrs-006rbacrowpolicyalterforselect)
+      * 5.8.6.4 [RQ.SRS-006.RBAC.RowPolicy.Alter.OnCluster](#rqsrs-006rbacrowpolicyalteroncluster)
+      * 5.8.6.5 [RQ.SRS-006.RBAC.RowPolicy.Alter.On](#rqsrs-006rbacrowpolicyalteron)
+      * 5.8.6.6 [RQ.SRS-006.RBAC.RowPolicy.Alter.Rename](#rqsrs-006rbacrowpolicyalterrename)
+      * 5.8.6.7 [RQ.SRS-006.RBAC.RowPolicy.Alter.Access](#rqsrs-006rbacrowpolicyalteraccess)
+      * 5.8.6.8 [RQ.SRS-006.RBAC.RowPolicy.Alter.Access.Permissive](#rqsrs-006rbacrowpolicyalteraccesspermissive)
+      * 5.8.6.9 [RQ.SRS-006.RBAC.RowPolicy.Alter.Access.Restrictive](#rqsrs-006rbacrowpolicyalteraccessrestrictive)
+      * 5.8.6.10 [RQ.SRS-006.RBAC.RowPolicy.Alter.Condition](#rqsrs-006rbacrowpolicyaltercondition)
+      * 5.8.6.11 [RQ.SRS-006.RBAC.RowPolicy.Alter.Condition.None](#rqsrs-006rbacrowpolicyalterconditionnone)
+      * 5.8.6.12 [RQ.SRS-006.RBAC.RowPolicy.Alter.Assignment](#rqsrs-006rbacrowpolicyalterassignment)
+      * 5.8.6.13 [RQ.SRS-006.RBAC.RowPolicy.Alter.Assignment.None](#rqsrs-006rbacrowpolicyalterassignmentnone)
+      * 5.8.6.14 [RQ.SRS-006.RBAC.RowPolicy.Alter.Assignment.All](#rqsrs-006rbacrowpolicyalterassignmentall)
+      * 5.8.6.15 [RQ.SRS-006.RBAC.RowPolicy.Alter.Assignment.AllExcept](#rqsrs-006rbacrowpolicyalterassignmentallexcept)
+      * 5.8.6.16 [RQ.SRS-006.RBAC.RowPolicy.Alter.Syntax](#rqsrs-006rbacrowpolicyaltersyntax)
+    * 5.8.7 [Drop Row Policy](#drop-row-policy)
+      * 5.8.7.1 [RQ.SRS-006.RBAC.RowPolicy.Drop](#rqsrs-006rbacrowpolicydrop)
+      * 5.8.7.2 [RQ.SRS-006.RBAC.RowPolicy.Drop.IfExists](#rqsrs-006rbacrowpolicydropifexists)
+      * 5.8.7.3 [RQ.SRS-006.RBAC.RowPolicy.Drop.On](#rqsrs-006rbacrowpolicydropon)
+      * 5.8.7.4 [RQ.SRS-006.RBAC.RowPolicy.Drop.OnCluster](#rqsrs-006rbacrowpolicydroponcluster)
+      * 5.8.7.5 [RQ.SRS-006.RBAC.RowPolicy.Drop.Syntax](#rqsrs-006rbacrowpolicydropsyntax)
+    * 5.8.8 [Show Create Row Policy](#show-create-row-policy)
+      * 5.8.8.1 [RQ.SRS-006.RBAC.RowPolicy.ShowCreateRowPolicy](#rqsrs-006rbacrowpolicyshowcreaterowpolicy)
+      * 5.8.8.2 [RQ.SRS-006.RBAC.RowPolicy.ShowCreateRowPolicy.On](#rqsrs-006rbacrowpolicyshowcreaterowpolicyon)
+      * 5.8.8.3 [RQ.SRS-006.RBAC.RowPolicy.ShowCreateRowPolicy.Syntax](#rqsrs-006rbacrowpolicyshowcreaterowpolicysyntax)
+      * 5.8.8.4 [RQ.SRS-006.RBAC.RowPolicy.ShowRowPolicies](#rqsrs-006rbacrowpolicyshowrowpolicies)
+      * 5.8.8.5 [RQ.SRS-006.RBAC.RowPolicy.ShowRowPolicies.On](#rqsrs-006rbacrowpolicyshowrowpolicieson)
+      * 5.8.8.6 [RQ.SRS-006.RBAC.RowPolicy.ShowRowPolicies.Syntax](#rqsrs-006rbacrowpolicyshowrowpoliciessyntax)
+  * 5.9 [Set Default Role](#set-default-role)
+    * 5.9.1 [RQ.SRS-006.RBAC.SetDefaultRole](#rqsrs-006rbacsetdefaultrole)
+    * 5.9.2 [RQ.SRS-006.RBAC.SetDefaultRole.CurrentUser](#rqsrs-006rbacsetdefaultrolecurrentuser)
+    * 5.9.3 [RQ.SRS-006.RBAC.SetDefaultRole.All](#rqsrs-006rbacsetdefaultroleall)
+    * 5.9.4 [RQ.SRS-006.RBAC.SetDefaultRole.AllExcept](#rqsrs-006rbacsetdefaultroleallexcept)
+    * 5.9.5 [RQ.SRS-006.RBAC.SetDefaultRole.None](#rqsrs-006rbacsetdefaultrolenone)
+    * 5.9.6 [RQ.SRS-006.RBAC.SetDefaultRole.Syntax](#rqsrs-006rbacsetdefaultrolesyntax)
+  * 5.10 [Set Role](#set-role)
+    * 5.10.1 [RQ.SRS-006.RBAC.SetRole](#rqsrs-006rbacsetrole)
+    * 5.10.2 [RQ.SRS-006.RBAC.SetRole.Default](#rqsrs-006rbacsetroledefault)
+    * 5.10.3 [RQ.SRS-006.RBAC.SetRole.None](#rqsrs-006rbacsetrolenone)
+    * 5.10.4 [RQ.SRS-006.RBAC.SetRole.All](#rqsrs-006rbacsetroleall)
+    * 5.10.5 [RQ.SRS-006.RBAC.SetRole.AllExcept](#rqsrs-006rbacsetroleallexcept)
+    * 5.10.6 [RQ.SRS-006.RBAC.SetRole.Syntax](#rqsrs-006rbacsetrolesyntax)
+  * 5.11 [Grant](#grant)
+    * 5.11.1 [RQ.SRS-006.RBAC.Grant.Privilege.To](#rqsrs-006rbacgrantprivilegeto)
+    * 5.11.2 [RQ.SRS-006.RBAC.Grant.Privilege.ToCurrentUser](#rqsrs-006rbacgrantprivilegetocurrentuser)
+    * 5.11.3 [RQ.SRS-006.RBAC.Grant.Privilege.Select](#rqsrs-006rbacgrantprivilegeselect)
+    * 5.11.4 [RQ.SRS-006.RBAC.Grant.Privilege.Insert](#rqsrs-006rbacgrantprivilegeinsert)
+    * 5.11.5 [RQ.SRS-006.RBAC.Grant.Privilege.Alter](#rqsrs-006rbacgrantprivilegealter)
+    * 5.11.6 [RQ.SRS-006.RBAC.Grant.Privilege.Create](#rqsrs-006rbacgrantprivilegecreate)
+    * 5.11.7 [RQ.SRS-006.RBAC.Grant.Privilege.Drop](#rqsrs-006rbacgrantprivilegedrop)
+    * 5.11.8 [RQ.SRS-006.RBAC.Grant.Privilege.Truncate](#rqsrs-006rbacgrantprivilegetruncate)
+    * 5.11.9 [RQ.SRS-006.RBAC.Grant.Privilege.Optimize](#rqsrs-006rbacgrantprivilegeoptimize)
+    * 5.11.10 [RQ.SRS-006.RBAC.Grant.Privilege.Show](#rqsrs-006rbacgrantprivilegeshow)
+    * 5.11.11 [RQ.SRS-006.RBAC.Grant.Privilege.KillQuery](#rqsrs-006rbacgrantprivilegekillquery)
+    * 5.11.12 [RQ.SRS-006.RBAC.Grant.Privilege.AccessManagement](#rqsrs-006rbacgrantprivilegeaccessmanagement)
+    * 5.11.13 [RQ.SRS-006.RBAC.Grant.Privilege.System](#rqsrs-006rbacgrantprivilegesystem)
+    * 5.11.14 [RQ.SRS-006.RBAC.Grant.Privilege.Introspection](#rqsrs-006rbacgrantprivilegeintrospection)
+    * 5.11.15 [RQ.SRS-006.RBAC.Grant.Privilege.Sources](#rqsrs-006rbacgrantprivilegesources)
+    * 5.11.16 [RQ.SRS-006.RBAC.Grant.Privilege.DictGet](#rqsrs-006rbacgrantprivilegedictget)
+    * 5.11.17 [RQ.SRS-006.RBAC.Grant.Privilege.None](#rqsrs-006rbacgrantprivilegenone)
+    * 5.11.18 [RQ.SRS-006.RBAC.Grant.Privilege.All](#rqsrs-006rbacgrantprivilegeall)
+    * 5.11.19 [RQ.SRS-006.RBAC.Grant.Privilege.GrantOption](#rqsrs-006rbacgrantprivilegegrantoption)
+    * 5.11.20 [RQ.SRS-006.RBAC.Grant.Privilege.On](#rqsrs-006rbacgrantprivilegeon)
+    * 5.11.21 [RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns](#rqsrs-006rbacgrantprivilegeprivilegecolumns)
+    * 5.11.22 [RQ.SRS-006.RBAC.Grant.Privilege.OnCluster](#rqsrs-006rbacgrantprivilegeoncluster)
+    * 5.11.23 [RQ.SRS-006.RBAC.Grant.Privilege.Syntax](#rqsrs-006rbacgrantprivilegesyntax)
+  * 5.12 [Revoke](#revoke)
+    * 5.12.1 [RQ.SRS-006.RBAC.Revoke.Privilege.Cluster](#rqsrs-006rbacrevokeprivilegecluster)
+    * 5.12.2 [RQ.SRS-006.RBAC.Revoke.Privilege.Select](#rqsrs-006rbacrevokeprivilegeselect)
+    * 5.12.3 [RQ.SRS-006.RBAC.Revoke.Privilege.Insert](#rqsrs-006rbacrevokeprivilegeinsert)
+    * 5.12.4 [RQ.SRS-006.RBAC.Revoke.Privilege.Alter](#rqsrs-006rbacrevokeprivilegealter)
+    * 5.12.5 [RQ.SRS-006.RBAC.Revoke.Privilege.Create](#rqsrs-006rbacrevokeprivilegecreate)
+    * 5.12.6 [RQ.SRS-006.RBAC.Revoke.Privilege.Drop](#rqsrs-006rbacrevokeprivilegedrop)
+    * 5.12.7 [RQ.SRS-006.RBAC.Revoke.Privilege.Truncate](#rqsrs-006rbacrevokeprivilegetruncate)
+    * 5.12.8 [RQ.SRS-006.RBAC.Revoke.Privilege.Optimize](#rqsrs-006rbacrevokeprivilegeoptimize)
+    * 5.12.9 [RQ.SRS-006.RBAC.Revoke.Privilege.Show](#rqsrs-006rbacrevokeprivilegeshow)
+    * 5.12.10 [RQ.SRS-006.RBAC.Revoke.Privilege.KillQuery](#rqsrs-006rbacrevokeprivilegekillquery)
+    * 5.12.11 [RQ.SRS-006.RBAC.Revoke.Privilege.AccessManagement](#rqsrs-006rbacrevokeprivilegeaccessmanagement)
+    * 5.12.12 [RQ.SRS-006.RBAC.Revoke.Privilege.System](#rqsrs-006rbacrevokeprivilegesystem)
+    * 5.12.13 [RQ.SRS-006.RBAC.Revoke.Privilege.Introspection](#rqsrs-006rbacrevokeprivilegeintrospection)
+    * 5.12.14 [RQ.SRS-006.RBAC.Revoke.Privilege.Sources](#rqsrs-006rbacrevokeprivilegesources)
+    * 5.12.15 [RQ.SRS-006.RBAC.Revoke.Privilege.DictGet](#rqsrs-006rbacrevokeprivilegedictget)
+    * 5.12.16 [RQ.SRS-006.RBAC.Revoke.Privilege.PrivilegeColumns](#rqsrs-006rbacrevokeprivilegeprivilegecolumns)
+    * 5.12.17 [RQ.SRS-006.RBAC.Revoke.Privilege.Multiple](#rqsrs-006rbacrevokeprivilegemultiple)
+    * 5.12.18 [RQ.SRS-006.RBAC.Revoke.Privilege.All](#rqsrs-006rbacrevokeprivilegeall)
+    * 5.12.19 [RQ.SRS-006.RBAC.Revoke.Privilege.None](#rqsrs-006rbacrevokeprivilegenone)
+    * 5.12.20 [RQ.SRS-006.RBAC.Revoke.Privilege.On](#rqsrs-006rbacrevokeprivilegeon)
+    * 5.12.21 [RQ.SRS-006.RBAC.Revoke.Privilege.From](#rqsrs-006rbacrevokeprivilegefrom)
+    * 5.12.22 [RQ.SRS-006.RBAC.Revoke.Privilege.Syntax](#rqsrs-006rbacrevokeprivilegesyntax)
+  * 5.13 [Grant Role](#grant-role)
+    * 5.13.1 [RQ.SRS-006.RBAC.Grant.Role](#rqsrs-006rbacgrantrole)
+    * 5.13.2 [RQ.SRS-006.RBAC.Grant.Role.CurrentUser](#rqsrs-006rbacgrantrolecurrentuser)
+    * 5.13.3 [RQ.SRS-006.RBAC.Grant.Role.AdminOption](#rqsrs-006rbacgrantroleadminoption)
+    * 5.13.4 [RQ.SRS-006.RBAC.Grant.Role.OnCluster](#rqsrs-006rbacgrantroleoncluster)
+    * 5.13.5 [RQ.SRS-006.RBAC.Grant.Role.Syntax](#rqsrs-006rbacgrantrolesyntax)
+  * 5.14 [Revoke Role](#revoke-role)
+    * 5.14.1 [RQ.SRS-006.RBAC.Revoke.Role](#rqsrs-006rbacrevokerole)
+    * 5.14.2 [RQ.SRS-006.RBAC.Revoke.Role.Keywords](#rqsrs-006rbacrevokerolekeywords)
+    * 5.14.3 [RQ.SRS-006.RBAC.Revoke.Role.Cluster](#rqsrs-006rbacrevokerolecluster)
+    * 5.14.4 [RQ.SRS-006.RBAC.Revoke.AdminOption](#rqsrs-006rbacrevokeadminoption)
+    * 5.14.5 [RQ.SRS-006.RBAC.Revoke.Role.Syntax](#rqsrs-006rbacrevokerolesyntax)
+  * 5.15 [Show Grants](#show-grants)
+    * 5.15.1 [RQ.SRS-006.RBAC.Show.Grants](#rqsrs-006rbacshowgrants)
+    * 5.15.2 [RQ.SRS-006.RBAC.Show.Grants.For](#rqsrs-006rbacshowgrantsfor)
+    * 5.15.3 [RQ.SRS-006.RBAC.Show.Grants.Syntax](#rqsrs-006rbacshowgrantssyntax)
+  * 5.16 [Table Privileges](#table-privileges)
+    * 5.16.1 [RQ.SRS-006.RBAC.Table.PublicTables](#rqsrs-006rbactablepublictables)
+    * 5.16.2 [RQ.SRS-006.RBAC.Table.SensitiveTables](#rqsrs-006rbactablesensitivetables)
+  * 5.17 [Distributed Tables](#distributed-tables)
+    * 5.17.1 [RQ.SRS-006.RBAC.DistributedTable.Create](#rqsrs-006rbacdistributedtablecreate)
+    * 5.17.2 [RQ.SRS-006.RBAC.DistributedTable.Select](#rqsrs-006rbacdistributedtableselect)
+    * 5.17.3 [RQ.SRS-006.RBAC.DistributedTable.Insert](#rqsrs-006rbacdistributedtableinsert)
+    * 5.17.4 [RQ.SRS-006.RBAC.DistributedTable.SpecialTables](#rqsrs-006rbacdistributedtablespecialtables)
+    * 5.17.5 [RQ.SRS-006.RBAC.DistributedTable.LocalUser](#rqsrs-006rbacdistributedtablelocaluser)
+    * 5.17.6 [RQ.SRS-006.RBAC.DistributedTable.SameUserDifferentNodesDifferentPrivileges](#rqsrs-006rbacdistributedtablesameuserdifferentnodesdifferentprivileges)
+  * 5.18 [Views](#views)
+    * 5.18.1 [View](#view)
+      * 5.18.1.1 [RQ.SRS-006.RBAC.View](#rqsrs-006rbacview)
+      * 5.18.1.2 [RQ.SRS-006.RBAC.View.Create](#rqsrs-006rbacviewcreate)
+      * 5.18.1.3 [RQ.SRS-006.RBAC.View.Select](#rqsrs-006rbacviewselect)
+      * 5.18.1.4 [RQ.SRS-006.RBAC.View.Drop](#rqsrs-006rbacviewdrop)
+    * 5.18.2 [Materialized View](#materialized-view)
+      * 5.18.2.1 [RQ.SRS-006.RBAC.MaterializedView](#rqsrs-006rbacmaterializedview)
+      * 5.18.2.2 [RQ.SRS-006.RBAC.MaterializedView.Create](#rqsrs-006rbacmaterializedviewcreate)
+      * 5.18.2.3 [RQ.SRS-006.RBAC.MaterializedView.Select](#rqsrs-006rbacmaterializedviewselect)
+      * 5.18.2.4 [RQ.SRS-006.RBAC.MaterializedView.Select.TargetTable](#rqsrs-006rbacmaterializedviewselecttargettable)
+      * 5.18.2.5 [RQ.SRS-006.RBAC.MaterializedView.Select.SourceTable](#rqsrs-006rbacmaterializedviewselectsourcetable)
+      * 5.18.2.6 [RQ.SRS-006.RBAC.MaterializedView.Drop](#rqsrs-006rbacmaterializedviewdrop)
+      * 5.18.2.7 [RQ.SRS-006.RBAC.MaterializedView.ModifyQuery](#rqsrs-006rbacmaterializedviewmodifyquery)
+      * 5.18.2.8 [RQ.SRS-006.RBAC.MaterializedView.Insert](#rqsrs-006rbacmaterializedviewinsert)
+      * 5.18.2.9 [RQ.SRS-006.RBAC.MaterializedView.Insert.SourceTable](#rqsrs-006rbacmaterializedviewinsertsourcetable)
+      * 5.18.2.10 [RQ.SRS-006.RBAC.MaterializedView.Insert.TargetTable](#rqsrs-006rbacmaterializedviewinserttargettable)
+    * 5.18.3 [Live View](#live-view)
+      * 5.18.3.1 [RQ.SRS-006.RBAC.LiveView](#rqsrs-006rbacliveview)
+      * 5.18.3.2 [RQ.SRS-006.RBAC.LiveView.Create](#rqsrs-006rbacliveviewcreate)
+      * 5.18.3.3 [RQ.SRS-006.RBAC.LiveView.Select](#rqsrs-006rbacliveviewselect)
+      * 5.18.3.4 [RQ.SRS-006.RBAC.LiveView.Drop](#rqsrs-006rbacliveviewdrop)
+      * 5.18.3.5 [RQ.SRS-006.RBAC.LiveView.Refresh](#rqsrs-006rbacliveviewrefresh)
+  * 5.19 [Select](#select)
+    * 5.19.1 [RQ.SRS-006.RBAC.Select](#rqsrs-006rbacselect)
+    * 5.19.2 [RQ.SRS-006.RBAC.Select.Column](#rqsrs-006rbacselectcolumn)
+    * 5.19.3 [RQ.SRS-006.RBAC.Select.Cluster](#rqsrs-006rbacselectcluster)
+    * 5.19.4 [RQ.SRS-006.RBAC.Select.TableEngines](#rqsrs-006rbacselecttableengines)
+  * 5.20 [Insert](#insert)
+    * 5.20.1 [RQ.SRS-006.RBAC.Insert](#rqsrs-006rbacinsert)
+    * 5.20.2 [RQ.SRS-006.RBAC.Insert.Column](#rqsrs-006rbacinsertcolumn)
+    * 5.20.3 [RQ.SRS-006.RBAC.Insert.Cluster](#rqsrs-006rbacinsertcluster)
+    * 5.20.4 [RQ.SRS-006.RBAC.Insert.TableEngines](#rqsrs-006rbacinserttableengines)
+  * 5.21 [Alter](#alter)
+    * 5.21.1 [Alter Column](#alter-column)
+      * 5.21.1.1 [RQ.SRS-006.RBAC.Privileges.AlterColumn](#rqsrs-006rbacprivilegesaltercolumn)
+      * 5.21.1.2 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Grant](#rqsrs-006rbacprivilegesaltercolumngrant)
+      * 5.21.1.3 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Revoke](#rqsrs-006rbacprivilegesaltercolumnrevoke)
+      * 5.21.1.4 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Column](#rqsrs-006rbacprivilegesaltercolumncolumn)
+      * 5.21.1.5 [RQ.SRS-006.RBAC.Privileges.AlterColumn.Cluster](#rqsrs-006rbacprivilegesaltercolumncluster)
+      * 5.21.1.6 [RQ.SRS-006.RBAC.Privileges.AlterColumn.TableEngines](#rqsrs-006rbacprivilegesaltercolumntableengines)
+    * 5.21.2 [Alter Index](#alter-index)
+      * 5.21.2.1 [RQ.SRS-006.RBAC.Privileges.AlterIndex](#rqsrs-006rbacprivilegesalterindex)
+      * 5.21.2.2 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Grant](#rqsrs-006rbacprivilegesalterindexgrant)
+      * 5.21.2.3 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Revoke](#rqsrs-006rbacprivilegesalterindexrevoke)
+      * 5.21.2.4 [RQ.SRS-006.RBAC.Privileges.AlterIndex.Cluster](#rqsrs-006rbacprivilegesalterindexcluster)
+      * 5.21.2.5 [RQ.SRS-006.RBAC.Privileges.AlterIndex.TableEngines](#rqsrs-006rbacprivilegesalterindextableengines)
+    * 5.21.3 [Alter Constraint](#alter-constraint)
+      * 5.21.3.1 [RQ.SRS-006.RBAC.Privileges.AlterConstraint](#rqsrs-006rbacprivilegesalterconstraint)
+      * 5.21.3.2 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Grant](#rqsrs-006rbacprivilegesalterconstraintgrant)
+      * 5.21.3.3 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Revoke](#rqsrs-006rbacprivilegesalterconstraintrevoke)
+      * 5.21.3.4 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.Cluster](#rqsrs-006rbacprivilegesalterconstraintcluster)
+      * 5.21.3.5 [RQ.SRS-006.RBAC.Privileges.AlterConstraint.TableEngines](#rqsrs-006rbacprivilegesalterconstrainttableengines)
+    * 5.21.4 [Alter TTL](#alter-ttl)
+      * 5.21.4.1 [RQ.SRS-006.RBAC.Privileges.AlterTTL](#rqsrs-006rbacprivilegesalterttl)
+      * 5.21.4.2 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Grant](#rqsrs-006rbacprivilegesalterttlgrant)
+      * 5.21.4.3 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Revoke](#rqsrs-006rbacprivilegesalterttlrevoke)
+      * 5.21.4.4 [RQ.SRS-006.RBAC.Privileges.AlterTTL.Cluster](#rqsrs-006rbacprivilegesalterttlcluster)
+      * 5.21.4.5 [RQ.SRS-006.RBAC.Privileges.AlterTTL.TableEngines](#rqsrs-006rbacprivilegesalterttltableengines)
+    * 5.21.5 [Alter Settings](#alter-settings)
+      * 5.21.5.1 [RQ.SRS-006.RBAC.Privileges.AlterSettings](#rqsrs-006rbacprivilegesaltersettings)
+      * 5.21.5.2 [RQ.SRS-006.RBAC.Privileges.AlterSettings.Grant](#rqsrs-006rbacprivilegesaltersettingsgrant)
+      * 5.21.5.3 [RQ.SRS-006.RBAC.Privileges.AlterSettings.Revoke](#rqsrs-006rbacprivilegesaltersettingsrevoke)
+      * 5.21.5.4 [RQ.SRS-006.RBAC.Privileges.AlterSettings.Cluster](#rqsrs-006rbacprivilegesaltersettingscluster)
+      * 5.21.5.5 [RQ.SRS-006.RBAC.Privileges.AlterSettings.TableEngines](#rqsrs-006rbacprivilegesaltersettingstableengines)
+    * 5.21.6 [Alter Update](#alter-update)
+      * 5.21.6.1 [RQ.SRS-006.RBAC.Privileges.AlterUpdate](#rqsrs-006rbacprivilegesalterupdate)
+      * 5.21.6.2 [RQ.SRS-006.RBAC.Privileges.AlterUpdate.Grant](#rqsrs-006rbacprivilegesalterupdategrant)
+      * 5.21.6.3 [RQ.SRS-006.RBAC.Privileges.AlterUpdate.Revoke](#rqsrs-006rbacprivilegesalterupdaterevoke)
+      * 5.21.6.4 [RQ.SRS-006.RBAC.Privileges.AlterUpdate.TableEngines](#rqsrs-006rbacprivilegesalterupdatetableengines)
+    * 5.21.7 [Alter Delete](#alter-delete)
+      * 5.21.7.1 [RQ.SRS-006.RBAC.Privileges.AlterDelete](#rqsrs-006rbacprivilegesalterdelete)
+      * 5.21.7.2 [RQ.SRS-006.RBAC.Privileges.AlterDelete.Grant](#rqsrs-006rbacprivilegesalterdeletegrant)
+      * 5.21.7.3 [RQ.SRS-006.RBAC.Privileges.AlterDelete.Revoke](#rqsrs-006rbacprivilegesalterdeleterevoke)
+      * 5.21.7.4 [RQ.SRS-006.RBAC.Privileges.AlterDelete.TableEngines](#rqsrs-006rbacprivilegesalterdeletetableengines)
+    * 5.21.8 [Alter Freeze Partition](#alter-freeze-partition)
+      * 5.21.8.1 [RQ.SRS-006.RBAC.Privileges.AlterFreeze](#rqsrs-006rbacprivilegesalterfreeze)
+      * 5.21.8.2 [RQ.SRS-006.RBAC.Privileges.AlterFreeze.Grant](#rqsrs-006rbacprivilegesalterfreezegrant)
+      * 5.21.8.3 [RQ.SRS-006.RBAC.Privileges.AlterFreeze.Revoke](#rqsrs-006rbacprivilegesalterfreezerevoke)
+      * 5.21.8.4 [RQ.SRS-006.RBAC.Privileges.AlterFreeze.TableEngines](#rqsrs-006rbacprivilegesalterfreezetableengines)
+    * 5.21.9 [Alter Fetch Partition](#alter-fetch-partition)
+      * 5.21.9.1 [RQ.SRS-006.RBAC.Privileges.AlterFetch](#rqsrs-006rbacprivilegesalterfetch)
+      * 5.21.9.2 [RQ.SRS-006.RBAC.Privileges.AlterFetch.Grant](#rqsrs-006rbacprivilegesalterfetchgrant)
+      * 5.21.9.3 [RQ.SRS-006.RBAC.Privileges.AlterFetch.Revoke](#rqsrs-006rbacprivilegesalterfetchrevoke)
+      * 5.21.9.4 [RQ.SRS-006.RBAC.Privileges.AlterFetch.TableEngines](#rqsrs-006rbacprivilegesalterfetchtableengines)
+    * 5.21.10 [Alter Move Partition](#alter-move-partition)
+      * 5.21.10.1 [RQ.SRS-006.RBAC.Privileges.AlterMove](#rqsrs-006rbacprivilegesaltermove)
+      * 5.21.10.2 [RQ.SRS-006.RBAC.Privileges.AlterMove.Grant](#rqsrs-006rbacprivilegesaltermovegrant)
+      * 5.21.10.3 [RQ.SRS-006.RBAC.Privileges.AlterMove.Revoke](#rqsrs-006rbacprivilegesaltermoverevoke)
+      * 5.21.10.4 [RQ.SRS-006.RBAC.Privileges.AlterMove.TableEngines](#rqsrs-006rbacprivilegesaltermovetableengines)
+  * 5.22 [Create](#create)
+    * 5.22.1 [RQ.SRS-006.RBAC.Privileges.CreateTable](#rqsrs-006rbacprivilegescreatetable)
+    * 5.22.2 [RQ.SRS-006.RBAC.Privileges.CreateDatabase](#rqsrs-006rbacprivilegescreatedatabase)
+    * 5.22.3 [RQ.SRS-006.RBAC.Privileges.CreateDictionary](#rqsrs-006rbacprivilegescreatedictionary)
+    * 5.22.4 [RQ.SRS-006.RBAC.Privileges.CreateTemporaryTable](#rqsrs-006rbacprivilegescreatetemporarytable)
+  * 5.23 [Attach](#attach)
+    * 5.23.1 [RQ.SRS-006.RBAC.Privileges.AttachDatabase](#rqsrs-006rbacprivilegesattachdatabase)
+    * 5.23.2 [RQ.SRS-006.RBAC.Privileges.AttachDictionary](#rqsrs-006rbacprivilegesattachdictionary)
+    * 5.23.3 [RQ.SRS-006.RBAC.Privileges.AttachTemporaryTable](#rqsrs-006rbacprivilegesattachtemporarytable)
+    * 5.23.4 [RQ.SRS-006.RBAC.Privileges.AttachTable](#rqsrs-006rbacprivilegesattachtable)
+  * 5.24 [Drop](#drop)
+    * 5.24.1 [RQ.SRS-006.RBAC.Privileges.DropTable](#rqsrs-006rbacprivilegesdroptable)
+    * 5.24.2 [RQ.SRS-006.RBAC.Privileges.DropDatabase](#rqsrs-006rbacprivilegesdropdatabase)
+    * 5.24.3 [RQ.SRS-006.RBAC.Privileges.DropDictionary](#rqsrs-006rbacprivilegesdropdictionary)
+  * 5.25 [Detach](#detach)
+    * 5.25.1 [RQ.SRS-006.RBAC.Privileges.DetachTable](#rqsrs-006rbacprivilegesdetachtable)
+    * 5.25.2 [RQ.SRS-006.RBAC.Privileges.DetachView](#rqsrs-006rbacprivilegesdetachview)
+    * 5.25.3 [RQ.SRS-006.RBAC.Privileges.DetachDatabase](#rqsrs-006rbacprivilegesdetachdatabase)
+    * 5.25.4 [RQ.SRS-006.RBAC.Privileges.DetachDictionary](#rqsrs-006rbacprivilegesdetachdictionary)
+  * 5.26 [Truncate](#truncate)
+    * 5.26.1 [RQ.SRS-006.RBAC.Privileges.Truncate](#rqsrs-006rbacprivilegestruncate)
+  * 5.27 [Optimize](#optimize)
+    * 5.27.1 [RQ.SRS-006.RBAC.Privileges.Optimize](#rqsrs-006rbacprivilegesoptimize)
+  * 5.28 [Kill Query](#kill-query)
+    * 5.28.1 [RQ.SRS-006.RBAC.Privileges.KillQuery](#rqsrs-006rbacprivilegeskillquery)
+  * 5.29 [Kill Mutation](#kill-mutation)
+    * 5.29.1 [RQ.SRS-006.RBAC.Privileges.KillMutation](#rqsrs-006rbacprivilegeskillmutation)
+    * 5.29.2 [RQ.SRS-006.RBAC.Privileges.KillMutation.AlterUpdate](#rqsrs-006rbacprivilegeskillmutationalterupdate)
+    * 5.29.3 [RQ.SRS-006.RBAC.Privileges.KillMutation.AlterDelete](#rqsrs-006rbacprivilegeskillmutationalterdelete)
+    * 5.29.4 [RQ.SRS-006.RBAC.Privileges.KillMutation.AlterDropColumn](#rqsrs-006rbacprivilegeskillmutationalterdropcolumn)
+  * 5.30 [Show](#show)
+    * 5.30.1 [RQ.SRS-006.RBAC.ShowTables.Privilege](#rqsrs-006rbacshowtablesprivilege)
+    * 5.30.2 [RQ.SRS-006.RBAC.ShowTables.RequiredPrivilege](#rqsrs-006rbacshowtablesrequiredprivilege)
+    * 5.30.3 [RQ.SRS-006.RBAC.ExistsTable.RequiredPrivilege](#rqsrs-006rbacexiststablerequiredprivilege)
+    * 5.30.4 [RQ.SRS-006.RBAC.CheckTable.RequiredPrivilege](#rqsrs-006rbacchecktablerequiredprivilege)
+    * 5.30.5 [RQ.SRS-006.RBAC.ShowDatabases.Privilege](#rqsrs-006rbacshowdatabasesprivilege)
+    * 5.30.6 [RQ.SRS-006.RBAC.ShowDatabases.RequiredPrivilege](#rqsrs-006rbacshowdatabasesrequiredprivilege)
+    * 5.30.7 [RQ.SRS-006.RBAC.ShowCreateDatabase.RequiredPrivilege](#rqsrs-006rbacshowcreatedatabaserequiredprivilege)
+    * 5.30.8 [RQ.SRS-006.RBAC.UseDatabase.RequiredPrivilege](#rqsrs-006rbacusedatabaserequiredprivilege)
+    * 5.30.9 [RQ.SRS-006.RBAC.ShowColumns.Privilege](#rqsrs-006rbacshowcolumnsprivilege)
+    * 5.30.10 [RQ.SRS-006.RBAC.ShowCreateTable.RequiredPrivilege](#rqsrs-006rbacshowcreatetablerequiredprivilege)
+    * 5.30.11 [RQ.SRS-006.RBAC.DescribeTable.RequiredPrivilege](#rqsrs-006rbacdescribetablerequiredprivilege)
+    * 5.30.12 [RQ.SRS-006.RBAC.ShowDictionaries.Privilege](#rqsrs-006rbacshowdictionariesprivilege)
+    * 5.30.13 [RQ.SRS-006.RBAC.ShowDictionaries.RequiredPrivilege](#rqsrs-006rbacshowdictionariesrequiredprivilege)
+    * 5.30.14 [RQ.SRS-006.RBAC.ShowCreateDictionary.RequiredPrivilege](#rqsrs-006rbacshowcreatedictionaryrequiredprivilege)
+    * 5.30.15 [RQ.SRS-006.RBAC.ExistsDictionary.RequiredPrivilege](#rqsrs-006rbacexistsdictionaryrequiredprivilege)
+  * 5.31 [Access Management](#access-management)
+    * 5.31.1 [RQ.SRS-006.RBAC.Privileges.CreateUser](#rqsrs-006rbacprivilegescreateuser)
+    * 5.31.2 [RQ.SRS-006.RBAC.Privileges.CreateUser.DefaultRole](#rqsrs-006rbacprivilegescreateuserdefaultrole)
+    * 5.31.3 [RQ.SRS-006.RBAC.Privileges.AlterUser](#rqsrs-006rbacprivilegesalteruser)
+    * 5.31.4 [RQ.SRS-006.RBAC.Privileges.DropUser](#rqsrs-006rbacprivilegesdropuser)
+    * 5.31.5 [RQ.SRS-006.RBAC.Privileges.CreateRole](#rqsrs-006rbacprivilegescreaterole)
+    * 5.31.6 [RQ.SRS-006.RBAC.Privileges.AlterRole](#rqsrs-006rbacprivilegesalterrole)
+    * 5.31.7 [RQ.SRS-006.RBAC.Privileges.DropRole](#rqsrs-006rbacprivilegesdroprole)
+    * 5.31.8 [RQ.SRS-006.RBAC.Privileges.CreateRowPolicy](#rqsrs-006rbacprivilegescreaterowpolicy)
+    * 5.31.9 [RQ.SRS-006.RBAC.Privileges.AlterRowPolicy](#rqsrs-006rbacprivilegesalterrowpolicy)
+    * 5.31.10 [RQ.SRS-006.RBAC.Privileges.DropRowPolicy](#rqsrs-006rbacprivilegesdroprowpolicy)
+    * 5.31.11 [RQ.SRS-006.RBAC.Privileges.CreateQuota](#rqsrs-006rbacprivilegescreatequota)
+    * 5.31.12 [RQ.SRS-006.RBAC.Privileges.AlterQuota](#rqsrs-006rbacprivilegesalterquota)
+    * 5.31.13 [RQ.SRS-006.RBAC.Privileges.DropQuota](#rqsrs-006rbacprivilegesdropquota)
+    * 5.31.14 [RQ.SRS-006.RBAC.Privileges.CreateSettingsProfile](#rqsrs-006rbacprivilegescreatesettingsprofile)
+    * 5.31.15 [RQ.SRS-006.RBAC.Privileges.AlterSettingsProfile](#rqsrs-006rbacprivilegesaltersettingsprofile)
+    * 5.31.16 [RQ.SRS-006.RBAC.Privileges.DropSettingsProfile](#rqsrs-006rbacprivilegesdropsettingsprofile)
+    * 5.31.17 [RQ.SRS-006.RBAC.Privileges.RoleAdmin](#rqsrs-006rbacprivilegesroleadmin)
+    * 5.31.18 [Show Access](#show-access)
+      * 5.31.18.1 [RQ.SRS-006.RBAC.ShowUsers.Privilege](#rqsrs-006rbacshowusersprivilege)
+      * 5.31.18.2 [RQ.SRS-006.RBAC.ShowUsers.RequiredPrivilege](#rqsrs-006rbacshowusersrequiredprivilege)
+      * 5.31.18.3 [RQ.SRS-006.RBAC.ShowCreateUser.RequiredPrivilege](#rqsrs-006rbacshowcreateuserrequiredprivilege)
+      * 5.31.18.4 [RQ.SRS-006.RBAC.ShowRoles.Privilege](#rqsrs-006rbacshowrolesprivilege)
+      * 5.31.18.5 [RQ.SRS-006.RBAC.ShowRoles.RequiredPrivilege](#rqsrs-006rbacshowrolesrequiredprivilege)
+      * 5.31.18.6 [RQ.SRS-006.RBAC.ShowCreateRole.RequiredPrivilege](#rqsrs-006rbacshowcreaterolerequiredprivilege)
+      * 5.31.18.7 [RQ.SRS-006.RBAC.ShowRowPolicies.Privilege](#rqsrs-006rbacshowrowpoliciesprivilege)
+      * 5.31.18.8 [RQ.SRS-006.RBAC.ShowRowPolicies.RequiredPrivilege](#rqsrs-006rbacshowrowpoliciesrequiredprivilege)
+      * 5.31.18.9 [RQ.SRS-006.RBAC.ShowCreateRowPolicy.RequiredPrivilege](#rqsrs-006rbacshowcreaterowpolicyrequiredprivilege)
+      * 5.31.18.10 [RQ.SRS-006.RBAC.ShowQuotas.Privilege](#rqsrs-006rbacshowquotasprivilege)
+      * 5.31.18.11 [RQ.SRS-006.RBAC.ShowQuotas.RequiredPrivilege](#rqsrs-006rbacshowquotasrequiredprivilege)
+      * 5.31.18.12 [RQ.SRS-006.RBAC.ShowCreateQuota.RequiredPrivilege](#rqsrs-006rbacshowcreatequotarequiredprivilege)
+      * 5.31.18.13 [RQ.SRS-006.RBAC.ShowSettingsProfiles.Privilege](#rqsrs-006rbacshowsettingsprofilesprivilege)
+      * 5.31.18.14 [RQ.SRS-006.RBAC.ShowSettingsProfiles.RequiredPrivilege](#rqsrs-006rbacshowsettingsprofilesrequiredprivilege)
+      * 5.31.18.15 [RQ.SRS-006.RBAC.ShowCreateSettingsProfile.RequiredPrivilege](#rqsrs-006rbacshowcreatesettingsprofilerequiredprivilege)
+  * 5.32 [dictGet](#dictget)
+    * 5.32.1 [RQ.SRS-006.RBAC.dictGet.Privilege](#rqsrs-006rbacdictgetprivilege)
+    * 5.32.2 [RQ.SRS-006.RBAC.dictGet.RequiredPrivilege](#rqsrs-006rbacdictgetrequiredprivilege)
+    * 5.32.3 [RQ.SRS-006.RBAC.dictGet.Type.RequiredPrivilege](#rqsrs-006rbacdictgettyperequiredprivilege)
+    * 5.32.4 [RQ.SRS-006.RBAC.dictGet.OrDefault.RequiredPrivilege](#rqsrs-006rbacdictgetordefaultrequiredprivilege)
+    * 5.32.5 [RQ.SRS-006.RBAC.dictHas.RequiredPrivilege](#rqsrs-006rbacdicthasrequiredprivilege)
+    * 5.32.6 [RQ.SRS-006.RBAC.dictGetHierarchy.RequiredPrivilege](#rqsrs-006rbacdictgethierarchyrequiredprivilege)
+    * 5.32.7 [RQ.SRS-006.RBAC.dictIsIn.RequiredPrivilege](#rqsrs-006rbacdictisinrequiredprivilege)
+  * 5.33 [Introspection](#introspection)
+    * 5.33.1 [RQ.SRS-006.RBAC.Privileges.Introspection](#rqsrs-006rbacprivilegesintrospection)
+    * 5.33.2 [RQ.SRS-006.RBAC.Privileges.Introspection.addressToLine](#rqsrs-006rbacprivilegesintrospectionaddresstoline)
+    * 5.33.3 [RQ.SRS-006.RBAC.Privileges.Introspection.addressToSymbol](#rqsrs-006rbacprivilegesintrospectionaddresstosymbol)
+    * 5.33.4 [RQ.SRS-006.RBAC.Privileges.Introspection.demangle](#rqsrs-006rbacprivilegesintrospectiondemangle)
+  * 5.34 [System](#system)
+    * 5.34.1 [RQ.SRS-006.RBAC.Privileges.System.Shutdown](#rqsrs-006rbacprivilegessystemshutdown)
+    * 5.34.2 [RQ.SRS-006.RBAC.Privileges.System.DropCache](#rqsrs-006rbacprivilegessystemdropcache)
+    * 5.34.3 [RQ.SRS-006.RBAC.Privileges.System.DropCache.DNS](#rqsrs-006rbacprivilegessystemdropcachedns)
+    * 5.34.4 [RQ.SRS-006.RBAC.Privileges.System.DropCache.Mark](#rqsrs-006rbacprivilegessystemdropcachemark)
+    * 5.34.5 [RQ.SRS-006.RBAC.Privileges.System.DropCache.Uncompressed](#rqsrs-006rbacprivilegessystemdropcacheuncompressed)
+    * 5.34.6 [RQ.SRS-006.RBAC.Privileges.System.Reload](#rqsrs-006rbacprivilegessystemreload)
+    * 5.34.7 [RQ.SRS-006.RBAC.Privileges.System.Reload.Config](#rqsrs-006rbacprivilegessystemreloadconfig)
+    * 5.34.8 [RQ.SRS-006.RBAC.Privileges.System.Reload.Dictionary](#rqsrs-006rbacprivilegessystemreloaddictionary)
+    * 5.34.9 [RQ.SRS-006.RBAC.Privileges.System.Reload.Dictionaries](#rqsrs-006rbacprivilegessystemreloaddictionaries)
+    * 5.34.10 [RQ.SRS-006.RBAC.Privileges.System.Reload.EmbeddedDictionaries](#rqsrs-006rbacprivilegessystemreloadembeddeddictionaries)
+    * 5.34.11 [RQ.SRS-006.RBAC.Privileges.System.Merges](#rqsrs-006rbacprivilegessystemmerges)
+    * 5.34.12 [RQ.SRS-006.RBAC.Privileges.System.TTLMerges](#rqsrs-006rbacprivilegessystemttlmerges)
+    * 5.34.13 [RQ.SRS-006.RBAC.Privileges.System.Fetches](#rqsrs-006rbacprivilegessystemfetches)
+    * 5.34.14 [RQ.SRS-006.RBAC.Privileges.System.Moves](#rqsrs-006rbacprivilegessystemmoves)
+    * 5.34.15 [RQ.SRS-006.RBAC.Privileges.System.Sends](#rqsrs-006rbacprivilegessystemsends)
+    * 5.34.16 [RQ.SRS-006.RBAC.Privileges.System.Sends.Distributed](#rqsrs-006rbacprivilegessystemsendsdistributed)
+    * 5.34.17 [RQ.SRS-006.RBAC.Privileges.System.Sends.Replicated](#rqsrs-006rbacprivilegessystemsendsreplicated)
+    * 5.34.18 [RQ.SRS-006.RBAC.Privileges.System.ReplicationQueues](#rqsrs-006rbacprivilegessystemreplicationqueues)
+    * 5.34.19 [RQ.SRS-006.RBAC.Privileges.System.SyncReplica](#rqsrs-006rbacprivilegessystemsyncreplica)
+    * 5.34.20 [RQ.SRS-006.RBAC.Privileges.System.RestartReplica](#rqsrs-006rbacprivilegessystemrestartreplica)
+    * 5.34.21 [RQ.SRS-006.RBAC.Privileges.System.Flush](#rqsrs-006rbacprivilegessystemflush)
+    * 5.34.22 [RQ.SRS-006.RBAC.Privileges.System.Flush.Distributed](#rqsrs-006rbacprivilegessystemflushdistributed)
+    * 5.34.23 [RQ.SRS-006.RBAC.Privileges.System.Flush.Logs](#rqsrs-006rbacprivilegessystemflushlogs)
+  * 5.35 [Sources](#sources)
+    * 5.35.1 [RQ.SRS-006.RBAC.Privileges.Sources](#rqsrs-006rbacprivilegessources)
+    * 5.35.2 [RQ.SRS-006.RBAC.Privileges.Sources.File](#rqsrs-006rbacprivilegessourcesfile)
+    * 5.35.3 [RQ.SRS-006.RBAC.Privileges.Sources.URL](#rqsrs-006rbacprivilegessourcesurl)
+    * 5.35.4 [RQ.SRS-006.RBAC.Privileges.Sources.Remote](#rqsrs-006rbacprivilegessourcesremote)
+    * 5.35.5 [RQ.SRS-006.RBAC.Privileges.Sources.MySQL](#rqsrs-006rbacprivilegessourcesmysql)
+    * 5.35.6 [RQ.SRS-006.RBAC.Privileges.Sources.ODBC](#rqsrs-006rbacprivilegessourcesodbc)
+    * 5.35.7 [RQ.SRS-006.RBAC.Privileges.Sources.JDBC](#rqsrs-006rbacprivilegessourcesjdbc)
+    * 5.35.8 [RQ.SRS-006.RBAC.Privileges.Sources.HDFS](#rqsrs-006rbacprivilegessourceshdfs)
+    * 5.35.9 [RQ.SRS-006.RBAC.Privileges.Sources.S3](#rqsrs-006rbacprivilegessourcess3)
+  * 5.36 [RQ.SRS-006.RBAC.Privileges.GrantOption](#rqsrs-006rbacprivilegesgrantoption)
+  * 5.37 [RQ.SRS-006.RBAC.Privileges.All](#rqsrs-006rbacprivilegesall)
+  * 5.38 [RQ.SRS-006.RBAC.Privileges.RoleAll](#rqsrs-006rbacprivilegesroleall)
+  * 5.39 [RQ.SRS-006.RBAC.Privileges.None](#rqsrs-006rbacprivilegesnone)
+  * 5.40 [RQ.SRS-006.RBAC.Privileges.AdminOption](#rqsrs-006rbacprivilegesadminoption)
 * 6 [References](#references)
 
 ## Revision History
 
 This document is stored in an electronic form using [Git] source control management software
-hosted in a Gitlab repository.
+hosted in a GitHub repository.
 
 All the updates are tracked using the [Git]'s revision history.
 
@@ -475,8 +636,6 @@ to [ClickHouse].
   privilege to access a database or a table
 * **select** -
   privilege to read data from a database or a table
-* **select columns** -
-  privilege to read specific columns from a table
 * **insert**
   privilege to insert data into a database or a table
 * **delete**
@@ -488,7 +647,7 @@ to [ClickHouse].
 * **drop**
   privilege to drop a database or a table
 * **all**
-  privilege that includes **usage**, **select**, **select columns**,
+  privilege that includes **usage**, **select**,
   **insert**, **delete**, **alter**, **create**, and **drop**
 * **grant option**
   privilege to grant the same privilege to other users or roles
@@ -504,414 +663,102 @@ version: 1.0
 
 [ClickHouse] SHALL support role based access control.
 
-#### Login
+### Login
 
-##### RQ.SRS-006.RBAC.Login
+#### RQ.SRS-006.RBAC.Login
 version: 1.0
 
 [ClickHouse] SHALL only allow access to the server for a given
 user only when correct username and password are used during
 the connection to the server.
 
-##### RQ.SRS-006.RBAC.Login.DefaultUser
+#### RQ.SRS-006.RBAC.Login.DefaultUser
 version: 1.0
 
 [ClickHouse] SHALL use the **default user** when no username and password
 are specified during the connection to the server.
 
-#### User
+### User
 
-##### RQ.SRS-006.RBAC.User
+#### RQ.SRS-006.RBAC.User
 version: 1.0
 
 [ClickHouse] SHALL support creation and manipulation of
 one or more **user** accounts to which roles, privileges,
 settings profile, quotas and row policies can be assigned.
 
-##### RQ.SRS-006.RBAC.User.Roles
+#### RQ.SRS-006.RBAC.User.Roles
 version: 1.0
 
 [ClickHouse] SHALL support assigning one or more **roles**
 to a **user**.
 
-##### RQ.SRS-006.RBAC.User.Privileges
+#### RQ.SRS-006.RBAC.User.Privileges
 version: 1.0
 
 [ClickHouse] SHALL support assigning one or more privileges to a **user**.
 
-##### RQ.SRS-006.RBAC.User.Variables
+#### RQ.SRS-006.RBAC.User.Variables
 version: 1.0
 
 [ClickHouse] SHALL support assigning one or more variables to a **user**.
 
-##### RQ.SRS-006.RBAC.User.Variables.Constraints
+#### RQ.SRS-006.RBAC.User.Variables.Constraints
 version: 1.0
 
 [ClickHouse] SHALL support assigning min, max and read-only constraints
 for the variables that can be set and read by the **user**.
 
-##### RQ.SRS-006.RBAC.User.SettingsProfile
+#### RQ.SRS-006.RBAC.User.SettingsProfile
 version: 1.0
 
 [ClickHouse] SHALL support assigning one or more **settings profiles**
 to a **user**.
 
-##### RQ.SRS-006.RBAC.User.Quotas
+#### RQ.SRS-006.RBAC.User.Quotas
 version: 1.0
 
 [ClickHouse] SHALL support assigning one or more **quotas** to a **user**.
 
-##### RQ.SRS-006.RBAC.User.RowPolicies
+#### RQ.SRS-006.RBAC.User.RowPolicies
 version: 1.0
 
 [ClickHouse] SHALL support assigning one or more **row policies** to a **user**.
 
-##### RQ.SRS-006.RBAC.User.AccountLock
-version: 1.0
-
-[ClickHouse] SHALL support locking and unlocking of **user** accounts.
-
-##### RQ.SRS-006.RBAC.User.AccountLock.DenyAccess
-version: 1.0
-
-[ClickHouse] SHALL deny access to the user whose account is locked.
-
-##### RQ.SRS-006.RBAC.User.DefaultRole
+#### RQ.SRS-006.RBAC.User.DefaultRole
 version: 1.0
 
 [ClickHouse] SHALL support assigning a default role to a **user**.
 
-##### RQ.SRS-006.RBAC.User.RoleSelection
+#### RQ.SRS-006.RBAC.User.RoleSelection
 version: 1.0
 
 [ClickHouse] SHALL support selection of one or more **roles** from the available roles
-that are assigned to a **user**.
+that are assigned to a **user** using `SET ROLE` statement.
 
-##### RQ.SRS-006.RBAC.User.ShowCreate
+#### RQ.SRS-006.RBAC.User.ShowCreate
 version: 1.0
 
 [ClickHouse] SHALL support showing the command of how **user** account was created.
 
-##### RQ.SRS-006.RBAC.User.ShowPrivileges
+#### RQ.SRS-006.RBAC.User.ShowPrivileges
 version: 1.0
 
 [ClickHouse] SHALL support listing the privileges of the **user**.
 
-#### Role
-
-##### RQ.SRS-006.RBAC.Role
-version: 1.0
-
-[ClikHouse] SHALL support creation and manipulation of **roles**
-to which privileges, settings profile, quotas and row policies can be
-assigned.
-
-##### RQ.SRS-006.RBAC.Role.Privileges
-version: 1.0
-
-[ClickHouse] SHALL support assigning one or more privileges to a **role**.
-
-##### RQ.SRS-006.RBAC.Role.Variables
-version: 1.0
-
-[ClickHouse] SHALL support assigning one or more variables to a **role**.
-
-##### RQ.SRS-006.RBAC.Role.SettingsProfile
-version: 1.0
-
-[ClickHouse] SHALL support assigning one or more **settings profiles**
-to a **role**.
-
-##### RQ.SRS-006.RBAC.Role.Quotas
-version: 1.0
-
-[ClickHouse] SHALL support assigning one or more **quotas** to a **role**.
-
-##### RQ.SRS-006.RBAC.Role.RowPolicies
-version: 1.0
-
-[ClickHouse] SHALL support assigning one or more **row policies** to a **role**.
-
-#### Privileges
-
-##### RQ.SRS-006.RBAC.Privileges.Usage
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **usage** privilege
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.Select
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **select** privilege
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.SelectColumns
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **select columns** privilege
-for a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.Insert
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **insert** privilege
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.Delete
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **delete** privilege
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.Alter
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **alter** privilege
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.Create
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **create** privilege
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.Drop
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **drop** privilege
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.All
-version: 1.0
-
-[ClickHouse] SHALL include in the **all** privilege the same rights
-as provided by **usage**, **select**, **select columns**,
-**insert**, **delete**, **alter**, **create**, and **drop** privileges.
-
-##### RQ.SRS-006.RBAC.Privileges.All.GrantRevoke
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **all** privileges
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **grant option** privilege
-for a database or a specific table to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.Privileges.AdminOption
-version: 1.0
-
-[ClickHouse] SHALL support granting or revoking **admin option** privilege
-to one or more **users** or **roles**.
-
-#### Required Privileges
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.Insert
-version: 1.0
-
-[ClickHouse] SHALL not allow any `INSERT INTO` statements
-to be executed unless the user has the **insert** privilege for the destination table
-either because of the explicit grant or through one of the roles assigned to the user.
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.Select
-version: 1.0
-
-[ClickHouse] SHALL not allow any `SELECT` statements
-to be executed unless the user has the **select** or **select columns** privilege
-for the destination table either because of the explicit grant
-or through one of the roles assigned to the user.
-If the the user only has the **select columns**
-privilege then only the specified columns SHALL be available for reading.
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.Create
-version: 1.0
-
-[ClickHouse] SHALL not allow any `CREATE` statements
-to be executed unless the user has the **create** privilege for the destination database
-either because of the explicit grant or through one of the roles assigned to the user.
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.Alter
-version: 1.0
-
-[ClickHouse] SHALL not allow any `ALTER` statements
-to be executed unless the user has the **alter** privilege for the destination table
-either because of the explicit grant or through one of the roles assigned to the user.
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.Drop
-version: 1.0
-
-[ClickHouse] SHALL not allow any `DROP` statements
-to be executed unless the user has the **drop** privilege for the destination database
-either because of the explicit grant or through one of the roles assigned to the user.
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.Drop.Table
-version: 1.0
-
-[ClickHouse] SHALL not allow any `DROP TABLE` statements
-to be executed unless the user has the **drop** privilege for the destination database or the table
-either because of the explicit grant or through one of the roles assigned to the user.
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.GrantRevoke
-version: 1.0
-
-[ClickHouse] SHALL not allow any `GRANT` or `REVOKE` statements
-to be executed unless the user has the **grant option** privilege
-for the privilege of the destination table
-either because of the explicit grant or through one of the roles assigned to the user.
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.Use
-version: 1.0
-
-[ClickHouse] SHALL not allow the `USE` statement to be executed
-unless the user has at least one of the privileges for the database
-or the table inside that database
-either because of the explicit grant or through one of the roles assigned to the user.
-
-##### RQ.SRS-006.RBAC.RequiredPrivileges.Admin
-version: 1.0
-
-[ClickHouse] SHALL not allow any of the following statements
-
-* `SYSTEM`
-* `SHOW`
-* `ATTACH`
-* `CHECK TABLE`
-* `DESCRIBE TABLE`
-* `DETACH`
-* `EXISTS`
-* `KILL QUERY`
-* `KILL MUTATION`
-* `OPTIMIZE`
-* `RENAME`
-* `TRUNCATE`
-
-to be executed unless the user has the **admin option** privilege
-through one of the roles with **admin option** privilege assigned to the user.
-
-#### Partial Revokes
-
-##### RQ.SRS-006.RBAC.PartialRevokes
-version: 1.0
-
-[ClickHouse] SHALL support partial revoking of privileges granted
-to a **user** or a **role**.
-
-#### Settings Profile
-
-##### RQ.SRS-006.RBAC.SettingsProfile
-version: 1.0
-
-[ClickHouse] SHALL support creation and manipulation of **settings profiles**
-that can include value definition for one or more variables and can
-can be assigned to one or more **users** or **roles**.
-
-##### RQ.SRS-006.RBAC.SettingsProfile.Constraints
-version: 1.0
-
-[ClickHouse] SHALL support assigning min, max and read-only constraints
-for the variables specified in the **settings profile**.
-
-##### RQ.SRS-006.RBAC.SettingsProfile.ShowCreate
-version: 1.0
-
-[ClickHouse] SHALL support showing the command of how **setting profile** was created.
-
-#### Quotas
-
-##### RQ.SRS-006.RBAC.Quotas
-version: 1.0
-
-[ClickHouse] SHALL support creation and manipulation of **quotas**
-that can be used to limit resource usage by a **user** or a **role**
-over a period of time.
-
-##### RQ.SRS-006.RBAC.Quotas.Keyed
-version: 1.0
-
-[ClickHouse] SHALL support creating **quotas** that are keyed
-so that a quota is tracked separately for each key value.
-
-##### RQ.SRS-006.RBAC.Quotas.Queries
-version: 1.0
-
-[ClickHouse] SHALL support setting **queries** quota to limit the total number of requests.
-
-##### RQ.SRS-006.RBAC.Quotas.Errors
-version: 1.0
-
-[ClickHouse] SHALL support setting **errors** quota to limit the number of queries that threw an exception.
-
-##### RQ.SRS-006.RBAC.Quotas.ResultRows
-version: 1.0
-
-[ClickHouse] SHALL support setting **result rows** quota to limit the
-the total number of rows given as the result.
-
-##### RQ.SRS-006.RBAC.Quotas.ReadRows
-version: 1.0
-
-[ClickHouse] SHALL support setting **read rows** quota to limit the total
-number of source rows read from tables for running the query on all remote servers.
-
-##### RQ.SRS-006.RBAC.Quotas.ResultBytes
-version: 1.0
-
-[ClickHouse] SHALL support setting **result bytes** quota to limit the total number
-of bytes that can be returned as the result.
-
-##### RQ.SRS-006.RBAC.Quotas.ReadBytes
-version: 1.0
-
-[ClickHouse] SHALL support setting **read bytes** quota to limit the total number
-of source bytes read from tables for running the query on all remote servers.
-
-##### RQ.SRS-006.RBAC.Quotas.ExecutionTime
-version: 1.0
-
-[ClickHouse] SHALL support setting **execution time** quota to limit the maximum
-query execution time.
-
-##### RQ.SRS-006.RBAC.Quotas.ShowCreate
-version: 1.0
-
-[ClickHouse] SHALL support showing the command of how **quota** was created.
-
-#### Row Policy
-
-##### RQ.SRS-006.RBAC.RowPolicy
-version: 1.0
-
-[ClickHouse] SHALL support creation and manipulation of table **row policies**
-that can be used to limit access to the table contents for a **user** or a **role**
-using a specified **condition**.
-
-##### RQ.SRS-006.RBAC.RowPolicy.Condition
-version: 1.0
-
-[ClickHouse] SHALL support row policy **conditions** that can be any SQL
-expression that returns a boolean.
-
-##### RQ.SRS-006.RBAC.RowPolicy.ShowCreate
-version: 1.0
-
-[ClickHouse] SHALL support showing the command of how **row policy** was created.
-
-### Specific
-
-##### RQ.SRS-006.RBAC.User.Use.DefaultRole
+#### RQ.SRS-006.RBAC.User.Use.DefaultRole
 version: 1.0
 
 [ClickHouse] SHALL by default use default role or roles assigned
 to the user if specified.
 
-##### RQ.SRS-006.RBAC.User.Use.AllRolesWhenNoDefaultRole
+#### RQ.SRS-006.RBAC.User.Use.AllRolesWhenNoDefaultRole
 version: 1.0
 
 [ClickHouse] SHALL by default use all the roles assigned to the user
 if no default role or roles are specified for the user.
+
+#### Create User
 
 ##### RQ.SRS-006.RBAC.User.Create
 version: 1.0
@@ -1110,6 +957,8 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
+#### Alter User
+
 ##### RQ.SRS-006.RBAC.User.Alter
 version: 1.0
 
@@ -1126,7 +975,8 @@ the left.
 version: 1.0
 
 [ClickHouse] SHALL support `IF EXISTS` clause in the `ALTER USER` statement
-to skip raising an exception (producing a warning instead) if a user with the specified **name** does not exist. If the `IF EXISTS` clause is not specified then an exception SHALL be raised if a user with the **name** does not exist.
+to skip raising an exception (producing a warning instead) if a user with the specified **name** does not exist.
+If the `IF EXISTS` clause is not specified then an exception SHALL be raised if a user with the **name** does not exist.
 
 ##### RQ.SRS-006.RBAC.User.Alter.Cluster
 version: 1.0
@@ -1164,7 +1014,8 @@ to some password as identification when altering user account using
 ##### RQ.SRS-006.RBAC.User.Alter.Host.AddDrop
 version: 1.0
 
-[ClickHouse] SHALL support altering user by adding and dropping access to hosts with the `ADD HOST` or the `DROP HOST`in the `ALTER USER` statement.
+[ClickHouse] SHALL support altering user by adding and dropping access to hosts
+with the `ADD HOST` or the `DROP HOST` in the `ALTER USER` statement.
 
 ##### RQ.SRS-006.RBAC.User.Alter.Host.Local
 version: 1.0
@@ -1196,7 +1047,8 @@ which user can access the server using the `HOST IP` clause in the
 ##### RQ.SRS-006.RBAC.User.Alter.Host.Like
 version: 1.0
 
-[ClickHouse] SHALL support specifying sone or more similar hosts using `LIKE` command syntax using the `HOST LIKE` clause in the `ALTER USER` statement.
+[ClickHouse] SHALL support specifying one or more similar hosts using `LIKE` command syntax
+using the `HOST LIKE` clause in the `ALTER USER` statement.
 
 ##### RQ.SRS-006.RBAC.User.Alter.Host.Any
 version: 1.0
@@ -1239,7 +1091,6 @@ version: 1.0
 
 [ClickHouse] SHALL support specifying a minimum value for the variable specifed using `SETTINGS` with `MIN` clause in the `ALTER USER` statement.
 
-
 ##### RQ.SRS-006.RBAC.User.Alter.Settings.Max
 version: 1.0
 
@@ -1264,85 +1115,7 @@ ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-##### RQ.SRS-006.RBAC.SetDefaultRole
-version: 1.0
-
-[ClickHouse] SHALL support setting or changing granted roles to default for one or more
-users using `SET DEFAULT ROLE` statement which
-SHALL permanently change the default roles for the user or users if successful.
-
-##### RQ.SRS-006.RBAC.SetDefaultRole.CurrentUser
-version: 1.0
-
-[ClickHouse] SHALL support setting or changing granted roles to default for
-the current user using `CURRENT_USER` clause in the `SET DEFAULT ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetDefaultRole.All
-version: 1.0
-
-[ClickHouse] SHALL support setting or changing all granted roles to default
-for one or more users using `ALL` clause in the `SET DEFAULT ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetDefaultRole.AllExcept
-version: 1.0
-
-[ClickHouse] SHALL support setting or changing all granted roles except those specified
-to default for one or more users using `ALL EXCEPT` clause in the `SET DEFAULT ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetDefaultRole.None
-version: 1.0
-
-[ClickHouse] SHALL support removing all granted roles from default
-for one or more users using `NONE` clause in the `SET DEFAULT ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetDefaultRole.Syntax
-version: 1.0
-
-[ClickHouse] SHALL support the following syntax for the `SET DEFAULT ROLE` statement.
-
-```sql
-SET DEFAULT ROLE
-    {NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
-    TO {user|CURRENT_USER} [,...]
-
-```
-
-##### RQ.SRS-006.RBAC.SetRole
-version: 1.0
-
-[ClickHouse] SHALL support activating role or roles for the current user
-using `SET ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetRole.Default
-version: 1.0
-
-[ClickHouse] SHALL support activating default roles for the current user
-using `DEFAULT` clause in the `SET ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetRole.None
-version: 1.0
-
-[ClickHouse] SHALL support activating no roles for the current user
-using `NONE` clause in the `SET ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetRole.All
-version: 1.0
-
-[ClickHouse] SHALL support activating all roles for the current user
-using `ALL` clause in the `SET ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetRole.AllExcept
-version: 1.0
-
-[ClickHouse] SHALL support activating all roles except those specified
-for the current user using `ALL EXCEPT` clause in the `SET ROLE` statement.
-
-##### RQ.SRS-006.RBAC.SetRole.Syntax
-version: 1.0
-
-```sql
-SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
-```
+#### Show Create User
 
 ##### RQ.SRS-006.RBAC.User.ShowCreateUser
 version: 1.0
@@ -1364,6 +1137,8 @@ version: 1.0
 ```sql
 SHOW CREATE USER [name | CURRENT_USER]
 ```
+
+#### Drop User
 
 ##### RQ.SRS-006.RBAC.User.Drop
 version: 1.0
@@ -1392,6 +1167,43 @@ version: 1.0
 ```sql
 DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
+
+### Role
+
+#### RQ.SRS-006.RBAC.Role
+version: 1.0
+
+[ClikHouse] SHALL support creation and manipulation of **roles**
+to which privileges, settings profile, quotas and row policies can be
+assigned.
+
+#### RQ.SRS-006.RBAC.Role.Privileges
+version: 1.0
+
+[ClickHouse] SHALL support assigning one or more privileges to a **role**.
+
+#### RQ.SRS-006.RBAC.Role.Variables
+version: 1.0
+
+[ClickHouse] SHALL support assigning one or more variables to a **role**.
+
+#### RQ.SRS-006.RBAC.Role.SettingsProfile
+version: 1.0
+
+[ClickHouse] SHALL support assigning one or more **settings profiles**
+to a **role**.
+
+#### RQ.SRS-006.RBAC.Role.Quotas
+version: 1.0
+
+[ClickHouse] SHALL support assigning one or more **quotas** to a **role**.
+
+#### RQ.SRS-006.RBAC.Role.RowPolicies
+version: 1.0
+
+[ClickHouse] SHALL support assigning one or more **row policies** to a **role**.
+
+#### Create Role
 
 ##### RQ.SRS-006.RBAC.Role.Create
 version: 1.0
@@ -1428,11 +1240,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-##### RQ.SRS-006.RBAC.Role.Create.Effect
-version: 1.0
-
-[ClickHouse] SHALL make the role available to be linked with users, privileges, quotas and
-settings profiles after the successful execution of the `CREATE ROLE` statement.
+#### Alter Role
 
 ##### RQ.SRS-006.RBAC.Role.Alter
 version: 1.0
@@ -1471,13 +1279,6 @@ profiles for which this alter change shall be applied to, are all supported, usi
 
 One or more variables and profiles may be specified as shown above.
 
-##### RQ.SRS-006.RBAC.Role.Alter.Effect
-version: 1.0
-
-[ClickHouse] SHALL alter the abilities granted by the role
-from all the users to which the role was assigned after the successful execution
-of the `ALTER ROLE` statement. Operations in progress SHALL be allowed to complete as is, but any new operation that requires the privileges that not otherwise granted to the user SHALL fail.
-
 ##### RQ.SRS-006.RBAC.Role.Alter.Syntax
 version: 1.0
 
@@ -1486,6 +1287,8 @@ ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
+
+#### Drop Role
 
 ##### RQ.SRS-006.RBAC.Role.Drop
 version: 1.0
@@ -1505,15 +1308,6 @@ version: 1.0
 
 [ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP ROLE` statement to specify the cluster from which to drop the specified role.
 
-##### RQ.SRS-006.RBAC.Role.Drop.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the abilities granted by the role
-from all the users to which the role was assigned after the successful execution
-of the `DROP ROLE` statement. Operations in progress SHALL be allowed to complete
-but any new operation that requires the privileges that not otherwise granted to
-the user SHALL fail.
-
 ##### RQ.SRS-006.RBAC.Role.Drop.Syntax
 version: 1.0
 
@@ -1522,6 +1316,8 @@ version: 1.0
 ``` sql
 DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
+
+#### Show Create Role
 
 ##### RQ.SRS-006.RBAC.Role.ShowCreate
 version: 1.0
@@ -1538,707 +1334,15 @@ version: 1.0
 SHOW CREATE ROLE name
 ```
 
-##### RQ.SRS-006.RBAC.Grant.Privilege.To
-version: 1.0
-
-[ClickHouse] SHALL support granting privileges to one or more users or roles using `TO` clause
-in the `GRANT PRIVILEGE` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.To.Effect
-version: 1.0
-
-[ClickHouse] SHALL grant privileges to any set of users and/or roles specified in the `TO` clause of the grant statement.
-Any new operation by one of the specified users or roles with the granted privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.ToCurrentUser
-version: 1.0
-
-[ClickHouse] SHALL support granting privileges to current user using `TO CURRENT_USER` clause
-in the `GRANT PRIVILEGE` statement.
-
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Select
-version: 1.0
-
-[ClickHouse] SHALL support granting the **select** privilege to one or more users or roles
-for a database or a table using the `GRANT SELECT` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Select.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **select** privilege to the specified users or roles
-after the successful execution of the `GRANT SELECT` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **select** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.SelectColumns
-version: 1.0
-
-[ClickHouse] SHALL support granting the **select columns** privilege to one or more users or roles
-for a database or a table using the `GRANT SELECT(columns)` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.SelectColumns.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **select columns** privilege to the specified users or roles
-after the successful execution of the `GRANT SELECT(columns)` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **select columns** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Insert
-version: 1.0
-
-[ClickHouse] SHALL support granting the **insert** privilege to one or more users or roles
-for a database or a table using the `GRANT INSERT` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Insert.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **insert** privilege to the specified users or roles
-after the successful execution of the `GRANT INSERT` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **insert** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Alter
-version: 1.0
-
-[ClickHouse] SHALL support granting the **alter** privilege to one or more users or roles
-for a database or a table using the `GRANT ALTER` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Alter.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **alter** privilege to the specified users or roles
-after the successful execution of the `GRANT ALTER` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **alter** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Create
-version: 1.0
-
-[ClickHouse] SHALL support granting the **create** privilege to one or more users or roles
-for a database or a table using the `GRANT CREATE` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Create.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **create** privilege to the specified users or roles
-after the successful execution of the `GRANT CREATE` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **create** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Drop
-version: 1.0
-
-[ClickHouse] SHALL support granting the **drop** privilege to one or more users or roles
-for a database or a table using the `GRANT DROP` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Drop.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **drop** privilege to the specified users or roles
-after the successful execution of the `GRANT DROP` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **drop** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Truncate
-version: 1.0
-
-[ClickHouse] SHALL support granting the **truncate** privilege to one or more users or roles
-for a database or a table using `GRANT TRUNCATE` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Truncate.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **truncate** privilege to the specified users or roles
-after the successful execution of the `GRANT TRUNCATE` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **truncate** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Optimize
-version: 1.0
-
-[ClickHouse] SHALL support granting the **optimize** privilege to one or more users or roles
-for a database or a table using `GRANT OPTIMIZE` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Optimize.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **optimize** privilege to the specified users or roles
-after the successful execution of the `GRANT OPTIMIZE` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **optimize** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Show
-version: 1.0
-
-[ClickHouse] SHALL support granting the **show** privilege to one or more users or roles
-for a database or a table using `GRANT SHOW` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Show.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **show** privilege to the specified users or roles
-after the successful execution of the `GRANT SHOW` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **show** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.KillQuery
-version: 1.0
-
-[ClickHouse] SHALL support granting the **kill query** privilege to one or more users or roles
-for a database or a table using `GRANT KILL QUERY` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.KillQuery.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **kill query** privilege to the specified users or roles
-after the successful execution of the `GRANT KILL QUERY` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **kill query** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.AccessManagement
-version: 1.0
-
-[ClickHouse] SHALL support granting the **access management** privileges to one or more users or roles
-for a database or a table using `GRANT ACCESS MANAGEMENT` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.AccessManagement.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **access management** privileges to the specified users or roles
-after the successful execution of the `GRANT ACCESS MANAGEMENT` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **access management** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.System
-version: 1.0
-
-[ClickHouse] SHALL support granting the **system** privileges to one or more users or roles
-for a database or a table using `GRANT SYSTEM` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.System.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **system** privileges to the specified users or roles
-after the successful execution of the `GRANT SYSTEM` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **system** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Introspection
-version: 1.0
-
-[ClickHouse] SHALL support granting the **introspection** privileges to one or more users or roles
-for a database or a table using `GRANT INTROSPECTION` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Introspection.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **introspection** privileges to the specified users or roles
-after the successful execution of the `GRANT INTROSPECTION` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **introspection** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Sources
-version: 1.0
-
-[ClickHouse] SHALL support granting the **sources** privileges to one or more users or roles
-for a database or a table using `GRANT SOURCES` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Sources.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **sources** privileges to the specified users or roles
-after the successful execution of the `GRANT SOURCES` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **sources** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.DictGet
-version: 1.0
-
-[ClickHouse] SHALL support granting the **dictGet** privilege to one or more users or roles
-for a database or a table using `GRANT dictGet` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.DictGet.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **dictGet** privileges to the specified users or roles
-after the successful execution of the `GRANT dictGet` statement.
-Any new operation by a user or a user that has the specified role
-which requires the **dictGet** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.None
-version: 1.0
-
-[ClickHouse] SHALL support granting no privileges to one or more users or roles
-for a database or a table using `GRANT NONE` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.None.Effect
-version: 1.0
-
-[ClickHouse] SHALL add no privileges to the specified users or roles
-after the successful execution of the `GRANT NONE` statement.
-Any new operation by a user or a user that has the specified role
-which requires no privileges SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.All
-version: 1.0
-
-[ClickHouse] SHALL support granting the **all** privileges to one or more users or roles
-for a database or a table using the `GRANT ALL` or `GRANT ALL PRIVILEGES` statements.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.All.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **all** privileges to the specified users or roles
-after the successful execution of the `GRANT ALL` or `GRANT ALL PRIVILEGES` statement.
-Any new operation by a user or a user that has the specified role
-which requires one or more privileges that are part of the **all**
-privileges SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.GrantOption
-version: 1.0
-
-[ClickHouse] SHALL support granting the **grant option** privilege to one or more users or roles
-for a database or a table using the `WITH GRANT OPTION` clause in the `GRANT` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.GrantOption.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **grant option** privilege to the specified users or roles
-after the successful execution of the `GRANT` statement with the `WITH GRANT OPTION` clause
-for the privilege that was specified in the statement.
-Any new `GRANT` statements executed by a user or a user that has the specified role
-which requires **grant option** for the privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.On
-version: 1.0
-
-[ClickHouse] SHALL support the `ON` clause in the `GRANT` privilege statement
-which SHALL allow to specify one or more tables to which the privilege SHALL
-be granted using the following patterns
-
-* `*.*` any table in any database
-* `database.*` any table in the specified database
-* `database.table` specific table in the specified database
-* `*` any table in the current database
-* `table` specific table in the current database
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.On.Effect
-version: 1.0
-
-[ClickHouse] SHALL grant privilege on a table specified in the `ON` clause.
-Any new operation by user or role with privilege on the granted table SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns
-version: 1.0
-
-[ClickHouse] SHALL support granting the privilege **some_privilege** to one or more users or roles
-for a database or a table using the `GRANT some_privilege(column)` statement for one column.
-Multiple columns will be supported with `GRANT some_privilege(column1, column2...)` statement.
-The privileges will be granted for only the specified columns.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns.Effect
-version: 1.0
-
-[ClickHouse] SHALL grant the privilege **some_privilege** to the specified users or roles
-after the successful execution of the `GRANT some_privilege(column)` statement for the specified column.
-Granting of the privilege **some_privilege** over multiple columns SHALL happen after the successful
-execution of the `GRANT some_privilege(column1, column2...)` statement.
-Any new operation by a user or a user that had the specified role
-which requires the privilege **some_privilege** over specified columns SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.OnCluster
-version: 1.0
-
-[ClickHouse] SHALL support specifying cluster on which to grant privileges using the `ON CLUSTER`
-clause in the `GRANT PRIVILEGE` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Privilege.Syntax
-version: 1.0
-
-[ClickHouse] SHALL support the following syntax for the `GRANT` statement that
-grants explicit privileges to a user or a role.
-
-```sql
-GRANT [ON CLUSTER cluster_name]
-    privilege {SELECT | SELECT(columns) | INSERT | ALTER | CREATE | DROP | TRUNCATE | OPTIMIZE | SHOW | KILL QUERY | ACCESS MANAGEMENT | SYSTEM | INTROSPECTION | SOURCES | dictGet | NONE |ALL 	[PRIVILEGES]} [, ...]
-    ON {*.* | database.* | database.table | * | table}
-    TO {user | role | CURRENT_USER} [,...]
-    [WITH GRANT OPTION]
-```
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Cluster
-version: 1.0
-
-[ClickHouse] SHALL support revoking privileges to one or more users or roles
-for a database or a table on some specific cluster using the `REVOKE ON CLUSTER cluster_name` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Cluster.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove some privilege from the specified users or roles
-on cluster **cluster_name** after the successful execution of the
-`REVOKE ON CLUSTER cluster_name some_privilege` statement. Any new operation by a user or a user
-that had the specified role which requires that privilege on cluster **cluster_name** SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Any
-version: 1.0
-
-[ClickHouse] SHALL support revoking ANY privilege to one or more users or roles
-for a database or a table using the `REVOKE some_privilege` statement.
-**some_privilege** refers to any Clickhouse defined privilege, whose hierarchy includes
-SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,
-SYSTEM, INTROSPECTION, SOURCES, dictGet and all of their sub-privileges.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Any.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **some_privilege** privilege from the specified users or roles
-after the successful execution of the `REVOKE some_privilege` statement.
-Any new operation by a user or a user that had the specified role
-which requires the privilege **some_privilege** SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Select
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **select** privilege to one or more users or roles
-for a database or a table using the `REVOKE SELECT` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Select.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **select** privilege from the specified users or roles
-after the successful execution of the `REVOKE SELECT` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **select** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Insert
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **insert** privilege to one or more users or roles
-for a database or a table using the `REVOKE INSERT` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Insert.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **insert** privilege from the specified users or roles
-after the successful execution of the `REVOKE INSERT` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **insert** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Alter
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **alter** privilege to one or more users or roles
-for a database or a table using the `REVOKE ALTER` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Alter.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **alter** privilege from the specified users or roles
-after the successful execution of the `REVOKE ALTER` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **alter** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Create
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **create** privilege to one or more users or roles
-for a database or a table using the `REVOKE CREATE` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Create.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **create** privilege from the specified users or roles
-after the successful execution of the `REVOKE CREATE` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **create** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Drop
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **drop** privilege to one or more users or roles
-for a database or a table using the `REVOKE DROP` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Drop.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **drop** privilege from the specified users or roles
-after the successful execution of the `REVOKE DROP` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **drop** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Truncate
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **truncate** privilege to one or more users or roles
-for a database or a table using the `REVOKE TRUNCATE` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Truncate.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **truncate** privilege from the specified users or roles
-after the successful execution of the `REVOKE TRUNCATE` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **truncate** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Optimize
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **optimize** privilege to one or more users or roles
-for a database or a table using the `REVOKE OPTIMIZE` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Optimize.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **optimize** privilege from the specified users or roles
-after the successful execution of the `REVOKE OPTMIZE` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **optimize** privilege SHALL fail if user does not have it otherwise.
-
-
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Show
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **show** privilege to one or more users or roles
-for a database or a table using the `REVOKE SHOW` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Show.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **show** privilege from the specified users or roles
-after the successful execution of the `REVOKE SHOW` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **show** privilege SHALL fail if user does not have it otherwise.
-
-
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.KillQuery
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **kill query** privilege to one or more users or roles
-for a database or a table using the `REVOKE KILL QUERY` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.KillQuery.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **kill query** privilege from the specified users or roles
-after the successful execution of the `REVOKE KILL QUERY` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **kill query** privilege SHALL fail if user does not have it otherwise.
-
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.AccessManagement
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **access management** privilege to one or more users or roles
-for a database or a table using the `REVOKE ACCESS MANAGEMENT` statement.
+### Partial Revokes
 
-##### RQ.SRS-006.RBAC.Revoke.Privilege.AccessManagement.Effect
+#### RQ.SRS-006.RBAC.PartialRevokes
 version: 1.0
-
-[ClickHouse] SHALL remove the **access management** privilege from the specified users or roles
-after the successful execution of the `REVOKE ACCESS MANAGEMENT` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **access management** privilege SHALL fail if user does not have it otherwise.
-
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.System
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **system** privilege to one or more users or roles
-for a database or a table using the `REVOKE SYSTEM` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.System.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **system** privilege from the specified users or roles
-after the successful execution of the `REVOKE SYSTEM` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **system** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Introspection
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **introspection** privilege to one or more users or roles
-for a database or a table using the `REVOKE INTROSPECTION` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Introspection.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **introspection** privilege from the specified users or roles
-after the successful execution of the `REVOKE INTROSPECTION` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **introspection** privilege SHALL fail if user does not have it otherwise.
-
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Sources
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **sources** privilege to one or more users or roles
-for a database or a table using the `REVOKE SOURCES` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Sources.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **sources** privilege from the specified users or roles
-after the successful execution of the `REVOKE SOURCES` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **sources** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.DictGet
-version: 1.0
-
-[ClickHouse] SHALL support revoking the **dictGet** privilege to one or more users or roles
-for a database or a table using the `REVOKE dictGet` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.DictGet.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **dictGet** privilege from the specified users or roles
-after the successful execution of the `REVOKE dictGet` statement.
-Any new operation by a user or a user that had the specified role
-which requires the **dictGet** privilege SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.PrivelegeColumns
-version: 1.0
-
-[ClickHouse] SHALL support revoking the privilege **some_privilege** to one or more users or roles
-for a database or a table using the `REVOKE some_privilege(column)` statement for one column.
-Multiple columns will be supported with `REVOKE some_privilege(column1, column2...)` statement.
-The privileges will be revoked for only the specified columns.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.PrivelegeColumns.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the privilege **some_privilege** from the specified users or roles
-after the successful execution of the `REVOKE some_privilege(column)` statement for the specified column.
-Removal of the privilege **some_privilege** over multiple columns SHALL happen after the successful
-execution of the `REVOKE some_privilege(column1, column2...)` statement.
-Any new operation by a user or a user that had the specified role
-which requires the privilege **some_privilege** over specified SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Multiple
-version: 1.0
-
-[ClickHouse] SHALL support revoking MULTIPLE **privileges** to one or more users or roles
-for a database or a table using the `REVOKE privilege1, privilege2...` statement.
-**privileges** refers to any set of Clickhouse defined privilege, whose hierarchy includes
-SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,
-SYSTEM, INTROSPECTION, SOURCES, dictGet and all of their sub-privileges.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Multiple.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **privileges** from the specified users or roles
-after the successful execution of the `REVOKE privilege1, privilege2...` statement.
-Any new operation by a user or a user that had the specified role
-which requires any of the **privileges** SHALL fail if user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.All
-version: 1.0
-
-[ClickHouse] SHALL support revoking **all** privileges to one or more users or roles
-for a database or a table using the `REVOKE ALL` or `REVOKE ALL PRIVILEGES` statements.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.All.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove **all** privileges from the specified users or roles
-after the successful execution of the `REVOKE ALL` or `REVOKE ALL PRIVILEGES` statement.
-Any new operation by a user or a user that had the specified role
-which requires one or more privileges that are part of **all**
-privileges SHALL fail.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.None
-version: 1.0
-
-[ClickHouse] SHALL support revoking **no** privileges to one or more users or roles
-for a database or a table using the `REVOKE NONE` statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.None.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove **no** privileges from the specified users or roles
-after the successful execution of the `REVOKE NONE` statement.
-Any new operation by a user or a user that had the specified role
-shall have the same effect after this command as it did before this command.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.On
-version: 1.0
-
-[ClickHouse] SHALL support the `ON` clause in the `REVOKE` privilege statement
-which SHALL allow to specify one or more tables to which the privilege SHALL
-be revoked using the following patterns
-
-* `db.table` specific table in the specified database
-* `db.*` any table in the specified database
-* `*.*` any table in any database
-* `table` specific table in the current database
-* `*` any table in the current database
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.On.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the specificed priviliges from the specified one or more tables
-indicated with the `ON` clause in the `REVOKE` privilege statement.
-The tables will be indicated using the following patterns
-
-* `db.table` specific table in the specified database
-* `db.*` any table in the specified database
-* `*.*` any table in any database
-* `table` specific table in the current database
-* `*` any table in the current database
-
-Any new operation by a user or a user that had the specified role
-which requires one or more privileges on the revoked tables SHALL fail.
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.From
-version: 1.0
-
-[ClickHouse] SHALL support the `FROM` clause in the `REVOKE` privilege statement
-which SHALL allow to specify one or more users to which the privilege SHALL
-be revoked using the following patterns
-
-* `{user | CURRENT_USER} [,...]` some combination of users by name, which may include the current user
-* `ALL` all users
-* `ALL EXCEPT {user | CURRENT_USER} [,...]` the logical reverse of the first pattern
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.From.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove **priviliges** to any set of users specified in the `FROM` clause
-in the `REVOKE` privilege statement. The details of the removed **privileges** will be specified
-in the other clauses. Any new operation by one of the specified users whose **privileges** have been
-revoked SHALL fail. The patterns that expand the `FROM` clause are listed below
-
-* `{user | CURRENT_USER} [,...]` some combination of users by name, which may include the current user
-* `ALL` all users
-* `ALL EXCEPT {user | CURRENT_USER} [,...]` the logical reverse of the first pattern
-
-##### RQ.SRS-006.RBAC.Revoke.Privilege.Syntax
-version: 1.0
-
-[ClickHouse] SHALL support the following syntax for the `REVOKE` statement that
-revokes explicit privileges of a user or a role.
 
-```sql
-REVOKE [ON CLUSTER cluster_name] privilege
-    [(column_name [,...])] [,...]
-    ON {db.table|db.*|*.*|table|*}
-    FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
-```
-<!-- old syntax, for reference -->
-<!-- ```sql
-REVOKE [GRANT OPTION FOR]
-    {USAGE | SELECT | SELECT(columns) | INSERT | DELETE | ALTER | CREATE | DROP | ALL [PRIVILEGES]} [, ...]
-    ON {*.* | database.* | database.table | * | table}
-    FROM user_or_role [, user_or_role ...]
-``` -->
+[ClickHouse] SHALL support partial revoking of privileges granted
+to a **user** or a **role**.
 
-##### RQ.SRS-006.RBAC.PartialRevoke.Syntax
+#### RQ.SRS-006.RBAC.PartialRevoke.Syntax
 version: 1.0
 
 [ClickHouse] SHALL support partial revokes by using `partial_revokes` variable
@@ -2256,175 +1360,27 @@ To enable partial revokes the `partial revokes` variable SHALL be set to `1`
 SET partial_revokes = 1
 ```
 
-##### RQ.SRS-006.RBAC.PartialRevoke.Effect
+### Settings Profile
+
+#### RQ.SRS-006.RBAC.SettingsProfile
 version: 1.0
 
-FIXME: Need to be defined.
+[ClickHouse] SHALL support creation and manipulation of **settings profiles**
+that can include value definition for one or more variables and can
+can be assigned to one or more **users** or **roles**.
 
-##### RQ.SRS-006.RBAC.Grant.Role
+#### RQ.SRS-006.RBAC.SettingsProfile.Constraints
 version: 1.0
 
-[ClickHouse] SHALL support granting one or more roles to
-one or more users or roles using the `GRANT` role statement.
+[ClickHouse] SHALL support assigning min, max and read-only constraints
+for the variables specified in the **settings profile**.
 
-##### RQ.SRS-006.RBAC.Grant.Role.Effect
-version: 1.0
-
-[ClickHouse] SHALL add all the privileges that are assigned to the role
-which is granted to the user or the role to which `GRANT` role statement is applied.
-Any new operation that requires the privileges included in the role
-SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Role.CurrentUser
-version: 1.0
-
-[ClickHouse] SHALL support granting one or more roles to current user using
-`TO CURRENT_USER` clause in the `GRANT` role statement.
-
-##### RQ.SRS-006.RBAC.Grant.Role.CurrentUser.Effect
-version: 1.0
-
-[ClickHouse] SHALL add all the privileges that are assigned to the role
-which is granted to the current user via the `GRANT` statement. Any new operation that
-requires the privileges included in the role SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Role.AdminOption
-version: 1.0
-
-[ClickHouse] SHALL support granting `admin option` privilege
-to one or more users or roles using the `WITH ADMIN OPTION` clause
-in the `GRANT` role statement.
-
-##### RQ.SRS-006.RBAC.Grant.Role.AdminOption.Effect
-version: 1.0
-
-[ClickHouse] SHALL add the **admin option** privilege to the specified users or roles
-after the successful execution of the `GRANT` role statement with the `WITH ADMIN OPTION` clause.
-Any new **system queries** statements executed by a user or a user that has the specified role
-which requires the **admin option** privilege SHALL succeed.
-
-##### RQ.SRS-006.RBAC.Grant.Role.OnCluster
-version: 1.0
-
-[ClickHouse] SHALL support specifying cluster on which the user is to be granted one or more roles
-using `ON CLUSTER` clause in the `GRANT` statement.
-
-##### RQ.SRS-006.RBAC.Grant.Role.Syntax
-version: 1.0
-
-[ClickHouse] SHALL support the following syntax for `GRANT` role statement
-
-``` sql
-GRANT
-    ON CLUSTER cluster_name
-    role [, role ...]
-    TO {user | role | CURRENT_USER} [,...]
-    [WITH ADMIN OPTION]
-```
-
-##### RQ.SRS-006.RBAC.Revoke.Role
-version: 1.0
-
-[ClickHouse] SHALL support revoking one or more roles from
-one or more users or roles using the `REVOKE` role statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Role.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove all the privileges that are assigned to the role
-that is being revoked from the user or the role to which the `REVOKE` role statement is applied.
-Any new operation, by the user or users that have the role which included the role being revoked,
-that requires the privileges included in the role SHALL fail if the user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Role.Keywords
-version: 1.0
-
-[ClickHouse] SHALL support revoking one or more roles from
-special groupings of one or more users or roles with the `ALL`, `ALL EXCEPT`,
-and `CURRENT_USER` keywords.
-
-##### RQ.SRS-006.RBAC.Revoke.Role.Keywords.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove all the privileges that are assigned to the role
-that is being revoked from the user or the role to which the `REVOKE` role statement with the specified keywords is applied.
-Any new operation, by the user or users that have the role which included the role being revoked,
-that requires the privileges included in the role SHALL fail if the user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.Role.Cluster
-version: 1.0
-
-[ClickHouse] SHALL support revoking one or more roles from
-one or more users or roles from one or more clusters
-using the `REVOKE ON CLUSTER` role statement.
-
-##### RQ.SRS-006.RBAC.Revoke.Role.Cluster.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove all the privileges that are assigned to the role
-that is being revoked from the user or the role from the cluster(s)
-to which the `REVOKE ON CLUSTER` role statement is applied.
-Any new operation, by the user or users that have the role which included the role being revoked,
-that requires the privileges included in the role SHALL fail if the user does not have it otherwise.
-
-##### RQ.SRS-006.RBAC.Revoke.AdminOption
-version: 1.0
-
-[ClickHouse] SHALL support revoking `admin option` privilege
-in one or more users or roles using the `ADMIN OPTION FOR` clause
-in the `REVOKE` role statement.
-
-##### RQ.SRS-006.RBAC.Revoke.AdminOption.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove the **admin option** privilege from the specified users or roles
-after the successful execution of the `REVOKE` role statement with the `ADMIN OPTION FOR` clause.
-Any new **system queries** statements executed by a user or a user that has the specified role
-which requires the **admin option** privilege SHALL fail.
-
-##### RQ.SRS-006.RBAC.Revoke.Role.Syntax
-version: 1.0
-
-[ClickHouse] SHALL support the following syntax for the `REVOKE` role statement
-
-```sql
-REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR]
-    role [,...]
-    FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
-```
-
-##### RQ.SRS-006.RBAC.Show.Grants
-version: 1.0
-
-[ClickHouse] SHALL support listing all the privileges granted to current user and role
-using the `SHOW GRANTS` statement.
-
-##### RQ.SRS-006.RBAC.Show.Grants.For
-version: 1.0
-
-[ClickHouse] SHALL support listing all the privileges granted to a user or a role
-using the `FOR` clause in the `SHOW GRANTS` statement.
-
-##### RQ.SRS-006.RBAC.Show.Grants.Syntax
-version: 1.0
-
-[Clickhouse] SHALL use the following syntax for the `SHOW GRANTS` statement
-
-``` sql
-SHOW GRANTS [FOR user_or_role]
-```
+#### Create Settings Profile
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.Create
 version: 1.0
 
 [ClickHouse] SHALL support creating settings profile using the `CREATE SETTINGS PROFILE` statement.
-
-##### RQ.SRS-006.RBAC.SettingsProfile.Create.Effect
-version: 1.0
-
-[ClickHouse] SHALL use new profile after the `CREATE SETTINGS PROFILE` statement
-is successfully executed for any new operations performed by all the users and roles to which
-the settings profile is assigned.
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.Create.IfNotExists
 version: 1.0
@@ -2451,25 +1407,11 @@ version: 1.0
 
 [ClickHouse] SHALL support assigning variable value in the `CREATE SETTINGS PROFILE` statement.
 
-##### RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Value.Effect
-version: 1.0
-
-[ClickHouse] SHALL use new variable values after `CREATE SETTINGS PROFILE` statement is
-successfully executed for any new operations performed by all the users and roles to which
-the settings profile is assigned.
-
 ##### RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Constraints
 version: 1.0
 
 [ClickHouse] SHALL support setting `MIN`, `MAX`, `READONLY`, and `WRITABLE`
 constraints for the variables in the `CREATE SETTINGS PROFILE` statement.
-
-##### RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Constraints.Effect
-version: 1.0
-
-[ClickHouse] SHALL use new variable constraints after `CREATE SETTINGS PROFILE` statement is
-successfully executed for any new operations performed by all the users and roles to which
-the settings profile is assigned.
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.Create.Assignment
 version: 1.0
@@ -2519,17 +1461,12 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
     [TO {user_or_role [,...] | NONE | ALL | ALL EXCEPT user_or_role [,...]}]
 ```
 
+#### Alter Settings Profile
+
 ##### RQ.SRS-006.RBAC.SettingsProfile.Alter
 version: 1.0
 
 [ClickHouse] SHALL support altering settings profile using the `ALTER STETTINGS PROFILE` statement.
-
-##### RQ.SRS-006.RBAC.SettingsProfile.Alter.Effect
-version: 1.0
-
-[ClickHouse] SHALL use the updated settings profile after `ALTER SETTINGS PROFILE`
-is successfully executed for any new operations performed by all the users and roles to which
-the settings profile is assigned or SHALL raise an exception if the settings profile does not exist.
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.Alter.IfExists
 version: 1.0
@@ -2556,37 +1493,17 @@ version: 1.0
 
 [ClickHouse] SHALL support altering value of the variable in the `ALTER SETTINGS PROFILE` statement.
 
-##### RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Value.Effect
-version: 1.0
-
-[ClickHouse] SHALL use the new value of the variable after `ALTER SETTINGS PROFILE`
-is successfully executed for any new operations performed by all the users and roles to which
-the settings profile is assigned.
-
 ##### RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Constraints
 version: 1.0
 
 [ClickHouse] SHALL support altering `MIN`, `MAX`, `READONLY`, and `WRITABLE`
 constraints for the variables in the `ALTER SETTINGS PROFILE` statement.
 
-##### RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Constraints.Effect
-version: 1.0
-
-[ClickHouse] SHALL use new constraints after `ALTER SETTINGS PROFILE`
-is successfully executed for any new operations performed by all the users and roles to which
-the settings profile is assigned.
-
 ##### RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment
 version: 1.0
 
 [ClickHouse] SHALL support reassigning settings profile to one or more users
 or roles using the `TO` clause in the `ALTER SETTINGS PROFILE` statement.
-
-##### RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.Effect
-version: 1.0
-
-[ClickHouse] SHALL unset all the variables and constraints that were defined in the settings profile
-in all users and roles to which the settings profile was previously assigned.
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.None
 version: 1.0
@@ -2631,16 +1548,12 @@ ALTER SETTINGS PROFILE [IF EXISTS] name
     [TO {user_or_role [,...] | NONE | ALL | ALL EXCEPT user_or_role [,...]]}
 ```
 
+#### Drop Settings Profile
+
 ##### RQ.SRS-006.RBAC.SettingsProfile.Drop
 version: 1.0
 
 [ClickHouse] SHALL support removing one or more settings profiles using the `DROP SETTINGS PROFILE` statement.
-
-##### RQ.SRS-006.RBAC.SettingsProfile.Drop.Effect
-version: 1.0
-
-[ClickHouse] SHALL unset all the variables and constraints that were defined in the settings profile
-in all the users and roles to which the settings profile was assigned.
 
 ##### RQ.SRS-006.RBAC.SettingsProfile.Drop.IfExists
 version: 1.0
@@ -2665,6 +1578,8 @@ version: 1.0
 DROP SETTINGS PROFILE [IF EXISTS] name [,name,...]
 ```
 
+#### Show Create Settings Profile
+
 ##### RQ.SRS-006.RBAC.SettingsProfile.ShowCreateSettingsProfile
 version: 1.0
 
@@ -2675,17 +1590,67 @@ using the `SHOW CREATE SETTINGS PROFILE` statement with the following syntax
 SHOW CREATE SETTINGS PROFILE name
 ```
 
+### Quotas
+
+#### RQ.SRS-006.RBAC.Quotas
+version: 1.0
+
+[ClickHouse] SHALL support creation and manipulation of **quotas**
+that can be used to limit resource usage by a **user** or a **role**
+over a period of time.
+
+#### RQ.SRS-006.RBAC.Quotas.Keyed
+version: 1.0
+
+[ClickHouse] SHALL support creating **quotas** that are keyed
+so that a quota is tracked separately for each key value.
+
+#### RQ.SRS-006.RBAC.Quotas.Queries
+version: 1.0
+
+[ClickHouse] SHALL support setting **queries** quota to limit the total number of requests.
+
+#### RQ.SRS-006.RBAC.Quotas.Errors
+version: 1.0
+
+[ClickHouse] SHALL support setting **errors** quota to limit the number of queries that threw an exception.
+
+#### RQ.SRS-006.RBAC.Quotas.ResultRows
+version: 1.0
+
+[ClickHouse] SHALL support setting **result rows** quota to limit the
+the total number of rows given as the result.
+
+#### RQ.SRS-006.RBAC.Quotas.ReadRows
+version: 1.0
+
+[ClickHouse] SHALL support setting **read rows** quota to limit the total
+number of source rows read from tables for running the query on all remote servers.
+
+#### RQ.SRS-006.RBAC.Quotas.ResultBytes
+version: 1.0
+
+[ClickHouse] SHALL support setting **result bytes** quota to limit the total number
+of bytes that can be returned as the result.
+
+#### RQ.SRS-006.RBAC.Quotas.ReadBytes
+version: 1.0
+
+[ClickHouse] SHALL support setting **read bytes** quota to limit the total number
+of source bytes read from tables for running the query on all remote servers.
+
+#### RQ.SRS-006.RBAC.Quotas.ExecutionTime
+version: 1.0
+
+[ClickHouse] SHALL support setting **execution time** quota to limit the maximum
+query execution time.
+
+#### Create Quotas
+
 ##### RQ.SRS-006.RBAC.Quota.Create
 version: 1.0
 
 [ClickHouse] SHALL support creating quotas using the `CREATE QUOTA` statement.
-
-##### RQ.SRS-006.RBAC.Quota.Create.Effect
-version: 1.0
-
-[ClickHouse] SHALL use new limits specified by the quota after the `CREATE QUOTA` statement
-is successfully executed for any new operations performed by all the users and roles to which
-the quota is assigned.
 
 ##### RQ.SRS-006.RBAC.Quota.Create.IfNotExists
 version: 1.0
@@ -2719,7 +1684,6 @@ of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:
 
 `FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number
 to define the interval.
-
 
 ##### RQ.SRS-006.RBAC.Quota.Create.Interval.Randomized
 version: 1.0
@@ -2843,17 +1807,12 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
+#### Alter Quota
+
 ##### RQ.SRS-006.RBAC.Quota.Alter
 version: 1.0
 
 [ClickHouse] SHALL support altering quotas using the `ALTER QUOTA` statement.
-
-##### RQ.SRS-006.RBAC.Quota.Alter.Effect
-version: 1.0
-
-[ClickHouse] SHALL use new limits specified by the updated quota after the `ALTER QUOTA` statement
-is successfully executed for any new operations performed by all the users and roles to which
-the quota is assigned.
 
 ##### RQ.SRS-006.RBAC.Quota.Alter.IfExists
 version: 1.0
@@ -3008,16 +1967,12 @@ ALTER QUOTA [IF EXIST] name
     [TO {user_or_role [,...] | NONE | ALL} [EXCEPT user_or_role [,...]]]
 ```
 
+#### Drop Quota
+
 ##### RQ.SRS-006.RBAC.Quota.Drop
 version: 1.0
 
 [ClickHouse] SHALL support removing one or more quotas using the `DROP QUOTA` statement.
-
-##### RQ.SRS-006.RBAC.Quota.Drop.Effect
-version: 1.0
-
-[ClickHouse] SHALL unset all the limits that were defined in the quota
-in all the users and roles to which the quota was assigned.
 
 ##### RQ.SRS-006.RBAC.Quota.Drop.IfExists
 version: 1.0
@@ -3041,6 +1996,8 @@ version: 1.0
 ``` sql
 DROP QUOTA [IF EXISTS] name [,name...]
 ```
+
+#### Show Quotas
 
 ##### RQ.SRS-006.RBAC.Quota.ShowQuotas
 version: 1.0
@@ -3066,7 +2023,6 @@ version: 1.0
 
 [ClickHouse] SHALL support the `SETTINGS` clause in the `SHOW QUOTAS` statement to define settings in the showing of all quotas.
 
-
 ##### RQ.SRS-006.RBAC.Quota.ShowQuotas.Syntax
 version: 1.0
 
@@ -3075,6 +2031,9 @@ with the following syntax
 ``` sql
 SHOW QUOTAS
 ```
+
+#### Show Create Quota
+
 ##### RQ.SRS-006.RBAC.Quota.ShowCreateQuota.Name
 version: 1.0
 
@@ -3102,18 +2061,38 @@ using the `SHOW CREATE QUOTA` statement.
 SHOW CREATE QUOTA [name | CURRENT]
 ```
 
+### Row Policy
+
+#### RQ.SRS-006.RBAC.RowPolicy
+version: 1.0
+
+[ClickHouse] SHALL support creation and manipulation of table **row policies**
+that can be used to limit access to the table contents for a **user** or a **role**
+using a specified **condition**.
+
+#### RQ.SRS-006.RBAC.RowPolicy.Condition
+version: 1.0
+
+[ClickHouse] SHALL support row policy **conditions** that can be any SQL
+expression that returns a boolean.
+
+#### RQ.SRS-006.RBAC.RowPolicy.Restriction
+version: 1.0
+
+[ClickHouse] SHALL restrict all access to a table when a row policy with a condition is created on that table.
+All users require a permissive row policy in order to view the table.
+
+#### RQ.SRS-006.RBAC.RowPolicy.Nesting
+version: 1.0
+
+[ClickHouse] SHALL restrict rows of tables or views created on top of a table with row policies according to those policies.
+
+#### Create Row Policy
+
 ##### RQ.SRS-006.RBAC.RowPolicy.Create
 version: 1.0
 
 [ClickHouse] SHALL support creating row policy using the `CREATE ROW POLICY` statement.
-
-##### RQ.SRS-006.RBAC.RowPolicy.Create.Effect
-version: 1.0
-
-[ClickHouse] SHALL use the new row policy to control access to the specified table
-after the `CREATE ROW POLICY` statement is successfully executed
-for any new operations on the table performed by all the users and roles to which
-the row policy is assigned.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Create.IfNotExists
 version: 1.0
@@ -3164,22 +2143,14 @@ version: 1.0
 
 [ClickHouse] SHALL support specifying which rows are affected
 using the `FOR SELECT` clause in the `CREATE ROW POLICY` statement.
-REQUIRES CONFIRMATION
+REQUIRES CONDITION.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Create.Condition
 version: 1.0
 
 [ClickHouse] SHALL support specifying a condition that
 that can be any SQL expression which returns a boolean using the `USING`
-clause in the `CREATE ROW POLOCY` statement.
-
-##### RQ.SRS-006.RBAC.RowPolicy.Create.Condition.Effect
-version: 1.0
-
-[ClickHouse] SHALL check the condition specified in the row policy using the
-`USING` clause in the `CREATE ROW POLICY` statement. The users or roles
-to which the row policy is assigned SHALL only see data for which
-the condition evaluates to the boolean value of `true`.
+clause in the `CREATE ROW POLICY` statement.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Create.Assignment
 version: 1.0
@@ -3218,18 +2189,12 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
+#### Alter Row Policy
+
 ##### RQ.SRS-006.RBAC.RowPolicy.Alter
 version: 1.0
 
 [ClickHouse] SHALL support altering row policy using the `ALTER ROW POLICY` statement.
-
-##### RQ.SRS-006.RBAC.RowPolicy.Alter.Effect
-version: 1.0
-
-[ClickHouse] SHALL use the updated row policy to control access to the specified table
-after the `ALTER ROW POLICY` statement is successfully executed
-for any new operations on the table performed by all the users and roles to which
-the row policy is assigned.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Alter.IfExists
 version: 1.0
@@ -3268,33 +2233,25 @@ in the `ALTER ROW POLICY` statement.
 version: 1.0
 
 [ClickHouse] SHALL support altering access to rows using the
-`AS` clause in the `CREATE ROW POLICY` statement.
+`AS` clause in the `ALTER ROW POLICY` statement.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Alter.Access.Permissive
 version: 1.0
 
 [ClickHouse] SHALL support permitting access to rows using the
-`AS PERMISSIVE` clause in the `CREATE ROW POLICY` statement.
+`AS PERMISSIVE` clause in the `ALTER ROW POLICY` statement.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Alter.Access.Restrictive
 version: 1.0
 
 [ClickHouse] SHALL support restricting access to rows using the
-`AS RESTRICTIVE` clause in the `CREATE ROW POLICY` statement.
+`AS RESTRICTIVE` clause in the `ALTER ROW POLICY` statement.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Alter.Condition
 version: 1.0
 
 [ClickHouse] SHALL support re-specifying the row policy condition
 using the `USING` clause in the `ALTER ROW POLICY` statement.
-
-##### RQ.SRS-006.RBAC.RowPolicy.Alter.Condition.Effect
-version: 1.0
-
-[ClickHouse] SHALL check the new condition specified for the row policy using the
-`USING` clause in the `ALTER ROW POLICY` statement. The users or roles
-to which the row policy is assigned SHALL only see data for which
-the new condition evaluates to the boolean value of `true`.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Alter.Condition.None
 version: 1.0
@@ -3340,16 +2297,12 @@ ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]tabl
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
+#### Drop Row Policy
+
 ##### RQ.SRS-006.RBAC.RowPolicy.Drop
 version: 1.0
 
 [ClickHouse] SHALL support removing one or more row policies using the `DROP ROW POLICY` statement.
-
-##### RQ.SRS-006.RBAC.RowPolicy.Drop.Effect
-version: 1.0
-
-[ClickHouse] SHALL remove checking the condition defined in the row policy
-in all the users and roles to which the row policy was assigned.
 
 ##### RQ.SRS-006.RBAC.RowPolicy.Drop.IfExists
 version: 1.0
@@ -3379,6 +2332,8 @@ version: 1.0
 ``` sql
 DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
 ```
+
+#### Show Create Row Policy
 
 ##### RQ.SRS-006.RBAC.RowPolicy.ShowCreateRowPolicy
 version: 1.0
@@ -3420,6 +2375,2131 @@ version: 1.0
 ```sql
 SHOW [ROW] POLICIES [ON [database.]table]
 ```
+
+### Set Default Role
+
+#### RQ.SRS-006.RBAC.SetDefaultRole
+version: 1.0
+
+[ClickHouse] SHALL support setting or changing granted roles to default for one or more
+users using `SET DEFAULT ROLE` statement which
+SHALL permanently change the default roles for the user or users if successful.
+
+#### RQ.SRS-006.RBAC.SetDefaultRole.CurrentUser
+version: 1.0
+
+[ClickHouse] SHALL support setting or changing granted roles to default for
+the current user using `CURRENT_USER` clause in the `SET DEFAULT ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetDefaultRole.All
+version: 1.0
+
+[ClickHouse] SHALL support setting or changing all granted roles to default
+for one or more users using `ALL` clause in the `SET DEFAULT ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetDefaultRole.AllExcept
+version: 1.0
+
+[ClickHouse] SHALL support setting or changing all granted roles except those specified
+to default for one or more users using `ALL EXCEPT` clause in the `SET DEFAULT ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetDefaultRole.None
+version: 1.0
+
+[ClickHouse] SHALL support removing all granted roles from default
+for one or more users using `NONE` clause in the `SET DEFAULT ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetDefaultRole.Syntax
+version: 1.0
+
+[ClickHouse] SHALL support the following syntax for the `SET DEFAULT ROLE` statement.
+
+```sql
+SET DEFAULT ROLE
+    {NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+    TO {user|CURRENT_USER} [,...]
+
+```
+
+### Set Role
+
+#### RQ.SRS-006.RBAC.SetRole
+version: 1.0
+
+[ClickHouse] SHALL support activating role or roles for the current user
+using `SET ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetRole.Default
+version: 1.0
+
+[ClickHouse] SHALL support activating default roles for the current user
+using `DEFAULT` clause in the `SET ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetRole.None
+version: 1.0
+
+[ClickHouse] SHALL support activating no roles for the current user
+using `NONE` clause in the `SET ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetRole.All
+version: 1.0
+
+[ClickHouse] SHALL support activating all roles for the current user
+using `ALL` clause in the `SET ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetRole.AllExcept
+version: 1.0
+
+[ClickHouse] SHALL support activating all roles except those specified
+for the current user using `ALL EXCEPT` clause in the `SET ROLE` statement.
+
+#### RQ.SRS-006.RBAC.SetRole.Syntax
+version: 1.0
+
+```sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+### Grant
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.To
+version: 1.0
+
+[ClickHouse] SHALL support granting privileges to one or more users or roles using `TO` clause
+in the `GRANT PRIVILEGE` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.ToCurrentUser
+version: 1.0
+
+[ClickHouse] SHALL support granting privileges to current user using `TO CURRENT_USER` clause
+in the `GRANT PRIVILEGE` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Select
+version: 1.0
+
+[ClickHouse] SHALL support granting the **select** privilege to one or more users or roles
+for a database or a table using the `GRANT SELECT` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Insert
+version: 1.0
+
+[ClickHouse] SHALL support granting the **insert** privilege to one or more users or roles
+for a database or a table using the `GRANT INSERT` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Alter
+version: 1.0
+
+[ClickHouse] SHALL support granting the **alter** privilege to one or more users or roles
+for a database or a table using the `GRANT ALTER` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Create
+version: 1.0
+
+[ClickHouse] SHALL support granting the **create** privilege to one or more users or roles
+using the `GRANT CREATE` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Drop
+version: 1.0
+
+[ClickHouse] SHALL support granting the **drop** privilege to one or more users or roles
+using the `GRANT DROP` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Truncate
+version: 1.0
+
+[ClickHouse] SHALL support granting the **truncate** privilege to one or more users or roles
+for a database or a table using `GRANT TRUNCATE` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Optimize
+version: 1.0
+
+[ClickHouse] SHALL support granting the **optimize** privilege to one or more users or roles
+for a database or a table using `GRANT OPTIMIZE` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Show
+version: 1.0
+
+[ClickHouse] SHALL support granting the **show** privilege to one or more users or roles
+for a database or a table using `GRANT SHOW` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.KillQuery
+version: 1.0
+
+[ClickHouse] SHALL support granting the **kill query** privilege to one or more users or roles
+for a database or a table using `GRANT KILL QUERY` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.AccessManagement
+version: 1.0
+
+[ClickHouse] SHALL support granting the **access management** privileges to one or more users or roles
+for a database or a table using `GRANT ACCESS MANAGEMENT` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.System
+version: 1.0
+
+[ClickHouse] SHALL support granting the **system** privileges to one or more users or roles
+for a database or a table using `GRANT SYSTEM` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Introspection
+version: 1.0
+
+[ClickHouse] SHALL support granting the **introspection** privileges to one or more users or roles
+for a database or a table using `GRANT INTROSPECTION` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Sources
+version: 1.0
+
+[ClickHouse] SHALL support granting the **sources** privileges to one or more users or roles
+for a database or a table using `GRANT SOURCES` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.DictGet
+version: 1.0
+
+[ClickHouse] SHALL support granting the **dictGet** privilege to one or more users or roles
+for a database or a table using `GRANT dictGet` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.None
+version: 1.0
+
+[ClickHouse] SHALL support granting no privileges to one or more users or roles
+for a database or a table using `GRANT NONE` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.All
+version: 1.0
+
+[ClickHouse] SHALL support granting the **all** privileges to one or more users or roles
+using the `GRANT ALL` or `GRANT ALL PRIVILEGES` statements.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.GrantOption
+version: 1.0
+
+[ClickHouse] SHALL support granting the **grant option** privilege to one or more users or roles
+for a database or a table using the `WITH GRANT OPTION` clause in the `GRANT` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.On
+version: 1.0
+
+[ClickHouse] SHALL support the `ON` clause in the `GRANT` privilege statement
+which SHALL allow to specify one or more tables to which the privilege SHALL
+be granted using the following patterns
+
+* `*.*` any table in any database
+* `database.*` any table in the specified database
+* `database.table` specific table in the specified database
+* `*` any table in the current database
+* `table` specific table in the current database
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns
+version: 1.0
+
+[ClickHouse] SHALL support granting the privilege **some_privilege** to one or more users or roles
+for a database or a table using the `GRANT some_privilege(column)` statement for one column.
+Multiple columns will be supported with `GRANT some_privilege(column1, column2...)` statement.
+The privileges will be granted for only the specified columns.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.OnCluster
+version: 1.0
+
+[ClickHouse] SHALL support specifying cluster on which to grant privileges using the `ON CLUSTER`
+clause in the `GRANT PRIVILEGE` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Privilege.Syntax
+version: 1.0
+
+[ClickHouse] SHALL support the following syntax for the `GRANT` statement that
+grants explicit privileges to a user or a role.
+
+```sql
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...]
+    ON {db.table|db.*|*.*|table|*}
+    TO {user | role | CURRENT_USER} [,...]
+    [WITH GRANT OPTION]
+```
+
+### Revoke
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support revoking privileges to one or more users or roles
+for a database or a table on some specific cluster using the `REVOKE ON CLUSTER cluster_name` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Select
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **select** privilege to one or more users or roles
+for a database or a table using the `REVOKE SELECT` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Insert
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **insert** privilege to one or more users or roles
+for a database or a table using the `REVOKE INSERT` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Alter
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **alter** privilege to one or more users or roles
+for a database or a table using the `REVOKE ALTER` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Create
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **create** privilege to one or more users or roles
+using the `REVOKE CREATE` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Drop
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **drop** privilege to one or more users or roles
+using the `REVOKE DROP` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Truncate
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **truncate** privilege to one or more users or roles
+for a database or a table using the `REVOKE TRUNCATE` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Optimize
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **optimize** privilege to one or more users or roles
+for a database or a table using the `REVOKE OPTIMIZE` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Show
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **show** privilege to one or more users or roles
+for a database or a table using the `REVOKE SHOW` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.KillQuery
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **kill query** privilege to one or more users or roles
+for a database or a table using the `REVOKE KILL QUERY` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.AccessManagement
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **access management** privilege to one or more users or roles
+for a database or a table using the `REVOKE ACCESS MANAGEMENT` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.System
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **system** privilege to one or more users or roles
+for a database or a table using the `REVOKE SYSTEM` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Introspection
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **introspection** privilege to one or more users or roles
+for a database or a table using the `REVOKE INTROSPECTION` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Sources
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **sources** privilege to one or more users or roles
+for a database or a table using the `REVOKE SOURCES` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.DictGet
+version: 1.0
+
+[ClickHouse] SHALL support revoking the **dictGet** privilege to one or more users or roles
+for a database or a table using the `REVOKE dictGet` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.PrivilegeColumns
+version: 1.0
+
+[ClickHouse] SHALL support revoking the privilege **some_privilege** to one or more users or roles
+for a database or a table using the `REVOKE some_privilege(column)` statement for one column.
+Multiple columns will be supported with `REVOKE some_privilege(column1, column2...)` statement.
+The privileges will be revoked for only the specified columns.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Multiple
+version: 1.0
+
+[ClickHouse] SHALL support revoking MULTIPLE **privileges** to one or more users or roles
+for a database or a table using the `REVOKE privilege1, privilege2...` statement.
+**privileges** refers to any set of Clickhouse defined privilege, whose hierarchy includes
+SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,
+SYSTEM, INTROSPECTION, SOURCES, dictGet and all of their sub-privileges.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.All
+version: 1.0
+
+[ClickHouse] SHALL support revoking **all** privileges to one or more users or roles
+for a database or a table using the `REVOKE ALL` or `REVOKE ALL PRIVILEGES` statements.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.None
+version: 1.0
+
+[ClickHouse] SHALL support revoking **no** privileges to one or more users or roles
+for a database or a table using the `REVOKE NONE` statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.On
+version: 1.0
+
+[ClickHouse] SHALL support the `ON` clause in the `REVOKE` privilege statement
+which SHALL allow to specify one or more tables to which the privilege SHALL
+be revoked using the following patterns
+
+* `db.table` specific table in the specified database
+* `db.*` any table in the specified database
+* `*.*` any table in any database
+* `table` specific table in the current database
+* `*` any table in the current database
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.From
+version: 1.0
+
+[ClickHouse] SHALL support the `FROM` clause in the `REVOKE` privilege statement
+which SHALL allow to specify one or more users to which the privilege SHALL
+be revoked using the following patterns
+
+* `{user | CURRENT_USER} [,...]` some combination of users by name, which may include the current user
+* `ALL` all users
+* `ALL EXCEPT {user | CURRENT_USER} [,...]` the logical reverse of the first pattern
+
+#### RQ.SRS-006.RBAC.Revoke.Privilege.Syntax
+version: 1.0
+
+[ClickHouse] SHALL support the following syntax for the `REVOKE` statement that
+revokes explicit privileges of a user or a role.
+
+```sql
+REVOKE [ON CLUSTER cluster_name] privilege
+    [(column_name [,...])] [,...]
+    ON {db.table|db.*|*.*|table|*}
+    FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+```
+
+### Grant Role
+
+#### RQ.SRS-006.RBAC.Grant.Role
+version: 1.0
+
+[ClickHouse] SHALL support granting one or more roles to
+one or more users or roles using the `GRANT` role statement.
+
+#### RQ.SRS-006.RBAC.Grant.Role.CurrentUser
+version: 1.0
+
+[ClickHouse] SHALL support granting one or more roles to current user using
+`TO CURRENT_USER` clause in the `GRANT` role statement.
+
+#### RQ.SRS-006.RBAC.Grant.Role.AdminOption
+version: 1.0
+
+[ClickHouse] SHALL support granting `admin option` privilege
+to one or more users or roles using the `WITH ADMIN OPTION` clause
+in the `GRANT` role statement.
+
+#### RQ.SRS-006.RBAC.Grant.Role.OnCluster
+version: 1.0
+
+[ClickHouse] SHALL support specifying cluster on which the user is to be granted one or more roles
+using `ON CLUSTER` clause in the `GRANT` statement.
+
+#### RQ.SRS-006.RBAC.Grant.Role.Syntax
+version: 1.0
+
+[ClickHouse] SHALL support the following syntax for `GRANT` role statement
+
+``` sql
+GRANT
+    ON CLUSTER cluster_name
+    role [, role ...]
+    TO {user | role | CURRENT_USER} [,...]
+    [WITH ADMIN OPTION]
+```
+
+### Revoke Role
+
+#### RQ.SRS-006.RBAC.Revoke.Role
+version: 1.0
+
+[ClickHouse] SHALL support revoking one or more roles from
+one or more users or roles using the `REVOKE` role statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Role.Keywords
+version: 1.0
+
+[ClickHouse] SHALL support revoking one or more roles from
+special groupings of one or more users or roles with the `ALL`, `ALL EXCEPT`,
+and `CURRENT_USER` keywords.
+
+#### RQ.SRS-006.RBAC.Revoke.Role.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support revoking one or more roles from
+one or more users or roles from one or more clusters
+using the `REVOKE ON CLUSTER` role statement.
+
+#### RQ.SRS-006.RBAC.Revoke.AdminOption
+version: 1.0
+
+[ClickHouse] SHALL support revoking `admin option` privilege
+in one or more users or roles using the `ADMIN OPTION FOR` clause
+in the `REVOKE` role statement.
+
+#### RQ.SRS-006.RBAC.Revoke.Role.Syntax
+version: 1.0
+
+[ClickHouse] SHALL support the following syntax for the `REVOKE` role statement
+
+```sql
+REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR]
+    role [,...]
+    FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
+```
+
+### Show Grants
+
+#### RQ.SRS-006.RBAC.Show.Grants
+version: 1.0
+
+[ClickHouse] SHALL support listing all the privileges granted to current user and role
+using the `SHOW GRANTS` statement.
+
+#### RQ.SRS-006.RBAC.Show.Grants.For
+version: 1.0
+
+[ClickHouse] SHALL support listing all the privileges granted to a user or a role
+using the `FOR` clause in the `SHOW GRANTS` statement.
+
+#### RQ.SRS-006.RBAC.Show.Grants.Syntax
+version: 1.0
+
+[Clickhouse] SHALL use the following syntax for the `SHOW GRANTS` statement
+
+``` sql
+SHOW GRANTS [FOR user_or_role]
+```
+
+### Table Privileges
+
+#### RQ.SRS-006.RBAC.Table.PublicTables
+version: 1.0
+
+[ClickHouse] SHALL support that a user without any privileges will be able to access the following tables
+
+* system.one
+* system.numbers
+* system.contributors
+* system.functions
+
+#### RQ.SRS-006.RBAC.Table.SensitiveTables
+version: 1.0
+
+[ClickHouse] SHALL not support a user with no privileges accessing the following `system` tables:
+
+* processes
+* query_log
+* query_thread_log
+* clusters
+* events
+* graphite_retentions
+* stack_trace
+* trace_log
+* user_directories
+* zookeeper
+* macros
+
+### Distributed Tables
+
+#### RQ.SRS-006.RBAC.DistributedTable.Create
+version: 1.0
+
+[ClickHouse] SHALL successfully `CREATE` a distributed table if and only if
+the user has **create table** privilege on the table and **remote** privilege on *.*
+
+#### RQ.SRS-006.RBAC.DistributedTable.Select
+version: 1.0
+
+[ClickHouse] SHALL successfully `SELECT` from a distributed table if and only if
+the user has **select** privilege on the table and on the remote table specified in the `CREATE` query of the distributed table.
+
+Does not require **select** privilege for the remote table if the remote table does not exist on the same server as the user.
+
+#### RQ.SRS-006.RBAC.DistributedTable.Insert
+version: 1.0
+
+[ClickHouse] SHALL successfully `INSERT` into a distributed table if and only if
+the user has **insert** privilege on the table and on the remote table specified in the `CREATE` query of the distributed table.
+
+Does not require **insert** privilege for the remote table if the remote table does not exist on the same server as the user,
+insert executes into the remote table on a different server.
+
+#### RQ.SRS-006.RBAC.DistributedTable.SpecialTables
+version: 1.0
+
+[ClickHouse] SHALL successfully execute a query using a distributed table that uses one of the special tables if and only if
+the user has the necessary privileges to interact with that special table, either granted directly or through a role.
+Special tables include:
+* materialized view
+* distributed table
+* source table of a materialized view
+
+#### RQ.SRS-006.RBAC.DistributedTable.LocalUser
+version: 1.0
+
+[ClickHouse] SHALL successfully execute a query using a distributed table from
+a user present locally, but not remotely.
+
+#### RQ.SRS-006.RBAC.DistributedTable.SameUserDifferentNodesDifferentPrivileges
+version: 1.0
+
+[ClickHouse] SHALL successfully execute a query using a distributed table by a user that exists on multiple nodes
+if and only if the user has the required privileges on the node the query is being executed from.
+
+### Views
+
+#### View
+
+##### RQ.SRS-006.RBAC.View
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to **create**, **select** and **drop**
+privileges for a view for users or roles.
+
+##### RQ.SRS-006.RBAC.View.Create
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute a `CREATE VIEW` command if and only if
+the user has **create view** privilege either explicitly or through roles.
+
+If the stored query includes one or more source tables, the user must have **select** privilege
+on all the source tables either explicitly or through a role.
+For example,
+```sql
+CREATE VIEW view AS SELECT * FROM source_table
+CREATE VIEW view AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))
+CREATE VIEW view AS SELECT * FROM table0 JOIN table1 USING column
+CREATE VIEW view AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2
+CREATE VIEW view AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))
+CREATE VIEW view0 AS SELECT column FROM view1 UNION ALL SELECT column FROM view2
+```
+
+##### RQ.SRS-006.RBAC.View.Select
+version: 1.0
+
+[ClickHouse] SHALL only successfully `SELECT` from a view if and only if
+the user has **select** privilege for that view either explicitly or through a role.
+
+If the stored query includes one or more source tables, the user must have **select** privilege
+on all the source tables either explicitly or through a role.
+For example,
+```sql
+CREATE VIEW view AS SELECT * FROM source_table
+CREATE VIEW view AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))
+CREATE VIEW view AS SELECT * FROM table0 JOIN table1 USING column
+CREATE VIEW view AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2
+CREATE VIEW view AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))
+CREATE VIEW view0 AS SELECT column FROM view1 UNION ALL SELECT column FROM view2
+
+SELECT * FROM view
+```
+
+##### RQ.SRS-006.RBAC.View.Drop
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute a `DROP VIEW` command if and only if
+the user has **drop view** privilege on that view either explicitly or through a role.
+
+#### Materialized View
+
+##### RQ.SRS-006.RBAC.MaterializedView
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to **create**, **select**, **alter** and **drop**
+privileges for a materialized view for users or roles.
+
+##### RQ.SRS-006.RBAC.MaterializedView.Create
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute a `CREATE MATERIALIZED VIEW` command if and only if
+the user has **create view** privilege either explicitly or through roles.
+
+If `POPULATE` is specified, the user must have `INSERT` privilege on the view,
+either explicitly or through roles.
+For example,
+```sql
+CREATE MATERIALIZED VIEW view ENGINE = Memory POPULATE AS SELECT * FROM source_table
+```
+
+If the stored query includes one or more source tables, the user must have **select** privilege
+on all the source tables either explicitly or through a role.
+For example,
+```sql
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM source_table
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 JOIN table1 USING column
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))
+CREATE MATERIALIZED VIEW view0 ENGINE = Memory AS SELECT column FROM view1 UNION ALL SELECT column FROM view2
+```
+
+If the materialized view has a target table explicitly declared in the `TO` clause, the user must have
+**insert** and **select** privilege on the target table.
+For example,
+```sql
+CREATE MATERIALIZED VIEW view TO target_table AS SELECT * FROM source_table
+```
+
+##### RQ.SRS-006.RBAC.MaterializedView.Select
+version: 1.0
+
+[ClickHouse] SHALL only successfully `SELECT` from a materialized view if and only if
+the user has **select** privilege for that view either explicitly or through a role.
+
+If the stored query includes one or more source tables, the user must have **select** privilege
+on all the source tables either explicitly or through a role.
+For example,
+```sql
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM source_table
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 JOIN table1 USING column
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2
+CREATE MATERIALIZED VIEW view ENGINE = Memory AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))
+CREATE MATERIALIZED VIEW view0 ENGINE = Memory AS SELECT column FROM view1 UNION ALL SELECT column FROM view2
+
+SELECT * FROM view
+```
+
+##### RQ.SRS-006.RBAC.MaterializedView.Select.TargetTable
+version: 1.0
+
+[ClickHouse] SHALL only successfully `SELECT` from the target table, implicit or explicit, of a materialized view if and only if
+the user has `SELECT` privilege for the table, either explicitly or through a role.
+
+##### RQ.SRS-006.RBAC.MaterializedView.Select.SourceTable
+version: 1.0
+
+[ClickHouse] SHALL only successfully `SELECT` from the source table of a materialized view if and only if
+the user has `SELECT` privilege for the table, either explicitly or through a role.
+
+##### RQ.SRS-006.RBAC.MaterializedView.Drop
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute a `DROP VIEW` command if and only if
+the user has **drop view** privilege on that view either explicitly or through a role.
+
+##### RQ.SRS-006.RBAC.MaterializedView.ModifyQuery
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute a `MODIFY QUERY` command if and only if
+the user has **modify query** privilege on that view either explicitly or through a role.
+
+If the new query includes one or more source tables, the user must have **select** privilege
+on all the source tables either explicitly or through a role.
+For example,
+```sql
+ALTER TABLE view MODIFY QUERY SELECT * FROM source_table
+```
+
+##### RQ.SRS-006.RBAC.MaterializedView.Insert
+version: 1.0
+
+[ClickHouse] SHALL only succesfully `INSERT` into a materialized view if and only if
+the user has `INSERT` privilege on the view, either explicitly or through a role.
+
+##### RQ.SRS-006.RBAC.MaterializedView.Insert.SourceTable
+version: 1.0
+
+[ClickHouse] SHALL only succesfully `INSERT` into a source table of a materialized view if and only if
+the user has `INSERT` privilege on the source table, either explicitly or through a role.
+
+##### RQ.SRS-006.RBAC.MaterializedView.Insert.TargetTable
+version: 1.0
+
+[ClickHouse] SHALL only succesfully `INSERT` into a target table of a materialized view if and only if
+the user has `INSERT` privelege on the target table, either explicitly or through a role.
+
+#### Live View
+
+##### RQ.SRS-006.RBAC.LiveView
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to **create**, **select**, **alter** and **drop**
+privileges for a live view for users or roles.
+
+##### RQ.SRS-006.RBAC.LiveView.Create
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute a `CREATE LIVE VIEW` command if and only if
+the user has **create view** privilege either explicitly or through roles.
+
+If the stored query includes one or more source tables, the user must have **select** privilege
+on all the source tables either explicitly or through a role.
+For example,
+```sql
+CREATE LIVE VIEW view AS SELECT * FROM source_table
+CREATE LIVE VIEW view AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))
+CREATE LIVE VIEW view AS SELECT * FROM table0 JOIN table1 USING column
+CREATE LIVE VIEW view AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2
+CREATE LIVE VIEW view AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))
+CREATE LIVE VIEW view0 AS SELECT column FROM view1 UNION ALL SELECT column FROM view2
+```
+
+##### RQ.SRS-006.RBAC.LiveView.Select
+version: 1.0
+
+[ClickHouse] SHALL only successfully `SELECT` from a live view if and only if
+the user has **select** privilege for that view either explicitly or through a role.
+
+If the stored query includes one or more source tables, the user must have **select** privilege
+on all the source tables either explicitly or through a role.
+For example,
+```sql
+CREATE LIVE VIEW view AS SELECT * FROM source_table
+CREATE LIVE VIEW view AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))
+CREATE LIVE VIEW view AS SELECT * FROM table0 JOIN table1 USING column
+CREATE LIVE VIEW view AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2
+CREATE LIVE VIEW view AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))
+CREATE LIVE VIEW view0 AS SELECT column FROM view1 UNION ALL SELECT column FROM view2
+
+SELECT * FROM view
+```
+
+##### RQ.SRS-006.RBAC.LiveView.Drop
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute a `DROP VIEW` command if and only if
+the user has **drop view** privilege on that view either explicitly or through a role.
+
+##### RQ.SRS-006.RBAC.LiveView.Refresh
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute an `ALTER LIVE VIEW REFRESH` command if and only if
+the user has **refresh** privilege on that view either explicitly or through a role.
+
+### Select
+
+#### RQ.SRS-006.RBAC.Select
+version: 1.0
+
+[ClickHouse] SHALL execute `SELECT` if and only if the user
+has the **select** privilege for the destination table
+either because of the explicit grant or through one of the roles assigned to the user.
+
+#### RQ.SRS-006.RBAC.Select.Column
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **select** privilege
+for one or more specified columns in a table to one or more **users** or **roles**.
+Any `SELECT` statements SHALL not to be executed, unless the user
+has the **select** privilege for the destination column
+either because of the explicit grant or through one of the roles assigned to the user.
+
+#### RQ.SRS-006.RBAC.Select.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **select** privilege
+on a specified cluster to one or more **users** or **roles**.
+Any `SELECT` statements SHALL succeed only on nodes where
+the table exists and privilege was granted.
+
+#### RQ.SRS-006.RBAC.Select.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **select** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+### Insert
+
+#### RQ.SRS-006.RBAC.Insert
+version: 1.0
+
+[ClickHouse] SHALL execute `INSERT INTO` if and only if the user
+has the **insert** privilege for the destination table
+either because of the explicit grant or through one of the roles assigned to the user.
+
+#### RQ.SRS-006.RBAC.Insert.Column
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **insert** privilege
+for one or more specified columns in a table to one or more **users** or **roles**.
+Any `INSERT INTO` statements SHALL not to be executed, unless the user
+has the **insert** privilege for the destination column
+either because of the explicit grant or through one of the roles assigned to the user.
+
+#### RQ.SRS-006.RBAC.Insert.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **insert** privilege
+on a specified cluster to one or more **users** or **roles**.
+Any `INSERT INTO` statements SHALL succeed only on nodes where
+the table exists and privilege was granted.
+
+#### RQ.SRS-006.RBAC.Insert.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **insert** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+### Alter
+
+#### Alter Column
+
+##### RQ.SRS-006.RBAC.Privileges.AlterColumn
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter column** privilege
+for a database or a specific table to one or more **users** or **roles**.
+Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL
+return an error, unless the user has the **alter column** privilege for
+the destination table either because of the explicit grant or through one of
+the roles assigned to the user.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterColumn.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter column** privilege
+for a database or a specific table to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterColumn.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter column** privilege
+for a database or a specific table to one or more **users** or **roles**
+
+##### RQ.SRS-006.RBAC.Privileges.AlterColumn.Column
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter column** privilege
+for one or more specified columns in a table to one or more **users** or **roles**.
+Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN` statements SHALL return an error,
+unless the user has the **alter column** privilege for the destination column
+either because of the explicit grant or through one of the roles assigned to the user.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterColumn.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter column** privilege
+on a specified cluster to one or more **users** or **roles**.
+Any `ALTER TABLE ... ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN`
+statements SHALL succeed only on nodes where the table exists and privilege was granted.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterColumn.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter column** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+#### Alter Index
+
+##### RQ.SRS-006.RBAC.Privileges.AlterIndex
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter index** privilege
+for a database or a specific table to one or more **users** or **roles**.
+Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX` statements SHALL
+return an error, unless the user has the **alter index** privilege for
+the destination table either because of the explicit grant or through one of
+the roles assigned to the user.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterIndex.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter index** privilege
+for a database or a specific table to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterIndex.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter index** privilege
+for a database or a specific table to one or more **users** or **roles**
+
+##### RQ.SRS-006.RBAC.Privileges.AlterIndex.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter index** privilege
+on a specified cluster to one or more **users** or **roles**.
+Any `ALTER TABLE ... ORDER BY | ADD|DROP|MATERIALIZE|CLEAR INDEX`
+statements SHALL succeed only on nodes where the table exists and privilege was granted.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterIndex.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter index** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+#### Alter Constraint
+
+##### RQ.SRS-006.RBAC.Privileges.AlterConstraint
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter constraint** privilege
+for a database or a specific table to one or more **users** or **roles**.
+Any `ALTER TABLE ... ADD|CREATE CONSTRAINT` statements SHALL
+return an error, unless the user has the **alter constraint** privilege for
+the destination table either because of the explicit grant or through one of
+the roles assigned to the user.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterConstraint.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter constraint** privilege
+for a database or a specific table to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterConstraint.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter constraint** privilege
+for a database or a specific table to one or more **users** or **roles**
+
+##### RQ.SRS-006.RBAC.Privileges.AlterConstraint.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter constraint** privilege
+on a specified cluster to one or more **users** or **roles**.
+Any `ALTER TABLE ... ADD|DROP CONSTRAINT`
+statements SHALL succeed only on nodes where the table exists and privilege was granted.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterConstraint.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter constraint** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+#### Alter TTL
+
+##### RQ.SRS-006.RBAC.Privileges.AlterTTL
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter ttl** or **alter materialize ttl** privilege
+for a database or a specific table to one or more **users** or **roles**.
+Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL` statements SHALL
+return an error, unless the user has the **alter ttl** or **alter materialize ttl** privilege for
+the destination table either because of the explicit grant or through one of
+the roles assigned to the user.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterTTL.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter ttl** or **alter materialize ttl** privilege
+for a database or a specific table to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterTTL.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter ttl** or **alter materialize ttl** privilege
+for a database or a specific table to one or more **users** or **roles**
+
+##### RQ.SRS-006.RBAC.Privileges.AlterTTL.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter ttl** or **alter materialize ttl** privilege
+on a specified cluster to one or more **users** or **roles**.
+Any `ALTER TABLE ... ALTER TTL | ALTER MATERIALIZE TTL`
+statements SHALL succeed only on nodes where the table exists and privilege was granted.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterTTL.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter ttl** or **alter materialize ttl** privilege
+on tables created using the following engines
+
+* MergeTree
+
+#### Alter Settings
+
+##### RQ.SRS-006.RBAC.Privileges.AlterSettings
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter settings** privilege
+for a database or a specific table to one or more **users** or **roles**.
+Any `ALTER TABLE ... MODIFY SETTING setting` statements SHALL
+return an error, unless the user has the **alter settings** privilege for
+the destination table either because of the explicit grant or through one of
+the roles assigned to the user. The **alter settings** privilege allows
+modifying table engine settings. It doesn’t affect settings or server configuration parameters.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterSettings.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter settings** privilege
+for a database or a specific table to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterSettings.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter settings** privilege
+for a database or a specific table to one or more **users** or **roles**
+
+##### RQ.SRS-006.RBAC.Privileges.AlterSettings.Cluster
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking **alter settings** privilege
+on a specified cluster to one or more **users** or **roles**.
+Any `ALTER TABLE ... MODIFY SETTING setting`
+statements SHALL succeed only on nodes where the table exists and privilege was granted.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterSettings.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter settings** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+#### Alter Update
+
+##### RQ.SRS-006.RBAC.Privileges.AlterUpdate
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER UPDATE` statement if and only if the user has **alter update** privilege for that column,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterUpdate.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter update** privilege on a column level
+to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterUpdate.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter update** privilege on a column level
+from one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterUpdate.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter update** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+#### Alter Delete
+
+##### RQ.SRS-006.RBAC.Privileges.AlterDelete
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER DELETE` statement if and only if the user has **alter delete** privilege for that table,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterDelete.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter delete** privilege on a column level
+to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterDelete.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter delete** privilege on a column level
+from one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterDelete.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter delete** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+#### Alter Freeze Partition
+
+##### RQ.SRS-006.RBAC.Privileges.AlterFreeze
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER FREEZE` statement if and only if the user has **alter freeze** privilege for that table,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterFreeze.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter freeze** privilege on a column level
+to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterFreeze.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter freeze** privilege on a column level
+from one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterFreeze.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter freeze** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+#### Alter Fetch Partition
+
+##### RQ.SRS-006.RBAC.Privileges.AlterFetch
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER FETCH` statement if and only if the user has **alter fetch** privilege for that table,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterFetch.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter fetch** privilege on a column level
+to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterFetch.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter fetch** privilege on a column level
+from one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterFetch.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter fetch** privilege
+on tables created using the following engines
+
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+#### Alter Move Partition
+
+##### RQ.SRS-006.RBAC.Privileges.AlterMove
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER MOVE` statement if and only if the user has **alter move**, **select**, and **alter delete** privilege on the source table
+and **insert** privilege on the target table, either directly or through a role.
+For example,
+```sql
+ALTER TABLE source_table MOVE PARTITION 1 TO target_table
+```
+
+##### RQ.SRS-006.RBAC.Privileges.AlterMove.Grant
+version: 1.0
+
+[ClickHouse] SHALL support granting **alter move** privilege on a column level
+to one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterMove.Revoke
+version: 1.0
+
+[ClickHouse] SHALL support revoking **alter move** privilege on a column level
+from one or more **users** or **roles**.
+
+##### RQ.SRS-006.RBAC.Privileges.AlterMove.TableEngines
+version: 1.0
+
+[ClickHouse] SHALL support controlling access to the **alter move** privilege
+on tables created using the following engines
+
+* MergeTree
+* ReplacingMergeTree
+* SummingMergeTree
+* AggregatingMergeTree
+* CollapsingMergeTree
+* VersionedCollapsingMergeTree
+* GraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedSummingMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+
+### Create
+
+#### RQ.SRS-006.RBAC.Privileges.CreateTable
+version: 1.0
+
+[ClickHouse] SHALL only successfully execute a `CREATE TABLE` command if and only if
+the user has **create table** privilege either explicitly or through roles.
+
+If the stored query includes one or more source tables, the user must have **select** privilege
+on all the source tables and **insert** for the table they're trying to create either explicitly or through a role.
+For example,
+```sql
+CREATE TABLE table AS SELECT * FROM source_table
+CREATE TABLE table AS SELECT * FROM table0 WHERE column IN (SELECT column FROM table1 WHERE column IN (SELECT column FROM table2 WHERE expression))
+CREATE TABLE table AS SELECT * FROM table0 JOIN table1 USING column
+CREATE TABLE table AS SELECT * FROM table0 UNION ALL SELECT * FROM table1 UNION ALL SELECT * FROM table2
+CREATE TABLE table AS SELECT column FROM table0 JOIN table1 USING column UNION ALL SELECT column FROM table2 WHERE column IN (SELECT column FROM table3 WHERE column IN (SELECT column FROM table4 WHERE expression))
+CREATE TABLE table0 AS SELECT column FROM table1 UNION ALL SELECT column FROM table2
+```
+
+#### RQ.SRS-006.RBAC.Privileges.CreateDatabase
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE DATABASE` statement if and only if the user has **create database** privilege on the database,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.CreateDictionary
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE DICTIONARY` statement if and only if the user has **create dictionary** privilege on the dictionary,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.CreateTemporaryTable
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE TEMPORARY TABLE` statement if and only if the user has **create temporary table** privilege on the table,
+either directly or through a role.
+
+### Attach
+
+#### RQ.SRS-006.RBAC.Privileges.AttachDatabase
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ATTACH DATABASE` statement if and only if the user has **create database** privilege on the database,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.AttachDictionary
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ATTACH DICTIONARY` statement if and only if the user has **create dictionary** privilege on the dictionary,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.AttachTemporaryTable
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ATTACH TEMPORARY TABLE` statement if and only if the user has **create temporary table** privilege on the table,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.AttachTable
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ATTACH TABLE` statement if and only if the user has **create table** privilege on the table,
+either directly or through a role.
+
+### Drop
+
+#### RQ.SRS-006.RBAC.Privileges.DropTable
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP TABLE` statement if and only if the user has **drop table** privilege on the table,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DropDatabase
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP DATABASE` statement if and only if the user has **drop database** privilege on the database,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DropDictionary
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP DICTIONARY` statement if and only if the user has **drop dictionary** privilege on the dictionary,
+either directly or through a role.
+
+### Detach
+
+#### RQ.SRS-006.RBAC.Privileges.DetachTable
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DETACH TABLE` statement if and only if the user has **drop table** privilege on the table,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DetachView
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DETACH VIEW` statement if and only if the user has **drop view** privilege on the view,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DetachDatabase
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DETACH DATABASE` statement if and only if the user has **drop database** privilege on the database,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DetachDictionary
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DETACH DICTIONARY` statement if and only if the user has **drop dictionary** privilege on the dictionary,
+either directly or through a role.
+
+### Truncate
+
+#### RQ.SRS-006.RBAC.Privileges.Truncate
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `TRUNCATE TABLE` statement if and only if the user has **truncate table** privilege on the table,
+either directly or through a role.
+
+### Optimize
+
+#### RQ.SRS-006.RBAC.Privileges.Optimize
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `OPTIMIZE TABLE` statement if and only if the user has **optimize table** privilege on the table,
+either directly or through a role.
+
+### Kill Query
+
+#### RQ.SRS-006.RBAC.Privileges.KillQuery
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `KILL QUERY` statement if and only if the user has **kill query** privilege,
+either directly or through a role.
+
+### Kill Mutation
+
+#### RQ.SRS-006.RBAC.Privileges.KillMutation
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `KILL MUTATION` statement if and only if
+the user has the privilege that created the mutation, either directly or through a role.
+For example, to `KILL MUTATION` after `ALTER UPDATE` query, the user needs `ALTER UPDATE` privilege.
+
+#### RQ.SRS-006.RBAC.Privileges.KillMutation.AlterUpdate
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `KILL MUTATION` query on an `ALTER UPDATE` mutation if and only if
+the user has `ALTER UPDATE` privilege on the table where the mutation was created, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.KillMutation.AlterDelete
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `KILL MUTATION` query on an `ALTER DELETE` mutation if and only if
+the user has `ALTER DELETE` privilege on the table where the mutation was created, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.KillMutation.AlterDropColumn
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `KILL MUTATION` query on an `ALTER DROP COLUMN` mutation if and only if
+the user has `ALTER DROP COLUMN` privilege on the table where the mutation was created, either directly or through a role.
+
+### Show
+
+#### RQ.SRS-006.RBAC.ShowTables.Privilege
+version: 1.0
+
+[ClickHouse] SHALL grant **show tables** privilege on a table to a user if that user has recieved any grant,
+including `SHOW TABLES`, on that table, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ShowTables.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW TABLES` statement if and only if the user has **show tables** privilege,
+or any privilege on the table either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ExistsTable.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `EXISTS table` statement if and only if the user has **show tables** privilege,
+or any privilege on the table either directly or through a role.
+
+#### RQ.SRS-006.RBAC.CheckTable.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CHECK table` statement if and only if the user has **show tables** privilege,
+or any privilege on the table either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ShowDatabases.Privilege
+version: 1.0
+
+[ClickHouse] SHALL grant **show databases** privilege on a database to a user if that user has recieved any grant,
+including `SHOW DATABASES`, on that table, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ShowDatabases.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW DATABASES` statement if and only if the user has **show databases** privilege,
+or any privilege on the database either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ShowCreateDatabase.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE DATABASE` statement if and only if the user has **show databases** privilege,
+or any privilege on the database either directly or through a role.
+
+#### RQ.SRS-006.RBAC.UseDatabase.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `USE database` statement if and only if the user has **show databases** privilege,
+or any privilege on the database either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ShowColumns.Privilege
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking the `SHOW COLUMNS` privilege.
+
+#### RQ.SRS-006.RBAC.ShowCreateTable.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE TABLE` statement if and only if the user has **show columns** privilege on that table,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.DescribeTable.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DESCRIBE table` statement if and only if the user has **show columns** privilege on that table,
+either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ShowDictionaries.Privilege
+version: 1.0
+
+[ClickHouse] SHALL grant **show dictionaries** privilege on a dictionary to a user if that user has recieved any grant,
+including `SHOW DICTIONARIES`, on that dictionary, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ShowDictionaries.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW DICTIONARIES` statement if and only if the user has **show dictionaries** privilege,
+or any privilege on the dictionary either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ShowCreateDictionary.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE DICTIONARY` statement if and only if the user has **show dictionaries** privilege,
+or any privilege on the dictionary either directly or through a role.
+
+#### RQ.SRS-006.RBAC.ExistsDictionary.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `EXISTS dictionary` statement if and only if the user has **show dictionaries** privilege,
+or any privilege on the dictionary either directly or through a role.
+
+### Access Management
+
+#### RQ.SRS-006.RBAC.Privileges.CreateUser
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE USER` statement if and only if the user has **create user** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.CreateUser.DefaultRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE USER` statement with `DEFAULT ROLE <role>` clause if and only if
+the user has **create user** privilege and the role with **admin option**, or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.AlterUser
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER USER` statement if and only if the user has **alter user** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DropUser
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP USER` statement if and only if the user has **drop user** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.CreateRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE ROLE` statement if and only if the user has **create role** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.AlterRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER ROLE` statement if and only if the user has **alter role** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DropRole
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP ROLE` statement if and only if the user has **drop role** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.CreateRowPolicy
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE ROW POLICY` statement if and only if the user has **create row policy** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.AlterRowPolicy
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER ROW POLICY` statement if and only if the user has **alter row policy** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DropRowPolicy
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP ROW POLICY` statement if and only if the user has **drop row policy** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.CreateQuota
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE QUOTA` statement if and only if the user has **create quota** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.AlterQuota
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER QUOTA` statement if and only if the user has **alter quota** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DropQuota
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP QUOTA` statement if and only if the user has **drop quota** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.CreateSettingsProfile
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `CREATE SETTINGS PROFILE` statement if and only if the user has **create settings profile** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.AlterSettingsProfile
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `ALTER SETTINGS PROFILE` statement if and only if the user has **alter settings profile** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.DropSettingsProfile
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `DROP SETTINGS PROFILE` statement if and only if the user has **drop settings profile** privilege,
+or either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.RoleAdmin
+version: 1.0
+
+[ClickHouse] SHALL successfully execute any role grant or revoke by a user with `ROLE ADMIN` privilege.
+
+#### Show Access
+
+##### RQ.SRS-006.RBAC.ShowUsers.Privilege
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW USERS` privilege when
+the user is granted `SHOW USERS`, `SHOW CREATE USER`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.ShowUsers.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW USERS` statement if and only if the user has **show users** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowCreateUser.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE USER` statement if and only if the user has **show users** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowRoles.Privilege
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW ROLES` privilege when
+the user is granted `SHOW ROLES`, `SHOW CREATE ROLE`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.ShowRoles.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW ROLES` statement if and only if the user has **show roles** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowCreateRole.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE ROLE` statement if and only if the user has **show roles** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowRowPolicies.Privilege
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW ROW POLICIES` privilege when
+the user is granted `SHOW ROW POLICIES`, `SHOW POLICIES`, `SHOW CREATE ROW POLICY`,
+`SHOW CREATE POLICY`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.ShowRowPolicies.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW ROW POLICIES` or `SHOW POLICIES` statement if and only if
+the user has **show row policies** privilege, either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowCreateRowPolicy.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE ROW POLICY` or `SHOW CREATE POLICY` statement
+if and only if the user has **show row policies** privilege,either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowQuotas.Privilege
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW QUOTAS` privilege when
+the user is granted `SHOW QUOTAS`, `SHOW CREATE QUOTA`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.ShowQuotas.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW QUOTAS` statement if and only if the user has **show quotas** privilege,
+either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowCreateQuota.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE QUOTA` statement if and only if
+the user has **show quotas** privilege, either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowSettingsProfiles.Privilege
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SHOW SETTINGS PROFILES` privilege when
+the user is granted `SHOW SETTINGS PROFILES`, `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`,
+`SHOW SETTINGS PROFILE`, `SHOW ACCESS`, or `ACCESS MANAGEMENT`.
+
+##### RQ.SRS-006.RBAC.ShowSettingsProfiles.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW SETTINGS PROFILES` or `SHOW PROFILES` statement
+if and only if the user has **show settings profiles** privilege, either directly or through a role.
+
+##### RQ.SRS-006.RBAC.ShowCreateSettingsProfile.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `SHOW CREATE SETTINGS PROFILE` or `SHOW CREATE PROFILE` statement
+if and only if the user has **show settings profiles** privilege, either directly or through a role.
+
+### dictGet
+
+#### RQ.SRS-006.RBAC.dictGet.Privilege
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `dictGet` privilege when
+the user is granted `dictGet`, `dictHas`, `dictGetHierarchy`, or `dictIsIn`.
+
+#### RQ.SRS-006.RBAC.dictGet.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `dictGet` statement
+if and only if the user has **dictGet** privilege on that dictionary, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.dictGet.Type.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `dictGet[TYPE]` statement
+if and only if the user has **dictGet** privilege on that dictionary, either directly or through a role.
+Available types:
+
+* Int8
+* Int16
+* Int32
+* Int64
+* UInt8
+* UInt16
+* UInt32
+* UInt64
+* Float32
+* Float64
+* Date
+* DateTime
+* UUID
+* String
+
+#### RQ.SRS-006.RBAC.dictGet.OrDefault.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `dictGetOrDefault` statement
+if and only if the user has **dictGet** privilege on that dictionary, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.dictHas.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `dictHas` statement
+if and only if the user has **dictGet** privilege, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.dictGetHierarchy.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `dictGetHierarchy` statement
+if and only if the user has **dictGet** privilege, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.dictIsIn.RequiredPrivilege
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `dictIsIn` statement
+if and only if the user has **dictGet** privilege, either directly or through a role.
+
+### Introspection
+
+#### RQ.SRS-006.RBAC.Privileges.Introspection
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `INTROSPECTION` privilege when
+the user is granted `INTROSPECTION` or `INTROSPECTION FUNCTIONS`.
+
+#### RQ.SRS-006.RBAC.Privileges.Introspection.addressToLine
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `addressToLine` statement if and only if
+the user has **introspection** privilege, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Introspection.addressToSymbol
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `addressToSymbol` statement if and only if
+the user has **introspection** privilege, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Introspection.demangle
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `demangle` statement if and only if
+the user has **introspection** privilege, either directly or through a role.
+
+### System
+
+#### RQ.SRS-006.RBAC.Privileges.System.Shutdown
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM SHUTDOWN` privilege when
+the user is granted `SYSTEM`, `SYSTEM SHUTDOWN`, `SHUTDOWN`,or `SYSTEM KILL`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.DropCache
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM DROP CACHE` privilege when
+the user is granted `SYSTEM`, `SYSTEM DROP CACHE`, or `DROP CACHE`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.DropCache.DNS
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM DROP DNS CACHE` privilege when
+the user is granted `SYSTEM`, `SYSTEM DROP CACHE`, `DROP CACHE`, `SYSTEM DROP DNS CACHE`,
+`SYSTEM DROP DNS`, `DROP DNS CACHE`, or `DROP DNS`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.DropCache.Mark
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM DROP MARK CACHE` privilege when
+the user is granted `SYSTEM`, `SYSTEM DROP CACHE`, `DROP CACHE`, `SYSTEM DROP MARK CACHE`,
+`SYSTEM DROP MARK`, `DROP MARK CACHE`, or `DROP MARKS`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.DropCache.Uncompressed
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM DROP UNCOMPRESSED CACHE` privilege when
+the user is granted `SYSTEM`, `SYSTEM DROP CACHE`, `DROP CACHE`, `SYSTEM DROP UNCOMPRESSED CACHE`,
+`SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, or `DROP UNCOMPRESSED`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Reload
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM RELOAD` privilege when
+the user is granted `SYSTEM` or `SYSTEM RELOAD`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Reload.Config
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM RELOAD CONFIG` privilege when
+the user is granted `SYSTEM`, `SYSTEM RELOAD`, `SYSTEM RELOAD CONFIG`, or `RELOAD CONFIG`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Reload.Dictionary
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM RELOAD DICTIONARY` privilege when
+the user is granted `SYSTEM`, `SYSTEM RELOAD`, `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARIES`, or `RELOAD DICTIONARY`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Reload.Dictionaries
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM RELOAD DICTIONARIES` privilege when
+the user is granted `SYSTEM`, `SYSTEM RELOAD`, `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARIES`, or `RELOAD DICTIONARY`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Reload.EmbeddedDictionaries
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege when
+the user is granted `SYSTEM`, `SYSTEM RELOAD`, `SYSTEM RELOAD DICTIONARY ON *.*`, or `SYSTEM RELOAD EMBEDDED DICTIONARIES`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Merges
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM MERGES` privilege when
+the user is granted `SYSTEM`, `SYSTEM MERGES`, `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, or `START MERGES`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.TTLMerges
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM TTL MERGES` privilege when
+the user is granted `SYSTEM`, `SYSTEM TTL MERGES`, `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, or `START TTL MERGES`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Fetches
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM FETCHES` privilege when
+the user is granted `SYSTEM`, `SYSTEM FETCHES`, `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, or `START FETCHES`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Moves
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM MOVES` privilege when
+the user is granted `SYSTEM`, `SYSTEM MOVES`, `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, or `START MOVES`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Sends
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM SENDS` privilege when
+the user is granted `SYSTEM`, `SYSTEM SENDS`, `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, or `START SENDS`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Sends.Distributed
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM DISTRIBUTED SENDS` privilege when
+the user is granted `SYSTEM`, `SYSTEM DISTRIBUTED SENDS`, `SYSTEM STOP DISTRIBUTED SENDS`,
+`SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, or `START DISTRIBUTED SENDS`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Sends.Replicated
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM REPLICATED SENDS` privilege when
+the user is granted `SYSTEM`, `SYSTEM REPLICATED SENDS`, `SYSTEM STOP REPLICATED SENDS`,
+`SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, or `START REPLICATED SENDS`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.ReplicationQueues
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM REPLICATION QUEUES` privilege when
+the user is granted `SYSTEM`, `SYSTEM REPLICATION QUEUES`, `SYSTEM STOP REPLICATION QUEUES`,
+`SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, or `START REPLICATION QUEUES`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.SyncReplica
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM SYNC REPLICA` privilege when
+the user is granted `SYSTEM`, `SYSTEM SYNC REPLICA`, or `SYNC REPLICA`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.RestartReplica
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM RESTART REPLICA` privilege when
+the user is granted `SYSTEM`, `SYSTEM RESTART REPLICA`, or `RESTART REPLICA`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Flush
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM FLUSH` privilege when
+the user is granted `SYSTEM` or `SYSTEM FLUSH`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Flush.Distributed
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM FLUSH DISTRIBUTED` privilege when
+the user is granted `SYSTEM`, `SYSTEM FLUSH DISTRIBUTED`, or `FLUSH DISTRIBUTED`.
+
+#### RQ.SRS-006.RBAC.Privileges.System.Flush.Logs
+version: 1.0
+
+[ClickHouse] SHALL successfully grant `SYSTEM FLUSH LOGS` privilege when
+the user is granted `SYSTEM`, `SYSTEM FLUSH LOGS`, or `FLUSH LOGS`.
+
+### Sources
+
+#### RQ.SRS-006.RBAC.Privileges.Sources
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking `SOURCES` privilege from
+the user, either directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Sources.File
+version: 1.0
+
+[ClickHouse] SHALL support the use of `FILE` source by a user if and only if
+the user has `FILE` or `SOURCES` privileges granted to them directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Sources.URL
+version: 1.0
+
+[ClickHouse] SHALL support the use of `URL` source by a user if and only if
+the user has `URL` or `SOURCES` privileges granted to them directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Sources.Remote
+version: 1.0
+
+[ClickHouse] SHALL support the use of `REMOTE` source by a user if and only if
+the user has `REMOTE` or `SOURCES` privileges granted to them directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Sources.MySQL
+version: 1.0
+
+[ClickHouse] SHALL support the use of `MySQL` source by a user if and only if
+the user has `MySQL` or `SOURCES` privileges granted to them directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Sources.ODBC
+version: 1.0
+
+[ClickHouse] SHALL support the use of `ODBC` source by a user if and only if
+the user has `ODBC` or `SOURCES` privileges granted to them directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Sources.JDBC
+version: 1.0
+
+[ClickHouse] SHALL support the use of `JDBC` source by a user if and only if
+the user has `JDBC` or `SOURCES` privileges granted to them directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Sources.HDFS
+version: 1.0
+
+[ClickHouse] SHALL support the use of `HDFS` source by a user if and only if
+the user has `HDFS` or `SOURCES` privileges granted to them directly or through a role.
+
+#### RQ.SRS-006.RBAC.Privileges.Sources.S3
+version: 1.0
+
+[ClickHouse] SHALL support the use of `S3` source by a user if and only if
+the user has `S3` or `SOURCES` privileges granted to them directly or through a role.
+
+### RQ.SRS-006.RBAC.Privileges.GrantOption
+version: 1.0
+
+[ClickHouse] SHALL successfully execute `GRANT` or `REVOKE` privilege statements by a user if and only if
+the user has that privilege with `GRANT OPTION`, either directly or through a role.
+
+### RQ.SRS-006.RBAC.Privileges.All
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking `ALL` privilege
+using `GRANT ALL ON *.* TO user`.
+
+### RQ.SRS-006.RBAC.Privileges.RoleAll
+version: 1.0
+
+[ClickHouse] SHALL support granting a role named `ALL` using `GRANT ALL TO user`.
+This shall only grant the user the privileges that have been granted to the role.
+
+### RQ.SRS-006.RBAC.Privileges.None
+version: 1.0
+
+[ClickHouse] SHALL support granting or revoking `NONE` privilege
+using `GRANT NONE TO user` or `GRANT USAGE ON *.* TO user`.
+
+### RQ.SRS-006.RBAC.Privileges.AdminOption
+version: 1.0
+
+[ClickHouse] SHALL support a user granting or revoking a role if and only if
+the user has that role with `ADMIN OPTION` privilege.
 
 ## References
 

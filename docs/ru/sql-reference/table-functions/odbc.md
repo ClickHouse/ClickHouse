@@ -1,3 +1,8 @@
+---
+toc_priority: 44
+toc_title: odbc
+---
+
 # odbc {#table-functions-odbc}
 
 Возвращает таблицу, подключенную через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
@@ -98,4 +103,3 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 -   [Внешние словари ODBC](../../sql-reference/table-functions/odbc.md#dicts-external_dicts_dict_sources-odbc)
 -   [Движок таблиц ODBC](../../sql-reference/table-functions/odbc.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/jdbc/) <!--hide-->

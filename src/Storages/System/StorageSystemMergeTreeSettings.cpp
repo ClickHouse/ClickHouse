@@ -7,7 +7,8 @@
 namespace DB
 {
 
-NamesAndTypesList SystemMergeTreeSettings::getNamesAndTypes()
+template <bool replicated>
+NamesAndTypesList SystemMergeTreeSettings<replicated>::getNamesAndTypes()
 {
     return {
         {"name",        std::make_shared<DataTypeString>()},
@@ -18,9 +19,11 @@ NamesAndTypesList SystemMergeTreeSettings::getNamesAndTypes()
     };
 }
 
-void SystemMergeTreeSettings::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+template <bool replicated>
+void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    for (auto setting : context.getMergeTreeSettings().all())
+    const auto & settings = replicated ? context->getReplicatedMergeTreeSettings().all() : context->getMergeTreeSettings().all();
+    for (const auto & setting : settings)
     {
         res_columns[0]->insert(setting.getName());
         res_columns[1]->insert(setting.getValueString());
@@ -30,4 +33,6 @@ void SystemMergeTreeSettings::fillData(MutableColumns & res_columns, const Conte
     }
 }
 
+template class SystemMergeTreeSettings<false>;
+template class SystemMergeTreeSettings<true>;
 }

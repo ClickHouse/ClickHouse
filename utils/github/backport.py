@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from clickhouse.utils.github.cherrypick import CherryPick
-from clickhouse.utils.github.query import Query as RemoteRepo
-from clickhouse.utils.github.local import Repository as LocalRepo
+try:
+    from clickhouse.utils.github.cherrypick import CherryPick
+    from clickhouse.utils.github.query import Query as RemoteRepo
+    from clickhouse.utils.github.local import Repository as LocalRepo
+except:
+    from .cherrypick import CherryPick
+    from .query import Query as RemoteRepo
+    from .local import Repository as LocalRepo
 
 import argparse
 import logging
@@ -20,9 +25,24 @@ class Backport:
     def getPullRequests(self, from_commit):
         return self._gh.get_pull_requests(from_commit)
 
-    def execute(self, repo, til, number, run_cherrypick):
-        repo = LocalRepo(repo, 'origin', self.default_branch_name)
-        branches = repo.get_release_branches()[-number:]  # [(branch_name, base_commit)]
+    def getBranchesWithRelease(self):
+        branches = set()
+        for pull_request in self._gh.find_pull_requests("release"):
+            if not pull_request['merged'] and not pull_request['closed']:
+                branches.add(pull_request['headRefName'])
+        return branches
+
+    def execute(self, repo, upstream, until_commit, run_cherrypick):
+        repo = LocalRepo(repo, upstream, self.default_branch_name)
+        all_branches = repo.get_release_branches()  # [(branch_name, base_commit)]
+
+        release_branches = self.getBranchesWithRelease()
+
+        branches = []
+        # iterate over all branches to preserve their precedence.
+        for branch in all_branches:
+            if branch[0] in release_branches:
+                branches.append(branch)
 
         if not branches:
             logging.info('No release branches found!')
@@ -31,9 +51,9 @@ class Backport:
         for branch in branches:
             logging.info('Found release branch: %s', branch[0])
 
-        if not til:
-            til = branches[0][1]
-        prs = self.getPullRequests(til)
+        if not until_commit:
+            until_commit = branches[0][1]
+        pull_requests = self.getPullRequests(until_commit)
 
         backport_map = {}
 
@@ -41,10 +61,10 @@ class Backport:
         RE_NO_BACKPORT = re.compile(r'^v(\d+\.\d+)-no-backport$')
         RE_BACKPORTED = re.compile(r'^v(\d+\.\d+)-backported$')
 
-        # pull-requests are sorted by ancestry from the least recent.
-        for pr in prs:
+        # pull-requests are sorted by ancestry from the most recent.
+        for pr in pull_requests:
             while repo.comparator(branches[-1][1]) >= repo.comparator(pr['mergeCommit']['oid']):
-                logging.info("PR #{} is already inside {}. Dropping this branch for futher PRs".format(pr['number'], branches[-1][0]))
+                logging.info("PR #{} is already inside {}. Dropping this branch for further PRs".format(pr['number'], branches[-1][0]))
                 branches.pop()
 
             logging.info("Processing PR #{}".format(pr['number']))
@@ -55,37 +75,37 @@ class Backport:
 
             # First pass. Find all must-backports
             for label in pr['labels']['nodes']:
-                if label['name'].startswith('pr-') and label['color'] == 'ff0000':
+                if label['name'] == 'pr-bugfix' or label['name'] == 'pr-must-backport':
                     backport_map[pr['number']] = branch_set.copy()
                     continue
-                m = RE_MUST_BACKPORT.match(label['name'])
-                if m:
+                matched = RE_MUST_BACKPORT.match(label['name'])
+                if matched:
                     if pr['number'] not in backport_map:
                         backport_map[pr['number']] = set()
-                    backport_map[pr['number']].add(m.group(1))
+                    backport_map[pr['number']].add(matched.group(1))
 
             # Second pass. Find all no-backports
             for label in pr['labels']['nodes']:
                 if label['name'] == 'pr-no-backport' and pr['number'] in backport_map:
                     del backport_map[pr['number']]
                     break
-                m1 = RE_NO_BACKPORT.match(label['name'])
-                m2 = RE_BACKPORTED.match(label['name'])
-                if m1 and pr['number'] in backport_map and m1.group(1) in backport_map[pr['number']]:
-                    backport_map[pr['number']].remove(m1.group(1))
-                    logging.info('\tskipping %s because of forced no-backport', m1.group(1))
-                elif m2 and pr['number'] in backport_map and m2.group(1) in backport_map[pr['number']]:
-                    backport_map[pr['number']].remove(m2.group(1))
-                    logging.info('\tskipping %s because it\'s already backported manually', m2.group(1))
+                matched_no_backport = RE_NO_BACKPORT.match(label['name'])
+                matched_backported = RE_BACKPORTED.match(label['name'])
+                if matched_no_backport and pr['number'] in backport_map and matched_no_backport.group(1) in backport_map[pr['number']]:
+                    backport_map[pr['number']].remove(matched_no_backport.group(1))
+                    logging.info('\tskipping %s because of forced no-backport', matched_no_backport.group(1))
+                elif matched_backported and pr['number'] in backport_map and matched_backported.group(1) in backport_map[pr['number']]:
+                    backport_map[pr['number']].remove(matched_backported.group(1))
+                    logging.info('\tskipping %s because it\'s already backported manually', matched_backported.group(1))
 
-        for pr, branches in backport_map.items():
+        for pr, branches in list(backport_map.items()):
             logging.info('PR #%s needs to be backported to:', pr)
             for branch in branches:
                 logging.info('\t%s, and the status is: %s', branch, run_cherrypick(self._token, pr, branch))
 
         # print API costs
         logging.info('\nGitHub API total costs per query:')
-        for name, value in self._gh.api_costs.items():
+        for name, value in list(self._gh.api_costs.items()):
             logging.info('%s : %s', name, value)
 
 
@@ -94,9 +114,9 @@ if __name__ == "__main__":
     parser.add_argument('--token',     type=str, required=True, help='token for Github access')
     parser.add_argument('--repo',      type=str, required=True, help='path to full repository', metavar='PATH')
     parser.add_argument('--til',       type=str,                help='check PRs from HEAD til this commit', metavar='COMMIT')
-    parser.add_argument('-n',          type=int, dest='number', help='number of last release branches to consider')
     parser.add_argument('--dry-run',   action='store_true',     help='do not create or merge any PRs', default=False)
     parser.add_argument('--verbose', '-v', action='store_true', help='more verbose output', default=False)
+    parser.add_argument('--upstream', '-u', type=str,           help='remote name of upstream in repository', default='origin')
     args = parser.parse_args()
 
     if args.verbose:
@@ -106,4 +126,4 @@ if __name__ == "__main__":
 
     cherrypick_run = lambda token, pr, branch: CherryPick(token, 'ClickHouse', 'ClickHouse', 'core', pr, branch).execute(args.repo, args.dry_run)
     bp = Backport(args.token, 'ClickHouse', 'ClickHouse', 'core')
-    bp.execute(args.repo, args.til, args.number, cherrypick_run)
+    bp.execute(args.repo, args.upstream, args.til, cherrypick_run)

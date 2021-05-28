@@ -6,6 +6,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -43,6 +44,7 @@ ASTPtr ASTSelectQuery::clone() const
     CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::HAVING);
+    CLONE(Expression::WINDOW);
     CLONE(Expression::ORDER_BY);
     CLONE(Expression::LIMIT_BY_OFFSET);
     CLONE(Expression::LIMIT_BY_LENGTH);
@@ -57,22 +59,35 @@ ASTPtr ASTSelectQuery::clone() const
 }
 
 
+void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(distinct);
+    hash_state.update(group_by_with_totals);
+    hash_state.update(group_by_with_rollup);
+    hash_state.update(group_by_with_cube);
+    hash_state.update(limit_with_ties);
+    IAST::updateTreeHashImpl(hash_state);
+}
+
+
 void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
     frame.need_parens = false;
+    frame.expression_list_prepend_whitespace = true;
+
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (with())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH" << (s.hilite ? hilite_none : "");
         s.one_line
             ? with()->formatImpl(s, state, frame)
             : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
         s.ostr << s.nl_or_ws;
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (distinct ? "DISTINCT " : "") << (s.hilite ? hilite_none : "");
+    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT" << (distinct ? " DISTINCT" : "") << (s.hilite ? hilite_none : "");
 
     s.one_line
         ? select()->formatImpl(s, state, frame)
@@ -98,7 +113,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (groupBy())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY " << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
         s.one_line
             ? groupBy()->formatImpl(s, state, frame)
             : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
@@ -119,9 +134,16 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         having()->formatImpl(s, state, frame);
     }
 
+    if (window())
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str <<
+            "WINDOW" << (s.hilite ? hilite_none : "");
+        window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+    }
+
     if (orderBy())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY" << (s.hilite ? hilite_none : "");
         s.one_line
             ? orderBy()->formatImpl(s, state, frame)
             : orderBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
@@ -136,7 +158,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
             s.ostr << ", ";
         }
         limitByLength()->formatImpl(s, state, frame);
-        s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << " BY" << (s.hilite ? hilite_none : "");
         s.one_line
             ? limitBy()->formatImpl(s, state, frame)
             : limitBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
@@ -285,10 +307,11 @@ bool ASTSelectQuery::final() const
 
 bool ASTSelectQuery::withFill() const
 {
-    if (!orderBy())
+    const ASTPtr order_by = orderBy();
+    if (!order_by)
         return false;
 
-    for (const auto & order_expression_element : orderBy()->children)
+    for (const auto & order_expression_element : order_by->children)
         if (order_expression_element->as<ASTOrderByElement &>().with_fill)
             return true;
 

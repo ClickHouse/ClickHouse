@@ -103,7 +103,7 @@ void PipelineExecutingBlockInputStream::setProcessListElement(QueryStatus * elem
     pipeline->setProcessListElement(elem);
 }
 
-void PipelineExecutingBlockInputStream::setLimits(const IBlockInputStream::LocalLimits & limits_)
+void PipelineExecutingBlockInputStream::setLimits(const StreamLocalLimits & limits_)
 {
     throwIfExecutionStarted(is_execution_started, "setLimits");
 
@@ -120,12 +120,5 @@ void PipelineExecutingBlockInputStream::setQuota(const std::shared_ptr<const Ena
     throw Exception("Quota is not supported by PipelineExecutingBlockInputStream",
                     ErrorCodes::LOGICAL_ERROR);
 }
-
-void PipelineExecutingBlockInputStream::addTotalRowsApprox(size_t)
-{
-    throw Exception("Progress is not supported by PipelineExecutingBlockInputStream",
-                    ErrorCodes::LOGICAL_ERROR);
-}
-
 
 }

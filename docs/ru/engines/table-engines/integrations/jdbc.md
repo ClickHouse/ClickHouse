@@ -1,3 +1,8 @@
+---
+toc_priority: 3
+toc_title: JDBC
+---
+
 # JDBC {#table-engine-jdbc}
 
 Позволяет ClickHouse подключаться к внешним базам данных с помощью [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
@@ -84,4 +89,3 @@ FROM jdbc_table
 
 -   [Табличная функция JDBC](../../../engines/table-engines/integrations/jdbc.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/jdbc/) <!--hide-->

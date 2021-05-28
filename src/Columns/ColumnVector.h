@@ -6,21 +6,28 @@
 #include <Columns/ColumnVectorHelper.h>
 #include <common/unaligned.h>
 #include <Core/Field.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
   * Floating-point numbers are compared this way that NaNs always end up at the end
   *  (if you don't do this, the sort would not work at all).
   */
-template <typename T>
+template <class T, class U = T>
 struct CompareHelper
 {
-    static bool less(T a, T b, int /*nan_direction_hint*/) { return a < b; }
-    static bool greater(T a, T b, int /*nan_direction_hint*/) { return a > b; }
+    static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
+    static constexpr bool greater(T a, U b, int /*nan_direction_hint*/) { return a > b; }
 
     /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
       * If one of the values is NaN, then
@@ -28,19 +35,19 @@ struct CompareHelper
       * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
       * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.
       */
-    static int compare(T a, T b, int /*nan_direction_hint*/)
+    static constexpr int compare(T a, U b, int /*nan_direction_hint*/)
     {
         return a > b ? 1 : (a < b ? -1 : 0);
     }
 };
 
-template <typename T>
+template <class T>
 struct FloatCompareHelper
 {
-    static bool less(T a, T b, int nan_direction_hint)
+    static constexpr bool less(T a, T b, int nan_direction_hint)
     {
-        bool isnan_a = std::isnan(a);
-        bool isnan_b = std::isnan(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
 
         if (isnan_a && isnan_b)
             return false;
@@ -52,10 +59,10 @@ struct FloatCompareHelper
         return a < b;
     }
 
-    static bool greater(T a, T b, int nan_direction_hint)
+    static constexpr bool greater(T a, T b, int nan_direction_hint)
     {
-        bool isnan_a = std::isnan(a);
-        bool isnan_b = std::isnan(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
 
         if (isnan_a && isnan_b)
             return false;
@@ -67,10 +74,11 @@ struct FloatCompareHelper
         return a > b;
     }
 
-    static int compare(T a, T b, int nan_direction_hint)
+    static constexpr int compare(T a, T b, int nan_direction_hint)
     {
-        bool isnan_a = std::isnan(a);
-        bool isnan_b = std::isnan(b);
+        const bool isnan_a = std::isnan(a);
+        const bool isnan_b = std::isnan(b);
+
         if (unlikely(isnan_a || isnan_b))
         {
             if (isnan_a && isnan_b)
@@ -85,8 +93,8 @@ struct FloatCompareHelper
     }
 };
 
-template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {};
-template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
+template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
+template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
 
 
 /** A template for columns that use a simple array to store.
@@ -117,26 +125,21 @@ private:
     ColumnVector(std::initializer_list<T> il) : data{il} {}
 
 public:
-    bool isNumeric() const override { return IsNumber<T>; }
+    bool isNumeric() const override { return is_arithmetic_v<T>; }
 
     size_t size() const override
     {
         return data.size();
     }
 
-    StringRef getDataAt(size_t n) const override
-    {
-        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
-    }
-
     void insertFrom(const IColumn & src, size_t n) override
     {
-        data.push_back(static_cast<const Self &>(src).getData()[n]);
+        data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
-    void insertData(const char * pos, size_t /*length*/) override
+    void insertData(const char * pos, size_t) override
     {
-        data.push_back(unalignedLoad<T>(pos));
+        data.emplace_back(unalignedLoad<T>(pos));
     }
 
     void insertDefault() override
@@ -144,7 +147,7 @@ public:
         data.push_back(T());
     }
 
-    virtual void insertManyDefaults(size_t length) override
+    void insertManyDefaults(size_t length) override
     {
         data.resize_fill(data.size() + length, T());
     }
@@ -158,6 +161,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -167,6 +172,11 @@ public:
     size_t byteSize() const override
     {
         return data.size() * sizeof(data[0]);
+    }
+
+    size_t byteSizeAt(size_t) const override
+    {
+        return sizeof(data[0]);
     }
 
     size_t allocatedBytes() const override
@@ -184,23 +194,32 @@ public:
         data.push_back(value);
     }
 
+    template <class U>
+    constexpr int compareAtOther(size_t n, size_t m, const ColumnVector<U> & rhs, int nan_direction_hint) const
+    {
+        return CompareHelper<T, U>::compare(data[n], rhs.data[m], nan_direction_hint);
+    }
+
     /// This method implemented in header because it could be possibly devirtualized.
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
     {
-        return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
+        return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override
     {
-        return this->template doCompareColumn<Self>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+        return this->template doCompareColumn<Self>(assert_cast<const Self &>(rhs), rhs_row_num, row_indexes,
                                                     compare_results, direction, nan_direction_hint);
     }
 
+    bool hasEqualValues() const override
+    {
+        return this->template hasEqualValuesImpl<Self>();
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
-                               IColumn::SpecialSort) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
@@ -209,8 +228,8 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>::get(); }
-    TypeIndex getDataType() const override { return TypeId<T>::value; }
+    const char * getFamilyName() const override { return TypeName<T>; }
+    TypeIndex getDataType() const override { return TypeId<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -233,23 +252,32 @@ public:
     /// Out of range conversion is permitted.
     UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
-        return UInt64(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return UInt64(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
     }
 
     /// Out of range conversion is permitted.
     Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
     {
-        return Int64(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return Int64(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
     }
 
     bool getBool(size_t n) const override
     {
-        return bool(data[n]);
+        if constexpr (is_arithmetic_v<T>)
+            return bool(data[n]);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
     }
 
     void insert(const Field & x) override
     {
-        data.push_back(DB::get<NearestFieldType<T>>(x));
+        data.push_back(DB::get<T>(x));
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -274,18 +302,26 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
-
     bool canBeInsideNullable() const override { return true; }
-
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), byteSize()); }
 
+    StringRef getRawData() const override
+    {
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
+    }
+
+    StringRef getDataAt(size_t n) const override
+    {
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+    }
 
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    ColumnPtr compress() const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
@@ -333,5 +369,23 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     return res;
 }
+
+/// Prevent implicit template instantiation of ColumnVector for common types
+
+extern template class ColumnVector<UInt8>;
+extern template class ColumnVector<UInt16>;
+extern template class ColumnVector<UInt32>;
+extern template class ColumnVector<UInt64>;
+extern template class ColumnVector<UInt128>;
+extern template class ColumnVector<UInt256>;
+extern template class ColumnVector<Int8>;
+extern template class ColumnVector<Int16>;
+extern template class ColumnVector<Int32>;
+extern template class ColumnVector<Int64>;
+extern template class ColumnVector<Int128>;
+extern template class ColumnVector<Int256>;
+extern template class ColumnVector<Float32>;
+extern template class ColumnVector<Float64>;
+extern template class ColumnVector<UUID>;
 
 }

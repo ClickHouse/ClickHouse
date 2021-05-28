@@ -11,6 +11,7 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -43,7 +44,7 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
     String getName() const override
     {
@@ -57,7 +58,7 @@ public:
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
-        if (arguments.size() < 1)
+        if (arguments.empty())
             throw Exception("Function " + getName() + " needs at least one argument; passed "
                             + toString(arguments.size()) + ".",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -96,7 +97,7 @@ public:
 
         if (arguments.size() == 1)
         {
-            const auto array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+            const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
 
             if (!array_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
@@ -116,7 +117,7 @@ public:
                 throw Exception("Function " + getName() + " needs one array argument.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            const auto data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
+            const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
             if (!data_type_function)
                 throw Exception("First argument for function " + getName() + " must be a function.",
@@ -129,17 +130,17 @@ public:
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
+            const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
 
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (arguments.size() == 1)
         {
-            ColumnPtr column_array_ptr = block.getByPosition(arguments[0]).column;
+            ColumnPtr column_array_ptr = arguments[0].column;
             const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
             if (!column_array)
@@ -151,11 +152,11 @@ public:
                 column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
             }
 
-            block.getByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
+            return Impl::execute(*column_array, column_array->getDataPtr());
         }
         else
         {
-            const auto & column_with_type_and_name = block.getByPosition(arguments[0]);
+            const auto & column_with_type_and_name = arguments[0];
 
             if (!column_with_type_and_name.column)
                 throw Exception("First argument for function " + getName() + " must be a function.",
@@ -177,7 +178,7 @@ public:
 
             for (size_t i = 1; i < arguments.size(); ++i)
             {
-                const auto & array_with_type_and_name = block.getByPosition(arguments[i]);
+                const auto & array_with_type_and_name = arguments[i];
 
                 ColumnPtr column_array_ptr = array_with_type_and_name.column;
                 const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
@@ -220,7 +221,7 @@ public:
                                                           array_with_type_and_name.name));
             }
 
-            /// Put all the necessary columns multiplied by the sizes of arrays into the block.
+            /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
             auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
             auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
             replicated_column_function->appendArguments(arrays);
@@ -229,7 +230,7 @@ public:
             if (lambda_result->lowCardinality())
                 lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
 
-            block.getByPosition(result).column = Impl::execute(*column_first_array, lambda_result);
+            return Impl::execute(*column_first_array, lambda_result);
         }
     }
 };

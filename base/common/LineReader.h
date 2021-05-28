@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <vector>
+#include <optional>
 
 class LineReader
 {
@@ -18,7 +19,7 @@ public:
         std::atomic<bool> ready{false};
 
         /// Get iterators for the matched range of words if any.
-        WordsRange getCompletions(const String & prefix, size_t prefix_length) const;
+        std::optional<WordsRange> getCompletions(const String & prefix, size_t prefix_length) const;
     };
 
     using Patterns = std::vector<const char *>;

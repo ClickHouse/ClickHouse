@@ -1,6 +1,6 @@
 # 如何在Linux中编译Mac OS X ClickHouse {#ru-he-zai-linuxzhong-bian-yi-mac-os-x-clickhouse}
 
-Linux机器也可以编译运行在OS X系统的`clickhouse`二进制包，这可以用于在Linux上跑持续集成测试。如果要在Mac OS X上直接构建ClickHouse，请参考另外一篇指南： https://clickhouse.tech/docs/zh/development/build\_osx/
+Linux机器也可以编译运行在OS X系统的`clickhouse`二进制包，这可以用于在Linux上跑持续集成测试。如果要在Mac OS X上直接构建ClickHouse，请参考另外一篇指南： https://clickhouse.tech/docs/zh/development/build_osx/
 
 Mac OS X的交叉编译基于以下构建说明，请首先遵循它们。
 
@@ -33,8 +33,8 @@ cd cctools-port/cctools
 make install
 
 cd ${CCTOOLS}
-wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
-tar xJf MacOSX10.14.sdk.tar.xz
+wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
+tar xJf MacOSX10.15.sdk.tar.xz
 ```
 
 # 编译 ClickHouse {#bian-yi-clickhouse}
@@ -46,7 +46,7 @@ CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_SYSTEM_NAME=Darwin \
     -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar \
     -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib \
     -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld \
-    -DSDK_PATH=${CCTOOLS}/MacOSX10.14.sdk
+    -DSDK_PATH=${CCTOOLS}/MacOSX10.15.sdk
 ninja -C build-osx
 ```
 

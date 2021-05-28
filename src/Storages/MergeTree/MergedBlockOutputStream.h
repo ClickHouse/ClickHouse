@@ -18,17 +18,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
-        CompressionCodecPtr default_codec,
-        bool blocks_are_granules_size = false);
-
-    MergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const NamesAndTypesList & columns_list_,
-        const MergeTreeIndices & skip_indices,
-        CompressionCodecPtr default_codec,
-        const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
-        size_t aio_threshold,
+        CompressionCodecPtr default_codec_,
         bool blocks_are_granules_size = false);
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
@@ -46,6 +36,7 @@ public:
     /// Finilize writing part and fill inner structures
     void writeSuffixAndFinalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
+            bool sync = false,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
@@ -58,12 +49,14 @@ private:
     void finalizePartOnDisk(
             const MergeTreeData::MutableDataPartPtr & new_part,
             NamesAndTypesList & part_columns,
-            MergeTreeData::DataPart::Checksums & checksums);
+            MergeTreeData::DataPart::Checksums & checksums,
+            bool sync);
 
 private:
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
+    CompressionCodecPtr default_codec;
 };
 
 }

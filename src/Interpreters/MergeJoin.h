@@ -23,6 +23,7 @@ class MergeJoin : public IJoin
 public:
     MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
+    const TableJoin & getTableJoin() const override { return *table_join; }
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
     void joinTotals(Block &) const override;
@@ -57,7 +58,7 @@ private:
     };
 
     /// There're two size limits for right-hand table: max_rows_in_join, max_bytes_in_join.
-    /// max_bytes is prefered. If it isn't set we approximate it as (max_rows * bytes/row).
+    /// max_bytes is preferred. If it isn't set we approximate it as (max_rows * bytes/row).
     struct BlockByteWeight
     {
         size_t operator()(const Block & block) const { return block.bytes(); }
@@ -76,12 +77,15 @@ private:
     Block right_table_keys;
     Block right_columns_to_add;
     SortedBlocksWriter::Blocks right_blocks;
+
+    /// Each block stores first and last row from corresponding sorted block on disk
     Blocks min_max_right_blocks;
     std::shared_ptr<SortedBlocksBuffer> left_blocks_buffer;
     std::shared_ptr<RowBitmaps> used_rows_bitmap;
     mutable std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
     std::unique_ptr<SortedBlocksWriter> disk_writer;
+    /// Set of files with sorted blocks
     SortedBlocksWriter::SortedFiles flushed_right_blocks;
     Block totals;
     std::atomic<bool> is_in_memory{true};

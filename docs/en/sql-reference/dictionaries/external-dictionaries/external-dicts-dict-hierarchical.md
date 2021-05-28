@@ -25,7 +25,7 @@ Look at the following hierarchical structure:
 
 This hierarchy can be expressed as the following dictionary table.
 
-| region\_id | parent\_region | region\_name  |
+| region_id | parent_region | region_name  |
 |------------|----------------|---------------|
 | 1          | 0              | Russia        |
 | 2          | 1              | Moscow        |
@@ -65,4 +65,3 @@ For our example, the structure of dictionary can be the following:
 </dictionary>
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->

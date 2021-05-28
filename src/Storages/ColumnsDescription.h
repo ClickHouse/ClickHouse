@@ -1,17 +1,20 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
-#include <Core/Names.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
-#include <Common/Exception.h>
-#include <Storages/ColumnDefault.h>
+#include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnCodec.h>
-#include <optional>
+#include <Storages/ColumnDefault.h>
+#include <Common/Exception.h>
 
-#include <boost/multi_index_container.hpp>
-#include <boost/multi_index/sequenced_index.hpp>
-#include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/member.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index_container.hpp>
+
+#include <optional>
 
 
 namespace DB
@@ -30,7 +33,7 @@ struct ColumnDescription
     DataTypePtr type;
     ColumnDefault default_desc;
     String comment;
-    CompressionCodecPtr codec;
+    ASTPtr codec;
     ASTPtr ttl;
 
     ColumnDescription() = default;
@@ -76,12 +79,16 @@ public:
     NamesAndTypesList getAliases() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases
+    NamesAndTypesList getAllWithSubcolumns() const;
+    NamesAndTypesList getAllPhysicalWithSubcolumns() const;
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
+    bool hasSubcolumn(const String & column_name) const;
+    bool hasInStorageOrSubcolumn(const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
 
     template <typename F>
@@ -104,14 +111,20 @@ public:
 
     Names getNamesOfPhysical() const;
     bool hasPhysical(const String & column_name) const;
+    bool hasPhysicalOrSubcolumn(const String & column_name) const;
     NameAndTypePair getPhysical(const String & column_name) const;
+    NameAndTypePair getPhysicalOrSubcolumn(const String & column_name) const;
 
     ColumnDefaults getDefaults() const; /// TODO: remove
     bool hasDefault(const String & column_name) const;
+    bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
+    /// Does column has non default specified compression codec
+    bool hasCompressionCodec(const String & column_name) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
     CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     String toString() const;
     static ColumnsDescription parse(const String & str);
@@ -136,12 +149,17 @@ public:
 private:
     Container columns;
 
+    using SubcolumnsContainer = std::unordered_map<String, NameAndTypePair>;
+    SubcolumnsContainer subcolumns;
+
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
+    void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
+    void removeSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
 };
 
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be casted to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context);
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
 }

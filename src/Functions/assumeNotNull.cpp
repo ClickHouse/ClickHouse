@@ -7,6 +7,8 @@
 
 namespace DB
 {
+namespace
+{
 
 /// Implements the function assumeNotNull which takes 1 argument and works as follows:
 /// - if the argument is a nullable column, return its embedded column;
@@ -17,7 +19,7 @@ class FunctionAssumeNotNull : public IFunction
 public:
     static constexpr auto name = "assumeNotNull";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionAssumeNotNull>();
     }
@@ -37,18 +39,18 @@ public:
         return removeNullable(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const ColumnPtr & col = block.getByPosition(arguments[0]).column;
-        ColumnPtr & res_col = block.getByPosition(result).column;
+        const ColumnPtr & col = arguments[0].column;
 
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
-            res_col = nullable_col->getNestedColumnPtr();
+            return nullable_col->getNestedColumnPtr();
         else
-            res_col = col;
+            return col;
     }
 };
 
+}
 
 void registerFunctionAssumeNotNull(FunctionFactory & factory)
 {

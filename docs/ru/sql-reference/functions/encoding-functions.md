@@ -1,3 +1,8 @@
+---
+toc_priority: 52
+toc_title: "Функции кодирования"
+---
+
 # Функции кодирования {#funktsii-kodirovaniia}
 
 ## char {#char}
@@ -10,13 +15,13 @@
 char(number_1, [number_2, ..., number_n]);
 ```
 
-**Параметры**
+**Аргументы**
 
--   `number_1, number_2, ..., number_n` — Числовые аргументы, которые интерпретируются как целые числа. Типы: [Int](../../sql-reference/functions/encoding-functions.md), [Float](../../sql-reference/functions/encoding-functions.md).
+-   `number_1, number_2, ..., number_n` — числовые аргументы, которые интерпретируются как целые числа. Типы: [Int](../../sql-reference/functions/encoding-functions.md), [Float](../../sql-reference/functions/encoding-functions.md).
 
 **Возвращаемое значение**
 
--   строка из соответствующих байт.
+-   Строка из соответствующих байт.
 
 Тип: `String`.
 
@@ -25,10 +30,10 @@ char(number_1, [number_2, ..., number_n]);
 Запрос:
 
 ``` sql
-SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello
+SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello;
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─hello─┐
@@ -44,7 +49,7 @@ SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello
 SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x82) AS hello;
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─hello──┐
@@ -58,7 +63,7 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─hello─┐
@@ -69,6 +74,8 @@ SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 ## hex {#hex}
 
 Returns a string containing the argument’s hexadecimal representation.
+
+Синоним: `HEX`.
 
 **Syntax**
 
@@ -165,4 +172,3 @@ If you want to convert the result to a number, you can use the ‘reverse’ and
 
 Принимает целое число. Возвращает массив чисел типа UInt64, содержащий степени двойки, в сумме дающих исходное число; числа в массиве идут по возрастанию.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/encoding_functions/) <!--hide-->

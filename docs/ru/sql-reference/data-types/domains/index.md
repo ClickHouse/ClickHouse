@@ -1,6 +1,6 @@
 ---
-toc_folder_title: Домены
-toc_title_title: Обзор
+toc_folder_title: "Домены"
+toc_title_title: "Обзор"
 toc_priority: 56
 ---
 
@@ -30,4 +30,3 @@ toc_priority: 56
 -   Невозможно неявно преобразовывать строковые значение в значения с доменным типом данных при вставке данных из другого столбца или таблицы.
 -   Домен не добавляет ограничения на хранимые значения.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/domains/overview) <!--hide-->

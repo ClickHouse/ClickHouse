@@ -106,7 +106,7 @@ bool ReadBufferAIO::nextImpl()
         ProfileInfo info;
         info.bytes_requested = requested_byte_count;
         info.bytes_read = bytes_read;
-        info.nanoseconds = watch->elapsed();
+        info.nanoseconds = watch->elapsed(); //-V1007
         profile_callback(info);
     }
 
@@ -298,7 +298,7 @@ void ReadBufferAIO::finalize()
 
     first_unread_pos_in_file += bytes_read;
     total_bytes_read += bytes_read;
-    working_buffer_offset = region_left_padding;
+    nextimpl_working_buffer_offset = region_left_padding;
 
     if (total_bytes_read == max_bytes_read)
         is_eof = true;
