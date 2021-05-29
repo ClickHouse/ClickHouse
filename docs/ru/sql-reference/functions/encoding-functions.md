@@ -155,7 +155,7 @@ Result:
 
 Выполняет операцию, обратную [hex](#hex). Функция интерпретирует каждую пару шестнадцатеричных цифр аргумента как число и преобразует его в символ.
 
-Если вы хотите преобразовать результат в число, вы можете использовать [функции преобразования типа](../../sql-reference/functions/type-conversion-functions.md).
+Если вы хотите преобразовать результат в число, вы можете использовать функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions).
 
 Синоним: `UNHEX`.
 
@@ -173,7 +173,7 @@ unhex(arg)
 
 **Возвращаемое значение**
 
--   Строка в текстовом формате.
+-   Бинарная строка.
 
 Тип: [String](../../sql-reference/data-types/string.md).
 
@@ -194,14 +194,15 @@ SELECT unhex('303132'), UNHEX('4D7953514C');
 Запрос:
 
 ``` sql
-SELECT toUInt8(unhex('303132')) AS num;
+SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
 ```
 
 Результат:
+
 ``` text
-┌─num─┐
-│  12 │
-└─────┘
+┌──num─┐
+│ 4095 │
+└──────┘
 ```
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}
