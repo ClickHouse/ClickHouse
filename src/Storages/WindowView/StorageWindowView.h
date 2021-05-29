@@ -25,7 +25,7 @@ class StorageWindowView final : public ext::shared_ptr_helper<StorageWindowView>
 public:
     ~StorageWindowView() override;
     String getName() const override { return "WindowView"; }
-    
+
     bool isView() const override { return true; }
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }

@@ -269,7 +269,7 @@ namespace
             return std::make_shared<DataTypeTuple>(DataTypes{dataType, dataType});
         }
 
-        static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
+        static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
             const auto & time_column = arguments[0];
             const auto & interval_column = arguments[1];
@@ -350,7 +350,7 @@ namespace
             return std::make_shared<DataTypeDateTime>();
         }
 
-        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
             const auto which_type = WhichDataType(arguments[0].type);
             ColumnPtr result_column_;
@@ -429,7 +429,7 @@ namespace
             return std::make_shared<DataTypeTuple>(DataTypes{dataType, dataType});
         }
 
-        static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
+        static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
             const auto & time_column = arguments[0];
             const auto & hop_interval_column = arguments[1];
@@ -658,7 +658,7 @@ namespace
             return executeWindowBound(column, 1, function_name);
         }
 
-        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
             if (arguments.size() == 2)
                 return dispatchForTumbleColumns(arguments, function_name);
@@ -695,7 +695,7 @@ namespace
             return std::make_shared<DataTypeDateTime>();
         }
 
-        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
             const auto & time_column = arguments[0];
             const auto which_type = WhichDataType(time_column.type);
@@ -723,7 +723,7 @@ namespace
             return WindowImpl<HOP_START>::getReturnType(arguments, function_name);
         }
 
-        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name) 
+        [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
             const auto & time_column = arguments[0];
             const auto which_type = WhichDataType(time_column.type);

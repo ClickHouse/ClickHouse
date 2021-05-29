@@ -7,7 +7,7 @@
 namespace DB
 {
 /** Implements WINDOW VIEW table WATCH input stream.
- *  Keeps stream alive by outputing blocks with no rows
+ *  Keeps stream alive by outputting blocks with no rows
  *  based on window interval.
  */
 class WindowViewBlockInputStream : public IBlockInputStream
