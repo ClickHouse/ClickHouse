@@ -81,12 +81,12 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
         schema_path = path.filename();
         schema_directory = path.parent_path() / "";
     }
-    else if (!fs::weakly_canonical(path).string().starts_with(fs::weakly_canonical(default_schema_directory()).string()))
+    else if (path.has_parent_path() && !fs::weakly_canonical(path).string().starts_with(fs::weakly_canonical(default_schema_directory()).string()))
     {
         if (is_server)
-            throw Exception(
-                "Path in the 'format_schema' setting shouldn't go outside the 'format_schema_path' directory: " + path.string(),
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Path in the 'format_schema' setting shouldn't go outside the 'format_schema_path' directory: {} ({} not in {})",
+                            path.string());
         fs::path default_schema_directory_path(default_schema_directory());
         if (default_schema_directory_path.is_absolute())
             path = default_schema_directory_path;

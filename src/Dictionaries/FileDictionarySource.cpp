@@ -1,5 +1,4 @@
 #include "FileDictionarySource.h"
-#include <filesystem>
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -10,10 +9,7 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
-#include <Common/filesystemHelpers.h>
 
-
-namespace fs = std::filesystem;
 
 namespace DB
 {

@@ -7,8 +7,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <filesystem>
-#include <DataStreams/OneBlockInputStream.h>
-#include <Interpreters/Context.h>
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
