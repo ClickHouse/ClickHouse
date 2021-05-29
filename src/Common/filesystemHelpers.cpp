@@ -20,7 +20,6 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_STATVFS;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 
