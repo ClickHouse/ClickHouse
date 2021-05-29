@@ -273,8 +273,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
 {
     Block & block = block_with_partition.block;
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    auto extended_storage_columns = data.getColumns(metadata_snapshot,
+        GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
 
-    convertObjectsToTuples(columns, block);
+    convertObjectsToTuples(columns, block, extended_storage_columns);
 
     static const String TMP_PREFIX = "tmp_insert_";
 

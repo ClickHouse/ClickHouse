@@ -39,7 +39,6 @@ public:
 private:
     SubcolumnsMap subcolumns;
     bool optimized_types_of_subcolumns = false;
-    size_t size_with_no_subcolumns = 0;
 
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
@@ -68,8 +67,7 @@ public:
 
     const char * getFamilyName() const override { return "Object"; }
 
-    size_t size() const override { return subcolumns.empty() ? size_with_no_subcolumns : subcolumns.begin()->second.size(); }
-
+    size_t size() const override;
     MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;

@@ -13,7 +13,7 @@ DataTypePtr getBaseTypeOfArray(DataTypePtr type);
 DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension);
 
 DataTypePtr getDataTypeByColumn(const IColumn & column);
-void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block);
+void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns);
 DataTypePtr getLeastCommonTypeForObject(const DataTypes & types);
 void optimizeTypesOfObjectColumns(MutableColumns & columns);
 

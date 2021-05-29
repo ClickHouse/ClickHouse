@@ -11,6 +11,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/ObjectUtils.h>
+#include <Columns/ColumnObject.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -5066,21 +5067,31 @@ static NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list)
     return res;
 }
 
-static NamesAndTypesList expandObjectColumnsImpl(
+static NamesAndTypesList extendObjectColumnsImpl(
     const MergeTreeData::DataPartsVector & parts,
     const NamesAndTypesList & columns_list,
-    const NameSet & requested_to_expand,
+    const NameSet & requested_to_extend,
     bool with_subcolumns)
 {
     std::unordered_map<String, DataTypes> types_in_parts;
 
-    for (const auto & part : parts)
+    if (parts.empty())
     {
-        const auto & part_columns = part->getColumns();
-        for (const auto & [name, type] : part_columns)
+        for (const auto & name : requested_to_extend)
+            types_in_parts[name].push_back(std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeUInt8>()},
+                Names{ColumnObject::COLUMN_NAME_DUMMY}));
+    }
+    else
+    {
+        for (const auto & part : parts)
         {
-            if (requested_to_expand.count(name))
-                types_in_parts[name].push_back(type);
+            const auto & part_columns = part->getColumns();
+            for (const auto & [name, type] : part_columns)
+            {
+                if (requested_to_extend.count(name))
+                    types_in_parts[name].push_back(type);
+            }
         }
     }
 
@@ -5111,24 +5122,24 @@ static NamesAndTypesList expandObjectColumnsImpl(
     return result_columns;
 }
 
-NamesAndTypesList MergeTreeData::expandObjectColumns(const DataPartsVector & parts, const NamesAndTypesList & columns_list, bool with_subcolumns)
+NamesAndTypesList MergeTreeData::extendObjectColumns(const DataPartsVector & parts, const NamesAndTypesList & columns_list, bool with_subcolumns)
 {
     /// Firstly fast check without locking parts, if there are any Object columns.
-    NameSet requested_to_expand = getNamesOfObjectColumns(columns_list);
-    if (requested_to_expand.empty())
+    NameSet requested_to_extend = getNamesOfObjectColumns(columns_list);
+    if (requested_to_extend.empty())
         return columns_list;
 
-    return expandObjectColumnsImpl(parts, columns_list, requested_to_expand, with_subcolumns);
+    return extendObjectColumnsImpl(parts, columns_list, requested_to_extend, with_subcolumns);
 }
 
-NamesAndTypesList MergeTreeData::expandObjectColumns(const NamesAndTypesList & columns_list, bool with_subcolumns) const
+NamesAndTypesList MergeTreeData::extendObjectColumns(const NamesAndTypesList & columns_list, bool with_subcolumns) const
 {
     /// Firstly fast check without locking parts, if there are any Object columns.
-    NameSet requested_to_expand = getNamesOfObjectColumns(columns_list);
-    if (requested_to_expand.empty())
+    NameSet requested_to_extend = getNamesOfObjectColumns(columns_list);
+    if (requested_to_extend.empty())
         return columns_list;
 
-    return expandObjectColumnsImpl(getDataPartsVector(), columns_list, requested_to_expand, with_subcolumns);
+    return extendObjectColumnsImpl(getDataPartsVector(), columns_list, requested_to_extend, with_subcolumns);
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()

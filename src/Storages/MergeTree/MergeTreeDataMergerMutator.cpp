@@ -702,7 +702,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     Names all_column_names = metadata_snapshot->getColumns().getNamesOfPhysical();
     NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
-    storage_columns = MergeTreeData::expandObjectColumns(parts, storage_columns, false);
+    storage_columns = MergeTreeData::extendObjectColumns(parts, storage_columns, false);
     const auto data_settings = data.getSettings();
 
     NamesAndTypesList gathering_columns;
