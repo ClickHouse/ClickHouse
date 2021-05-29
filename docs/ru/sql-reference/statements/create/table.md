@@ -346,7 +346,7 @@ SELECT * FROM base.t1;
 └───┘
 ```
 
-## COMMENT TABLE {#comment-table}
+## Секция COMMENT {#comment-table}
 
 Вы можете добавить комментарий к таблице при ее создании.
 
