@@ -31,7 +31,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix_,
     Block & sample_block_,
-    ContextPtr context_,
+    ContextConstPtr context_,
     bool created_from_ddl)
     : log(&Poco::Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
@@ -172,7 +172,7 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextConstPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
