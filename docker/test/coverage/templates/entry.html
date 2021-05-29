@@ -8,7 +8,9 @@
     {% else %}
             table-danger
     {% endif %}">
-
+    {{ entry.lines[2] }}%
+</td>
+<td>
     {% if entry.lines[1] > 0 %}
         {{ entry.lines[0] }} / {{ entry.lines[1] }}
     {% else %}
@@ -24,6 +26,9 @@
     {% else %}
             table-danger
     {% endif %}">
+    {{ entry.funcs[2] }}%
+</td>
+<td>
     {% if entry.funcs[1] > 0 %}
         {{ entry.funcs[0] }} / {{ entry.funcs[1] }}
     {% else %}
@@ -38,5 +43,9 @@
     {% else %}
             table-danger
     {% endif %}">
+    {{ entry.tests[1] }}%
+</td>
+<td>
     {{ entry.tests[0] }} / {{ tests_total }}
+</td>
 </td>

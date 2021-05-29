@@ -26,6 +26,11 @@ files = []
 tests = []
 tests_names = []
 
+pr_url = ""
+pr_index = 0
+commit_url = ""
+commit_hash = ""
+
 class FileEntry:
     def __init__(self, path, lines_with_hits, funcs_with_hits, tests_with_hits):
         self.full_path = path
@@ -168,10 +173,10 @@ def render(tpl, **kwargs):
         "bounds": bounds,
         "colors": colors,
         "tests_total": len(tests),
-        "pr_url": "PR URL",
-        "pr_index": "PR index",
-        "commit_url": "Commit URL",
-        "commit_hash": "Commit hash"
+        "pr_url": pr_url,
+        "pr_index": pr_index,
+        "commit_url": commit_url,
+        "commit_hash": commit_hash
     })
 
     return tpl.render(kwargs)
@@ -303,10 +308,25 @@ def read_report(f: TextIO):
 
 def main():
     parser = argparse.ArgumentParser(prog='CCR converter')
+
     parser.add_argument('ccr_report_file')
     parser.add_argument('html_dir')
+    parser.add_argument('pr_url')
+    parser.add_argument('pr_index')
+    parser.add_argument('commit_url')
+    parser.add_argument('commit_hash')
 
     args = parser.parse_args()
+
+    global pr_url
+    global pr_index
+    global commit_url
+    global commit_hash
+
+    pr_url = args.pr_url
+    pr_index = args.pr_index
+    commit_url = args.commit_url
+    commit_hash = args.commit_hash
 
     with open(args.ccr_report_file, "r") as f:
         read_report(f)

@@ -108,6 +108,6 @@ clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --co
 
 kill_clickhouse
 
-cp /report.ccr "${OUTPUT_DIR}"/report.ccr
+cp /report.ccr "${OUTPUT_DIR}"/report.ccr pr pr_index commit commit_hash
 
 python3 ccr_converter.py /report.ccr ${GENHTML_REPORT_DIR}
