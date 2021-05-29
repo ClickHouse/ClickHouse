@@ -328,13 +328,17 @@ catch (const Exception & e)
 }
 
 
-std::string LocalServer::getInitialCreateTableQuery()
+String LocalServer::getInitialCreateTableQuery()
 {
     if (!config().has("table-structure"))
         return {};
+    
+    String wrapped_table_structure;
+    String table_structure = config().getString("table-structure");
+    if (table_structure != "auto")
+        wrapped_table_structure = " (" + table_structure + ") ";
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-    auto table_structure = config().getString("table-structure");
     auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
     String table_file;
     if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
@@ -344,7 +348,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 
     return
     "CREATE TABLE " + table_name +
-        " (" + table_structure + ") " +
+        wrapped_table_structure +
     "ENGINE = "
         "File(" + data_format + ", " + table_file + ")"
     "; ";
