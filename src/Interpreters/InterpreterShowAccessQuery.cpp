@@ -34,12 +34,12 @@ BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    WriteBufferFromOwnString buf;
+    std::stringstream ss;
     for (const auto & query : queries)
     {
-        buf.restart();
-        formatAST(*query, buf, false, true);
-        column->insert(buf.str());
+        ss.str("");
+        formatAST(*query, ss, false, true);
+        column->insert(ss.str());
     }
 
     String desc = "ACCESS";
@@ -49,8 +49,8 @@ BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
 
 std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 {
-    const auto & access_control = getContext()->getAccessControlManager();
-    getContext()->checkAccess(AccessType::SHOW_ACCESS);
+    const auto & access_control = context.getAccessControlManager();
+    context.checkAccess(AccessType::SHOW_ACCESS);
 
     std::vector<AccessEntityPtr> entities;
     for (auto type : ext::range(EntityType::MAX))
@@ -71,7 +71,7 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
 {
     auto entities = getEntities();
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = context.getAccessControlManager();
 
     ASTs create_queries, grant_queries;
     for (const auto & entity : entities)

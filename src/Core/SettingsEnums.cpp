@@ -11,8 +11,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
     extern const int UNKNOWN_JOIN;
     extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
-    extern const int UNKNOWN_UNION;
 }
 
 
@@ -22,6 +20,11 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
+
+
+IMPLEMENT_SETTING_ENUM(SpecialSort, ErrorCodes::UNKNOWN_JOIN,
+    {{"not_specified",  SpecialSort::NOT_SPECIFIED},
+     {"opencl_bitonic", SpecialSort::OPENCL_BITONIC}})
 
 
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
@@ -67,11 +70,6 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENT
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort}})
 
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"simple",         FormatSettings::DateTimeOutputFormat::Simple},
-     {"iso",            FormatSettings::DateTimeOutputFormat::ISO},
-     {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
-
 IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
     {{"none",        LogsLevel::none},
      {"fatal",       LogsLevel::fatal},
@@ -93,22 +91,4 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUME
     {{"Ordinary", DefaultDatabaseEngine::Ordinary},
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
 
-IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
-    {{"decimal",    MySQLDataTypesSupport::DECIMAL},
-     {"datetime64", MySQLDataTypesSupport::DATETIME64}})
-
-IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
-    {{"",         UnionMode::Unspecified},
-     {"ALL",      UnionMode::ALL},
-     {"DISTINCT", UnionMode::DISTINCT}})
-
-IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"none",         DistributedDDLOutputMode::NONE},
-     {"throw",    DistributedDDLOutputMode::THROW},
-     {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
-     {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
-
-IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"default",      HandleKafkaErrorMode::DEFAULT},
-     {"stream",       HandleKafkaErrorMode::STREAM}})
 }

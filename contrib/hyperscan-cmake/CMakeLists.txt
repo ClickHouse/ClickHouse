@@ -26,8 +26,8 @@ if (NOT USE_INTERNAL_HYPERSCAN_LIBRARY)
     if (LIBRARY_HYPERSCAN AND INCLUDE_HYPERSCAN)
         set (EXTERNAL_HYPERSCAN_LIBRARY_FOUND 1)
 
-        add_library (hyperscan INTERFACE)
-        set_target_properties (hyperscan PROPERTIES INTERFACE_LINK_LIBRARIES ${LIBRARY_HYPERSCAN})
+        add_library (hyperscan UNKNOWN IMPORTED GLOBAL)
+        set_target_properties (hyperscan PROPERTIES IMPORTED_LOCATION ${LIBRARY_HYPERSCAN})
         set_target_properties (hyperscan PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_HYPERSCAN})
         set_property(TARGET hyperscan APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_HYPERSCAN=1)
     else ()
@@ -252,7 +252,6 @@ if (NOT EXTERNAL_HYPERSCAN_LIBRARY_FOUND)
     target_compile_definitions (hyperscan PUBLIC USE_HYPERSCAN=1)
     target_compile_options (hyperscan
         PRIVATE -g0 # Library has too much debug information
-        -mno-avx -mno-avx2 # The library is using dynamic dispatch and is confused if AVX is enabled globally
         -march=corei7 -O2 -fno-strict-aliasing -fno-omit-frame-pointer -fvisibility=hidden # The options from original build system
         -fno-sanitize=undefined # Assume the library takes care of itself
     )

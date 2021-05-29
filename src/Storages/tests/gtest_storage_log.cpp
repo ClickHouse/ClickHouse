@@ -10,16 +10,14 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageLog.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register.h>
 
 #include <memory>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
 
-#if !defined(__clang__)
+#if !__clang__
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
@@ -70,7 +68,7 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
+std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -108,7 +106,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
+std::string readData(DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -116,12 +114,10 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     Names column_names;
     column_names.push_back("a");
 
-    SelectQueryInfo query_info;
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
-        context, QueryProcessingStage::Complete, query_info);
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
     QueryPipeline pipeline;
-    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
+    pipeline.init(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1));
     BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     Block sample;
@@ -131,16 +127,15 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
         sample.insert(std::move(col));
     }
 
-    tryRegisterFormats();
-
-    WriteBufferFromOwnString out_buf;
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("Values", out_buf, sample, context);
+    std::ostringstream ss;
+    WriteBufferFromOStream out_buf(ss);
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, context);
 
     copyData(*in, *output);
 
     output->flush();
 
-    return out_buf.str();
+    return ss.str();
 }
 
 TYPED_TEST(StorageLogTest, testReadWrite)

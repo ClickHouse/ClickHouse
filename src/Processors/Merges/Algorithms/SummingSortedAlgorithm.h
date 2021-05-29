@@ -50,9 +50,6 @@ public:
 
         /// Names of columns from header.
         Names column_names;
-
-        /// Does SimpleAggregateFunction allocates memory in arena?
-        bool allocates_memory_in_arena = false;
     };
 
     /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.
@@ -75,11 +72,6 @@ public:
 
     private:
         ColumnsDefinition & def;
-
-        /// Memory pool for SimpleAggregateFunction
-        /// (only when allocates_memory_in_arena == true).
-        std::unique_ptr<Arena> arena;
-        size_t arena_size = 0;
 
         bool is_group_started = false;
 

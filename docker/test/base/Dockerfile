@@ -1,13 +1,14 @@
 # docker build -t yandex/clickhouse-test-base .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
 
 RUN apt-get update \
-    && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
+    && apt-get install apt-utils ca-certificates lsb-release wget gnupg apt-transport-https \
         --yes --no-install-recommends --verbose-versions \
+    && echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
-    && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && wget -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
@@ -31,7 +32,8 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
-RUN apt-get update \
+RUN echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
+    && apt-get update \
     && apt-get install \
         clang-${LLVM_VERSION} \
         debhelper \
@@ -43,21 +45,23 @@ RUN apt-get update \
         llvm-${LLVM_VERSION} \
         moreutils \
         perl \
+        perl \
         pigz \
         pkg-config \
         tzdata \
         --yes --no-install-recommends
 
-# Sanitizer options for services (clickhouse-server)
+# Sanitizer options
 RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
   echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
   echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
-  echo "LSAN_OPTIONS='suppressions=/usr/share/clickhouse-test/config/lsan_suppressions.txt'" >> /etc/environment; \
   ln -s /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
-# Sanitizer options for current shell (not current, but the one that will be spawned on "docker run")
-# (but w/o verbosity for TSAN, otherwise test.reference will not match)
-ENV TSAN_OPTIONS='halt_on_error=1 history_size=7'
-ENV UBSAN_OPTIONS='print_stacktrace=1'
-ENV MSAN_OPTIONS='abort_on_error=1'
+
+# Some python2 packages deprecated in ubuntu 20.04, so install them using pip
+RUN add-apt-repository universe \
+    && apt-get install python2 --yes --no-install-recommends \
+    && curl "https://bootstrap.pypa.io/pip/2.7/get-pip.py" --output get-pip.py \
+    && python2 get-pip.py \
+    && pip install requests termcolor
 
 CMD sleep 1

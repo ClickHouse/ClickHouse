@@ -16,7 +16,7 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/StreamLocalLimits.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 
 namespace DB
@@ -32,15 +32,15 @@ namespace ErrorCodes
 
 BlockIO InterpreterWatchQuery::execute()
 {
-    if (!getContext()->getSettingsRef().allow_experimental_live_view)
+    if (!context.getSettingsRef().allow_experimental_live_view)
         throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
 
     BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
-    auto table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
+    auto table_id = context.resolveStorageID(query, Context::ResolveOrdinary);
 
     /// Get storage
-    storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
 
     if (!storage)
         throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",
@@ -48,10 +48,10 @@ BlockIO InterpreterWatchQuery::execute()
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
-    getContext()->checkAccess(AccessType::SELECT, table_id, required_columns);
+    context.checkAccess(AccessType::SELECT, table_id, required_columns);
 
     /// Get context settings for this query
-    const Settings & settings = getContext()->getSettingsRef();
+    const Settings & settings = context.getSettingsRef();
 
     /// Limitation on the number of columns to read.
     if (settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
@@ -71,19 +71,19 @@ BlockIO InterpreterWatchQuery::execute()
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
     /// Watch storage
-    streams = storage->watch(required_columns, query_info, getContext(), from_stage, max_block_size, max_streams);
+    streams = storage->watch(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
     /// Constraints on the result, the quota on the result, and also callback for progress.
     if (IBlockInputStream * stream = dynamic_cast<IBlockInputStream *>(streams[0].get()))
     {
-        StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT;
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_CURRENT;
         limits.size_limits.max_rows = settings.max_result_rows;
         limits.size_limits.max_bytes = settings.max_result_bytes;
         limits.size_limits.overflow_mode = settings.result_overflow_mode;
 
         stream->setLimits(limits);
-        stream->setQuota(getContext()->getQuota());
+        stream->setQuota(context.getQuota());
     }
 
     res.in = streams[0];

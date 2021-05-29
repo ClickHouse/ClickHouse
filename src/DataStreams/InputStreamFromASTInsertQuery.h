@@ -25,7 +25,7 @@ public:
         const ASTPtr & ast,
         ReadBuffer * input_buffer_tail_part,
         const Block & header,
-        ContextPtr context,
+        const Context & context,
         const ASTPtr & input_function);
 
     Block readImpl() override { return res_stream->read(); }

@@ -1,11 +1,11 @@
 #pragma once
 
 #include <tuple>
+#include <sstream>
 #include <iomanip>
 #include <city.h>
 
 #include <Core/Types.h>
-#include <Common/hex.h>
 
 #ifdef __SSE4_2__
 #include <nmmintrin.h>
@@ -19,7 +19,7 @@ namespace DB
 struct UInt128
 {
 /// Suppress gcc7 warnings: 'prev_key.DB::UInt128::low' may be used uninitialized in this function
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -28,61 +28,56 @@ struct UInt128
     UInt64 low;
     UInt64 high;
 
-    /// TODO: Make this constexpr. Currently it is used in unions
-    /// and union cannot contain member with non trivial constructor
-    /// constructor must be non user provided but compiler cannot constexpr constructor
-    /// if members low and high are not initialized, if we default member initialize them
-    /// constructor becomes non trivial.
     UInt128() = default;
-    explicit constexpr UInt128(const UInt64 low_, const UInt64 high_) : low(low_), high(high_) { }
+    explicit UInt128(const UInt64 low_, const UInt64 high_) : low(low_), high(high_) {}
 
     /// We need Int128 to UInt128 conversion or AccurateComparison will call greaterOp<Int128, UInt64> instead of greaterOp<Int128, UInt128>
-    explicit constexpr UInt128(const Int128 rhs) : low(rhs), high(rhs >> 64) {}
-    explicit constexpr UInt128(const Int64 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const Int32 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const Int16 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const Int8 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const UInt8 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const UInt16 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const UInt32 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const UInt64 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const Float32 rhs) : low(rhs), high() {}
-    explicit constexpr UInt128(const Float64 rhs) : low(rhs), high() {}
+    explicit UInt128(const Int128 rhs) : low(rhs), high(rhs >> 64) {}
+    explicit UInt128(const Int64 rhs) : low(rhs), high() {}
+    explicit UInt128(const Int32 rhs) : low(rhs), high() {}
+    explicit UInt128(const Int16 rhs) : low(rhs), high() {}
+    explicit UInt128(const Int8 rhs) : low(rhs), high() {}
+    explicit UInt128(const UInt8 rhs) : low(rhs), high() {}
+    explicit UInt128(const UInt16 rhs) : low(rhs), high() {}
+    explicit UInt128(const UInt32 rhs) : low(rhs), high() {}
+    explicit UInt128(const UInt64 rhs) : low(rhs), high() {}
+    explicit UInt128(const Float32 rhs) : low(rhs), high() {}
+    explicit UInt128(const Float64 rhs) : low(rhs), high() {}
 
-    constexpr auto tuple() const { return std::tie(high, low); }
+    auto tuple() const { return std::tie(high, low); }
 
     String toHexString() const
     {
-        String res(2 * sizeof(UInt128), 0);
-        writeHexUIntLowercase(*this, res.data());
-        return res;
+        std::ostringstream os;
+        os << std::setw(16) << std::setfill('0') << std::hex << high << low;
+        return String(os.str());
     }
 
-    constexpr bool operator== (const UInt128 rhs) const { return tuple() == rhs.tuple(); }
-    constexpr bool operator!= (const UInt128 rhs) const { return tuple() != rhs.tuple(); }
-    constexpr bool operator<  (const UInt128 rhs) const { return tuple() < rhs.tuple(); }
-    constexpr bool operator<= (const UInt128 rhs) const { return tuple() <= rhs.tuple(); }
-    constexpr bool operator>  (const UInt128 rhs) const { return tuple() > rhs.tuple(); }
-    constexpr bool operator>= (const UInt128 rhs) const { return tuple() >= rhs.tuple(); }
+    bool inline operator== (const UInt128 rhs) const { return tuple() == rhs.tuple(); }
+    bool inline operator!= (const UInt128 rhs) const { return tuple() != rhs.tuple(); }
+    bool inline operator<  (const UInt128 rhs) const { return tuple() < rhs.tuple(); }
+    bool inline operator<= (const UInt128 rhs) const { return tuple() <= rhs.tuple(); }
+    bool inline operator>  (const UInt128 rhs) const { return tuple() > rhs.tuple(); }
+    bool inline operator>= (const UInt128 rhs) const { return tuple() >= rhs.tuple(); }
 
-    constexpr bool operator == (const Int128 rhs) const { return *this == UInt128(rhs, rhs >> 64) && rhs >= 0; }
-    constexpr bool operator != (const Int128 rhs) const { return *this != UInt128(rhs, rhs >> 64) || rhs < 0; }
-    constexpr bool operator >= (const Int128 rhs) const { return *this >= UInt128(rhs, rhs >> 64) || rhs < 0; }
-    constexpr bool operator >  (const Int128 rhs) const { return *this >  UInt128(rhs, rhs >> 64) || rhs < 0; }
-    constexpr bool operator <= (const Int128 rhs) const { return *this <= UInt128(rhs, rhs >> 64) && rhs >= 0; }
-    constexpr bool operator <  (const Int128 rhs) const { return *this <  UInt128(rhs, rhs >> 64) && rhs >= 0; }
+    bool inline operator == (const Int128 rhs) const { return *this == UInt128(rhs, rhs >> 64) && rhs >= 0; }
+    bool inline operator != (const Int128 rhs) const { return *this != UInt128(rhs, rhs >> 64) || rhs < 0; }
+    bool inline operator >= (const Int128 rhs) const { return *this >= UInt128(rhs, rhs >> 64) || rhs < 0; }
+    bool inline operator >  (const Int128 rhs) const { return *this >  UInt128(rhs, rhs >> 64) || rhs < 0; }
+    bool inline operator <= (const Int128 rhs) const { return *this <= UInt128(rhs, rhs >> 64) && rhs >= 0; }
+    bool inline operator <  (const Int128 rhs) const { return *this <  UInt128(rhs, rhs >> 64) && rhs >= 0; }
 
-    constexpr bool operator >  (const Int256 rhs) const { return (rhs < 0) || ((Int256(high) << 64) + low) > rhs; }
-    constexpr bool operator >  (const UInt256 rhs) const { return ((UInt256(high) << 64) + low) > rhs; }
-    constexpr bool operator <  (const Int256 rhs) const { return (rhs >= 0) && ((Int256(high) << 64) + low) < rhs; }
-    constexpr bool operator <  (const UInt256 rhs) const { return ((UInt256(high) << 64) + low) < rhs; }
+    bool inline operator >  (const Int256 rhs) const { return (rhs < 0) || ((Int256(high) << 64) + low) > rhs; }
+    bool inline operator >  (const UInt256 rhs) const { return ((UInt256(high) << 64) + low) > rhs; }
+    bool inline operator <  (const Int256 rhs) const { return (rhs >= 0) && ((Int256(high) << 64) + low) < rhs; }
+    bool inline operator <  (const UInt256 rhs) const { return ((UInt256(high) << 64) + low) < rhs; }
 
-    template <typename T> constexpr bool operator== (const T rhs) const { return *this == UInt128(rhs); }
-    template <typename T> constexpr bool operator!= (const T rhs) const { return *this != UInt128(rhs); }
-    template <typename T> constexpr bool operator>= (const T rhs) const { return *this >= UInt128(rhs); }
-    template <typename T> constexpr bool operator>  (const T rhs) const { return *this >  UInt128(rhs); }
-    template <typename T> constexpr bool operator<= (const T rhs) const { return *this <= UInt128(rhs); }
-    template <typename T> constexpr bool operator<  (const T rhs) const { return *this <  UInt128(rhs); }
+    template <typename T> bool inline operator== (const T rhs) const { return *this == UInt128(rhs); }
+    template <typename T> bool inline operator!= (const T rhs) const { return *this != UInt128(rhs); }
+    template <typename T> bool inline operator>= (const T rhs) const { return *this >= UInt128(rhs); }
+    template <typename T> bool inline operator>  (const T rhs) const { return *this >  UInt128(rhs); }
+    template <typename T> bool inline operator<= (const T rhs) const { return *this <= UInt128(rhs); }
+    template <typename T> bool inline operator<  (const T rhs) const { return *this <  UInt128(rhs); }
 
     template <typename T> explicit operator T() const
     {
@@ -92,19 +87,19 @@ struct UInt128
             return static_cast<T>(low);
     }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
-    constexpr UInt128 & operator= (const UInt64 rhs) { low = rhs; high = 0; return *this; }
+    UInt128 & operator= (const UInt64 rhs) { low = rhs; high = 0; return *this; }
 };
 
-template <typename T> constexpr bool operator == (T a, const UInt128 b) { return b.operator==(a); }
-template <typename T> constexpr bool operator != (T a, const UInt128 b) { return b.operator!=(a); }
-template <typename T> constexpr bool operator >= (T a, const UInt128 b) { return b <= a; }
-template <typename T> constexpr bool operator >  (T a, const UInt128 b) { return b < a; }
-template <typename T> constexpr bool operator <= (T a, const UInt128 b) { return b >= a; }
-template <typename T> constexpr bool operator <  (T a, const UInt128 b) { return b > a; }
+template <typename T> bool inline operator == (T a, const UInt128 b) { return b.operator==(a); }
+template <typename T> bool inline operator != (T a, const UInt128 b) { return b.operator!=(a); }
+template <typename T> bool inline operator >= (T a, const UInt128 b) { return b <= a; }
+template <typename T> bool inline operator >  (T a, const UInt128 b) { return b < a; }
+template <typename T> bool inline operator <= (T a, const UInt128 b) { return b >= a; }
+template <typename T> bool inline operator <  (T a, const UInt128 b) { return b > a; }
 
 template <> inline constexpr bool IsNumber<UInt128> = true;
 template <> struct TypeName<UInt128> { static constexpr const char * get() { return "UInt128"; } };
@@ -150,7 +145,7 @@ struct DummyUInt256
 {
 
 /// Suppress gcc7 warnings: 'prev_key.DB::UInt256::a' may be used uninitialized in this function
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -179,7 +174,7 @@ struct DummyUInt256
     bool operator== (const UInt64 rhs) const { return a == rhs && b == 0 && c == 0 && d == 0; }
     bool operator!= (const UInt64 rhs) const { return !operator==(rhs); }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
@@ -249,44 +244,6 @@ template <> struct hash<DB::UInt128>
     {
         return CityHash_v1_0_2::Hash128to64({u.low, u.high});
     }
-};
-
-template<>
-class numeric_limits<DB::UInt128>
-{
-public:
-    static constexpr bool is_specialized = true;
-    static constexpr bool is_signed = ::is_signed<DB::UInt128>::value;
-    static constexpr bool is_integer = ::is_integer<DB::UInt128>::value;
-    static constexpr bool is_exact = true;
-    static constexpr bool has_infinity = false;
-    static constexpr bool has_quiet_NaN = false;
-    static constexpr bool has_signaling_NaN = false;
-    static constexpr std::float_denorm_style has_denorm = std::denorm_absent;
-    static constexpr bool has_denorm_loss = false;
-    static constexpr std::float_round_style round_style = std::round_toward_zero;
-    static constexpr bool is_iec559 = false;
-    static constexpr bool is_bounded = true;
-    static constexpr bool is_modulo = true;
-    static constexpr int digits = std::numeric_limits<UInt64>::digits * 2;
-    static constexpr int digits10 = digits * 0.30103 /*std::log10(2)*/;
-    static constexpr int max_digits10 = 0;
-    static constexpr int radix = 2;
-    static constexpr int min_exponent = 0;
-    static constexpr int min_exponent10 = 0;
-    static constexpr int max_exponent = 0;
-    static constexpr int max_exponent10 = 0;
-    static constexpr bool traps = true;
-    static constexpr bool tinyness_before = false;
-
-    static constexpr DB::UInt128 min() noexcept { return DB::UInt128(0, 0); }
-
-    static constexpr DB::UInt128 max() noexcept
-    {
-        return DB::UInt128(std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max());
-    }
-
-    static constexpr DB::UInt128 lowest() noexcept { return min(); }
 };
 
 }

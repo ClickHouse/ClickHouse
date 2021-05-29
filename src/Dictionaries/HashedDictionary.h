@@ -3,22 +3,15 @@
 #include <atomic>
 #include <memory>
 #include <variant>
-#include <optional>
-
-#include <sparsehash/sparse_hash_map>
-#include <ext/range.h>
-
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/HashSet.h>
-#include <Core/Block.h>
-
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryHelpers.h>
+#include <Core/Block.h>
+#include <Common/HashTable/HashMap.h>
+#include <sparsehash/sparse_hash_map>
+#include <ext/range.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
 
 /** This dictionary stores all content in a hash table in memory
   * (a separate Key -> Value map for each attribute)
@@ -27,33 +20,21 @@
 
 namespace DB
 {
+using BlockPtr = std::shared_ptr<Block>;
 
-template <DictionaryKeyType dictionary_key_type, bool sparse>
 class HashedDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by hashed dictionary");
-
     HashedDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_,
-        BlockPtr previously_loaded_block_ = nullptr);
+        bool sparse_,
+        BlockPtr saved_block_ = nullptr);
 
-    std::string getTypeName() const override
-    {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple && sparse)
-            return "SparseHashed";
-        else if constexpr (dictionary_key_type == DictionaryKeyType::simple && !sparse)
-            return "Hashed";
-        else if constexpr (dictionary_key_type == DictionaryKeyType::complex && sparse)
-            return "ComplexKeySpareseHashed";
-        else
-            return "ComplexKeyHashed";
-    }
+    std::string getTypeName() const override { return sparse ? "SparseHashed" : "Hashed"; }
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
@@ -67,7 +48,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, previously_loaded_block);
+        return std::make_shared<HashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, sparse, saved_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -78,67 +59,112 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.getAttribute(attribute_name).injective;
+        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return dictionary_key_type; }
+    bool hasHierarchy() const override { return hierarchical_attribute; }
 
-    ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+    void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
-    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::simple && dict_struct.hierarchical_attribute_index.has_value(); }
+#define DECLARE(TYPE) \
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
 
-    ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & hierarchy_attribute_type) const override;
+    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
 
-    ColumnUInt8::Ptr isInHierarchy(
-        ColumnPtr key_column,
-        ColumnPtr in_key_column,
-        const DataTypePtr & key_type) const override;
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const PaddedPODArray<Key> & ids, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
 
-    ColumnPtr getDescendants(
-        ColumnPtr key_column,
-        const DataTypePtr & key_type,
-        size_t level) const override;
+    void
+    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
+        const;
+
+#define DECLARE(TYPE) \
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) \
+        const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
+
+    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
+
+    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
+
+    void isInVectorVector(
+        const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+    void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
+    void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value>
-    using CollectionTypeNonSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::simple,
-        HashMap<UInt64, Value>,
-        HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
+    using CollectionType = HashMap<UInt64, Value>;
+    template <typename Value>
+    using CollectionPtrType = std::unique_ptr<CollectionType<Value>>;
 
 #if !defined(ARCADIA_BUILD)
-    template <typename Key, typename Value>
-    using SparseHashMap = google::sparse_hash_map<Key, Value, DefaultHash<Key>>;
+    template <typename Value>
+    using SparseCollectionType = google::sparse_hash_map<UInt64, Value, DefaultHash<UInt64>>;
 #else
-        template <typename Key, typename Value>
-        using SparseHashMap = google::sparsehash::sparse_hash_map<Key, Value, DefaultHash<Key>>;
+    template <typename Value>
+    using SparseCollectionType = google::sparsehash::sparse_hash_map<UInt64, Value, DefaultHash<UInt64>>;
 #endif
 
     template <typename Value>
-    using CollectionTypeSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::simple,
-        SparseHashMap<UInt64, Value>,
-        SparseHashMap<StringRef, Value>>;
-
-    template <typename Value>
-    using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
-
-    using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
+    using SparseCollectionPtrType = std::unique_ptr<SparseCollectionType<Value>>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::optional<NullableSet> is_nullable_set;
-
         std::variant<
             UInt8,
             UInt16,
@@ -152,31 +178,44 @@ private:
             Decimal32,
             Decimal64,
             Decimal128,
-            Decimal256,
             Float32,
             Float64,
-            StringRef>
+            String>
             null_values;
-
         std::variant<
-            CollectionType<UInt8>,
-            CollectionType<UInt16>,
-            CollectionType<UInt32>,
-            CollectionType<UInt64>,
-            CollectionType<UInt128>,
-            CollectionType<Int8>,
-            CollectionType<Int16>,
-            CollectionType<Int32>,
-            CollectionType<Int64>,
-            CollectionType<Decimal32>,
-            CollectionType<Decimal64>,
-            CollectionType<Decimal128>,
-            CollectionType<Decimal256>,
-            CollectionType<Float32>,
-            CollectionType<Float64>,
-            CollectionType<StringRef>>
-            container;
-
+            CollectionPtrType<UInt8>,
+            CollectionPtrType<UInt16>,
+            CollectionPtrType<UInt32>,
+            CollectionPtrType<UInt64>,
+            CollectionPtrType<UInt128>,
+            CollectionPtrType<Int8>,
+            CollectionPtrType<Int16>,
+            CollectionPtrType<Int32>,
+            CollectionPtrType<Int64>,
+            CollectionPtrType<Decimal32>,
+            CollectionPtrType<Decimal64>,
+            CollectionPtrType<Decimal128>,
+            CollectionPtrType<Float32>,
+            CollectionPtrType<Float64>,
+            CollectionPtrType<StringRef>>
+            maps;
+        std::variant<
+            SparseCollectionPtrType<UInt8>,
+            SparseCollectionPtrType<UInt16>,
+            SparseCollectionPtrType<UInt32>,
+            SparseCollectionPtrType<UInt64>,
+            SparseCollectionPtrType<UInt128>,
+            SparseCollectionPtrType<Int8>,
+            SparseCollectionPtrType<Int16>,
+            SparseCollectionPtrType<Int32>,
+            SparseCollectionPtrType<Int64>,
+            SparseCollectionPtrType<Decimal32>,
+            SparseCollectionPtrType<Decimal64>,
+            SparseCollectionPtrType<Decimal128>,
+            SparseCollectionPtrType<Float32>,
+            SparseCollectionPtrType<Float64>,
+            SparseCollectionPtrType<StringRef>>
+            sparse_maps;
         std::unique_ptr<Arena> string_arena;
     };
 
@@ -188,46 +227,61 @@ private:
 
     void loadData();
 
+    template <typename T>
+    void addAttributeSize(const Attribute & attribute);
+
     void calculateBytesAllocated();
 
-    template <typename AttributeType, typename ValueSetter, typename NullableValueSetter, typename DefaultValueExtractor>
+    template <typename T>
+    void createAttributeImpl(Attribute & attribute, const Field & null_value);
+
+    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+
+    template <typename OutputType, typename AttrType, typename ValueSetter, typename DefaultGetter>
+    void getItemsAttrImpl(
+        const AttrType & attr, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
-        const Attribute & attribute,
-        DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
-        ValueSetter && set_value,
-        NullableValueSetter && set_nullable_value,
-        DefaultValueExtractor & default_value_extractor) const;
+        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
 
-    template <typename GetContainerFunc>
-    void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func);
+    template <typename T>
+    bool setAttributeValueImpl(Attribute & attribute, const Key id, const T value);
 
-    template <typename GetContainerFunc>
-    void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func) const;
+    bool setAttributeValue(Attribute & attribute, const Key id, const Field & value);
 
-    void resize(size_t added_rows);
+    const Attribute & getAttribute(const std::string & attribute_name) const;
 
-    StringRef copyKeyInArena(StringRef key);
+    template <typename T>
+    void has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
+
+    template <typename T, typename AttrType>
+    PaddedPODArray<Key> getIdsAttrImpl(const AttrType & attr) const;
+    template <typename T>
+    PaddedPODArray<Key> getIds(const Attribute & attribute) const;
+
+    PaddedPODArray<Key> getIds() const;
+
+    template <typename AttrType, typename ChildType, typename AncestorType>
+    void isInAttrImpl(const AttrType & attr, const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
+    template <typename ChildType, typename AncestorType>
+    void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const bool require_nonempty;
+    const bool sparse;
 
+    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
+    const Attribute * hierarchical_attribute = nullptr;
 
     size_t bytes_allocated = 0;
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
-    BlockPtr previously_loaded_block;
-    Arena complex_key_arena;
+    BlockPtr saved_block;
 };
-
-extern template class HashedDictionary<DictionaryKeyType::simple, false>;
-extern template class HashedDictionary<DictionaryKeyType::simple, true>;
-
-extern template class HashedDictionary<DictionaryKeyType::complex, false>;
-extern template class HashedDictionary<DictionaryKeyType::complex, true>;
 
 }

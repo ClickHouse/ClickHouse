@@ -28,7 +28,6 @@ MergeSortingStep::MergeSortingStep(
     size_t max_merged_block_size_,
     UInt64 limit_,
     size_t max_bytes_before_remerge_,
-    double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
@@ -37,7 +36,6 @@ MergeSortingStep::MergeSortingStep(
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
-    , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_)
 {
@@ -56,7 +54,7 @@ void MergeSortingStep::updateLimit(size_t limit_)
     }
 }
 
-void MergeSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
@@ -66,7 +64,6 @@ void MergeSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQu
         return std::make_shared<MergeSortingTransform>(
                 header, description, max_merged_block_size, limit,
                 max_bytes_before_remerge / pipeline.getNumStreams(),
-                remerge_lowered_memory_bytes_ratio,
                 max_bytes_before_external_sort,
                 tmp_volume,
                 min_free_disk_space);

@@ -21,8 +21,5 @@
 -   `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Список имен пользователей/[ролей](../../operations/access-rights.md#role-management) к которым применяется квота.
 -   `apply_to_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Список имен пользователей/ролей к которым квота применяться не должна.
 
-## Смотрите также {#see-also}
-
--   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
-
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/quotas) <!--hide-->
 

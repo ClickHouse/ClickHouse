@@ -51,7 +51,7 @@ void FinishSortingStep::updateLimit(size_t limit_)
     }
 }
 
-void FinishSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
 {
     bool need_finish_sorting = (prefix_description.size() < result_description.size());
     if (pipeline.getNumStreams() > 1)

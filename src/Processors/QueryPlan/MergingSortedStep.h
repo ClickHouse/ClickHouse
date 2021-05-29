@@ -19,7 +19,7 @@ public:
 
     String getName() const override { return "MergingSorted"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
     void describeActions(FormatSettings & settings) const override;
 

@@ -13,13 +13,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
 /** globalVariable('name') - takes constant string argument and returns the value of global variable with that name.
   * It is intended for compatibility with MySQL.
@@ -30,7 +29,7 @@ class FunctionGlobalVariable : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionGlobalVariable>();
     }
@@ -58,9 +57,9 @@ public:
             return variable->second.type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnWithTypeAndName & col = arguments[0];
+        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
         auto variable = global_variable_map.find(Poco::toLower(variable_name));
 
@@ -68,7 +67,8 @@ public:
         if (variable != global_variable_map.end())
             val = variable->second.value;
 
-        return result_type->createColumnConst(input_rows_count, val);
+        auto & result_col = block.getByPosition(result);
+        result_col.column = result_col.type->createColumnConst(input_rows_count, val);
     }
 
 private:
@@ -77,14 +77,10 @@ private:
         DataTypePtr type;
         Field value;
     };
-    std::unordered_map<String, TypeAndValue> global_variable_map
-        = {{"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
-           {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
-           {"version_comment", {std::make_shared<DataTypeString>(), ""}},
-           {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}}};
+    std::unordered_map<String, TypeAndValue> global_variable_map = {
+        {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}}, {"version", {std::make_shared<DataTypeString>(), "5.7.30"}}};
 };
 
-}
 
 void registerFunctionGlobalVariable(FunctionFactory & factory)
 {

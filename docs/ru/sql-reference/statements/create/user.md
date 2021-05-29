@@ -1,26 +1,23 @@
 ---
-toc_priority: 39
-toc_title: "Пользователь"
+toc_priority: 5
+toc_title: Пользователь
 ---
 
 # CREATE USER {#create-user-statement}
 
-Создает [аккаунты пользователей](../../../operations/access-rights.md#user-account-management).
+Создает [аккаунт пользователя](../../../operations/access-rights.md#user-account-management).
 
-Синтаксис:
+### Синтаксис {#create-user-syntax}
 
-``` sql
-CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] 
-        [, name2 [ON CLUSTER cluster_name2] ...]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
+```sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-`ON CLUSTER` позволяет создавать пользователей в кластере, см. [Распределенные DDL](../../../sql-reference/distributed-ddl.md).
-
-## Идентификация
+#### Идентификация
 
 Существует несколько способов идентификации пользователя:
 
@@ -30,10 +27,8 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 - `IDENTIFIED WITH sha256_hash BY 'hash'`
 - `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 - `IDENTIFIED WITH double_sha1_hash BY 'hash'`
-- `IDENTIFIED WITH ldap SERVER 'server_name'`
-- `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 
-## Пользовательский хост
+#### Пользовательский хост
 
 Пользовательский хост — это хост, с которого можно установить соединение с сервером ClickHouse. Хост задается в секции `HOST` следующими способами:
 
@@ -54,7 +49,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
     ClickHouse трактует конструкцию `user_name@'address'` как имя пользователя целиком. То есть технически вы можете создать несколько пользователей с одинаковыми `user_name`, но разными частями конструкции после `@`, но лучше так не делать.
 
 
-## Примеры {#create-user-examples}
+### Примеры {#create-user-examples}
 
 
 Создать аккаунт `mira`, защищенный паролем `qwerty`:
@@ -74,7 +69,7 @@ CREATE USER john DEFAULT ROLE role1, role2
 Создать аккаунт `john` и установить ролями по умолчанию все его будущие роли:
 
 ``` sql
-CREATE USER user DEFAULT ROLE ALL
+ALTER USER user DEFAULT ROLE ALL
 ```
 
 Когда роль будет назначена аккаунту `john`, она автоматически станет ролью по умолчанию.
@@ -82,7 +77,8 @@ CREATE USER user DEFAULT ROLE ALL
 Создать аккаунт `john` и установить ролями по умолчанию все его будущие роли, кроме `role1` и `role2`:
 
 ``` sql
-CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2
+ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/user) 
 <!--hide-->

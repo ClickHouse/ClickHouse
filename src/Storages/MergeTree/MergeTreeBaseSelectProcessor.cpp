@@ -7,7 +7,6 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeUUID.h>
 
 
 namespace DB
@@ -30,7 +29,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_)
-    : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, virt_column_names_))
+    : SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -206,7 +205,6 @@ namespace
 
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
-        virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
     };
 }
 
@@ -243,16 +241,6 @@ static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inser
 
                 inserter.insertUInt64Column(column, virtual_column_name);
             }
-            else if (virtual_column_name == "_part_uuid")
-            {
-                ColumnPtr column;
-                if (rows)
-                    column = DataTypeUUID().createColumnConst(rows, task->data_part->uuid)->convertToFullColumnIfConst();
-                else
-                    column = DataTypeUUID().createColumn();
-
-                inserter.insertUUIDColumn(column, virtual_column_name);
-            }
             else if (virtual_column_name == "_partition_id")
             {
                 ColumnPtr column;
@@ -283,11 +271,6 @@ namespace
             block.insert({column, std::make_shared<DataTypeUInt64>(), name});
         }
 
-        void insertUUIDColumn(const ColumnPtr & column, const String & name) final
-        {
-            block.insert({column, std::make_shared<DataTypeUUID>(), name});
-        }
-
         Block & block;
     };
 
@@ -305,10 +288,6 @@ namespace
             columns.push_back(column);
         }
 
-        void insertUUIDColumn(const ColumnPtr & column, const String &) final
-        {
-            columns.push_back(column);
-        }
         Columns & columns;
     };
 }
@@ -337,28 +316,12 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         if (prewhere_info->alias_actions)
             prewhere_info->alias_actions->execute(block);
 
-        if (prewhere_info->row_level_filter)
-        {
-            prewhere_info->row_level_filter->execute(block);
-            auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
-            if (!row_level_column.type->canBeUsedInBooleanContext())
-            {
-                throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
-                    ErrorCodes::LOGICAL_ERROR);
-            }
-
-            block.erase(prewhere_info->row_level_column_name);
-        }
-
-        if (prewhere_info->prewhere_actions)
-            prewhere_info->prewhere_actions->execute(block);
-
+        prewhere_info->prewhere_actions->execute(block);
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
+
         if (!prewhere_column.type->canBeUsedInBooleanContext())
-        {
             throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
-                ErrorCodes::LOGICAL_ERROR);
-        }
+                            ErrorCodes::LOGICAL_ERROR);
 
         if (prewhere_info->remove_prewhere_column)
             block.erase(prewhere_info->prewhere_column_name);
@@ -370,7 +333,7 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
     }
 }
 
-Block MergeTreeBaseSelectProcessor::transformHeader(
+Block MergeTreeBaseSelectProcessor::getHeader(
     Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns)
 {
     executePrewhereActions(block, prewhere_info);

@@ -1,6 +1,5 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB

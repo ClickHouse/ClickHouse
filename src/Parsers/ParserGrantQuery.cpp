@@ -8,7 +8,6 @@
 #include <Parsers/ParserRolesOrUsersSet.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -21,6 +20,8 @@ namespace ErrorCodes
 
 namespace
 {
+    using Kind = ASTGrantQuery::Kind;
+
     bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & access_flags)
     {
         static constexpr auto is_one_of_access_type_words = [](IParser::Pos & pos_)
@@ -86,7 +87,7 @@ namespace
         });
     }
 
-    bool parseAccessFlagsWithColumns(IParser::Pos & pos, Expected & expected,
+    bool parseAccessTypesWithColumns(IParser::Pos & pos, Expected & expected,
                                      std::vector<std::pair<AccessFlags, Strings>> & access_and_columns)
     {
         std::vector<std::pair<AccessFlags, Strings>> res;
@@ -111,7 +112,7 @@ namespace
     }
 
 
-    bool parseElementsWithoutOptions(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
+    bool parseAccessRightsElements(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -120,7 +121,7 @@ namespace
             auto parse_around_on = [&]
             {
                 std::vector<std::pair<AccessFlags, Strings>> access_and_columns;
-                if (!parseAccessFlagsWithColumns(pos, expected, access_and_columns))
+                if (!parseAccessTypesWithColumns(pos, expected, access_and_columns))
                     return false;
 
                 if (!ParserKeyword{"ON"}.ignore(pos, expected))
@@ -156,16 +157,16 @@ namespace
     }
 
 
-    void eraseNonGrantable(AccessRightsElements & elements)
+    void removeNonGrantableFlags(AccessRightsElements & elements)
     {
-        boost::range::remove_erase_if(elements, [](AccessRightsElement & element)
+        for (auto & element : elements)
         {
             if (element.empty())
-                return true;
+                continue;
             auto old_flags = element.access_flags;
-            element.eraseNonGrantable();
+            element.removeNonGrantableFlags();
             if (!element.empty())
-                return false;
+                continue;
 
             if (!element.any_column)
                 throw Exception(old_flags.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
@@ -175,17 +176,17 @@ namespace
                 throw Exception(old_flags.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
             else
                 throw Exception(old_flags.toString() + " cannot be granted", ErrorCodes::INVALID_GRANT);
-        });
+        }
     }
 
 
-    bool parseRoles(IParser::Pos & pos, Expected & expected, bool is_revoke, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseRoles(IParser::Pos & pos, Expected & expected, Kind kind, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().useIDMode(id_mode);
-            if (is_revoke)
+            roles_p.allowRoleNames().useIDMode(id_mode);
+            if (kind == Kind::REVOKE)
                 roles_p.allowAll();
 
             ASTPtr ast;
@@ -198,20 +199,28 @@ namespace
     }
 
 
-    bool parseToGrantees(IParser::Pos & pos, Expected & expected, bool is_revoke, std::shared_ptr<ASTRolesOrUsersSet> & grantees)
+    bool parseToRoles(IParser::Pos & pos, Expected & expected, ASTGrantQuery::Kind kind, std::shared_ptr<ASTRolesOrUsersSet> & to_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{is_revoke ? "FROM" : "TO"}.ignore(pos, expected))
-                return false;
+            if (kind == Kind::GRANT)
+            {
+                if (!ParserKeyword{"TO"}.ignore(pos, expected))
+                    return false;
+            }
+            else
+            {
+                if (!ParserKeyword{"FROM"}.ignore(pos, expected))
+                    return false;
+            }
 
             ASTPtr ast;
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().allowUsers().allowCurrentUser().allowAll(is_revoke);
+            roles_p.allowRoleNames().allowUserNames().allowCurrentUser().allowAll(kind == Kind::REVOKE);
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            grantees = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            to_roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
             return true;
         });
     }
@@ -228,13 +237,20 @@ namespace
 
 bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (attach_mode && !ParserKeyword{"ATTACH"}.ignore(pos, expected))
-        return false;
+    bool attach = false;
+    if (attach_mode)
+    {
+        if (!ParserKeyword{"ATTACH"}.ignore(pos, expected))
+            return false;
+        attach = true;
+    }
 
-    bool is_revoke = false;
-    if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
-        is_revoke = true;
-    else if (!ParserKeyword{"GRANT"}.ignore(pos, expected))
+    Kind kind;
+    if (ParserKeyword{"GRANT"}.ignore(pos, expected))
+        kind = Kind::GRANT;
+    else if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
+        kind = Kind::REVOKE;
+    else
         return false;
 
     String cluster;
@@ -243,7 +259,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool grant_option = false;
     bool admin_option = false;
-    if (is_revoke)
+    if (kind == Kind::REVOKE)
     {
         if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected))
             grant_option = true;
@@ -253,20 +269,20 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     AccessRightsElements elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
-    if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
+    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, kind, attach, roles))
         return false;
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    std::shared_ptr<ASTRolesOrUsersSet> grantees;
-    if (!parseToGrantees(pos, expected, is_revoke, grantees))
+    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
+    if (!parseToRoles(pos, expected, kind, to_roles))
         return false;
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    if (!is_revoke)
+    if (kind == Kind::GRANT)
     {
         if (ParserKeyword{"WITH GRANT OPTION"}.ignore(pos, expected))
             grant_option = true;
@@ -282,24 +298,19 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (admin_option && !elements.empty())
         throw Exception("ADMIN OPTION should be specified for roles", ErrorCodes::SYNTAX_ERROR);
 
-    if (grant_option)
-    {
-        for (auto & element : elements)
-            element.grant_option = true;
-    }
-
-    if (!is_revoke)
-        eraseNonGrantable(elements);
+    if (kind == Kind::GRANT)
+        removeNonGrantableFlags(elements);
 
     auto query = std::make_shared<ASTGrantQuery>();
     node = query;
 
-    query->is_revoke = is_revoke;
-    query->attach_mode = attach_mode;
+    query->kind = kind;
+    query->attach = attach;
     query->cluster = std::move(cluster);
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
-    query->grantees = std::move(grantees);
+    query->to_roles = std::move(to_roles);
+    query->grant_option = grant_option;
     query->admin_option = admin_option;
 
     return true;

@@ -65,7 +65,7 @@ ColumnPtr fillColumnWithRandomData(
     UInt64 max_array_length,
     UInt64 max_string_length,
     pcg64 & rng,
-    ContextPtr context)
+    const Context & context)
 {
     TypeIndex idx = type->getTypeId();
 
@@ -215,7 +215,7 @@ ColumnPtr fillColumnWithRandomData(
             column->getData().resize(limit);
 
             for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);
+                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);   /// Slow
 
             return column;
         }
@@ -319,7 +319,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::DateTime64:
         {
             auto column = type->createColumn();
-            auto & column_concrete = typeid_cast<ColumnDecimal<DateTime64> &>(*column);
+            auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
             column_concrete.getData().resize(limit);
 
             UInt64 range = (1ULL << 32) * intExp10(typeid_cast<const DataTypeDateTime64 &>(*type).getScale());
@@ -339,7 +339,7 @@ ColumnPtr fillColumnWithRandomData(
 class GenerateSource : public SourceWithProgress
 {
 public:
-    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
+    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, const Context & context_)
         : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
@@ -367,7 +367,7 @@ private:
 
     pcg64 rng;
 
-    ContextPtr context;
+    const Context & context;
 
     static Block & prepareBlockToFill(Block & block)
     {
@@ -441,8 +441,8 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 Pipe StorageGenerateRandom::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)

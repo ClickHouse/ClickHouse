@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -27,8 +27,6 @@ struct PartitionCommand
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
-        UNFREEZE_ALL_PARTITIONS,
-        UNFREEZE_PARTITION,
         REPLACE_PARTITION,
     };
 
@@ -54,7 +52,7 @@ struct PartitionCommand
     /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
     String from_zookeeper_path;
 
-    /// For FREEZE PARTITION and UNFREEZE
+    /// For FREEZE PARTITION
     String with_name;
 
     enum MoveDestinationType

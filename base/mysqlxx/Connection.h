@@ -41,6 +41,7 @@ private:
 /** MySQL connection.
   * Usage:
   *        mysqlxx::Connection connection("Test", "127.0.0.1", "root", "qwerty", 3306);
+  *        std::cout << connection.query("SELECT 'Hello, World!'").store().at(0).at(0).getString() << std::endl;
   *
   * Or with Poco library configuration:
   *        mysqlxx::Connection connection("mysql_params");

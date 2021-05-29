@@ -1,6 +1,5 @@
 ---
-toc_title: "Функции для работы с географическими координатами"
-toc_priority: 62
+toc_title: Функции для работы с географическими координатами
 ---
 
 # Функции для работы с географическими координатами {#geographical-coordinates}
@@ -133,3 +132,4 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/geo/coordinates) <!--hide-->

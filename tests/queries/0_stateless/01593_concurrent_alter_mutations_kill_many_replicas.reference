@@ -1,0 +1,16 @@
+499999500000
+499999500000
+499999500000
+499999500000
+499999500000
+Metadata version on replica 1 equal with first replica, OK
+CREATE TABLE default.concurrent_kill_1\n(\n    `key` UInt64,\n    `value` Int64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test_01593_concurrent_kill\', \'1\')\nORDER BY key\nSETTINGS max_replicated_mutations_in_queue = 1000, number_of_free_entries_in_pool_to_execute_mutation = 0, max_replicated_merges_in_queue = 1000, index_granularity = 8192
+Metadata version on replica 2 equal with first replica, OK
+CREATE TABLE default.concurrent_kill_2\n(\n    `key` UInt64,\n    `value` Int64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test_01593_concurrent_kill\', \'2\')\nORDER BY key\nSETTINGS max_replicated_mutations_in_queue = 1000, number_of_free_entries_in_pool_to_execute_mutation = 0, max_replicated_merges_in_queue = 1000, index_granularity = 8192
+Metadata version on replica 3 equal with first replica, OK
+CREATE TABLE default.concurrent_kill_3\n(\n    `key` UInt64,\n    `value` Int64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test_01593_concurrent_kill\', \'3\')\nORDER BY key\nSETTINGS max_replicated_mutations_in_queue = 1000, number_of_free_entries_in_pool_to_execute_mutation = 0, max_replicated_merges_in_queue = 1000, index_granularity = 8192
+Metadata version on replica 4 equal with first replica, OK
+CREATE TABLE default.concurrent_kill_4\n(\n    `key` UInt64,\n    `value` Int64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test_01593_concurrent_kill\', \'4\')\nORDER BY key\nSETTINGS max_replicated_mutations_in_queue = 1000, number_of_free_entries_in_pool_to_execute_mutation = 0, max_replicated_merges_in_queue = 1000, index_granularity = 8192
+Metadata version on replica 5 equal with first replica, OK
+CREATE TABLE default.concurrent_kill_5\n(\n    `key` UInt64,\n    `value` Int64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test_01593_concurrent_kill\', \'5\')\nORDER BY key\nSETTINGS max_replicated_mutations_in_queue = 1000, number_of_free_entries_in_pool_to_execute_mutation = 0, max_replicated_merges_in_queue = 1000, index_granularity = 8192
+499999500000

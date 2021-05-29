@@ -8,8 +8,8 @@ namespace DB
 {
 
 
-CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), with_names(with_names_), format_settings(format_settings_)
+CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, callback), with_names(with_names_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -40,9 +40,9 @@ void CSVRowOutputFormat::doWritePrefix()
 }
 
 
-void CSVRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
+void CSVRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    serialization.serializeTextCSV(column, row_num, out, format_settings);
+    type.serializeAsTextCSV(column, row_num, out, format_settings);
 }
 
 
@@ -77,12 +77,11 @@ void registerOutputFormatProcessorCSV(FormatFactory & factory)
         factory.registerOutputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
         {
-                return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, params, format_settings);
+                return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, callback, format_settings);
         });
-        factory.markOutputFormatSupportsParallelFormatting(with_names ? "CSVWithNames" : "CSV");
     }
 }
 

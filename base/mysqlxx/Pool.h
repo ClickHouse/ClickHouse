@@ -3,7 +3,6 @@
 #include <list>
 #include <memory>
 #include <mutex>
-#include <atomic>
 
 #include <Poco/Exception.h>
 #include <Poco/Logger.h>
@@ -38,9 +37,7 @@ protected:
     struct Connection
     {
         mysqlxx::Connection conn;
-        /// Ref count modified in constructor/descructor of Entry
-        /// but also read in pool code.
-        std::atomic<int> ref_count = 0;
+        int ref_count = 0;
     };
 
 public:
@@ -159,9 +156,9 @@ public:
       */
     Pool(const std::string & db_,
          const std::string & server_,
-         const std::string & user_,
-         const std::string & password_,
-         unsigned port_,
+         const std::string & user_ = "",
+         const std::string & password_ = "",
+         unsigned port_ = 0,
          const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
@@ -169,8 +166,9 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
          bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT)
-    : logger(Poco::Logger::get("mysqlxx::Pool")), default_connections(default_connections_),
-    max_connections(max_connections_), db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
+    : logger(Poco::Logger::get("mysqlxx::Pool")),
+    default_connections(default_connections_), max_connections(max_connections_),
+    db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
     connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_),
     opt_reconnect(opt_reconnect_) {}
 

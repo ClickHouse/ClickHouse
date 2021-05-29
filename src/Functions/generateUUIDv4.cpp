@@ -30,7 +30,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UInt128>::create();
         typename ColumnVector<UInt128>::Container & vec_to = col_res->getData();
@@ -49,7 +49,7 @@ public:
             uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
 
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -59,7 +59,7 @@ public:
 class FunctionGenerateUUIDv4 : public TargetSpecific::Default::FunctionGenerateUUIDv4
 {
 public:
-    explicit FunctionGenerateUUIDv4(ContextPtr context) : selector(context)
+    explicit FunctionGenerateUUIDv4(const Context & context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
@@ -70,12 +70,12 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionGenerateUUIDv4>(context);
     }

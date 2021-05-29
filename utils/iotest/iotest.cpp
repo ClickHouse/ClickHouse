@@ -6,7 +6,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
-#include <common/getPageSize.h>
 
 #include <cstdlib>
 #include <iomanip>
@@ -47,7 +46,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 {
     using namespace DB;
 
-    Memory<> direct_buf(block_size, ::getPageSize());
+    Memory<> direct_buf(block_size, sysconf(_SC_PAGESIZE));
     std::vector<char> simple_buf(block_size);
 
     char * buf;

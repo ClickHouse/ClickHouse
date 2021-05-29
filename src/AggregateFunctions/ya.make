@@ -1,16 +1,12 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
 )
 
-
 SRCS(
     AggregateFunctionAggThrow.cpp
-    AggregateFunctionAny.cpp
     AggregateFunctionArray.cpp
     AggregateFunctionAvg.cpp
     AggregateFunctionAvgWeighted.cpp
@@ -19,7 +15,6 @@ SRCS(
     AggregateFunctionCategoricalInformationValue.cpp
     AggregateFunctionCombinatorFactory.cpp
     AggregateFunctionCount.cpp
-    AggregateFunctionDeltaSum.cpp
     AggregateFunctionDistinct.cpp
     AggregateFunctionEntropy.cpp
     AggregateFunctionFactory.cpp
@@ -30,38 +25,32 @@ SRCS(
     AggregateFunctionGroupUniqArray.cpp
     AggregateFunctionHistogram.cpp
     AggregateFunctionIf.cpp
-    AggregateFunctionMLMethod.cpp
-    AggregateFunctionMannWhitney.cpp
-    AggregateFunctionMax.cpp
     AggregateFunctionMaxIntersections.cpp
     AggregateFunctionMerge.cpp
-    AggregateFunctionMin.cpp
+    AggregateFunctionMinMaxAny.cpp
+    AggregateFunctionMLMethod.cpp
     AggregateFunctionNull.cpp
     AggregateFunctionOrFill.cpp
     AggregateFunctionQuantile.cpp
-    AggregateFunctionRankCorrelation.cpp
     AggregateFunctionResample.cpp
     AggregateFunctionRetention.cpp
     AggregateFunctionSequenceMatch.cpp
     AggregateFunctionSimpleLinearRegression.cpp
-    AggregateFunctionSimpleState.cpp
     AggregateFunctionState.cpp
     AggregateFunctionStatistics.cpp
     AggregateFunctionStatisticsSimple.cpp
-    AggregateFunctionStudentTTest.cpp
     AggregateFunctionSum.cpp
-    AggregateFunctionSumCount.cpp
     AggregateFunctionSumMap.cpp
+    AggregateFunctionTimeSeriesGroupSum.cpp
     AggregateFunctionTopK.cpp
-    AggregateFunctionUniq.cpp
     AggregateFunctionUniqCombined.cpp
+    AggregateFunctionUniq.cpp
     AggregateFunctionUniqUpTo.cpp
-    AggregateFunctionWelchTTest.cpp
     AggregateFunctionWindowFunnel.cpp
-    UniqCombinedBiasData.cpp
-    UniqVariadicHash.cpp
     parseAggregateFunctionParameters.cpp
     registerAggregateFunctions.cpp
+    UniqCombinedBiasData.cpp
+    UniqVariadicHash.cpp
 
 )
 

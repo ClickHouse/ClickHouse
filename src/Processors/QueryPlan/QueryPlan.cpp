@@ -3,12 +3,18 @@
 #include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include "MergingSortedStep.h"
+#include "FinishSortingStep.h"
+#include "MergeSortingStep.h"
+#include "PartialSortingStep.h"
+#include "TotalsHavingStep.h"
+#include "ExpressionStep.h"
+#include "ArrayJoinStep.h"
+#include "FilterStep.h"
 
 namespace DB
 {
@@ -20,8 +26,6 @@ namespace ErrorCodes
 
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
-QueryPlan::QueryPlan(QueryPlan &&) = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) = default;
 
 void QueryPlan::checkInitialized() const
 {
@@ -47,7 +51,7 @@ const DataStream & QueryPlan::getCurrentDataStream() const
     return root->step->getOutputStream();
 }
 
-void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
+void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans)
 {
     if (isInitialized())
         throw Exception("Cannot unite plans because current QueryPlan is already initialized",
@@ -66,7 +70,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (size_t i = 0; i < num_inputs; ++i)
     {
         const auto & step_header = inputs[i].header;
-        const auto & plan_header = plans[i]->getCurrentDataStream().header;
+        const auto & plan_header = plans[i].getCurrentDataStream().header;
         if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception("Cannot unite QueryPlans using " + step->getName() + " because "
                             "it has incompatible header with plan " + root->step->getName() + " "
@@ -75,19 +79,19 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     }
 
     for (auto & plan : plans)
-        nodes.splice(nodes.end(), std::move(plan->nodes));
+        nodes.splice(nodes.end(), std::move(plan.nodes));
 
     nodes.emplace_back(Node{.step = std::move(step)});
     root = &nodes.back();
 
     for (auto & plan : plans)
-        root->children.emplace_back(plan->root);
+        root->children.emplace_back(plan.root);
 
     for (auto & plan : plans)
     {
-        max_threads = std::max(max_threads, plan->max_threads);
+        max_threads = std::max(max_threads, plan.max_threads);
         interpreter_context.insert(interpreter_context.end(),
-                                   plan->interpreter_context.begin(), plan->interpreter_context.end());
+                                   plan.interpreter_context.begin(), plan.interpreter_context.end());
     }
 }
 
@@ -132,12 +136,10 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                     " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
-QueryPipelinePtr QueryPlan::buildQueryPipeline(
-    const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
+QueryPipelinePtr QueryPlan::buildQueryPipeline()
 {
     checkInitialized();
-    optimize(optimization_settings);
+    optimize();
 
     struct Frame
     {
@@ -164,7 +166,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
         if (next_child == frame.node->children.size())
         {
             bool limit_max_threads = frame.pipelines.empty();
-            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
+            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines));
 
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
@@ -179,19 +181,6 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
         last_pipeline->addInterpreterContext(std::move(context));
 
     return last_pipeline;
-}
-
-Pipe QueryPlan::convertToPipe(
-    const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
-{
-    if (!isInitialized())
-        return {};
-
-    if (isCompleted())
-        throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
-
-    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
 }
 
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
@@ -234,7 +223,7 @@ static void explainStep(
                     settings.out << "\n" << prefix << "        ";
 
                 first = false;
-                elem.dumpNameAndType(settings.out);
+                elem.dumpStructure(settings.out);
             }
         }
 
@@ -243,18 +232,6 @@ static void explainStep(
 
     if (options.actions)
         step.describeActions(settings);
-
-    if (options.indexes)
-        step.describeIndexes(settings);
-}
-
-std::string debugExplainStep(const IQueryPlanStep & step)
-{
-    WriteBufferFromOwnString out;
-    IQueryPlanStep::FormatSettings settings{.out = out};
-    QueryPlan::ExplainPlanOptions options{.actions = true};
-    explainStep(step, settings, options);
-    return out.str();
 }
 
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
@@ -342,9 +319,194 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
-void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
+/// If plan looks like Limit -> Sorting, update limit for Sorting
+bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
 {
-    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
+    if (limit == 0)
+        return false;
+
+    QueryPlanStepPtr & step = node->step;
+    QueryPlan::Node * child = nullptr;
+    bool updated = false;
+
+    if (auto * merging_sorted = typeid_cast<MergingSortedStep *>(step.get()))
+    {
+        /// TODO: remove LimitStep here.
+        merging_sorted->updateLimit(limit);
+        updated = true;
+        child = node->children.front();
+    }
+    else if (auto * finish_sorting = typeid_cast<FinishSortingStep *>(step.get()))
+    {
+        /// TODO: remove LimitStep here.
+        finish_sorting->updateLimit(limit);
+        updated = true;
+    }
+    else if (auto * merge_sorting = typeid_cast<MergeSortingStep *>(step.get()))
+    {
+        merge_sorting->updateLimit(limit);
+        updated = true;
+        child = node->children.front();
+    }
+    else if (auto * partial_sorting = typeid_cast<PartialSortingStep *>(step.get()))
+    {
+        partial_sorting->updateLimit(limit);
+        updated = true;
+    }
+
+    /// We often have chain PartialSorting -> MergeSorting -> MergingSorted
+    /// Try update limit for them also if possible.
+    if (child)
+        tryUpdateLimitForSortingSteps(child, limit);
+
+    return updated;
+}
+
+/// Move LimitStep down if possible.
+static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlan::Node * child_node)
+{
+    auto & child = child_node->step;
+    auto * limit = typeid_cast<LimitStep *>(parent.get());
+
+    if (!limit)
+        return;
+
+    /// Skip LIMIT WITH TIES by now.
+    if (limit->withTies())
+        return;
+
+    const auto * transforming = dynamic_cast<const ITransformingStep *>(child.get());
+
+    /// Skip everything which is not transform.
+    if (!transforming)
+        return;
+
+    /// Special cases for sorting steps.
+    if (tryUpdateLimitForSortingSteps(child_node, limit->getLimitForSorting()))
+        return;
+
+    /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
+    if (typeid_cast<const TotalsHavingStep *>(child.get()))
+        return;
+
+    /// Now we should decide if pushing down limit possible for this step.
+
+    const auto & transform_traits = transforming->getTransformTraits();
+    const auto & data_stream_traits = transforming->getDataStreamTraits();
+
+    /// Cannot push down if child changes the number of rows.
+    if (!transform_traits.preserves_number_of_rows)
+        return;
+
+    /// Cannot push down if data was sorted exactly by child stream.
+    if (!child->getOutputStream().sort_description.empty() && !data_stream_traits.preserves_sorting)
+        return;
+
+    /// Now we push down limit only if it doesn't change any stream properties.
+    /// TODO: some of them may be changed and, probably, not important for following streams. We may add such info.
+    if (!limit->getOutputStream().hasEqualPropertiesWith(transforming->getOutputStream()))
+        return;
+
+    /// Input stream for Limit have changed.
+    limit->updateInputStream(transforming->getInputStreams().front());
+
+    parent.swap(child);
+}
+
+/// Move ARRAY JOIN up if possible.
+static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * child_node, QueryPlan::Nodes & nodes)
+{
+    auto & parent = parent_node->step;
+    auto & child = child_node->step;
+    auto * expression_step = typeid_cast<ExpressionStep *>(parent.get());
+    auto * filter_step = typeid_cast<FilterStep *>(parent.get());
+    auto * array_join_step = typeid_cast<ArrayJoinStep *>(child.get());
+
+    if (!(expression_step || filter_step) || !array_join_step)
+        return;
+
+    const auto & array_join = array_join_step->arrayJoin();
+    const auto & expression = expression_step ? expression_step->getExpression()
+                                              : filter_step->getExpression();
+
+    auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
+
+    /// No actions can be moved before ARRAY JOIN.
+    if (!split_actions)
+        return;
+
+    /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
+    if (expression->getActions().empty())
+    {
+        auto expected_header = parent->getOutputStream().header;
+
+        /// Expression/Filter -> ArrayJoin
+        std::swap(parent, child);
+        /// ArrayJoin -> Expression/Filter
+
+        if (expression_step)
+            child = std::make_unique<ExpressionStep>(child_node->children.at(0)->step->getOutputStream(),
+                                                     std::move(split_actions));
+        else
+            child = std::make_unique<FilterStep>(child_node->children.at(0)->step->getOutputStream(),
+                                                 std::move(split_actions),
+                                                 filter_step->getFilterColumnName(),
+                                                 filter_step->removesFilterColumn());
+
+        array_join_step->updateInputStream(child->getOutputStream(), expected_header);
+        return;
+    }
+
+    /// Add new expression step before ARRAY JOIN.
+    /// Expression/Filter -> ArrayJoin -> Something
+    auto & node = nodes.emplace_back();
+    node.children.swap(child_node->children);
+    child_node->children.emplace_back(&node);
+    /// Expression/Filter -> ArrayJoin -> node -> Something
+
+    node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
+                                                 std::move(split_actions));
+    array_join_step->updateInputStream(node.step->getOutputStream(), {});
+    expression_step ? expression_step->updateInputStream(array_join_step->getOutputStream(), true)
+                    : filter_step->updateInputStream(array_join_step->getOutputStream(), true);
+}
+
+void QueryPlan::optimize()
+{
+    struct Frame
+    {
+        Node * node;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (frame.next_child == 0)
+        {
+            /// First entrance, try push down.
+            if (frame.node->children.size() == 1)
+                tryPushDownLimit(frame.node->step, frame.node->children.front());
+        }
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{frame.node->children[frame.next_child]});
+            ++frame.next_child;
+        }
+        else
+        {
+            /// Last entrance, try lift up.
+            if (frame.node->children.size() == 1)
+                tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
+
+            stack.pop();
+        }
+    }
 }
 
 }

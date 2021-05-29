@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Functions/IFunction.h>
 
 /// This file contains developer interface for functions.
@@ -36,15 +35,15 @@ public:
 
     virtual String getName() const = 0;
 
-    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
-    virtual ColumnPtr executeDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
+    virtual void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
-        return execute(arguments, result_type, input_rows_count);
+        execute(block, arguments, result, input_rows_count);
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
-      *  if some of arguments are Nullable, then execute function as usual for columns,
+      *  if some of arguments are Nullable, then execute function as usual for block,
       *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
@@ -88,9 +87,9 @@ public:
     virtual String getName() const = 0;
 
     virtual const DataTypes & getArgumentTypes() const = 0;
-    virtual const DataTypePtr & getResultType() const = 0;
+    virtual const DataTypePtr & getReturnType() const = 0;
 
-    virtual ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
+    virtual ExecutableFunctionImplPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -106,9 +105,9 @@ public:
     virtual bool isStateful() const { return false; }
 
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
 
-    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
+    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool hasInformationAboutMonotonicity() const { return false; }
@@ -126,12 +125,11 @@ using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
 class IFunctionOverloadResolverImpl
 {
 public:
-
     virtual ~IFunctionOverloadResolverImpl() = default;
 
     virtual String getName() const = 0;
 
-    virtual FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const = 0;
+    virtual FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const = 0;
 
     virtual DataTypePtr getReturnType(const DataTypes & /*arguments*/) const
     {
@@ -154,7 +152,7 @@ public:
     /// Properties from IFunctionOverloadResolver. See comments in IFunction.h
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
-    virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
+    virtual bool isInjective(const Block &) const { return false; }
     virtual bool isStateful() const { return false; }
     virtual bool isVariadic() const { return false; }
 
@@ -193,20 +191,19 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 class IFunction
 {
 public:
-
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
 
-    virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
-    virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const = 0;
+    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
-        return executeImpl(arguments, result_type, input_rows_count);
+        executeImpl(block, arguments, result, input_rows_count);
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
-      *  if some of arguments are Nullable, then execute function as usual for columns,
+      *  if some of arguments are Nullable, then execute function as usual for block,
       *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
@@ -253,8 +250,8 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
-    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }

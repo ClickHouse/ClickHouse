@@ -16,7 +16,7 @@ class InDepthNodeVisitor
 public:
     using Data = typename Matcher::Data;
 
-    InDepthNodeVisitor(Data & data_, WriteBuffer * ostr_ = nullptr)
+    InDepthNodeVisitor(Data & data_, std::ostream * ostr_ = nullptr)
     :   data(data_),
         visit_depth(0),
         ostr(ostr_)
@@ -29,15 +29,7 @@ public:
         if constexpr (!_top_to_bottom)
             visitChildren(ast);
 
-        try
-        {
-            Matcher::visit(ast, data);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While processing {}", ast->formatForErrorMessage());
-            throw;
-        }
+        Matcher::visit(ast, data);
 
         if constexpr (_top_to_bottom)
             visitChildren(ast);
@@ -46,7 +38,7 @@ public:
 private:
     Data & data;
     size_t visit_depth;
-    WriteBuffer * ostr;
+    std::ostream * ostr;
 
     void visitChildren(T & ast)
     {
@@ -68,11 +60,11 @@ struct NeedChild
 };
 
 /// Simple matcher for one node type. Use need_child function for complex traversal logic.
-template <typename DataImpl, NeedChild::Condition need_child = NeedChild::all, typename T = ASTPtr>
+template <typename Data_, NeedChild::Condition need_child = NeedChild::all, typename T = ASTPtr>
 class OneTypeMatcher
 {
 public:
-    using Data = DataImpl;
+    using Data = Data_;
     using TypeToVisit = typename Data::TypeToVisit;
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child) { return need_child(node, child); }

@@ -44,16 +44,17 @@ namespace
     }
 }
 
-DatabaseDictionary::DatabaseDictionary(const String & name_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext())
+DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & global_context_)
+    : IDatabase(name_)
     , log(&Poco::Logger::get("DatabaseDictionary(" + database_name + ")"))
+    , global_context(global_context_.getGlobalContext())
 {
 }
 
 Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_name)
 {
     Tables tables;
-    auto load_results = getContext()->getExternalDictionariesLoader().getLoadResults(filter_by_name);
+    auto load_results = global_context.getExternalDictionariesLoader().getLoadResults(filter_by_name);
     String db_name = getDatabaseName();
     for (auto & load_result : load_results)
     {
@@ -64,34 +65,34 @@ Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_nam
     return tables;
 }
 
-bool DatabaseDictionary::isTableExist(const String & table_name, ContextPtr) const
+bool DatabaseDictionary::isTableExist(const String & table_name, const Context &) const
 {
-    return getContext()->getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
+    return global_context.getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
 }
 
-StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextPtr) const
+StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, const Context &) const
 {
-    auto load_result = getContext()->getExternalDictionariesLoader().getLoadResult(table_name);
+    auto load_result = global_context.getExternalDictionariesLoader().getLoadResult(table_name);
     return createStorageDictionary(getDatabaseName(), load_result);
 }
 
-DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name), getDatabaseName());
 }
 
 bool DatabaseDictionary::empty() const
 {
-    return !getContext()->getExternalDictionariesLoader().hasObjects();
+    return !global_context.getExternalDictionariesLoader().hasObjects();
 }
 
-ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
+ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     String query;
     {
         WriteBufferFromString buffer(query);
 
-        auto load_result = getContext()->getExternalDictionariesLoader().getLoadResult(table_name);
+        auto load_result = global_context.getExternalDictionariesLoader().getLoadResult(table_name);
         if (!load_result.config)
         {
             if (throw_on_error)
@@ -105,7 +106,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
     }
 
-    auto settings = getContext()->getSettingsRef();
+    auto settings = global_context.getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
@@ -125,7 +126,7 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
         WriteBufferFromString buffer(query);
         buffer << "CREATE DATABASE " << backQuoteIfNeed(getDatabaseName()) << " ENGINE = Dictionary";
     }
-    auto settings = getContext()->getSettingsRef();
+    auto settings = global_context.getSettingsRef();
     ParserCreateQuery parser;
     return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
 }

@@ -14,21 +14,18 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
     CompressionCodecPtr default_codec,
-    const MergeTreeIndices & indices_to_recalc,
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , header(header_)
 {
-    const auto & global_settings = data_part->storage.getContext()->getSettings();
-    const auto & storage_settings = data_part->storage.getSettings();
-
+    const auto & global_settings = data_part->storage.global_context.getSettings();
     MergeTreeWriterSettings writer_settings(
         global_settings,
-        storage_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        /* rewrite_primary_key = */false);
+        global_settings.min_bytes_to_use_direct_io);
 
     writer = data_part->getWriter(
         header.getNamesAndTypesList(),
@@ -43,14 +40,25 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         throw Exception("MergedColumnOnlyOutputStream supports only parts stored on disk", ErrorCodes::NOT_IMPLEMENTED);
 
     writer_on_disk->setWrittenOffsetColumns(offset_columns_);
+    writer_on_disk->initSkipIndices();
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
 {
+    std::unordered_set<String> skip_indexes_column_names_set;
+    for (const auto & index : writer->getSkipIndices())
+        std::copy(index->index.column_names.cbegin(), index->index.column_names.cend(),
+                  std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
+
+    Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, nullptr);
+
     if (!block.rows())
         return;
 
-    writer->write(block, nullptr);
+    writer->write(block);
+    writer->calculateAndSerializeSkipIndices(skip_indexes_block);
+    writer->next();
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()
@@ -59,14 +67,12 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
-    MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums,
-    bool sync)
+MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finish(checksums, sync);
+    writer->finishDataSerialization(checksums);
+    writer->finishSkipIndicesSerialization(checksums);
 
     auto columns = new_part->getColumns();
 

@@ -21,7 +21,7 @@ class ASTFunctionStatefulData
 public:
     using TypeToVisit = ASTFunction;
 
-    ContextPtr context;
+    const Context & context;
     bool & is_stateful;
     void visit(ASTFunction & ast_function, ASTPtr &)
     {
@@ -80,7 +80,7 @@ class DuplicateOrderByData
 public:
     using TypeToVisit = ASTSelectQuery;
 
-    ContextPtr context;
+    const Context & context;
 
     void visit(ASTSelectQuery & select_query, ASTPtr &)
     {

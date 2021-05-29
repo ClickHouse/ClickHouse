@@ -1,5 +1,5 @@
 /// Bug in GCC: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=59124
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
@@ -50,7 +50,6 @@ struct Test
             {
                 DB::WriteBufferFromFile wb(filename);
                 wb.write(reinterpret_cast<const char *>(&store), sizeof(store));
-                wb.close();
             }
 
             {
@@ -263,6 +262,6 @@ int main()
     return 0;
 }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif

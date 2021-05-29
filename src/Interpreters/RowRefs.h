@@ -228,8 +228,7 @@ public:
         Entry<Float64>::LookupPtr,
         Entry<Decimal32>::LookupPtr,
         Entry<Decimal64>::LookupPtr,
-        Entry<Decimal128>::LookupPtr,
-        Entry<DateTime64>::LookupPtr>;
+        Entry<Decimal128>::LookupPtr>;
 
     AsofRowRefs() {}
     AsofRowRefs(TypeIndex t);

@@ -25,16 +25,11 @@ protected:
             return false;
 
         /// First reading
-        if (working_buffer.empty())
+        if (working_buffer.size() == 0 && (*current)->hasPendingData())
         {
-            if ((*current)->hasPendingData())
-            {
-                working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
-                return true;
-            }
+            working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
+            return true;
         }
-        else
-            (*current)->position() = position();
 
         if (!(*current)->next())
         {
@@ -56,12 +51,14 @@ protected:
     }
 
 public:
-    explicit ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(nullptr, 0), buffers(buffers_), current(buffers.begin())
-    {
-        assert(!buffers.empty());
-    }
+    ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(nullptr, 0), buffers(buffers_), current(buffers.begin()) {}
 
-    ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ConcatReadBuffer({&buf1, &buf2}) {}
+    ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ReadBuffer(nullptr, 0)
+    {
+        buffers.push_back(&buf1);
+        buffers.push_back(&buf2);
+        current = buffers.begin();
+    }
 };
 
 }

@@ -10,7 +10,7 @@ toc_priority: 190
 uniq(x[, ...])
 ```
 
-**Аргументы**
+**Параметры**
 
 Функция принимает переменное число входных параметров. Параметры могут быть числовых типов, а также `Tuple`, `Array`, `Date`, `DateTime`, `String`.
 
@@ -39,3 +39,4 @@ uniq(x[, ...])
 -   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
 -   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniq/) <!--hide-->

@@ -10,10 +10,6 @@
     #include <linux/capability.h>
 #endif
 
-#if defined(OS_DARWIN)
-    #include <mach-o/dyld.h>
-#endif
-
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/formatReadable.h>
@@ -21,12 +17,10 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/hex.h>
 #include <common/getResource.h>
-#include <common/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/MMapReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <IO/Operators.h>
@@ -66,21 +60,17 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int SYSTEM_ERROR;
     extern const int NOT_ENOUGH_SPACE;
-    extern const int CANNOT_KILL;
 }
 
 }
 
-/// ANSI escape sequence for intense color in terminal.
-#define HILITE "\033[1m"
-#define END_HILITE "\033[0m"
 
 using namespace DB;
 namespace po = boost::program_options;
 namespace fs = std::filesystem;
 
 
-static auto executeScript(const std::string & command, bool throw_on_error = false)
+auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
     WriteBufferFromFileDescriptor wb_stdout(STDOUT_FILENO);
@@ -97,7 +87,7 @@ static auto executeScript(const std::string & command, bool throw_on_error = fal
         return sh->tryWait();
 }
 
-static bool ask(std::string question)
+bool ask(std::string question)
 {
     while (true)
     {
@@ -112,16 +102,6 @@ static bool ask(std::string question)
         if (answer == "y" || answer == "Y")
             return true;
     }
-}
-
-static bool filesEqual(std::string path1, std::string path2)
-{
-    MMapReadBufferFromFile in1(path1, 0);
-    MMapReadBufferFromFile in2(path2, 0);
-
-    /// memcmp is faster than hashing and comparing hashes
-    return in1.buffer().size() == in2.buffer().size()
-        && 0 == memcmp(in1.buffer().begin(), in2.buffer().begin(), in1.buffer().size());
 }
 
 
@@ -156,111 +136,64 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
     try
     {
         /// We need to copy binary to the binary directory.
-        /// The binary is currently run. We need to obtain its path from procfs (on Linux).
+        /// The binary is currently run. We need to obtain its path from procfs.
 
-#if defined(OS_DARWIN)
-        uint32_t path_length = 0;
-        _NSGetExecutablePath(nullptr, &path_length);
-        if (path_length <= 1)
-            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
-
-        std::string path(path_length, std::string::value_type());
-        auto res = _NSGetExecutablePath(&path[0], &path_length);
-        if (res != 0)
-            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
-
-        fs::path binary_self_path(path);
-#else
         fs::path binary_self_path = "/proc/self/exe";
-#endif
-
         if (!fs::exists(binary_self_path))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary from {}, file doesn't exist",
                             binary_self_path.string());
 
-        fs::path binary_self_canonical_path = fs::canonical(binary_self_path);
-
         /// Copy binary to the destination directory.
 
         /// TODO An option to link instead of copy - useful for developers.
+        /// TODO Check if the binary is the same.
+
+        size_t binary_size = fs::file_size(binary_self_path);
 
         fs::path prefix = fs::path(options["prefix"].as<std::string>());
         fs::path bin_dir = prefix / fs::path(options["binary-path"].as<std::string>());
+
+        size_t available_space = fs::space(bin_dir).available;
+        if (available_space < binary_size)
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
+                bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
 
         fs::path main_bin_path = bin_dir / "clickhouse";
         fs::path main_bin_tmp_path = bin_dir / "clickhouse.new";
         fs::path main_bin_old_path = bin_dir / "clickhouse.old";
 
-        size_t binary_size = fs::file_size(binary_self_path);
+        fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
 
-        bool old_binary_exists = fs::exists(main_bin_path);
-        bool already_installed = false;
-
-        /// Check if the binary is the same file (already installed).
-        if (old_binary_exists && binary_self_canonical_path == fs::canonical(main_bin_path))
+        try
         {
-            already_installed = true;
-            fmt::print("ClickHouse binary is already located at {}\n", main_bin_path.string());
+            ReadBufferFromFile in(binary_self_path.string());
+            WriteBufferFromFile out(main_bin_tmp_path.string());
+            copyData(in, out);
+            out.sync();
+
+            if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
+
+            out.finalize();
         }
-        /// Check if binary has the same content.
-        else if (old_binary_exists && binary_size == fs::file_size(main_bin_path))
+        catch (const Exception & e)
         {
-            fmt::print("Found already existing ClickHouse binary at {} having the same size. Will check its contents.\n",
-                main_bin_path.string());
-
-            if (filesEqual(binary_self_path.string(), main_bin_path.string()))
-            {
-                already_installed = true;
-                fmt::print("ClickHouse binary is already located at {} and it has the same content as {}\n",
-                    main_bin_path.string(), binary_self_canonical_path.string());
-            }
+            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
+                std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
+            throw;
         }
 
-        if (already_installed)
+        if (fs::exists(main_bin_path))
         {
-            if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
+            fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
+                       main_bin_path.string(), main_bin_old_path.string());
+
+            /// There is file exchange operation in Linux but it's not portable.
+            fs::rename(main_bin_path, main_bin_old_path);
         }
-        else
-        {
-            size_t available_space = fs::space(bin_dir).available;
-            if (available_space < binary_size)
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
-                    bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
 
-            fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
-
-            try
-            {
-                ReadBufferFromFile in(binary_self_path.string());
-                WriteBufferFromFile out(main_bin_tmp_path.string());
-                copyData(in, out);
-                out.sync();
-
-                if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                    throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
-
-                out.finalize();
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                    std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
-                throw;
-            }
-
-            if (old_binary_exists)
-            {
-                fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
-                        main_bin_path.string(), main_bin_old_path.string());
-
-                /// There is file exchange operation in Linux but it's not portable.
-                fs::rename(main_bin_path, main_bin_old_path);
-            }
-
-            fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
-            fs::rename(main_bin_tmp_path, main_bin_path);
-        }
+        fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
+        fs::rename(main_bin_tmp_path, main_bin_path);
 
         /// Create symlinks.
 
@@ -272,7 +205,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-benchmark",
             "clickhouse-copier",
             "clickhouse-obfuscator",
-            "clickhouse-git-import",
             "clickhouse-compressor",
             "clickhouse-format",
             "clickhouse-extract-from-config"
@@ -468,8 +400,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
             if (!configuration->getString("users.default.password", "").empty()
-                || !configuration->getString("users.default.password_sha256_hex", "").empty()
-                || !configuration->getString("users.default.password_double_sha1_hex", "").empty())
+                || configuration->getString("users.default.password_sha256_hex", "").empty()
+                || configuration->getString("users.default.password_double_sha1_hex", "").empty())
             {
                 has_password_for_default_user = true;
             }
@@ -562,32 +494,20 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         bool stdin_is_a_tty = isatty(STDIN_FILENO);
         bool stdout_is_a_tty = isatty(STDOUT_FILENO);
-
-        /// dpkg or apt installers can ask for non-interactive work explicitly.
-
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
-        bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
-
-        bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
-
-        /// We can ask password even if stdin is closed/redirected but /dev/tty is available.
-        bool can_ask_password = !noninteractive && stdout_is_a_tty;
+        bool is_interactive = stdin_is_a_tty && stdout_is_a_tty;
 
         if (has_password_for_default_user)
         {
-            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
+            fmt::print("Password for default user is already specified. To remind or reset, see {} and {}.\n",
                        users_config_file.string(), users_d.string());
         }
-        else if (!can_ask_password)
+        else if (!is_interactive)
         {
-            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+            fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
                        users_config_file.string(), users_d.string());
         }
         else
         {
-            /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
-            /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
-
             char buf[1000] = {};
             std::string password;
             if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
@@ -615,7 +535,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
+                fmt::print("Password for default user is saved in file {}.\n", password_file);
 #else
                 out << "<yandex>\n"
                     "    <users>\n"
@@ -626,36 +546,21 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
+                fmt::print("Password for default user is saved in plaintext in file {}.\n", password_file);
 #endif
                 has_password_for_default_user = true;
             }
             else
-                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+                fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
                            users_config_file.string(), users_d.string());
         }
 
-        /** Set capabilities for the binary.
-          *
-          * 1. Check that "setcap" tool exists.
-          * 2. Check that an arbitrary program with installed capabilities can run.
-          * 3. Set the capabilities.
-          *
-          * The second is important for Docker and systemd-nspawn.
-          * When the container has no capabilities,
-          * but the executable file inside the container has capabilities,
-          *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
-          */
+        /// Set capabilities for the binary.
 
 #if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
-        std::string command = fmt::format("command -v setcap >/dev/null"
-            " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
-            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
-            " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
-                " This is optional. Taskstats accounting will be disabled."
-                " To enable taskstats accounting you may add the required capability later manually.\"",
-            "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
+        std::string command = fmt::format("command setcap && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {}", main_bin_path.string());
+        fmt::print(" {}\n", command);
         executeScript(command);
 #endif
 
@@ -675,6 +580,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
         }
 
+        std::string maybe_sudo;
+        if (getuid() != 0)
+            maybe_sudo = "sudo ";
+
         std::string maybe_password;
         if (has_password_for_default_user)
             maybe_password = " --password";
@@ -682,19 +591,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         fmt::print(
             "\nClickHouse has been successfully installed.\n"
             "\nStart clickhouse-server with:\n"
-            " sudo clickhouse start\n"
+            " {}clickhouse start\n"
             "\nStart clickhouse-client with:\n"
             " clickhouse-client{}\n\n",
-            maybe_password);
-    }
-    catch (const fs::filesystem_error &)
-    {
-        std::cerr << getCurrentExceptionMessage(false) << '\n';
-
-        if (getuid() != 0)
-            std::cerr << "\nRun with sudo.\n";
-
-        return getCurrentExceptionCode();
+            maybe_sudo, maybe_password);
     }
     catch (...)
     {
@@ -779,7 +679,7 @@ namespace
                 fmt::print("Server started\n");
                 break;
             }
-            sleepForSeconds(1);
+            ::sleep(1);
         }
 
         if (try_num == num_tries)
@@ -866,20 +766,17 @@ namespace
         return pid;
     }
 
-    int stop(const fs::path & pid_file, bool force)
+    int stop(const fs::path & pid_file)
     {
         UInt64 pid = isRunning(pid_file);
 
         if (!pid)
             return 0;
 
-        int signal = force ? SIGKILL : SIGTERM;
-        const char * signal_name = force ? "kill" : "terminate";
-
-        if (0 == kill(pid, signal))
-            fmt::print("Sent {} signal to process with pid {}.\n", signal_name, pid);
+        if (0 == kill(pid, 15)) /// Terminate
+            fmt::print("Sent termination signal.\n", pid);
         else
-            throwFromErrno(fmt::format("Cannot send {} signal", signal_name), ErrorCodes::SYSTEM_ERROR);
+            throwFromErrno("Cannot send termination signal", ErrorCodes::SYSTEM_ERROR);
 
         size_t try_num = 0;
         constexpr size_t num_tries = 60;
@@ -891,7 +788,7 @@ namespace
                 fmt::print("Server stopped\n");
                 break;
             }
-            sleepForSeconds(1);
+            ::sleep(1);
         }
 
         if (try_num == num_tries)
@@ -901,27 +798,6 @@ namespace
                 fmt::print("Sent kill signal.\n", pid);
             else
                 throwFromErrno("Cannot send kill signal", ErrorCodes::SYSTEM_ERROR);
-
-            /// Wait for the process (100 seconds).
-            constexpr size_t num_kill_check_tries = 1000;
-            constexpr size_t kill_check_delay_ms = 100;
-            for (size_t i = 0; i < num_kill_check_tries; ++i)
-            {
-                fmt::print("Waiting for server to be killed\n");
-                if (!isRunning(pid_file))
-                {
-                    fmt::print("Server exited\n");
-                    break;
-                }
-                sleepForMilliseconds(kill_check_delay_ms);
-            }
-
-            if (isRunning(pid_file))
-            {
-                throw Exception(ErrorCodes::CANNOT_KILL,
-                    "The server process still exists after %zu ms",
-                    num_kill_check_tries, kill_check_delay_ms);
-            }
         }
 
         return 0;
@@ -976,7 +852,6 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     desc.add_options()
         ("help,h", "produce help message")
         ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
-        ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
     ;
 
     po::variables_map options;
@@ -995,7 +870,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     {
         fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-server.pid";
 
-        return stop(pid_file, options["force"].as<bool>());
+        return stop(pid_file);
     }
     catch (...)
     {
@@ -1048,7 +923,6 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         ("config-path", po::value<std::string>()->default_value("/etc/clickhouse-server"), "directory with configs")
         ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
         ("user", po::value<std::string>()->default_value("clickhouse"), "clickhouse user")
-        ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
     ;
 
     po::variables_map options;
@@ -1071,7 +945,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         fs::path config = fs::path(options["config-path"].as<std::string>()) / "config.xml";
         fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-server.pid";
 
-        if (int res = stop(pid_file, options["force"].as<bool>()))
+        if (int res = stop(pid_file))
             return res;
         return start(user, executable, config, pid_file);
     }

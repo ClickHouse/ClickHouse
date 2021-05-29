@@ -1,14 +1,9 @@
----
-toc_priority: 19
-toc_title: AMPLab Big Data Benchmark
----
-
 # AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
 
 См. https://amplab.cs.berkeley.edu/benchmark/
 
 Зарегистрируйте бесплатную учетную запись на https://aws.amazon.com - понадобится кредитная карта, email и номер телефона
-Получите новый ключ доступа на https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential
+Получите новый ключ доступа на https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
 Выполните следующее в консоли:
 
@@ -125,3 +120,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
