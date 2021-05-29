@@ -66,12 +66,12 @@ Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_nam
     return tables;
 }
 
-bool DatabaseDictionary::isTableExist(const String & table_name, ContextPtr) const
+bool DatabaseDictionary::isTableExist(const String & table_name, ContextConstPtr) const
 {
     return getContext()->getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
 }
 
-StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextPtr) const
+StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextConstPtr) const
 {
     auto load_result = getContext()->getExternalDictionariesLoader().getLoadResult(table_name);
     return createStorageDictionary(getDatabaseName(), load_result, getContext());

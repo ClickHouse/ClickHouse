@@ -27,7 +27,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_,
+        ContextConstPtr context_,
         const std::string & remote_table_schema_ = "");
 
     String getName() const override { return "PostgreSQL"; }
@@ -48,7 +48,7 @@ private:
 
     String remote_table_name;
     String remote_table_schema;
-    ContextPtr global_context;
+    ContextConstPtr global_context;
     postgres::PoolWithFailoverPtr pool;
 };
 

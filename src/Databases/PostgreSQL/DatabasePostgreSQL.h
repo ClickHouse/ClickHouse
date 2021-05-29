@@ -51,8 +51,8 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
-    bool isTableExist(const String & name, ContextPtr context) const override;
-    StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
+    bool isTableExist(const String & name, ContextConstPtr context) const override;
+    StoragePtr tryGetTable(const String & name, ContextConstPtr context) const override;
 
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
     void dropTable(ContextPtr, const String & table_name, bool no_delay) override;
@@ -79,7 +79,7 @@ private:
 
     bool checkPostgresTable(const String & table_name) const;
     std::unordered_set<std::string> fetchTablesList() const;
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
+    StoragePtr fetchTable(const String & table_name, ContextConstPtr context, bool table_checked) const;
     void removeOutdatedTables();
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };

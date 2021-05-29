@@ -30,9 +30,9 @@ public:
         return "Dictionary";
     }
 
-    bool isTableExist(const String & table_name, ContextPtr context) const override;
+    bool isTableExist(const String & table_name, ContextConstPtr context) const override;
 
-    StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
+    StoragePtr tryGetTable(const String & table_name, ContextConstPtr context) const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 

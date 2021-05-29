@@ -56,10 +56,10 @@ public:
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 
-    bool isTableExist(const String & table_name, ContextPtr) const override { return isTableExist(table_name); }
+    bool isTableExist(const String & table_name, ContextConstPtr) const override { return isTableExist(table_name); }
     bool isTableExist(const String & table_name) const;
 
-    StoragePtr tryGetTable(const String & table_name, ContextPtr) const override { return tryGetTable(table_name); }
+    StoragePtr tryGetTable(const String & table_name, ContextConstPtr) const override { return tryGetTable(table_name); }
     StoragePtr tryGetTable(const String & table_name) const;
 
     bool empty() const override;

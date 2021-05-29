@@ -167,7 +167,7 @@ void DatabaseMaterializeMySQL<Base>::drop(ContextPtr context_)
 }
 
 template<typename Base>
-StoragePtr DatabaseMaterializeMySQL<Base>::tryGetTable(const String & name, ContextPtr context_) const
+StoragePtr DatabaseMaterializeMySQL<Base>::tryGetTable(const String & name, ContextConstPtr context_) const
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {

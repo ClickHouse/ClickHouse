@@ -133,7 +133,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
 }
 
 
-bool DatabasePostgreSQL::isTableExist(const String & table_name, ContextPtr /* context */) const
+bool DatabasePostgreSQL::isTableExist(const String & table_name, ContextConstPtr /* context */) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -144,7 +144,7 @@ bool DatabasePostgreSQL::isTableExist(const String & table_name, ContextPtr /* c
 }
 
 
-StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr local_context) const
+StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextConstPtr local_context) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -155,7 +155,7 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 }
 
 
-StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr local_context, const bool table_checked) const
+StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextConstPtr local_context, const bool table_checked) const
 {
     if (!cache_tables || !cached_tables.count(table_name))
     {

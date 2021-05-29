@@ -59,7 +59,7 @@ public:
 
     void drop(ContextPtr context_) override;
 
-    StoragePtr tryGetTable(const String & name, ContextPtr context_) const override;
+    StoragePtr tryGetTable(const String & name, ContextConstPtr context_) const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
 

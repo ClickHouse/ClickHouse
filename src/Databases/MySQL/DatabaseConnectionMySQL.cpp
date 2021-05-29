@@ -96,12 +96,12 @@ DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(ContextPtr 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
-bool DatabaseConnectionMySQL::isTableExist(const String & name, ContextPtr local_context) const
+bool DatabaseConnectionMySQL::isTableExist(const String & name, ContextConstPtr local_context) const
 {
     return bool(tryGetTable(name, local_context));
 }
 
-StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name, ContextPtr local_context) const
+StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name, ContextConstPtr local_context) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -197,7 +197,7 @@ ASTPtr DatabaseConnectionMySQL::getCreateDatabaseQuery() const
     return create_query;
 }
 
-void DatabaseConnectionMySQL::fetchTablesIntoLocalCache(ContextPtr local_context) const
+void DatabaseConnectionMySQL::fetchTablesIntoLocalCache(ContextConstPtr local_context) const
 {
     const auto & tables_with_modification_time = fetchTablesWithModificationTime(local_context);
 
@@ -220,7 +220,7 @@ void DatabaseConnectionMySQL::destroyLocalCacheExtraTables(const std::map<String
 }
 
 void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
-    const std::map<String, UInt64> & tables_modification_time, ContextPtr local_context) const
+    const std::map<String, UInt64> & tables_modification_time, ContextConstPtr local_context) const
 {
     std::vector<String> wait_update_tables_name;
     for (const auto & table_modification_time : tables_modification_time)
@@ -264,7 +264,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
     }
 }
 
-std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTime(ContextPtr local_context) const
+std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTime(ContextConstPtr local_context) const
 {
     Block tables_status_sample_block
     {
@@ -297,7 +297,7 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
 }
 
 std::map<String, NamesAndTypesList>
-DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr local_context) const
+DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, ContextConstPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 

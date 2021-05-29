@@ -19,9 +19,9 @@ class Context;
 class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
 {
 public:
-    bool isTableExist(const String & table_name, ContextPtr context) const override;
+    bool isTableExist(const String & table_name, ContextConstPtr context) const override;
 
-    StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
+    StoragePtr tryGetTable(const String & table_name, ContextConstPtr context) const override;
 
     bool empty() const override;
 

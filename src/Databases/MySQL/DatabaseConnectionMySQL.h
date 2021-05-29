@@ -60,9 +60,9 @@ public:
 
     ASTPtr getCreateDatabaseQuery() const override;
 
-    bool isTableExist(const String & name, ContextPtr context) const override;
+    bool isTableExist(const String & name, ContextConstPtr context) const override;
 
-    StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
+    StoragePtr tryGetTable(const String & name, ContextConstPtr context) const override;
 
     time_t getObjectMetadataModificationTime(const String & name) const override;
 
@@ -107,15 +107,15 @@ private:
 
     void cleanOutdatedTables();
 
-    void fetchTablesIntoLocalCache(ContextPtr context) const;
+    void fetchTablesIntoLocalCache(ContextConstPtr context) const;
 
-    std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;
+    std::map<String, UInt64> fetchTablesWithModificationTime(ContextConstPtr local_context) const;
 
-    std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr context) const;
+    std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name, ContextConstPtr context) const;
 
     void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const;
 
-    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const;
+    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextConstPtr context) const;
 
     ThreadFromGlobalPool thread;
 };

@@ -46,7 +46,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    ContextPtr context_,
+    ContextConstPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)

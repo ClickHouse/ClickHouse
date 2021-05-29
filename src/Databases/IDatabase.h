@@ -125,10 +125,10 @@ public:
     virtual void loadStoredObjects(ContextPtr /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
 
     /// Check the existence of the table.
-    virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
+    virtual bool isTableExist(const String & name, ContextConstPtr context) const = 0;
 
     /// Get the table for work. Return nullptr if there is no table.
-    virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
+    virtual StoragePtr tryGetTable(const String & name, ContextConstPtr context) const = 0;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 

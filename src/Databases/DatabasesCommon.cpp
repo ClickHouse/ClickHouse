@@ -25,13 +25,13 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 {
 }
 
-bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
+bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextConstPtr) const
 {
     std::lock_guard lock(mutex);
     return tables.find(table_name) != tables.end();
 }
 
-StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
+StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextConstPtr) const
 {
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);

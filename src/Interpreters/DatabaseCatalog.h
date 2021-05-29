@@ -82,15 +82,15 @@ using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 /// Such table can be accessed from everywhere by its ID.
 /// Removes the table from database on destruction.
 /// TemporaryTableHolder object can be attached to a query or session Context, so table will be accessible through the context.
-struct TemporaryTableHolder : boost::noncopyable, WithContext
+struct TemporaryTableHolder : boost::noncopyable, WithConstContext
 {
     using Creator = std::function<StoragePtr (const StorageID &)>;
 
-    TemporaryTableHolder(ContextPtr context, const Creator & creator, const ASTPtr & query = {});
+    TemporaryTableHolder(ContextConstPtr context, const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
     TemporaryTableHolder(
-        ContextPtr context,
+        ContextConstPtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         const ASTPtr & query = {},
@@ -155,11 +155,11 @@ public:
     Databases getDatabases() const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
-    DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
+    DatabasePtr getDatabase(const String & database_name, ContextConstPtr local_context) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
-    void assertTableDoesntExist(const StorageID & table_id, ContextPtr context) const;
-    bool isTableExist(const StorageID & table_id, ContextPtr context) const;
+    void assertTableDoesntExist(const StorageID & table_id, ContextConstPtr context) const;
+    bool isTableExist(const StorageID & table_id, ContextConstPtr context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
     StoragePtr getTable(const StorageID & table_id, ContextPtr context) const;
