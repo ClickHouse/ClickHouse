@@ -3,13 +3,15 @@ FROM yandex/clickhouse-stateless-test
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
-            clang-tools-11 \
             cmake \
             c++filt \
-    && pip3 install jinja2 cxxfilt
+    && pip3 install \
+            jinja2  \
+            pygments \
+            tqdm
 
 COPY s3downloader /s3downloader
-COPY scripts/ /scripts/
+COPY templates/ /templates/
 
 COPY run.sh /run.sh
 

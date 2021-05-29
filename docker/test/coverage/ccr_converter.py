@@ -11,11 +11,16 @@ import sys
 import argparse
 import os.path
 
-bounds = {
+bounds = { # success bound, warning bound, %
     "lines": [90, 75],
     "funcs": [90, 75],
-    "tests": [50, 15]
+    "tests": [20, 1]
     }
+
+colors = { # not covered, covered
+    "lines": ["#fbd08e", "#deffb7"],
+    "funcs": ["#ffb1b1", "#f5c3ff"]
+}
 
 files = []
 tests = []
@@ -66,12 +71,46 @@ class DirEntry:
 
         self.tests_with_hits.update(f.tests_with_hits)
 
+class CodeFormatter(HtmlFormatter):
+    def __init__(self, covered_lines, not_covered_lines, covered_funcs, not_covered_funcs):
+        super(CodeFormatter, self).__init__(linenos=True, lineanchors="line")
+
+        self.covered_lines = covered_lines
+        self.not_covered_lines= not_covered_lines
+        self.covered_funcs = covered_funcs
+        self.not_covered_funcs = not_covered_funcs
+
+    def wrap(self, source, outfile):
+        return self._wrap_code(source)
+
+    def _wrap_code(self, source):
+        frmt = '<span style="background-color:{}">{}</span>'
+
+        yield 0, '<div class="highlight"><pre>'
+
+        for i, (t, value) in enumerate(source):
+            if t != 1:
+                yield t, value
+
+            if i + 1 in self.covered_lines:
+                yield 1, frmt.format(colors["lines"][1], value)
+            elif i + 1 in self.not_covered_lines:
+                yield 1, frmt.format(colors["lines"][0], value)
+            elif i + 1 in self.covered_funcs:
+                yield 1, frmt.format(colors["funcs"][1], value)
+            elif i + 1 in self.not_covered_funcs:
+                yield 1, frmt.format(colors["funcs"][0], value)
+            else:
+                yield 1, value
+
+        yield 0, '</pre></div>'
+
 def percent(a, b):
   return 0 if b == 0 else int(a * 100 / b)
 
 def get_hit(lines, funcs):
     return len([e for e in lines if e[1]]), len(lines), \
-           len([e for e in funcs if e[2]]), len(funcs)
+           len([e for e in funcs if e[1]]), len(funcs)
 
 def accumulate_data():
     data = {}
@@ -87,7 +126,7 @@ def accumulate_data():
 
     return data
 
-def _prepare_data():
+def get_entries():
     out = []
     data = accumulate_data()
     prefix = ""
@@ -105,7 +144,7 @@ def _prepare_data():
         funcs_hit, lines_hit = data[i] if i in data else (set(), set())
 
         lines_with_hits = [(line, line in lines_hit) for line in lines_instrumented]
-        funcs_with_hits = [(name, line, index in funcs_hit) for index, (name, line) in funcs_instrumented.items()]
+        funcs_with_hits = [(line, index in funcs_hit) for index, (_, line) in funcs_instrumented.items()]
         tests_with_hits = [j for j, test in enumerate(tests) if i in test.keys()]
 
         test_file = FileEntry(path, lines_with_hits, funcs_with_hits, tests_with_hits)
@@ -124,6 +163,19 @@ def _prepare_data():
 
     return prefix, sorted(out, key=lambda x: x.name)
 
+def render(tpl, **kwargs):
+    kwargs.update({
+        "bounds": bounds,
+        "colors": colors,
+        "tests_total": len(tests),
+        "pr_url": "PR URL",
+        "pr_index": "PR index",
+        "commit_url": "Commit URL",
+        "commit_hash": "Commit hash"
+    })
+
+    return tpl.render(kwargs)
+
 def generate_dir_page(out_dir, entry: DirEntry, env, upper_level=False):
     special_entries = []
 
@@ -141,18 +193,12 @@ def generate_dir_page(out_dir, entry: DirEntry, env, upper_level=False):
         for e in entries:
             e.url = e.name
 
-    output = template.render(
-        entries=entries,
-        special_entries=special_entries,
-        bounds=bounds,
-        tests_total=len(tests))
-
     path = os.path.join(out_dir, entry.name)
 
     os.makedirs(path, exist_ok=True)
 
     with open(os.path.join(path, "index.html"), "w") as f:
-        f.write(output)
+        f.write(render(template, entries=entries, special_entries=special_entries))
 
 def generate_file_page(out_dir, prefix, entry: FileEntry, env):
     template = env.get_template('file.html')
@@ -163,15 +209,24 @@ def generate_file_page(out_dir, prefix, entry: FileEntry, env):
         print("No file", src_file_path)
         return
 
-    with open(src_file_path, "r") as src_file:
-        lines = highlight(src_file.read(), CppLexer(),
-            HtmlFormatter(linenos=True, hl_lines=[e[0] for e in entry.lines_with_hits]))
+    parent_dir = entry.full_path.split("/")[-2]
 
-        output = template.render(
+    covered_lines = sorted([e[0] for e in entry.lines_with_hits if e[1]])
+    not_covered_lines = sorted([e[0] for e in entry.lines_with_hits if not e[1]])
+    covered_funcs = sorted(set([e[0] for e in entry.funcs_with_hits if e[1]]))
+    not_covered_funcs = sorted(set([e[0] for e in entry.funcs_with_hits if not e[1]]))
+
+    formatter = CodeFormatter(covered_lines, not_covered_lines, covered_funcs, not_covered_funcs)
+
+    with open(src_file_path, "r") as src_file:
+        lines = highlight(src_file.read(), CppLexer(), formatter)
+
+        output = render(template,
             lines=lines,
             entry=entry,
-            bounds=bounds,
-            tests_total=len(tests))
+            parent_dir=parent_dir,
+            not_covered_lines=not_covered_lines,
+            not_covered_funcs=not_covered_funcs)
 
         with open(os.path.join(out_dir, entry.full_path) + ".html", "w") as f:
             f.write(output)
@@ -184,7 +239,7 @@ def generate_html(out_dir, files, tests, tests_names):
     env.lstrip_blocks = True
     env.rstrip_blocks = True
 
-    prefix, entries = _prepare_data()
+    prefix, entries = get_entries()
 
     root_entry = DirEntry("")
 

@@ -1,7 +1,8 @@
 {% extends "page.html" %}
 
 {% block content %}
-    <div class="row gx-5">
+
+    <div class="col-12">
         <table class="table table-bordered table-sm">
             <thead>
                 <tr>
@@ -21,60 +22,33 @@
         </table>
     </div>
 
-    <div class="row gx-5">
-        <div class="btn-group" role="group" aria-label="Basic example">
-            <button class="btn btn-primary" data-bs-toggle="collapse"
-                                            href="#multiCollapseExample1" type="button"
-                                                                          aria-expanded="false" aria-controls="multiCollapseExample1">
-                Toggle lines coverage
-            </button>
-            <button class="btn btn-primary" data-bs-toggle="collapse"
-                                            data-bs-target="#multiCollapseExample2" type="button"
-                                                                                    aria-expanded="false" aria-controls="multiCollapseExample2">
-                Toggle functions coverage
-            </button>
-            <button class="btn btn-primary" type="button" data-bs-toggle="collapse"
-                                                          data-bs-target=".multi-collapse" aria-expanded="false"
-                                                                                           aria-controls="multiCollapseExample1 multiCollapseExample2">
-                Toggle both
-            </button>
-        </div>
-    </div>
-
-    <div class="collapse multi-collapse" id="multiCollapseExample1">
-        <div class="row gx-5">
-            <div class="col">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Covered lines</h5>
-                        <p class="card-text">
-                        <a href="#line1">1</a> <a href="#line1">2</a>
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Not covered lines</h5>
-                        <p class="card-text">
-                        <a href="#line1">1</a> <a href="#line1">2</a>
-                        </p>
-                    </div>
-                </div>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Not covered lines</h5>
+                <p class="card-text">
+                    {% for line in not_covered_lines %}
+                        <a href="#line-{{ line }}">{{ line }}</a>
+                    {% endfor %}
+                </p>
             </div>
         </div>
     </div>
 
-    <div class="row gx-5">
-        <div class="collapse multi-collapse" id="multiCollapseExample2">
-            <div class="card card-body">
-                Some placeholder content for the second collapse component of this multi-collapse example. This panel is hidden by default but revealed when the user activates the relevant trigger.
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Not covered funcs</h5>
+                <p class="card-text">
+                    {% for line in not_covered_funcs %}
+                        <a href="#line-{{ line }}">{{ line }}</a>
+                    {% endfor %}
+                </p>
             </div>
         </div>
     </div>
 
-    <div class="rox gx-5">
-        {{ lines }}
-    </div>
+
+    <div class="col-12"> {{ lines }} </div>
+
 {% endblock %}

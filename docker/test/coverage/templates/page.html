@@ -11,7 +11,30 @@
     </head>
     <body>
         <div class="container-lg">
-            <div class="row gx-5">
+            <div class="row" style="margin-bottom: 20px;margin-top: 20px;">
+                <div class="col-4">
+                    Coverage report:<br>
+                    PR <a href="{{ pr_url }}">#{{ pr_index }}</a><br>
+                    Commit <a href="{{ commit_url }}">{{ commit_hash }}</a>
+                </div>
+                <div class="col-4">
+                    {% for e in bounds %}
+                        {{ e }} coverage:
+                        <span class="badge bg-success">> {{ bounds[e][0] }}%</span>
+                        <span class="badge bg-warning text-dark">>= {{ bounds[e][1] }}%</span>
+                        <span class="badge bg-danger">< {{ bounds[e][1] }}%</span> <br>
+                    {% endfor %}
+                </div>
+                <div class="col-4">
+                    {% for key in colors %}
+                        {{ key }}:
+                        <span class="badge text-dark" style="background-color:{{ colors[key][1] }}">Covered</span>
+                        <span class="badge text-dark" style="background-color:{{ colors[key][0] }}">Not covered</span>
+                        <br>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="row">
                 {% block content %}
                 {% endblock %}
             </div>
