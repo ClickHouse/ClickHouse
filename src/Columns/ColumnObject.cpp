@@ -66,6 +66,14 @@ void ColumnObject::checkConsistency() const
     }
 }
 
+size_t ColumnObject::size() const
+{
+#ifndef NDEBUG
+    checkConsistency();
+#endif
+    return subcolumns.empty() ? 0 : subcolumns.begin()->second.size();
+}
+
 MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 {
     if (new_size != 0)
@@ -171,10 +179,16 @@ void ColumnObject::optimizeTypesOfSubcolumns()
     for (auto && [name, subcolumn] : subcolumns)
     {
         auto from_type = getDataTypeByColumn(*subcolumn.data);
-        auto to_type = subcolumn.least_common_type;
+        const auto & to_type = subcolumn.least_common_type;
 
         if (isNothing(getBaseTypeOfArray(to_type)))
             continue;
+
+        auto it = std::find_if(subcolumns.begin(), subcolumns.end(),
+            [&name = name](const auto & elem) { return elem.first.size() > name.size() && startsWith(elem.first, name); });
+
+        if (it != subcolumns.end())
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Data in Object has ambiguous paths: '{}' and '{}", name, it->first);
 
         if (to_type->equals(*from_type))
         {

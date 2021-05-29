@@ -224,7 +224,7 @@ NamesAndTypesList IStorage::getColumns(const StorageMetadataPtr & metadata_snaps
     }
 
     if (options.with_extended_objects)
-        all_columns = expandObjectColumns(all_columns, options.with_subcolumns);
+        all_columns = extendObjectColumns(all_columns, options.with_subcolumns);
 
     return all_columns;
 }

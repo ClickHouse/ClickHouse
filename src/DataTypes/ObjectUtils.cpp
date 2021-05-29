@@ -84,8 +84,12 @@ static auto extractVector(const std::vector<Tuple> & vec)
     return res;
 }
 
-void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block)
+void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns)
 {
+    std::unordered_map<String, DataTypePtr> storage_columns_map;
+    for (const auto & [name, type] : extended_storage_columns)
+        storage_columns_map[name] = type;
+
     for (auto & name_type : columns_list)
     {
         if (const auto * type_object = getTypeObject(name_type.type))
@@ -112,11 +116,16 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block)
             auto tuple_columns = extractVector<2>(tuple_elements);
 
             auto type_tuple = std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
-            auto column_tuple = ColumnTuple::create(tuple_columns);
+
+            auto it = storage_columns_map.find(name_type.name);
+            if (it == storage_columns_map.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", name_type.name);
+
+            getLeastCommonTypeForObject({type_tuple, it->second});
 
             name_type.type = type_tuple;
             column.type = type_tuple;
-            column.column = column_tuple;
+            column.column = ColumnTuple::create(tuple_columns);
         }
     }
 }
