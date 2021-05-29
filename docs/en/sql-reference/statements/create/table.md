@@ -355,7 +355,7 @@ SELECT * FROM base.t1;
 └───┘
 ```
 
-## COMMENT TABLE {#comment-table}
+## COMMENT Clause {#comment-table}
 
 You can add a comment to the table when you creating it.
 
