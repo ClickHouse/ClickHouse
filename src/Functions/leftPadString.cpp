@@ -1,6 +1,6 @@
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnDecimal.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -102,70 +102,96 @@ namespace
 
             if (number_of_arguments != 2 && number_of_arguments != 3)
                 throw Exception(
-                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(number_of_arguments)
-                        + ", should be 2 or 3",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                    getName(),
+                    toString(number_of_arguments));
 
             if (!isStringOrFixedString(arguments[0]))
                 throw Exception(
-                    "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
             if (!isNativeNumber(arguments[1]))
                 throw Exception(
-                    "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of second argument of function {}",
+                    arguments[1]->getName(),
+                    getName());
 
             if (number_of_arguments == 3 && !isStringOrFixedString(arguments[2]))
                 throw Exception(
-                    "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of third argument of function {}",
+                    arguments[2]->getName(),
+                    getName());
 
             return arguments[0];
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
         {
-            const ColumnConst * len_column = checkAndGetColumnConst<ColumnDecimal<Decimal32>>(arguments[1].column.get());
-            if (!len_column)
-                throw Exception(
-                    "Illegal column " + arguments[1].column->getName() + " of first ('len') argument of function " + getName()
-                        + ". Must be a number.", // FIXME
-                    ErrorCodes::ILLEGAL_COLUMN);
-            size_t len = len_column->getValue<size_t>();
-
+            const ColumnPtr str_column = arguments[0].column;
             String padstr = " ";
             if (arguments.size() == 3)
             {
                 const ColumnConst * pad_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
                 if (!pad_column)
                     throw Exception(
-                        "Illegal column " + arguments[2].column->getName() + " of second ('pad') argument of function " + getName()
-                            + ". Must be constant string.",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of third ('pad') argument of function {}. Must be constant string.",
+                        arguments[2].column->getName(),
+                        getName());
 
                 padstr = pad_column->getValue<String>();
             }
 
-            const ColumnPtr str_column = arguments[0].column;
+            MutableColumnPtr result;
+
+            if (!(execute<UInt8>(arguments, str_column, padstr, result) || execute<UInt16>(arguments, str_column, padstr, result)
+                  || execute<UInt32>(arguments, str_column, padstr, result) || execute<UInt64>(arguments, str_column, padstr, result)
+                  || execute<Int8>(arguments, str_column, padstr, result) || execute<Int16>(arguments, str_column, padstr, result)
+                  || execute<Int32>(arguments, str_column, padstr, result) || execute<Int64>(arguments, str_column, padstr, result)))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of second ('len') argument of function {}. Must be a number.",
+                    arguments[1].column->getName(),
+                    getName());
+
+            return result;
+        }
+
+    private:
+        template <typename NumType>
+        bool execute(
+            const ColumnsWithTypeAndName & arguments, const ColumnPtr & str_column, const String & padstr, MutableColumnPtr & result) const
+        {
+            const ColumnConst * len_column = checkAndGetColumnConst<ColumnDecimal<NumType>>(arguments[1].column.get());
+            if (!len_column)
+                return false;
+            size_t len = len_column->getValue<size_t>();
+
             if (const ColumnString * strings = checkAndGetColumn<ColumnString>(str_column.get()))
             {
                 auto col_res = ColumnString::create();
                 LeftPadStringImpl::vector(
                     strings->getChars(), strings->getOffsets(), len, padstr, col_res->getChars(), col_res->getOffsets());
-                return col_res;
+                result = std::move(col_res);
             }
             else if (const ColumnFixedString * strings_fixed = checkAndGetColumn<ColumnFixedString>(str_column.get()))
             {
-                auto col_res = ColumnFixedString::create(strings_fixed->getN());
+                auto col_res = ColumnFixedString::create(len);
                 LeftPadStringImpl::vectorFixed(strings_fixed->getChars(), strings_fixed->getN(), len, padstr, col_res->getChars());
-                return col_res;
+                result = std::move(col_res);
             }
             else
+            {
                 throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of first ('str') argument of function " + getName()
-                        + ". Must be a string or fixed string.",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of first ('str') argument of function {}. Must be a string or fixed string.",
+                    arguments[0].column->getName(),
+                    getName());
+            }
+            return true;
         }
     };
 }
