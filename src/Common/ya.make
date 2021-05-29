@@ -95,7 +95,6 @@ SRCS(
     ZooKeeper/ZooKeeperNodeCache.cpp
     checkStackSize.cpp
     clearPasswordFromCommandLine.cpp
-    createFile.cpp
     createHardLink.cpp
     escapeForFileName.cpp
     filesystemHelpers.cpp

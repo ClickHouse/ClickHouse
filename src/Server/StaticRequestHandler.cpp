@@ -138,7 +138,9 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
 
     if (startsWith(response_expression, file_prefix))
     {
-        const auto & file_name = response_expression.substr(file_prefix.size() + 1, response_expression.size() - file_prefix.size());
+        auto file_name = response_expression.substr(file_prefix.size(), response_expression.size() - file_prefix.size());
+        if (file_name.starts_with('/'))
+            file_name = file_name.substr(1);
 
         fs::path user_files_absolute_path = fs::canonical(fs::path(server.context()->getUserFilesPath()));
         String file_path = fs::weakly_canonical(user_files_absolute_path / file_name);

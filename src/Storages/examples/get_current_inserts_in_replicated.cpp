@@ -4,11 +4,12 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
-
 #include <ext/scope_guard.h>
 
+#include <filesystem>
 #include <iostream>
 
+namespace fs = std::filesystem;
 
 using namespace DB;
 
