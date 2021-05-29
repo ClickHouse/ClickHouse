@@ -21,7 +21,7 @@ namespace
     {
     public:
         static constexpr auto name = "logTrace";
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionLogTrace>(); }
+        static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionLogTrace>(); }
 
         String getName() const override { return name; }
 
