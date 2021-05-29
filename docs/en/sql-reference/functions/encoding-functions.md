@@ -153,7 +153,7 @@ Result:
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to a character.
 
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAsType](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
+If you want to convert the result to a number, you can use [to<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
 Alias: `UNHEX`.
 
@@ -187,6 +187,18 @@ Result:
 ┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
+```
+
+Query:
+``` sql
+SELECT toUInt8(unhex('303132')) AS num;
+```
+
+Result:
+``` text
+┌─num─┐
+│  12 │
+└─────┘
 ```
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}

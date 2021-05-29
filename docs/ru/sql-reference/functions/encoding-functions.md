@@ -155,7 +155,7 @@ Result:
 
 Выполняет операцию, обратную [hex](#hex). Функция интерпретирует каждую пару шестнадцатеричных цифр аргумента как число и преобразует его в символ.
 
-Если вы хотите преобразовать результат в число, вы можете использовать функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions).
+Если вы хотите преобразовать результат в число, вы можете использовать функции [to<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-func).
 
 Синоним: `UNHEX`.
 
@@ -189,6 +189,19 @@ SELECT unhex('303132'), UNHEX('4D7953514C');
 ┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT toUInt8(unhex('303132')) AS num;
+```
+
+Результат:
+``` text
+┌─num─┐
+│  12 │
+└─────┘
 ```
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}
