@@ -3023,7 +3023,6 @@ SET limit = 5;
 SET offset = 7;
 SELECT * FROM test LIMIT 10 OFFSET 100;
 ```
-
 Result:
 
 ``` text
@@ -3032,6 +3031,38 @@ Result:
 │ 108 │
 │ 109 │
 └─────┘
+```
+
+## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+
+Enables to fuse aggregate functions with identical argument. It rewrites query contains at least two aggregate functions from [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) or [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) with identical argument to [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
+
+Possible values:
+
+-   0 — Functions with identical argument are not fused.
+-   1 — Functions with identical argument are fused.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
+SET optimize_fuse_sum_count_avg = 1;
+EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+```
+
+Result:
+
+``` text
+SELECT
+    sum(a),
+    sumCount(b).1,
+    sumCount(b).2,
+    (sumCount(b).1) / (sumCount(b).2)    
+FROM fuse_tbl
 ```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -4,7 +4,7 @@ toc_title: External Dictionaries
 ---
 
 !!! attention "Attention"
-    `dict_name` parameter must be fully qualified for dictionaries created with DDL queries. Eg. `<database>.<dict_name>`.
+    For dictionaries, created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
 
 # Functions for Working with External Dictionaries {#ext_dict_functions}
 

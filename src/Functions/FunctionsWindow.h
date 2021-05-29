@@ -746,7 +746,7 @@ class FunctionWindow : public IFunction
 {
 public:
     static constexpr auto name = WindowImpl<type>::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWindow>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionWindow>(); }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
