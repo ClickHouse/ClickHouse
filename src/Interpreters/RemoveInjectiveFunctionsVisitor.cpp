@@ -17,7 +17,7 @@ static bool isUniq(const ASTFunction & func)
 }
 
 /// Remove injective functions of one argument: replace with a child
-static bool removeInjectiveFunction(ASTPtr & ast, ContextPtr context, const FunctionFactory & function_factory)
+static bool removeInjectiveFunction(ASTPtr & ast, ContextConstPtr context, const FunctionFactory & function_factory)
 {
     const ASTFunction * func = ast->as<ASTFunction>();
     if (!func)

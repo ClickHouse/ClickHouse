@@ -2924,4 +2924,36 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 Значение по умолчанию: `1800`.
 
+## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+
+Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
+
+Возможные значения:
+
+-   0 — функции с одинаковым аргументом не объединяются.
+-   1 — функции с одинаковым аргументом объединяются.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
+SET optimize_fuse_sum_count_avg = 1;
+EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+```
+
+Результат:
+
+``` text
+SELECT
+    sum(a),
+    sumCount(b).1,
+    sumCount(b).2,
+    (sumCount(b).1) / (sumCount(b).2)
+FROM fuse_tbl
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
