@@ -165,8 +165,8 @@ namespace
         {
             if (auto * t = ast->as<ASTFunction>())
             {
-            if (t->name == "HOP" || t->name == "TUMBLE")
-                t->name = "WINDOW_ID";
+                if (t->name == "HOP" || t->name == "TUMBLE")
+                    t->name = "WINDOW_ID";
             }
         }
     };
@@ -205,7 +205,10 @@ namespace
         static void visit(const ASTIdentifier & node, ASTPtr & node_ptr, Data & data)
         {
             if (node.getColumnName() == data.window_id_alias)
-                dynamic_cast<ASTIdentifier *>(node_ptr.get())->setShortName(data.window_id_name);
+            {
+                if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(node_ptr))
+                    identifier->setShortName(data.window_id_name);
+            }
         }
     };
 
