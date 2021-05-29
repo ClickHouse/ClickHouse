@@ -7,7 +7,7 @@ ExpressionTransform
       ReplacingSorted 2 → 1
         (Expression)
         ExpressionTransform × 2
-          (ReadFromMergeTree)
+          (ReadFromStorage)
           MergeTree × 2 0 → 1
 0	0
 1	1
@@ -27,5 +27,5 @@ ExpressionTransform × 2
           AddingSelector × 2
             (Expression)
             ExpressionTransform × 2
-              (ReadFromMergeTree)
+              (ReadFromStorage)
               MergeTree × 2 0 → 1
