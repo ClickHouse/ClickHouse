@@ -85,7 +85,6 @@ def test_choose_source_replica(start_cluster):
     for node in nodes:
         assert node.query("SELECT count(), sum(id) FROM test_table WHERE date=toDate(2)") == "11\t55\n"
 
-
 def test_update_metadata(start_cluster):
     for node in nodes:
         node.query(
