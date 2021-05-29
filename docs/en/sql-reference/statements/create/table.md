@@ -390,34 +390,3 @@ Result:
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘
 ```
-
-Query:
-
-``` sql
-CREATE TABLE t2 (x String) ENGINE = MergeTree ORDER BY x COMMENT 'The MergeTree table';
-SELECT name,comment FROM system.tables WHERE name = 't2';
-```
-
-Result:
-
-```text
-┌─name─┬─comment─────────────┐
-│ t2   │ The MergeTree table │
-└──────┴─────────────────────┘
-
-```
-
-Query:
-
-``` sql
-CREATE TABLE t3 (x String) ENGINE = Log COMMENT 'The Log table';
-SELECT name,comment FROM system.tables WHERE name = 't3';
-```
-
-Result:
-
-```text
-┌─name─┬─comment───────┐
-│ t3   │ The Log table │
-└──────┴───────────────┘
-```
