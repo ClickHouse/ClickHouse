@@ -49,8 +49,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-TemporaryTableHolder::TemporaryTableHolder(ContextConstPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
-    : WithConstContext(context_->getGlobalContext())
+TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
+    : WithContext(context_->getGlobalContext())
     , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
 {
     ASTPtr original_create;
@@ -73,14 +73,13 @@ TemporaryTableHolder::TemporaryTableHolder(ContextConstPtr context_, const Tempo
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
-    temporary_tables->createTable(const_pointer_cast<Context>(getContext()),
-        global_name, table, original_create);
+    temporary_tables->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
 
 
 TemporaryTableHolder::TemporaryTableHolder(
-    ContextConstPtr context_,
+    ContextPtr context_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const ASTPtr & query,
@@ -101,7 +100,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs)
-        : WithConstContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
+        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -116,8 +115,7 @@ TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder &&
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
-        temporary_tables->dropTable(const_pointer_cast<Context>(getContext()),
-            "_tmp_" + toString(id));
+        temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -127,8 +125,7 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
 
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id),
-        const_pointer_cast<Context>(getContext()));
+    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
     if (!table)
         throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
     return table;
