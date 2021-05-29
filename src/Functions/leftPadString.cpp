@@ -165,10 +165,10 @@ namespace
         bool execute(
             const ColumnsWithTypeAndName & arguments, const ColumnPtr & str_column, const String & padstr, MutableColumnPtr & result) const
         {
-            const ColumnConst * len_column = checkAndGetColumnConst<ColumnDecimal<NumType>>(arguments[1].column.get());
+            const auto len_column = checkAndGetColumnConst<ColumnDecimal<NumType>>(arguments[1].column.get());
             if (!len_column)
                 return false;
-            size_t len = len_column->getValue<size_t>();
+            size_t len = len_column->template getValue<size_t>();
 
             if (const ColumnString * strings = checkAndGetColumn<ColumnString>(str_column.get()))
             {
