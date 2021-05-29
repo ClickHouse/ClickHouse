@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Functions/IFunction.h>
 #include <type_traits>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -8,7 +9,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/DummyJSONParser.h>
-#include <Functions/IFunctionImpl.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 #include <Functions/JSONPath/Generators/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
