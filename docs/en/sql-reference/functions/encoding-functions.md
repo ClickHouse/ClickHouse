@@ -153,7 +153,7 @@ Result:
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to a character.
 
-If you want to convert the result to a number, you can use [type conversion functions](../../sql-reference/functions/type-conversion-functions.md).
+If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
 Alias: `UNHEX`.
 
@@ -171,7 +171,7 @@ Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal d
 
 **Returned value**
 
--   A string in text format.
+-   A binary string.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -190,15 +190,17 @@ Result:
 ```
 
 Query:
+
 ``` sql
-SELECT toUInt8(unhex('303132')) AS num;
+SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
 ```
 
 Result:
+
 ``` text
-┌─num─┐
-│  12 │
-└─────┘
+┌──num─┐
+│ 4095 │
+└──────┘
 ```
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}
