@@ -148,7 +148,7 @@ void LinearModelData::predict(
     const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    ContextPtr context) const
+    ContextConstPtr context) const
 {
     gradient_computer->predict(container, arguments, offset, limit, weights, bias, context);
 }
@@ -455,7 +455,7 @@ void LogisticRegression::predict(
     size_t limit,
     const std::vector<Float64> & weights,
     Float64 bias,
-    ContextPtr /*context*/) const
+    ContextConstPtr /*context*/) const
 {
     size_t rows_num = arguments.front().column->size();
 
@@ -523,7 +523,7 @@ void LinearRegression::predict(
     size_t limit,
     const std::vector<Float64> & weights,
     Float64 bias,
-    ContextPtr /*context*/) const
+    ContextConstPtr /*context*/) const
 {
     if (weights.size() + 1 != arguments.size())
     {
