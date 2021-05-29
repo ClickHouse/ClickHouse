@@ -1463,7 +1463,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 const IDataType * new_type = command.data_type.get();
                 const IDataType * old_type = old_types[command.column_name];
 
-                checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                if (new_type)
+                    checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
 
                 /// No other checks required
                 continue;
