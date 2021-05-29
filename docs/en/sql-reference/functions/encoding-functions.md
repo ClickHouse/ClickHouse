@@ -153,7 +153,7 @@ Result:
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to a character.
 
-If you want to convert the result to a number, you can use [to<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
+If you want to convert the result to a number, you can use [type conversion functions](../../sql-reference/functions/type-conversion-functions.md).
 
 Alias: `UNHEX`.
 
