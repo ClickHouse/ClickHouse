@@ -162,12 +162,12 @@ public:
     bool isTableExist(const StorageID & table_id, ContextConstPtr context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
-    StoragePtr getTable(const StorageID & table_id, ContextPtr context) const;
-    StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
+    StoragePtr getTable(const StorageID & table_id, ContextConstPtr context) const;
+    StoragePtr tryGetTable(const StorageID & table_id, ContextConstPtr context) const;
+    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextConstPtr context) const;
+    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextConstPtr context) const;
     DatabaseAndTable getTableImpl(const StorageID & table_id,
-                                  ContextPtr context,
+                                  ContextConstPtr context,
                                   std::optional<Exception> * exception = nullptr) const;
 
     void addDependency(const StorageID & from, const StorageID & where);

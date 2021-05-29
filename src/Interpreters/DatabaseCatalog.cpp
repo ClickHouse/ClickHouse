@@ -212,7 +212,7 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
-    ContextPtr context_,
+    ContextConstPtr context_,
     std::optional<Exception> * exception) const
 {
     if (!table_id)
@@ -637,7 +637,7 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
     return storage_is_dictionary;
 }
 
-StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
+StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextConstPtr local_context) const
 {
     std::optional<Exception> exc;
     auto res = getTableImpl(table_id, local_context, &exc);
@@ -646,12 +646,12 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
     return res.second;
 }
 
-StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
+StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextConstPtr local_context) const
 {
     return getTableImpl(table_id, local_context, nullptr).second;
 }
 
-DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
+DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextConstPtr local_context) const
 {
     std::optional<Exception> exc;
     auto res = getTableImpl(table_id, local_context, &exc);
@@ -660,7 +660,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
     return res;
 }
 
-DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
+DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextConstPtr local_context) const
 {
     return getTableImpl(table_id, local_context, nullptr);
 }
