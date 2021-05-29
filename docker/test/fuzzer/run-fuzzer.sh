@@ -119,7 +119,12 @@ continue
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
+    clickhouse-client \
+        --receive_timeout=10 \
+        --receive_data_timeout_ms=10000 \
+        --query-fuzzer-runs=1000 \
+        --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
+        $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?

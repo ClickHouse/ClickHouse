@@ -568,22 +568,23 @@ void makeWindowDescriptionFromAST(const Context & context,
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
 
-    if (definition.frame.type != WindowFrame::FrameType::Rows
-        && definition.frame.type != WindowFrame::FrameType::Range)
+    if (definition.frame_type != WindowFrame::FrameType::Rows
+        && definition.frame_type != WindowFrame::FrameType::Range)
     {
-        std::string name = definition.frame.type == WindowFrame::FrameType::Rows
-            ? "ROWS"
-            : definition.frame.type == WindowFrame::FrameType::Groups
-                ? "GROUPS" : "RANGE";
-
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Window frame '{}' is not implemented (while processing '{}')",
-            name, ast->formatForErrorMessage());
+            WindowFrame::toString(definition.frame_type),
+            ast->formatForErrorMessage());
     }
 
-    desc.frame = definition.frame;
+    desc.frame.is_default = definition.frame_is_default;
+    desc.frame.type = definition.frame_type;
+    desc.frame.begin_type = definition.frame_begin_type;
+    desc.frame.begin_preceding = definition.frame_begin_preceding;
+    desc.frame.end_type = definition.frame_end_type;
+    desc.frame.end_preceding = definition.frame_end_preceding;
 
-    if (definition.frame.end_type == WindowFrame::BoundaryType::Offset)
+    if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {
         auto [value, _] = evaluateConstantExpression(
             definition.frame_end_offset,
@@ -591,7 +592,7 @@ void makeWindowDescriptionFromAST(const Context & context,
         desc.frame.end_offset = value;
     }
 
-    if (definition.frame.begin_type == WindowFrame::BoundaryType::Offset)
+    if (definition.frame_begin_type == WindowFrame::BoundaryType::Offset)
     {
         auto [value, _] = evaluateConstantExpression(
             definition.frame_begin_offset,
