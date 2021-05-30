@@ -164,7 +164,7 @@ Type: `UInt8`.
 
 ## dictGetChildren {#dictgetchildren}
 
-Returns first-level children as an array of indexes. It is a inverse transformation for [dictGetHierarchy](#dictgethierarchy).
+Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
 
 **Syntax** 
 
@@ -185,7 +185,7 @@ Type: [Array(UInt64)](../../sql-reference/data-types/array.md).
 
 ## dictGetDescendant {#dictgetdescendant}
 
-Returns all descendants as if [dictGetChildren](#dictgetchildren) was applied `level` times recursively.  
+Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.  
 
 **Syntax**
 
@@ -197,7 +197,7 @@ dictGetDescendants(dict_name, key, level)
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
 -   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
--   `level` — hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `level` — Hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 

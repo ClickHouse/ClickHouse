@@ -180,7 +180,7 @@ dictGetChildren(dict_name, key)
 
 ## dictGetDescendant {#dictgetdescendant}
 
-Возвращает всех потомков, как если бы [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.  
+Возвращает всех потомков, как если бы функция [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.  
 
 **Синтаксис**
 
@@ -198,7 +198,7 @@ dictGetDescendants(dict_name, key, level)
 
 -   Потомки для ключа.
 
-ТИп: [Array(UInt64)](../../sql-reference/data-types/array.md).
+Тип: [Array(UInt64)](../../sql-reference/data-types/array.md).
 
 ## Прочие функции {#ext_dict_functions-other}
 
