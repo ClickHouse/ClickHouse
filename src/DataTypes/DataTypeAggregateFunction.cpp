@@ -38,11 +38,33 @@ namespace ErrorCodes
 
 String DataTypeAggregateFunction::doGetName() const
 {
-    LOG_TRACE(&Poco::Logger::get("kssenii"), "doGetName stack trace:{}", StackTrace().toString());
+    return getNameImpl(true);
+}
+
+
+String DataTypeAggregateFunction::getNameWithoutVersion() const
+{
+    return getNameImpl(false);
+}
+
+
+size_t DataTypeAggregateFunction::getVersion() const
+{
+    if (version)
+        return *version;
+    return function->getDefaultVersion();
+}
+
+
+String DataTypeAggregateFunction::getNameImpl(bool with_version) const
+{
     WriteBufferFromOwnString stream;
     stream << "AggregateFunction(";
-    if (version)
-        stream << version << ", ";
+
+    /// If aggregate function does not support versioning its version is 0 and is not printed.
+    auto data_type_version = getVersion();
+    if (with_version && data_type_version)
+        stream << data_type_version << ", ";
     stream << function->getName();
 
     if (!parameters.empty())
@@ -64,11 +86,15 @@ String DataTypeAggregateFunction::doGetName() const
     return stream.str();
 }
 
+
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    /// FIXME: ColumnAggregateFunction also uses function->serialize methods
+    /// FIXME: There are a lot of function->serialize inside ColumnAggregateFunction.
+    /// Looks like it also needs version.
+    LOG_TRACE(&Poco::Logger::get("kssenii"), "KSSENII COLUMN");
     return ColumnAggregateFunction::create(function);
 }
+
 
 /// Create empty state
 Field DataTypeAggregateFunction::getDefault() const
@@ -100,20 +126,18 @@ Field DataTypeAggregateFunction::getDefault() const
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
-    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
+    return typeid(rhs) == typeid(*this) && getNameWithoutVersion() == typeid_cast<const DataTypeAggregateFunction &>(rhs).getNameWithoutVersion();
 }
+
 
 SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
 {
-    LOG_TRACE(&Poco::Logger::get("kssenii"), "get serializaton version: {}, name: {}, stack: {}", version, getName(), StackTrace().toString());
-    return std::make_shared<SerializationAggregateFunction>(function, version);
+    return std::make_shared<SerializationAggregateFunction>(function, getVersion());
 }
 
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    LOG_TRACE(&Poco::Logger::get("kssenii"), "create data type: {}", StackTrace().toString());
-
     String function_name;
     AggregateFunctionPtr function;
     DataTypes argument_types;
@@ -188,6 +212,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
+
 
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {

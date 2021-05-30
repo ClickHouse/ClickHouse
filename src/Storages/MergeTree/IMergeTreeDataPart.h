@@ -121,7 +121,7 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns);
+    void setColumns(const NamesAndTypesList & new_columns, bool loaded_from_disk = false);
 
     const NamesAndTypesList & getColumns() const { return columns; }
 

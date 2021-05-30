@@ -389,7 +389,7 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, bool loaded_from_disk)
 {
     columns = new_columns;
     column_name_to_position.clear();
@@ -398,8 +398,15 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
     for (const auto & column : columns)
     {
         column_name_to_position.emplace(column.name, pos);
+
+        /// TODO: May be there is a better way or a better place for that.
+        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (loaded_from_disk && aggregate_function_data_type)
+            aggregate_function_data_type->setVersionIfEmpty(0);
+
         for (const auto & subcolumn : column.type->getSubcolumnNames())
             column_name_to_position.emplace(Nested::concatenateName(column.name, subcolumn), pos);
+
         ++pos;
     }
 }
@@ -1007,6 +1014,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
     NamesAndTypesList loaded_columns;
 
+    bool loaded_from_disk = false;
     if (!volume->getDisk()->exists(path))
     {
         /// We can get list of columns only from columns.txt in compact parts.
@@ -1027,18 +1035,15 @@ void IMergeTreeDataPart::loadColumns(bool require)
             loaded_columns.writeText(*buf);
         }
         volume->getDisk()->moveFile(path + ".tmp", path);
-        LOG_TRACE(&Poco::Logger::get("kssenii"), "Loaded from metadata");
     }
     else
     {
-        //LOG_TRACE(&Poco::Logger::get("kssenii"), "Loading columns stacktrace: {}", col.name, col.type->getName());
         loaded_columns.readText(*volume->getDisk()->readFile(path));
-        LOG_TRACE(&Poco::Logger::get("kssenii"), "Loaded from disk");
+        loaded_from_disk = true;
+
         for (auto & col : loaded_columns)
         {
             LOG_TRACE(&Poco::Logger::get("kssenii"), "Setting version for columns: {}, {}", col.name, col.type->getName());
-            if (auto agg = typeid_cast<const DataTypeAggregateFunction *>(col.type.get()))
-                agg->setVersion(0);
         }
     }
 
@@ -1047,7 +1052,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         LOG_TRACE(&Poco::Logger::get("kssenii"), "Loaded columns: {}, {}", col.name, col.type->getName());
     }
 
-    setColumns(loaded_columns);
+    setColumns(loaded_columns, loaded_from_disk);
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
