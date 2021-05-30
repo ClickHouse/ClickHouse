@@ -178,6 +178,34 @@ dictGetChildren(dict_name, key)
 
 Тип: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
+**Пример**
+
+Рассмотрим иерархический словарь:
+
+``` text
+┌─id─┬─parent_id─┐
+│  1 │         0 │
+│  2 │         1 │
+│  3 │         1 │
+│  4 │         2 │
+└────┴───────────┘
+```
+
+Потомки первого уровня:
+
+``` sql
+SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetChildren('hierarchy_flat_dictionary', number)─┐
+│ [1]                                                  │
+│ [2,3]                                                │
+│ [4]                                                  │
+│ []                                                   │
+└──────────────────────────────────────────────────────┘
+```
+
 ## dictGetDescendant {#dictgetdescendant}
 
 Возвращает всех потомков, как если бы функция [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.  
@@ -202,43 +230,38 @@ dictGetDescendants(dict_name, key, level)
 
 **Пример**
 
-Исходная таблица:
-
-``` sql
-CREATE TABLE hierarchy_source_table (id UInt64, parent_id UInt64) ENGINE = TinyLog;
-INSERT INTO hierarchy_source_table VALUES (1, 0), (2, 1), (3, 1), (4, 2);
-CREATE DICTIONARY hierarchy_flat_dictionary
-(
-    id UInt64,
-    parent_id UInt64 HIERARCHICAL
-)
-PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'hierarchy_source_table'))
-LAYOUT(FLAT())
-LIFETIME(MIN 1 MAX 1000);
-```
-Запрос:
-
-``` sql
-SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
-SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
-SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
-```
-Результат:
+Рассмотрим иерархический словарь:
 
 ``` text
-┌─dictGetChildren('hierarchy_flat_dictionary', number)─┐
-│ [1]                                                  │
-│ [2,3]                                                │
-│ [4]                                                  │
-│ []                                                   │
-└──────────────────────────────────────────────────────┘
+┌─id─┬─parent_id─┐
+│  1 │         0 │
+│  2 │         1 │
+│  3 │         1 │
+│  4 │         2 │
+└────┴───────────┘
+```
+Все потомки:
+
+``` sql
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+```
+
+``` text
 ┌─dictGetDescendants('hierarchy_flat_dictionary', number)─┐
 │ [1,2,3,4]                                               │
 │ [2,3,4]                                                 │
 │ [4]                                                     │
 │ []                                                      │
 └─────────────────────────────────────────────────────────┘
+```
+
+Потомки первого уровня:
+
+``` sql
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
+```
+
+``` text
 ┌─dictGetDescendants('hierarchy_flat_dictionary', number, 1)─┐
 │ [1]                                                        │
 │ [2,3]                                                      │
