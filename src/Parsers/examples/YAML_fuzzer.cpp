@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <cstdio>
 #include <time.h>
 #include <filesystem>
 
@@ -10,15 +11,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     /// build ClickHouse with YAML_fuzzer.cpp
     /// ./YAML_fuzzer YAML_CORPUS
     /// where YAML_CORPUS is a directory with different YAML configs for libfuzzer
-
-    srand(time(NULL));
-    std::string cur_file = std::to_string(rand());
-
-    while (std::filesystem::exists(cur_file))
-    {
-        std::string cur_file = std::to_string(rand());
+    char* file_name = std::tmpnam(nullptr);
+    if (file_name == nullptr) {
+        std::cout << "Cannot create temp file!\n";
+        return 1;
     }
-
+    std::string cur_file(file_name);
+    
     std::string input = std::string(reinterpret_cast<const char*>(data), size);
     DB::YAMLParser parser;
 
@@ -34,8 +33,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     {
         std::cout << "YAMLParser exception from bad file, etc. OK\n";
     }
-
-    remove(cur_file.c_str());
     return 0;
 }
 
