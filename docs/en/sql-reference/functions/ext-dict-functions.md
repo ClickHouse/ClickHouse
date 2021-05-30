@@ -181,7 +181,7 @@ dictGetChildren(dict_name, key)
 
 -   First-level descendants for the key.
 
-Type: [Array(UInt64)](../../sql-reference/data-types/array.md).
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 ## dictGetDescendant {#dictgetdescendant}
 
@@ -292,4 +292,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
         - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
-
