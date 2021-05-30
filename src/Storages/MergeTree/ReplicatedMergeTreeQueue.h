@@ -92,8 +92,8 @@ private:
     using FuturePartsSet = std::map<String, LogEntryPtr>;
     FuturePartsSet future_parts;
 
-    /// Index of the first log entry that we didn't see yet.
-    Int64 log_pointer = 0;
+    using LostPartsSet = std::set<String>;
+    LostPartsSet lost_forever_parts;
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
     bool currently_executing_drop_or_replace_range = false;
@@ -275,6 +275,7 @@ public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
     ~ReplicatedMergeTreeQueue();
 
+    void clear();
 
     void initialize(const MergeTreeData::DataParts & parts);
 
@@ -289,13 +290,20 @@ public:
       */
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
+    using QueueIters = std::vector<Queue::const_iterator>;
+    QueueIters findEntriesByNewPartName(const String & part_name) const;
+
+    bool markPartAsLostForever(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
+
+    void executePartIsLost(zkutil::ZooKeeperPtr zookeeper, LogEntry & entry_lost);
+
     /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
       * If queue was not empty load() would not load duplicate records.
       * return true, if we update queue.
       */
     bool load(zkutil::ZooKeeperPtr zookeeper);
 
-    bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
+    bool removeFailedQuorumPart(const MergeTreePartInfo & part_info);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
@@ -477,6 +485,8 @@ public:
 
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
+
+    bool ensurePartIsLost(const String & part_name, Poco::Logger * log) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;
