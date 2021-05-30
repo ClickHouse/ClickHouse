@@ -172,7 +172,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
     auto create_stream_getter = [&](bool stream_for_prefix)
     {
-        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
+        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer * //-V1047
         {
             if (cache.count(ISerialization::getSubcolumnNameForStream(path)))
                 return nullptr;
@@ -357,6 +357,11 @@ void LogBlockOutputStream::writeSuffix()
 
     streams.clear();
     done = true;
+
+    /// unlock should be done from the same thread as lock, and dtor may be
+    /// called from different thread, so it should be done here (at least in
+    /// case of no exceptions occurred)
+    lock.unlock();
 }
 
 
@@ -460,6 +465,7 @@ StorageLog::StorageLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -471,6 +477,7 @@ StorageLog::StorageLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -586,7 +593,7 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
     renameInMemory(new_table_id);
 }
 
-void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
+void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
     files.clear();
     file_count = 0;
@@ -628,9 +635,9 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
 }
 
 
-static std::chrono::seconds getLockTimeout(const Context & context)
+static std::chrono::seconds getLockTimeout(ContextPtr context)
 {
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
     if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
         lock_timeout = settings.max_execution_time.totalSeconds();
@@ -642,7 +649,7 @@ Pipe StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
@@ -667,7 +674,7 @@ Pipe StorageLog::read(
     if (num_streams > marks_size)
         num_streams = marks_size;
 
-    size_t max_read_buffer_size = context.getSettingsRef().max_read_buffer_size;
+    size_t max_read_buffer_size = context->getSettingsRef().max_read_buffer_size;
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
@@ -690,7 +697,7 @@ Pipe StorageLog::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
+BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     auto lock_timeout = getLockTimeout(context);
     loadMarks(lock_timeout);
@@ -702,7 +709,7 @@ BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMe
     return std::make_shared<LogBlockOutputStream>(*this, metadata_snapshot, std::move(lock));
 }
 
-CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & context)
+CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr context)
 {
     std::shared_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
@@ -726,11 +733,17 @@ void registerStorageLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         String disk_name = getDiskName(*args.storage_def);
-        DiskPtr disk = args.context.getDisk(disk_name);
+        DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return StorageLog::create(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
-            args.attach, args.context.getSettings().max_compress_block_size);
+            disk,
+            args.relative_data_path,
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.attach,
+            args.getContext()->getSettings().max_compress_block_size);
     }, features);
 }
 

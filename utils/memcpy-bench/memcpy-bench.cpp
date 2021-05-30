@@ -299,8 +299,8 @@ static void * memcpySSE2Unrolled8(void * __restrict destination, const void * __
 
 
 //static __attribute__((__always_inline__, __target__("sse2")))
-__attribute__((__always_inline__))
-void memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & src, size_t & size)
+__attribute__((__always_inline__)) inline void
+memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & src, size_t & size)
 {
     /// Align destination to 16 bytes boundary.
     size_t padding = (16 - (reinterpret_cast<size_t>(dst) & 15)) & 15;

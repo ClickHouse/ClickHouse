@@ -17,7 +17,7 @@ struct NullableValueSource;
 template <typename Base>
 struct ConstSource;
 
-using NumericValueSources = typename TypeListMap<NumericValueSource, TypeListNumbersAndUInt128>::Type;
+using NumericValueSources = typename TypeListMap<NumericValueSource, TypeListNumbersAndUUID>::Type;
 using BasicValueSources = typename AppendToTypeList<GenericValueSource, NumericValueSources>::Type;
 using NullableValueSources = typename TypeListMap<NullableValueSource, BasicValueSources>::Type;
 using BasicAndNullableValueSources = typename TypeListConcat<BasicValueSources, NullableValueSources>::Type;

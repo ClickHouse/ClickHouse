@@ -1,11 +1,14 @@
 #pragma once
 
-#include <memory>
-#include <unordered_map>
-#include <set>
-#include <boost/noncopyable.hpp>
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <memory>
+#include <set>
+#include <unordered_map>
 
 
 namespace Poco { class Logger; }
@@ -32,7 +35,7 @@ class MergeTreeWhereOptimizer : private boost::noncopyable
 public:
     MergeTreeWhereOptimizer(
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & queried_columns_,

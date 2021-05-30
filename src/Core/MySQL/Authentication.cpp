@@ -73,7 +73,7 @@ Native41::Native41(const String & password, const String & auth_plugin_data)
 }
 
 void Native41::authenticate(
-    const String & user_name, std::optional<String> auth_response, Context & context,
+    const String & user_name, std::optional<String> auth_response, ContextPtr context,
     std::shared_ptr<PacketEndpoint> packet_endpoint, bool, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
@@ -86,15 +86,17 @@ void Native41::authenticate(
 
     if (auth_response->empty())
     {
-        context.setUser(user_name, "", address);
+        context->setUser(user_name, "", address);
         return;
     }
 
     if (auth_response->size() != Poco::SHA1Engine::DIGEST_SIZE)
-        throw Exception("Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE) + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
-                        ErrorCodes::UNKNOWN_EXCEPTION);
+        throw Exception(
+            "Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE)
+                + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
+            ErrorCodes::UNKNOWN_EXCEPTION);
 
-    auto user = context.getAccessControlManager().read<User>(user_name);
+    auto user = context->getAccessControlManager().read<User>(user_name);
 
     Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
     assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
@@ -109,7 +111,7 @@ void Native41::authenticate(
     {
         password_sha1[i] = digest[i] ^ static_cast<unsigned char>((*auth_response)[i]);
     }
-    context.setUser(user_name, password_sha1, address);
+    context->setUser(user_name, password_sha1, address);
 }
 
 #if USE_SSL
@@ -134,7 +136,7 @@ Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logg
 }
 
 void Sha256Password::authenticate(
-    const String & user_name, std::optional<String> auth_response, Context & context,
+    const String & user_name, std::optional<String> auth_response, ContextPtr context,
     std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
@@ -229,7 +231,7 @@ void Sha256Password::authenticate(
         password.pop_back();
     }
 
-    context.setUser(user_name, password, address);
+    context->setUser(user_name, password, address);
 }
 
 #endif

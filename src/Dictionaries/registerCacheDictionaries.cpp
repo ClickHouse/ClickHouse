@@ -1,7 +1,9 @@
 #include "CacheDictionary.h"
 #include "CacheDictionaryStorage.h"
 #include "SSDCacheDictionaryStorage.h"
+#include <Common/filesystemHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -11,6 +13,7 @@ namespace ErrorCodes
     extern const int TOO_SMALL_BUFFER_SIZE;
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
@@ -26,7 +29,7 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     const size_t size = config.getUInt64(dictionary_configuration_prefix + "size_in_cells");
     if (size == 0)
         throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE,
-            "({}): cache dictionary cannot have 0 cells",
+            "{}: cache dictionary cannot have 0 cells",
             full_name);
 
     size_t dict_lifetime_seconds = static_cast<size_t>(dict_lifetime.max_sec);
@@ -68,35 +71,32 @@ SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const size_t file_size = config.getInt64(dictionary_configuration_prefix + "file_size", DEFAULT_FILE_SIZE_BYTES);
     if (file_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): file_size must be a multiple of block_size",
+            "{}: file_size must be a multiple of block_size",
             full_name);
 
     const size_t read_buffer_size = config.getInt64(dictionary_configuration_prefix + "read_buffer_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
     if (read_buffer_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): read_buffer_size must be a multiple of block_size",
+            "{}: read_buffer_size must be a multiple of block_size",
             full_name);
 
     const size_t write_buffer_size
         = config.getInt64(dictionary_configuration_prefix + "write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
     if (write_buffer_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): write_buffer_size must be a multiple of block_size",
+            "{}: write_buffer_size must be a multiple of block_size",
             full_name);
 
-    auto directory_path = config.getString(dictionary_configuration_prefix + "path");
-    if (directory_path.empty())
+    auto file_path = config.getString(dictionary_configuration_prefix + "path");
+    if (file_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): ssd cache dictionary cannot have empty path",
+            "{}: ssd cache dictionary cannot have empty path",
             full_name);
-
-    if (directory_path.at(0) != '/')
-        directory_path = std::filesystem::path{config.getString("path")}.concat(directory_path).string();
 
     SSDCacheDictionaryStorageConfiguration configuration{
         strict_max_lifetime_seconds,
         dict_lifetime,
-        directory_path,
+        file_path,
         max_partitions_count,
         block_size,
         file_size / block_size,
@@ -119,7 +119,7 @@ CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfigura
     const size_t max_update_queue_size = config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
     if (max_update_queue_size == 0)
         throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE,
-            "({}): dictionary of layout '({})' cannot have empty update queue of size 0",
+            "{}: dictionary of layout '{}' cannot have empty update queue of size 0",
             full_name,
             layout_type);
 
@@ -127,7 +127,7 @@ CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfigura
         = config.getUInt64(layout_prefix + ".cache.update_queue_push_timeout_milliseconds", 10);
     if (update_queue_push_timeout_milliseconds < 10)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): dictionary of layout '({})' have too little update_queue_push_timeout",
+            "{}: dictionary of layout '{}' have too little update_queue_push_timeout",
             full_name,
             layout_type);
 
@@ -136,7 +136,7 @@ CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfigura
     const size_t max_threads_for_updates = config.getUInt64(layout_prefix + ".max_threads_for_updates", 4);
     if (max_threads_for_updates == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): dictionary of layout) '({})' cannot have zero threads for updates",
+            "{}: dictionary of layout) '{}' cannot have zero threads for updates",
             full_name,
             layout_type);
 
@@ -169,14 +169,14 @@ DictionaryPtr createCacheDictionaryLayout(
 
     if (dict_struct.range_min || dict_struct.range_max)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): elements .structure.range_min and .structure.range_max should be defined only "
-                  "for a dictionary of layout 'range_hashed'",
+            "{}: elements .structure.range_min and .structure.range_max should be defined only "
+            "for a dictionary of layout 'range_hashed'",
             full_name);
 
     const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
     if (require_nonempty)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): cache dictionary of layout cannot have 'require_nonempty' attribute set",
+            "{}: cache dictionary of layout cannot have 'require_nonempty' attribute set",
             full_name);
 
     const auto & layout_prefix = config_prefix + ".layout";
@@ -205,7 +205,9 @@ DictionaryPtr createSSDCacheDictionaryLayout(
     const DictionaryStructure & dict_struct,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    DictionarySourcePtr source_ptr)
+    DictionarySourcePtr source_ptr,
+    ContextConstPtr context,
+    bool created_from_ddl)
 {
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionary");
 
@@ -222,14 +224,14 @@ DictionaryPtr createSSDCacheDictionaryLayout(
 
     if (dict_struct.range_min || dict_struct.range_max)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): elements .structure.range_min and .structure.range_max should be defined only "
-                  "for a dictionary of layout 'range_hashed'",
+            "{}: elements .structure.range_min and .structure.range_max should be defined only "
+            "for a dictionary of layout 'range_hashed'",
             full_name);
 
     const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
     if (require_nonempty)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "({}): cache dictionary of layout cannot have 'require_nonempty' attribute set",
+            "{}: cache dictionary of layout cannot have 'require_nonempty' attribute set",
             full_name);
 
     const auto & layout_prefix = config_prefix + ".layout";
@@ -241,10 +243,14 @@ DictionaryPtr createSSDCacheDictionaryLayout(
     const bool allow_read_expired_keys = config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
 
     auto storage_configuration = parseSSDCacheStorageConfiguration(full_name, config, layout_prefix, dict_lifetime, dictionary_key_type);
+
+    if (created_from_ddl && !pathStartsWith(storage_configuration.file_path, context->getUserFilesPath()))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", storage_configuration.file_path, context->getUserFilesPath());
+
+
     auto storage = std::make_shared<SSDCacheDictionaryStorage<dictionary_key_type>>(storage_configuration);
 
-    auto update_queue_configuration
-        = parseCacheDictionaryUpdateQueueConfiguration(full_name, config, layout_prefix, dictionary_key_type);
+    auto update_queue_configuration = parseCacheDictionaryUpdateQueueConfiguration(full_name, config, layout_prefix, dictionary_key_type);
 
     return std::make_unique<CacheDictionary<dictionary_key_type>>(
         dict_id, dict_struct, std::move(source_ptr), storage, update_queue_configuration, dict_lifetime, allow_read_expired_keys);
@@ -258,7 +264,9 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                           const DictionaryStructure & dict_struct,
                                           const Poco::Util::AbstractConfiguration & config,
                                           const std::string & config_prefix,
-                                          DictionarySourcePtr source_ptr) -> DictionaryPtr
+                                          DictionarySourcePtr source_ptr,
+                                          ContextConstPtr /* context */,
+                                          bool /* created_from_ddl */) -> DictionaryPtr
     {
         return createCacheDictionaryLayout<DictionaryKeyType::simple>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
     };
@@ -269,7 +277,9 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                                const DictionaryStructure & dict_struct,
                                                const Poco::Util::AbstractConfiguration & config,
                                                const std::string & config_prefix,
-                                               DictionarySourcePtr source_ptr) -> DictionaryPtr
+                                               DictionarySourcePtr source_ptr,
+                                               ContextConstPtr /* context */,
+                                               bool /* created_from_ddl */) -> DictionaryPtr
     {
         return createCacheDictionaryLayout<DictionaryKeyType::complex>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
     };
@@ -282,9 +292,11 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                               const DictionaryStructure & dict_struct,
                                               const Poco::Util::AbstractConfiguration & config,
                                               const std::string & config_prefix,
-                                              DictionarySourcePtr source_ptr) -> DictionaryPtr
+                                              DictionarySourcePtr source_ptr,
+                                              ContextConstPtr context,
+                                              bool created_from_ddl) -> DictionaryPtr
     {
-        return createSSDCacheDictionaryLayout<DictionaryKeyType::simple>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
+        return createSSDCacheDictionaryLayout<DictionaryKeyType::simple>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), context, created_from_ddl);
     };
 
     factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false);
@@ -293,8 +305,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                                    const DictionaryStructure & dict_struct,
                                                    const Poco::Util::AbstractConfiguration & config,
                                                    const std::string & config_prefix,
-                                                   DictionarySourcePtr source_ptr) -> DictionaryPtr {
-        return createSSDCacheDictionaryLayout<DictionaryKeyType::complex>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
+                                                   DictionarySourcePtr source_ptr,
+                                                   ContextConstPtr context,
+                                                   bool created_from_ddl) -> DictionaryPtr {
+        return createSSDCacheDictionaryLayout<DictionaryKeyType::complex>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), context, created_from_ddl);
     };
 
     factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true);

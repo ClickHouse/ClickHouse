@@ -25,7 +25,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const override;
 };
 
 }

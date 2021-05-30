@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -18,16 +18,16 @@ namespace
 class FunctionNullIf : public IFunction
 {
 private:
-    const Context & context;
+    ContextConstPtr context;
 public:
     static constexpr auto name = "nullIf";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionNullIf>(context);
     }
 
-    explicit FunctionNullIf(const Context & context_) : context(context_) {}
+    explicit FunctionNullIf(ContextConstPtr context_) : context(context_) {}
 
     std::string getName() const override
     {

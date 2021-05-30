@@ -19,9 +19,14 @@ namespace ErrorCodes
 {
 }
 
-
-bool decimalCheckComparisonOverflow(const Context & context) { return context.getSettingsRef().decimal_check_overflow; }
-bool decimalCheckArithmeticOverflow(const Context & context) { return context.getSettingsRef().decimal_check_overflow; }
+bool decimalCheckComparisonOverflow(ContextConstPtr context)
+{
+    return context->getSettingsRef().decimal_check_overflow;
+}
+bool decimalCheckArithmeticOverflow(ContextConstPtr context)
+{
+    return context->getSettingsRef().decimal_check_overflow;
+}
 
 template <typename T>
 Field DataTypeDecimalBase<T>::getDefault() const

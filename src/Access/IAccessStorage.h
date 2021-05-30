@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/UUID.h>
 #include <ext/scope_guard.h>
 #include <functional>

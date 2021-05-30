@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 class AccessRightsElements;
 class ASTAlterCommand;
 
@@ -14,23 +14,21 @@ class ASTAlterCommand;
 /** Allows you add or remove a column in the table.
   * It also allows you to manipulate the partitions of the MergeTree family tables.
   */
-class InterpreterAlterQuery : public IInterpreter
+class InterpreterAlterQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterAlterQuery(const ASTPtr & query_ptr_, const Context & context_);
+    InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextPtr context_);
 
     BlockIO execute() override;
 
     static AccessRightsElements getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table);
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context & context) const override;
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
 private:
     AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
-
-    const Context & context;
 };
 
 }

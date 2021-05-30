@@ -8,7 +8,7 @@
           <format>TabSeparated</format>
         </file>
       </source>
-      <lifetime>1</lifetime>
+      <lifetime>5</lifetime>
       <layout><flat/></layout>
       <structure><id><name>key</name> </id>
         <attribute><name>a</name><type>Int32</type>
