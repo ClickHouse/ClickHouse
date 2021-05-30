@@ -39,7 +39,7 @@ Pipe StorageSystemStoragePolicies::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
@@ -55,7 +55,7 @@ Pipe StorageSystemStoragePolicies::read(
     MutableColumnPtr col_move_factor = ColumnFloat32::create();
     MutableColumnPtr col_prefer_not_to_merge = ColumnUInt8::create();
 
-    for (const auto & [policy_name, policy_ptr] : context.getPoliciesMap())
+    for (const auto & [policy_name, policy_ptr] : context->getPoliciesMap())
     {
         const auto & volumes = policy_ptr->getVolumes();
         for (size_t i = 0; i != volumes.size(); ++i)

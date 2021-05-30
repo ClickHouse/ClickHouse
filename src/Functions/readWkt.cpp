@@ -68,7 +68,7 @@ public:
         return true;
     }
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionReadWkt<DataTypeName, Geometry, Serializer, NameHolder>>();
     }

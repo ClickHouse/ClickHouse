@@ -1,4 +1,12 @@
 <yandex>
+    <listen_host>::</listen_host>
+
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+    </logger>
+
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>{id}</server_id>
@@ -9,6 +17,9 @@
             <force_sync>false</force_sync>
             <startup_timeout>120000</startup_timeout>
             <raft_logs_level>trace</raft_logs_level>
+            <heart_beat_interval_ms>1000</heart_beat_interval_ms>
+            <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
             <quorum_reads>{quorum_reads}</quorum_reads>
             <snapshot_distance>{snapshot_distance}</snapshot_distance>
             <stale_log_gap>{stale_log_gap}</stale_log_gap>

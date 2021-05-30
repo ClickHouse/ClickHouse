@@ -27,8 +27,8 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
+    UInt64 s3_max_single_read_retries;
     size_t buffer_size;
-    bool initialized = false;
     off_t offset = 0;
     Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;
@@ -40,6 +40,7 @@ public:
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
+        UInt64 s3_max_single_read_retries_,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;

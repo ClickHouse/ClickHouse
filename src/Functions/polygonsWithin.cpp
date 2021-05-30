@@ -36,7 +36,7 @@ public:
 
     explicit FunctionPolygonsWithin() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionPolygonsWithin>();
     }

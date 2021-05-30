@@ -10,6 +10,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -21,6 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
+/// TODO Proper support for Decimal256.
 template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {
@@ -56,7 +58,7 @@ inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string 
 }
 
 template <template <typename, typename> class Function>
-AggregateFunctionPtr createAggregateFunctionMoving(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionMoving(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
 

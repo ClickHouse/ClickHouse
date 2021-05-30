@@ -92,7 +92,7 @@ private:
             ConnectionEstablisherAsync & connection_establisher_async;
             Fiber & fiber;
 
-            void operator()(int fd, const Poco::Timespan & timeout, const std::string &);
+            void operator()(int fd, Poco::Timespan timeout, const std::string &);
         };
 
         Fiber operator()(Fiber && sink);

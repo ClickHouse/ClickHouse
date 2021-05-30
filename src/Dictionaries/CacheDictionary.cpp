@@ -70,7 +70,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -133,7 +133,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
 template <DictionaryKeyType dictionary_key_type>
 Columns CacheDictionary<dictionary_key_type>::getColumns(
     const Strings & attribute_names,
-    const DataTypes &,
+    const DataTypes & result_types,
     const Columns & key_columns,
     const DataTypes & key_types,
     const Columns & default_values_columns) const
@@ -159,7 +159,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     auto keys = extractor.extractAllKeys();
 
-    DictionaryStorageFetchRequest request(dict_struct, attribute_names, default_values_columns);
+    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, default_values_columns);
 
     FetchResult result_of_fetch_from_storage;
 
@@ -176,8 +176,9 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
 
-    query_count.fetch_add(keys.size());
-    hit_count.fetch_add(found_keys_size);
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(found_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
 
     MutableColumns & fetched_columns_from_storage = result_of_fetch_from_storage.fetched_columns;
     const PaddedPODArray<KeyState> & key_index_to_state_from_storage = result_of_fetch_from_storage.key_index_to_state;
@@ -277,7 +278,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     const auto keys = extractor.extractAllKeys();
 
     /// We make empty request just to fetch if keys exists
-    DictionaryStorageFetchRequest request(dict_struct, {}, {});
+    DictionaryStorageFetchRequest request(dict_struct, {}, {}, {});
 
     FetchResult result_of_fetch_from_storage;
 
@@ -296,8 +297,9 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, expired_keys_size);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, not_found_keys_size);
 
-    query_count.fetch_add(keys.size());
-    hit_count.fetch_add(found_keys_size);
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(found_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
 
     size_t keys_to_update_size = expired_keys_size + not_found_keys_size;
     auto update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(key_columns, result_of_fetch_from_storage.key_index_to_state, request, keys_to_update_size);
@@ -365,8 +367,10 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
-        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type);
+        size_t keys_found;
+        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -381,8 +385,10 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
-        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type);
+        size_t keys_found;
+        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -520,8 +526,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     */
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
 
-    size_t found_keys_size = 0;
-
     Arena * complex_key_arena = update_unit_ptr->complex_keys_arena_holder.getComplexKeyArena();
     DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, complex_key_arena);
     auto requested_keys = requested_keys_extractor.extractAllKeys();
@@ -610,9 +614,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                     auto fetched_key_from_source = keys_extracted_from_block[i];
 
                     not_found_keys.erase(fetched_key_from_source);
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_size;
+                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
                     found_keys_in_source.emplace_back(fetched_key_from_source);
-                    ++found_keys_size;
                 }
             }
 
@@ -666,9 +669,13 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             }
         }
 
+        /// The underlying source can have duplicates, so count only unique keys this formula is used.
+        size_t found_keys_size = requested_keys_size - not_found_keys.size();
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, requested_keys_size - found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_keys_size);
         ProfileEvents::increment(ProfileEvents::DictCacheRequests);
+
+        found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
     }
     else
     {

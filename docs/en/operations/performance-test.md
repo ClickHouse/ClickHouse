@@ -12,6 +12,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
 3.  Copy the link to `clickhouse` binary for amd64 or aarch64.
 4.  ssh to the server and download it with wget:
 ```bash
+# These links are outdated, please obtain the fresh link from the "commits" page.
 # For amd64:
 wget https://clickhouse-builds.s3.yandex.net/0/e29c4c3cc47ab2a6c4516486c1b77d57e7d42643/clickhouse_build_check/gcc-10_relwithdebuginfo_none_bundled_unsplitted_disable_False_binary/clickhouse
 # For aarch64:

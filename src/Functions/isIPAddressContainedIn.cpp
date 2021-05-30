@@ -5,7 +5,7 @@
 #include <Common/formatIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <variant>
@@ -125,7 +125,7 @@ namespace DB
     public:
         static constexpr auto name = "isIPAddressInRange";
         String getName() const override { return name; }
-        static FunctionPtr create(const Context &) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
+        static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* return_type */, size_t input_rows_count) const override
         {
