@@ -5,12 +5,10 @@ namespace DB
 
 class OpenFDMetrics
 {
-
 public:
-
     struct Data
     {
-        uint16_t cnt;
+        uint32_t cnt;
 
         Data() {
             cnt = 0;
