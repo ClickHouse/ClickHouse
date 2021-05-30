@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # use $CLICKHOUSE_DATABASE so that clickhouse-test will replace it with default to match .reference
 config=$CUR_DIR/config_$CLICKHOUSE_DATABASE
 xml_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.xml
+XML_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.XML
 conf_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.conf
 yml_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.yml
 yaml_config=$CUR_DIR/config_$CLICKHOUSE_DATABASE.yaml
@@ -16,6 +17,7 @@ function cleanup()
 {
     rm "${config:?}"
     rm "${xml_config:?}"
+    rm "${XML_config:?}"
     rm "${conf_config:?}"
     rm "${yml_config:?}"
     rm "${yaml_config:?}"
@@ -38,6 +40,11 @@ cat > "$xml_config" <<EOL
     <max_threads>2</max_threads>
 </config>
 EOL
+cat > "$XML_config" <<EOL
+<config>
+    <max_threads>2</max_threads>
+</config>
+EOL
 cat > "$yml_config" <<EOL
 max_threads: 2
 EOL
@@ -53,6 +60,8 @@ echo 'default'
 $CLICKHOUSE_CLIENT --config "$config" -q "select getSetting('max_threads')"
 echo 'xml'
 $CLICKHOUSE_CLIENT --config "$xml_config" -q "select getSetting('max_threads')"
+echo 'XML'
+$CLICKHOUSE_CLIENT --config "$XML_config" -q "select getSetting('max_threads')"
 echo 'conf'
 $CLICKHOUSE_CLIENT --config "$conf_config" -q "select getSetting('max_threads')"
 echo '/dev/fd/PIPE'
