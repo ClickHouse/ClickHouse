@@ -415,51 +415,44 @@ try
         attachSystemTables(global_context);
     }
 
-    auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
-    if (history_file_from_env)
-        history_file = history_file_from_env;
+    if (is_interactive)
+    {
+        auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+        if (history_file_from_env)
+            history_file = history_file_from_env;
 
-    if (!history_file.empty() && !Poco::File(history_file).exists())
-        Poco::File(history_file).createFile();
+        if (!history_file.empty() && !Poco::File(history_file).exists())
+            Poco::File(history_file).createFile();
 
-    LineReader::Patterns query_extenders = {"\\"};
-    LineReader::Patterns query_delimiters = {";", "\\G"};
+        LineReader::Patterns query_extenders = {"\\"};
+        LineReader::Patterns query_delimiters = {";", "\\G"};
 
-    Strings keys;
+        Strings keys;
 
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
 
-    server_display_name = config().getString("display_name", getFQDNOrHostName());
+        server_display_name = config().getString("display_name", getFQDNOrHostName());
 
-    /// Prompt may contain the following substitutions in a form of {name}.
-    std::map<String, String> prompt_substitutions{
-        {"display_name", server_display_name}
-    };
+        /// Prompt may contain the following substitutions in a form of {name}.
+        std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
 
-    /// Quite suboptimal.
-    for (const auto & [key, value] : prompt_substitutions)
-        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+        /// Quite suboptimal.
+        for (const auto & [key, value] : prompt_substitutions)
+            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
 
 #if USE_REPLXX
-    replxx::Replxx::highlighter_callback_t highlight_callback{};
-            if (config().getBool("highlight"))
-                highlight_callback = highlight;
+        replxx::Replxx::highlighter_callback_t highlight_callback{};
+        if (config().getBool("highlight"))
+            highlight_callback = highlight;
 
-            ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
+        ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
 
 #elif defined(USE_READLINE) && USE_READLINE
-    ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
+        ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
-    LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
+        LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
-
-    if (!is_interactive)
-    {
-        processQueries();
-    }
-    else
-    {
         do
         {
             auto input = lr.readLine(boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default")), ":-] ");
@@ -469,6 +462,10 @@ try
 
         std::cout << "Bye." << std::endl;
         return 0;
+    }
+    else
+    {
+        processQueries();
     }
 
     global_context->shutdown();
