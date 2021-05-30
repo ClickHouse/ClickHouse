@@ -148,7 +148,7 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
     catch (const YAML::ParserException& e)
     {
         /// yaml-cpp cannot parse the file because its contents are incorrect
-        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration file {}", path, e.what());
+        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration file {}, {}", path, e.what());
     }
     catch (const YAML::BadFile&)
     {

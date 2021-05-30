@@ -11,9 +11,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     /// build ClickHouse with YAML_fuzzer.cpp
     /// ./YAML_fuzzer YAML_CORPUS
     /// where YAML_CORPUS is a directory with different YAML configs for libfuzzer
-    char* file_name = std::tmpnam(nullptr);
+    char buf[L_tmpnam];
+    char* file_name = std::tmpnam(buf);
     if (file_name == nullptr) {
-        std::cout << "Cannot create temp file!\n";
+        std::cerr << "Cannot create temp file!\n";
         return 1;
     }
     std::string cur_file(file_name);
@@ -21,17 +22,19 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     std::string input = std::string(reinterpret_cast<const char*>(data), size);
     DB::YAMLParser parser;
 
-    std::ofstream temp_file(cur_file);
-    temp_file << input;
-    temp_file.close();
+    {
+        std::ofstream temp_file(cur_file);
+        temp_file << input;
+    }
 
     try
     {
         DB::YAMLParser::parse(cur_file);
     }
-    catch (const DB::Exception&)
+    catch (...)
     {
-        std::cout << "YAMLParser exception from bad file, etc. OK\n";
+        std::cerr << "YAML_fuzzer failed: " << getCurrentExceptionMessage() << std::endl;
+        return 1;
     }
     return 0;
 }
