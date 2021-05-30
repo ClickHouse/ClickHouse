@@ -560,7 +560,10 @@ void LocalServer::processQueries(String queries_str)
     CurrentThread::QueryScope query_scope_holder(context);
 
     ///Set progress show
-    progress_bar.need_render_progress = config().getBool("progress", false);
+    if (!is_interactive)
+    {
+        progress_bar.need_render_progress = config().getBool("progress", false);
+    }
 
     if (progress_bar.need_render_progress)
     {
