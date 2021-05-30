@@ -203,7 +203,7 @@ dictGetDescendants(dict_name, key, level)
 
 -   Descendants for the key.
 
-Type: [Array(UInt64)](../../sql-reference/data-types/array.md).
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
