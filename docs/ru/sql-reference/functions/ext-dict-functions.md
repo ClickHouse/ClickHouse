@@ -170,9 +170,9 @@ dictGetChildren(dict_name, key)
 **Аргументы** 
 
 -   `dict_name` — Имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
--   `key` — Значение ключа.[Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
+-   `key` — Значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
 
-**Returned values**
+**Возвращаемые значения**
 
 -   Потомки первого уровня для ключа.
 
@@ -191,7 +191,7 @@ dictGetDescendants(dict_name, key, level)
 **Аргументы** 
 
 -   `dict_name` — Имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
--   `key` — Значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md)
+-   `key` — Значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 -   `level` — уровень иерархии. Если `level = 0` возвращаются все потомки до конца. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
@@ -199,6 +199,54 @@ dictGetDescendants(dict_name, key, level)
 -   Потомки для ключа.
 
 Тип: [Array(UInt64)](../../sql-reference/data-types/array.md).
+
+**Пример**
+
+Исходная таблица:
+
+``` sql
+CREATE TABLE hierarchy_source_table (id UInt64, parent_id UInt64) ENGINE = TinyLog;
+INSERT INTO hierarchy_source_table VALUES (1, 0), (2, 1), (3, 1), (4, 2);
+CREATE DICTIONARY hierarchy_flat_dictionary
+(
+    id UInt64,
+    parent_id UInt64 HIERARCHICAL
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'hierarchy_source_table'))
+LAYOUT(FLAT())
+LIFETIME(MIN 1 MAX 1000);
+```
+Запрос:
+
+``` sql
+SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
+```
+Результат:
+
+``` text
+┌─dictGetChildren('hierarchy_flat_dictionary', number)─┐
+│ [1]                                                  │
+│ [2,3]                                                │
+│ [4]                                                  │
+│ []                                                   │
+└──────────────────────────────────────────────────────┘
+┌─dictGetDescendants('hierarchy_flat_dictionary', number)─┐
+│ [1,2,3,4]                                               │
+│ [2,3,4]                                                 │
+│ [4]                                                     │
+│ []                                                      │
+└─────────────────────────────────────────────────────────┘
+┌─dictGetDescendants('hierarchy_flat_dictionary', number, 1)─┐
+│ [1]                                                        │
+│ [2,3]                                                      │
+│ [4]                                                        │
+│ []                                                         │
+└────────────────────────────────────────────────────────────┘
+```
+```
 
 ## Прочие функции {#ext_dict_functions-other}
 
