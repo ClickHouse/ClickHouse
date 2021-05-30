@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.5.6.*
+ARG version=21.5.7.*
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
