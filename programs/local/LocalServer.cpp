@@ -453,21 +453,18 @@ try
 #else
         LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
-        do
-        {
-            auto input = lr.readLine(boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default")), ":-] ");
-            if (input.empty())
-                break;
-        } while (true);
-
-        std::cout << "Bye." << std::endl;
-        return 0;
     }
-    else
+
+    do
     {
-        processQueries();
-    }
+        if (!processQueries()) {
+            break;
+        }
+    } while (true);
 
+    if (is_interactive) {
+        std::cout << "Bye." << std::endl;
+    }
     global_context->shutdown();
     global_context.reset();
 
@@ -517,12 +514,20 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
-void LocalServer::processQueries()
+bool LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
     String queries_str = initial_create_query;
+    if (is_interactive) {
+        auto input = lr.readLine(boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default")), ":-] ");
+        if (input.empty())
+            return false;
 
-    if (config().has("query"))
+        if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+            return false;
+
+        queries_str += input;
+    } else if (config().has("query"))
         queries_str += config().getRawString("query");
     else
     {

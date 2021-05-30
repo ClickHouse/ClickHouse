@@ -39,7 +39,7 @@ private:
     void tryInitPath();
     void applyCmdOptions(ContextPtr context);
     void applyCmdSettings(ContextPtr context);
-    void processQueries();
+    bool processQueries();
     void setupUsers();
     void cleanup();
 
@@ -52,6 +52,11 @@ protected:
     String prompt_by_server_display_name;
     /// Path to a file containing command history.
     String history_file;
+
+    using StringSet = std::unordered_set<String>;
+
+    StringSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
+                           "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
 
     String server_display_name;
 
