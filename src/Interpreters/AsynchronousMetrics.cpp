@@ -16,7 +16,6 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
-
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
