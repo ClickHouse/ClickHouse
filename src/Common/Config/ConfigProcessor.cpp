@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <functional>
 #include <filesystem>
+#include <boost/algorithm/string.hpp>
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
@@ -440,6 +441,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             std::string extension = path.getExtension();
             std::string base_name = path.getBaseName();
 
+            boost::algorithm::to_lower(extension);
+
             // Skip non-config and temporary files
             if (file.isFile() && (extension == "xml" || extension == "conf" || extension == "yaml" || extension == "yml") && !startsWith(base_name, "."))
             {
@@ -465,11 +468,15 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     if (fs::exists(path))
     {
         fs::path p(path);
-        if (p.extension() == ".yaml" || p.extension() == ".yml")
+
+        std::string extension = p.extension();
+        boost::algorithm::to_lower(extension);
+
+        if (extension == ".yaml" || extension == ".yml")
         {
             config = YAMLParser::parse(path);
         }
-        else if (p.extension() == ".xml" || p.extension() == ".conf" || p.extension().empty())
+        else if (extension == ".xml" || extension == ".conf" || extension.empty())
         {
             config = dom_parser.parse(path);
         }
@@ -514,7 +521,10 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             XMLDocumentPtr with;
 
             fs::path p(merge_file);
-            if (p.extension() == ".yaml" || p.extension() == ".yml")
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
             {
                 with = YAMLParser::parse(merge_file);
             }
