@@ -244,7 +244,7 @@ dictHas('dict_name', id)
 -   0, если ключа нет.
 -   1, если ключ есть.
 
-Тип — `UInt8`.
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 ## dictGetHierarchy {#dictgethierarchy}
 
@@ -265,7 +265,7 @@ dictGetHierarchy('dict_name', key)
 
 -   Цепочка предков заданного ключа.
 
-Type: [Array(UInt64)](../../sql-reference/functions/ext-dict-functions.md).
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 ## dictIsIn {#dictisin}
 
@@ -284,7 +284,7 @@ Type: [Array(UInt64)](../../sql-reference/functions/ext-dict-functions.md).
 -   0, если `child_id_expr` — не дочерний элемент `ancestor_id_expr`.
 -   1, если `child_id_expr` — дочерний элемент `ancestor_id_expr` или если `child_id_expr` и есть `ancestor_id_expr`.
 
-Тип — `UInt8`.
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 ## dictGetChildren {#dictgetchildren}
 
@@ -298,8 +298,8 @@ dictGetChildren(dict_name, key)
 
 **Аргументы** 
 
--   `dict_name` — Имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
--   `key` — Значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
 
 **Возвращаемые значения**
 
@@ -347,8 +347,8 @@ dictGetDescendants(dict_name, key, level)
 
 **Аргументы** 
 
--   `dict_name` — Имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
--   `key` — Значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 -   `level` — уровень иерархии. Если `level = 0`, возвращаются все потомки. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
