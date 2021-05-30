@@ -198,7 +198,7 @@ dictGetDescendants(dict_name, key, level)
 
 -   Потомки для ключа.
 
-Тип: [Array(UInt64)](../../sql-reference/data-types/array.md).
+Тип: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 **Пример**
 
@@ -287,4 +287,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
     -   `dictGet[Type]OrDefault` возвращает аргумент `default_value_expr`.
 
 Если значение атрибута не удалось обработать или оно не соответствует типу данных атрибута, то ClickHouse генерирует исключение.
-
