@@ -376,11 +376,6 @@ order by number
 settings max_block_size = 3;
 ;
 
--- careful with auto-application of Null combinator
-select lagInFrame(toNullable(1)) over ();
-select lagInFrameOrNull(1) over (); -- { serverError 36 }
-select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
-
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,

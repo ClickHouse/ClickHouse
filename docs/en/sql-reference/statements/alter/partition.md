@@ -184,7 +184,7 @@ To restore data from a backup, do the following:
 2.  Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
 3.  Run `ALTER TABLE t ATTACH PARTITION` queries to add the data to a table.
 
-Restoring from a backup does not require stopping the server.
+Restoring from a backup doesn’t require stopping the server.
 
 For more information about backups and restoring data, see the [Data Backup](../../../operations/backup.md) section.
 

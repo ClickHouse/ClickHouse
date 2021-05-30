@@ -94,7 +94,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
                     if (it != begin && *it == prev_key)
                     {
                         assert(place != nullptr);
-                        updater(place->getMapped()); // NOLINT
+                        updater(place->getMapped());
                         continue;
                     }
                     prev_key = *it;

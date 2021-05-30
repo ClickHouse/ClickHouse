@@ -64,6 +64,7 @@ public:
     struct SourcesInfo
     {
         std::vector<String> uris;
+
         std::atomic<size_t> next_uri_to_read = 0;
 
         bool need_path_column = false;

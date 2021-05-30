@@ -419,12 +419,6 @@ private:
     bool canConstantBeWrappedByFunctions(
         const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
 
-    /// Check if ASTPtr node, passed to canConstantBeWrappedBy*, can be used by them for further checks.
-    /// Always call this method at start of other methods, which require key comparison, because it also checks if adjusted
-    /// key expression can also be used (with substitution from modulo to moduloLegacy). This is needed because partition key
-    /// is always modified, when passed into keyCondition, - with recursive substitution from modulo to moduloLegacy.
-    bool canConstantBeWrapped(const ASTPtr & node, const String & expr_name, String & result_expr_name);
-
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.

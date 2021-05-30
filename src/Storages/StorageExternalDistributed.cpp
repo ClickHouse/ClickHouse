@@ -12,7 +12,6 @@
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <common/logger_useful.h>
@@ -80,8 +79,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     columns_,
                     constraints_,
                     String{},
-                    context,
-                    MySQLSettings{});
+                    context);
                 break;
             }
 #endif

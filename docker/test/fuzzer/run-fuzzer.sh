@@ -126,20 +126,6 @@ continue
 
     echo "Fuzzer exit code is $fuzzer_exit_code"
 
-    # If the server dies, most often the fuzzer returns code 210: connetion
-    # refused, and sometimes also code 32: attempt to read after eof. For
-    # simplicity, check again whether the server is accepting connections, using
-    # clickhouse-client. We don't check for existence of server process, because
-    # the process is still present while the server is terminating and not
-    # accepting the connections anymore.
-    if clickhouse-client --query "select 1 format Null"
-    then
-        server_died=0
-    else
-        echo "Server live check returns $?"
-        server_died=1
-    fi
-
     clickhouse-client --query "select elapsed, query from system.processes" ||:
     killall clickhouse-server ||:
     for _ in {1..10}
@@ -201,29 +187,25 @@ case "$stage" in
 
     # Make files with status and description we'll show for this check on Github
     task_exit_code=$fuzzer_exit_code
-    if [ "$server_died" == 1 ]
+    if [ "$fuzzer_exit_code" == 143 ]
     then
-        # The server has died.
-        task_exit_code=210
+        # SIGTERM -- the fuzzer was killed by timeout, which means a normal run.
+        echo "success" > status.txt
+        echo "OK" > description.txt
+        task_exit_code=0
+    elif [ "$fuzzer_exit_code" == 210 ]
+    then
+        # Lost connection to the server. This probably means that the server died
+        # with abort.
         echo "failure" > status.txt
         if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
-    elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
-    then
-        # Variants of a normal run:
-        # 0 -- fuzzing ended earlier than timeout.
-        # 143 -- SIGTERM -- the fuzzer was killed by timeout.
-        task_exit_code=0
-        echo "success" > status.txt
-        echo "OK" > description.txt
     else
-        # The server was alive, but the fuzzer returned some error. Probably this
-        # is a problem in the fuzzer itself. Don't grep the server log in this
-        # case, because we will find a message about normal server termination
-        # (Received signal 15), which is confusing.
-        task_exit_code=$fuzzer_exit_code
+        # Something different -- maybe the fuzzer itself died? Don't grep the
+        # server log in this case, because we will find a message about normal
+        # server termination (Received signal 15), which is confusing.
         echo "failure" > status.txt
         echo "Fuzzer failed ($fuzzer_exit_code). See the logs." > description.txt
     fi

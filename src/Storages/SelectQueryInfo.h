@@ -122,7 +122,7 @@ struct MergeTreeDataSelectCache;
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
-    const ProjectionDescription * desc{};
+    const ProjectionDescription * desc;
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
     String where_column_name;

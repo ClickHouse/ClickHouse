@@ -270,37 +270,16 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
     const size_t initial_pos = buf.count();
-    bool has_sign = false;
-    bool has_number = false;
     while (!buf.eof())
     {
         switch (*buf.position())
         {
             case '+':
             {
-                if (has_sign || has_number)
-                {
-                    if constexpr (throw_exception)
-                        throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
-                            ErrorCodes::CANNOT_PARSE_NUMBER);
-                    else
-                        return ReturnType(false);
-                }
-                has_sign = true;
                 break;
             }
             case '-':
             {
-                if (has_sign || has_number)
-                {
-                    if constexpr (throw_exception)
-                        throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
-                            ErrorCodes::CANNOT_PARSE_NUMBER);
-                    else
-                        return ReturnType(false);
-                }
                 if constexpr (is_signed_v<T>)
                     negative = true;
                 else
@@ -310,7 +289,6 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                     else
                         return ReturnType(false);
                 }
-                has_sign = true;
                 break;
             }
             case '0': [[fallthrough]];
@@ -324,7 +302,6 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '8': [[fallthrough]];
             case '9':
             {
-                has_number = true;
                 if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW && !is_big_int_v<T>)
                 {
                     /// Perform relativelly slow overflow check only when
@@ -353,14 +330,6 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    if (has_sign && !has_number)
-    {
-        if constexpr (throw_exception)
-            throw ParsingException(
-                "Cannot parse number with a sign character but without any numeric character", ErrorCodes::CANNOT_PARSE_NUMBER);
-        else
-            return ReturnType(false);
-    }
     x = res;
     if constexpr (is_signed_v<T>)
     {

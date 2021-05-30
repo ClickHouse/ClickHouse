@@ -3,7 +3,6 @@
 
 namespace DB
 {
-struct Settings;
 namespace
 {
     class AggregateFunctionCombinatorSimpleState final : public IAggregateFunctionCombinator

@@ -28,7 +28,6 @@
 
 namespace DB
 {
-struct Settings;
 
 /// uniq
 

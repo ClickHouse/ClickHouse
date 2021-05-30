@@ -379,7 +379,6 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 
 MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
     const String & part_name,
     const String & replica_path,
     const String & host,
@@ -471,36 +470,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         size_t sum_files_size = 0;
         readBinary(sum_files_size, in);
         IMergeTreeDataPart::TTLInfos ttl_infos;
+        /// Skip ttl infos, not required for S3 metadata
         String ttl_infos_string;
         readBinary(ttl_infos_string, in);
-        ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
-        assertString("ttl format version: 1\n", ttl_infos_buffer);
-        ttl_infos.read(ttl_infos_buffer);
-
-        ReservationPtr reservation
-            = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, &ttl_infos, true);
-        if (!reservation)
-            reservation
-                = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
-        if (reservation)
-        {
-            /// When we have multi-volume storage, one of them was chosen, depends on TTL, free space, etc.
-            /// Chosen one may be S3 or not.
-            DiskPtr disk = reservation->getDisk();
-            if (disk && disk->getType() == DiskType::Type::S3)
-            {
-                for (const auto & d : disks_s3)
-                {
-                    if (d->getPath() == disk->getPath())
-                    {
-                        Disks disks_tmp = { disk };
-                        disks_s3.swap(disks_tmp);
-                        break;
-                    }
-                }
-            }
-        }
-
         String part_type = "Wide";
         readStringBinary(part_type, in);
         if (part_type == "InMemory")
@@ -521,7 +493,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             if (e.code() != ErrorCodes::S3_ERROR)
                 throw;
             /// Try again but without S3 copy
-            return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
+            return fetchPart(metadata_snapshot, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, to_detached, tmp_prefix_, nullptr, false);
         }
     }
@@ -585,7 +557,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     MergeTreeData::DataPart::Checksums checksums;
     return part_type == "InMemory"
-        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, std::move(reservation), in, projections)
+        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, std::move(reservation), in, projections)
         : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, reservation->getDisk(), in, projections, checksums);
 }
 
@@ -593,7 +565,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
     const UUID & part_uuid,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
     ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in,
     size_t projections)
@@ -648,7 +619,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
     new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
-    new_data_part->partition.create(metadata_snapshot, block, 0, context);
+    new_data_part->partition.create(metadata_snapshot, block, 0);
 
     MergedBlockOutputStream part_out(
         new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
@@ -824,6 +795,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     readBinary(files, in);
 
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
 
     for (size_t i = 0; i < files; ++i)
     {
@@ -833,7 +805,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        String data_path = part_download_path + file_name;
+        String data_path = new_data_part->getFullRelativePath() + file_name;
         String metadata_file = fullPath(disk, data_path);
 
         {
@@ -865,7 +837,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
 
     assertEOF(in);
 
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);

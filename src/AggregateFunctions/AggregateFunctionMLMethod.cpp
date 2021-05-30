@@ -16,8 +16,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -31,7 +29,7 @@ namespace
     using FuncLogisticRegression = AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression>;
     template <class Method>
     AggregateFunctionPtr
-    createAggregateFunctionMLMethod(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    createAggregateFunctionMLMethod(const std::string & name, const DataTypes & argument_types, const Array & parameters)
     {
         if (parameters.size() > 4)
             throw Exception(

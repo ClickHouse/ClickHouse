@@ -275,7 +275,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr context,
                                  const std::string & /* default_database */,
-                                 bool created_from_ddl) -> DictionarySourcePtr
+                                 bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable_pool` does not support attribute expressions");
@@ -283,7 +283,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (created_from_ddl)
+        if (check_config)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);

@@ -190,7 +190,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr context,
                                  const std::string & /* default_database */,
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr
+                                 bool /* check_config */) -> DictionarySourcePtr
     {
 #if USE_LIBPQXX
         const auto config_prefix = root_config_prefix + ".postgresql";

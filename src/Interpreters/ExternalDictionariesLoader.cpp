@@ -38,8 +38,8 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 {
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.
-    bool created_from_ddl = !repository_name.empty();
-    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
+    bool dictionary_from_database = !repository_name.empty();
+    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), dictionary_from_database);
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const

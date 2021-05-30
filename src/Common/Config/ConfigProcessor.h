@@ -1,9 +1,5 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
-
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -145,4 +141,3 @@ private:
 };
 
 }
-

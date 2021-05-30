@@ -15,7 +15,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         Block & sample_block,
         ContextPtr,
         const std::string & /* default_database */,
-        bool /* created_from_ddl */)
+        bool /* check_config */)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
         return std::make_unique<MongoDBDictionarySource>(dict_struct,

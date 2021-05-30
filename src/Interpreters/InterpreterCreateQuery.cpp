@@ -263,7 +263,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
 
         /// We use global context here, because storages lifetime is bigger than query context lifetime
-        database->loadStoredObjects(getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach); //-V560
+        database->loadStoredObjects(getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach);
     }
     catch (...)
     {
