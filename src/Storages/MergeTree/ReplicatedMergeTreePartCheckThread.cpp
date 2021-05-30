@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
+    extern const int LOGICAL_ERROR;
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
@@ -190,7 +191,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
     if (missing_part_search_result == MissingPartSearchResult::LostForever)
     {
         /// Is it in the replication queue? If there is - delete, because the task can not be processed.
-        if (!storage.queue.remove(zookeeper, part_name))
+        if (!storage.queue.markPartAsLostForever(zookeeper, part_name))
         {
             /// The part was not in our queue.
             LOG_WARNING(log, "Missing part {} is not in our queue, this can happen rarely.", part_name);
@@ -367,8 +368,8 @@ void ReplicatedMergeTreePartCheckThread::run()
             {
                 if (!parts_set.empty())
                 {
-                    LOG_ERROR(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
                     parts_set.clear();
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty parts_set with empty parts_queue. This is a bug.");
                 }
             }
             else
@@ -401,7 +402,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
             if (parts_queue.empty())
             {
-                LOG_ERROR(log, "Someone erased checking part from parts_queue. This is a bug.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased checking part from parts_queue. This is a bug.");
             }
             else
             {
