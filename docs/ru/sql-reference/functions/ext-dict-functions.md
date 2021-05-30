@@ -246,7 +246,6 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.nu
 │ []                                                         │
 └────────────────────────────────────────────────────────────┘
 ```
-```
 
 ## Прочие функции {#ext_dict_functions-other}
 
