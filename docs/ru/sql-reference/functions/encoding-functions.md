@@ -157,8 +157,8 @@ Result:
 
 Если вы хотите преобразовать результат в число, вы можете использовать функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions).
 
-!!! note "Note"
-    Если `unhex()` вызывается из `clickhouse-client`, двоичные строки отображаются с использованием UTF-8.
+!!! note "Примечание"
+    Если `unhex` вызывается из `clickhouse-client`, двоичные строки отображаются с использованием UTF-8.
 
 Синоним: `UNHEX`.
 
