@@ -27,7 +27,8 @@ public:
         const std::string & username_,
         const std::string & password_,
         const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_);
+        const ConstraintsDescription & constraints_,
+        const String & comment);
 
     std::string getName() const override { return "MongoDB"; }
 
@@ -35,7 +36,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;

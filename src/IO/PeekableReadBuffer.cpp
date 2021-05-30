@@ -175,7 +175,7 @@ bool PeekableReadBuffer::nextImpl()
 
     if (checkpoint_at_end)
     {
-        checkpoint.emplace(working_buffer.begin());
+        checkpoint.emplace(position());
         peeked_size = 0;
         checkpoint_in_own_memory = false;
     }

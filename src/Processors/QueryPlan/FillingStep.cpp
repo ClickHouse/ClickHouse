@@ -2,6 +2,7 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -48,6 +49,11 @@ void FillingStep::describeActions(FormatSettings & settings) const
     settings.out << String(settings.offset, ' ');
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);
     settings.out << '\n';
+}
+
+void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Sort Description", explainSortDescription(sort_description, input_streams.front().header));
 }
 
 }

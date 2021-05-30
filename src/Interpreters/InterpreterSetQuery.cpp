@@ -9,8 +9,8 @@ namespace DB
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    context.checkSettingsConstraints(ast.changes);
-    context.getSessionContext().applySettingsChanges(ast.changes);
+    getContext()->checkSettingsConstraints(ast.changes);
+    getContext()->getSessionContext()->applySettingsChanges(ast.changes);
     return {};
 }
 
@@ -18,8 +18,8 @@ BlockIO InterpreterSetQuery::execute()
 void InterpreterSetQuery::executeForCurrentContext()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    context.checkSettingsConstraints(ast.changes);
-    context.applySettingsChanges(ast.changes);
+    getContext()->checkSettingsConstraints(ast.changes);
+    getContext()->applySettingsChanges(ast.changes);
 }
 
 }

@@ -43,16 +43,15 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
 
-FormatSettings getFormatSettings(const Context & context)
+FormatSettings getFormatSettings(ContextConstPtr context)
 {
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     return getFormatSettings(context, settings);
 }
 
 template <typename Settings>
-FormatSettings getFormatSettings(const Context & context,
-    const Settings & settings)
+FormatSettings getFormatSettings(ContextConstPtr context, const Settings & settings)
 {
     FormatSettings format_settings;
 
@@ -70,7 +69,6 @@ FormatSettings getFormatSettings(const Context & context,
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
-    format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
     format_settings.custom.result_before_delimiter = settings.format_custom_result_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
@@ -99,8 +97,8 @@ FormatSettings getFormatSettings(const Context & context,
     format_settings.regexp.regexp = settings.format_regexp;
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
     format_settings.schema.format_schema = settings.format_schema;
-    format_settings.schema.format_schema_path = context.getFormatSchemaPath();
-    format_settings.schema.is_server = context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);
+    format_settings.schema.format_schema_path = context->getFormatSchemaPath();
+    format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
@@ -120,26 +118,22 @@ FormatSettings getFormatSettings(const Context & context,
     {
         const Poco::URI & avro_schema_registry_url = settings.format_avro_schema_registry_url;
         if (!avro_schema_registry_url.empty())
-            context.getRemoteHostFilter().checkURL(avro_schema_registry_url);
+            context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
 
     return format_settings;
 }
 
-template
-FormatSettings getFormatSettings<FormatFactorySettings>(const Context & context,
-    const FormatFactorySettings & settings);
+template FormatSettings getFormatSettings<FormatFactorySettings>(ContextConstPtr context, const FormatFactorySettings & settings);
 
-template
-FormatSettings getFormatSettings<Settings>(const Context & context,
-    const Settings & settings);
+template FormatSettings getFormatSettings<Settings>(ContextConstPtr context, const Settings & settings);
 
 
 InputFormatPtr FormatFactory::getInput(
     const String & name,
     ReadBuffer & buf,
     const Block & sample,
-    const Context & context,
+    ContextConstPtr context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -154,7 +148,7 @@ InputFormatPtr FormatFactory::getInput(
         throw Exception("Format " + name + " is not suitable for input (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
     }
 
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
 
     // Doesn't make sense to use parallel parsing with less than four threads
@@ -204,13 +198,17 @@ InputFormatPtr FormatFactory::getInput(
     return format;
 }
 
-BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(const String & name,
-    WriteBuffer & buf, const Block & sample, const Context & context,
-    WriteCallback callback, const std::optional<FormatSettings> & _format_settings) const
+BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(
+    const String & name,
+    WriteBuffer & buf,
+    const Block & sample,
+    ContextConstPtr context,
+    WriteCallback callback,
+    const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
 
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     bool parallel_formatting = settings.output_format_parallel_formatting;
 
     if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting
@@ -237,12 +235,15 @@ BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(const Stri
 }
 
 
-BlockOutputStreamPtr FormatFactory::getOutputStream(const String & name,
-    WriteBuffer & buf, const Block & sample, const Context & context,
-    WriteCallback callback, const std::optional<FormatSettings> & _format_settings) const
+BlockOutputStreamPtr FormatFactory::getOutputStream(
+    const String & name,
+    WriteBuffer & buf,
+    const Block & sample,
+    ContextConstPtr context,
+    WriteCallback callback,
+    const std::optional<FormatSettings> & _format_settings) const
 {
-    auto format_settings = _format_settings
-        ? *_format_settings : getFormatSettings(context);
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
     if (!getCreators(name).output_processor_creator)
     {
@@ -267,7 +268,7 @@ InputFormatPtr FormatFactory::getInputFormat(
     const String & name,
     ReadBuffer & buf,
     const Block & sample,
-    const Context & context,
+    ContextConstPtr context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -275,13 +276,12 @@ InputFormatPtr FormatFactory::getInputFormat(
     if (!input_getter)
         throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
 
-    if (context.hasQueryContext() && settings.log_queries)
-        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
+    if (context->hasQueryContext() && settings.log_queries)
+        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-    auto format_settings = _format_settings
-        ? *_format_settings : getFormatSettings(context);
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
     RowInputFormatParams params;
     params.max_block_size = max_block_size;
@@ -289,7 +289,6 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     params.max_execution_time = settings.max_execution_time;
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
-
     auto format = input_getter(buf, sample, params, format_settings);
 
     /// It's a kludge. Because I cannot remove context from values format.
@@ -300,18 +299,20 @@ InputFormatPtr FormatFactory::getInputFormat(
 }
 
 OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
-    const String & name, WriteBuffer & buf, const Block & sample,
-    const Context & context, WriteCallback callback,
+    const String & name,
+    WriteBuffer & buf,
+    const Block & sample,
+    ContextConstPtr context,
+    WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
         throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
-    auto format_settings = _format_settings
-        ? *_format_settings : getFormatSettings(context);
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
 
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
         && !settings.output_format_json_array_of_rows)
@@ -322,8 +323,8 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
 
-        if (context.hasQueryContext() && settings.log_queries)
-            context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
+        if (context->hasQueryContext() && settings.log_queries)
+            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
         return std::make_shared<ParallelFormattingOutputFormat>(builder);
     }
@@ -333,16 +334,19 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 
 
 OutputFormatPtr FormatFactory::getOutputFormat(
-    const String & name, WriteBuffer & buf, const Block & sample,
-    const Context & context, WriteCallback callback,
+    const String & name,
+    WriteBuffer & buf,
+    const Block & sample,
+    ContextConstPtr context,
+    WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
         throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
-    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
+    if (context->hasQueryContext() && context->getSettingsRef().log_queries)
+        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
     RowOutputFormatParams params;
     params.callback = std::move(callback);
@@ -412,10 +416,25 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
 {
     auto & target = dict[name].supports_parallel_formatting;
     if (target)
-        throw Exception("FormatFactory: Output format " + name + " is already marked as supporting parallel formatting.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("FormatFactory: Output format " + name + " is already marked as supporting parallel formatting", ErrorCodes::LOGICAL_ERROR);
     target = true;
 }
 
+
+void FormatFactory::markFormatAsColumnOriented(const String & name)
+{
+    auto & target = dict[name].is_column_oriented;
+    if (target)
+        throw Exception("FormatFactory: Format " + name + " is already marked as column oriented", ErrorCodes::LOGICAL_ERROR);
+    target = true;
+}
+
+
+bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
+{
+    const auto & target = getCreators(name);
+    return target.is_column_oriented;
+}
 
 FormatFactory & FormatFactory::instance()
 {

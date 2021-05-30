@@ -1,7 +1,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
@@ -25,7 +25,7 @@ class FunctionToTimezone : public IFunction
 {
 public:
     static constexpr auto name = "toTimezone";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimezone>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToTimezone>(); }
 
     String getName() const override
     {

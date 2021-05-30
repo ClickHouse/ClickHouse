@@ -12,41 +12,42 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
-    KeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_, bool force_sync_);
+    KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_);
 
-    void init(size_t last_commited_log_index, size_t logs_to_keep);
+    void init(uint64_t last_commited_log_index, uint64_t logs_to_keep);
 
-    size_t start_index() const override;
+    uint64_t start_index() const override;
 
-    size_t next_slot() const override;
+    uint64_t next_slot() const override;
 
     nuraft::ptr<nuraft::log_entry> last_entry() const override;
 
-    size_t append(nuraft::ptr<nuraft::log_entry> & entry) override;
+    uint64_t append(nuraft::ptr<nuraft::log_entry> & entry) override;
 
-    void write_at(size_t index, nuraft::ptr<nuraft::log_entry> & entry) override;
+    void write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & entry) override;
 
-    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(size_t start, size_t end) override;
+    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override;
 
-    nuraft::ptr<nuraft::log_entry> entry_at(size_t index) override;
+    nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;
 
-    size_t term_at(size_t index) override;
+    uint64_t term_at(uint64_t index) override;
 
-    nuraft::ptr<nuraft::buffer> pack(size_t index, int32_t cnt) override;
+    nuraft::ptr<nuraft::buffer> pack(uint64_t index, int32_t cnt) override;
 
-    void apply_pack(size_t index, nuraft::buffer & pack) override;
+    void apply_pack(uint64_t index, nuraft::buffer & pack) override;
 
-    bool compact(size_t last_log_index) override;
+    bool compact(uint64_t last_log_index) override;
 
     bool flush() override;
 
-    size_t size() const;
+    uint64_t size() const;
+
+    void end_of_append_batch(uint64_t start_index, uint64_t count) override;
 
 private:
     mutable std::mutex changelog_lock;
     Poco::Logger * log;
     Changelog changelog;
-    bool force_sync;
 };
 
 }

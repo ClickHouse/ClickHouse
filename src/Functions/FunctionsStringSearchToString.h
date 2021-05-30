@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/StringRef.h>
@@ -36,7 +36,7 @@ class FunctionsStringSearchToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringSearchToString>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionsStringSearchToString>(); }
 
     String getName() const override { return name; }
 

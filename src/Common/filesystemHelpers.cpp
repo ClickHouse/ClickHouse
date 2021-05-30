@@ -79,7 +79,6 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
         if (device_id != parent_device_id)
             return absolute_path;
         absolute_path = parent;
-        device_id = parent_device_id;
     }
 
     return absolute_path;
@@ -107,6 +106,25 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 #else
     throw DB::Exception("The function getFilesystemName is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
 #endif
+}
+
+bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
+{
+    auto absolute_path = std::filesystem::weakly_canonical(path);
+    auto absolute_prefix_path = std::filesystem::weakly_canonical(prefix_path);
+
+    auto [_, prefix_path_mismatch_it] = std::mismatch(absolute_path.begin(), absolute_path.end(), absolute_prefix_path.begin(), absolute_prefix_path.end());
+
+    bool path_starts_with_prefix_path = (prefix_path_mismatch_it == absolute_prefix_path.end());
+    return path_starts_with_prefix_path;
+}
+
+bool pathStartsWith(const String & path, const String & prefix_path)
+{
+    auto filesystem_path = std::filesystem::path(path);
+    auto filesystem_prefix_path = std::filesystem::path(prefix_path);
+
+    return pathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
 }
