@@ -9,7 +9,7 @@ NamesAndTypesList StorageSystemTableFunctions::getNamesAndTypes()
     return {{"name", std::make_shared<DataTypeString>()}};
 }
 
-void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     const auto & functions_names = TableFunctionFactory::instance().getAllRegisteredNames();
     for (const auto & function_name : functions_names)

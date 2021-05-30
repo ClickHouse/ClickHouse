@@ -2,6 +2,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/LimitTransform.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -74,6 +75,14 @@ void LimitStep::describeActions(FormatSettings & settings) const
 
         settings.out << '\n';
     }
+}
+
+void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Limit", limit);
+    map.add("Offset", offset);
+    map.add("With Ties", with_ties);
+    map.add("Reads All Data", always_read_till_end);
 }
 
 }

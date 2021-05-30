@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
 
-class Context;
 struct Settings;
 
 /** Predicate optimization based on rewriting ast rules
@@ -15,10 +15,10 @@ struct Settings;
  *      - Move predicates from having to where
  *      - Push the predicate down from the current query to the having of the subquery
  */
-class PredicateExpressionsOptimizer
+class PredicateExpressionsOptimizer : WithConstContext
 {
 public:
-    PredicateExpressionsOptimizer(const Context & context_, const TablesWithColumns & tables_with_columns_, const Settings & settings_);
+    PredicateExpressionsOptimizer(ContextConstPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings_);
 
     bool optimize(ASTSelectQuery & select_query);
 
@@ -26,7 +26,6 @@ private:
     const bool enable_optimize_predicate_expression;
     const bool enable_optimize_predicate_expression_to_final_subquery;
     const bool allow_push_predicate_when_subquery_contains_with;
-    const Context & context;
     const TablesWithColumns & tables_with_columns;
 
     std::vector<ASTs> extractTablesPredicates(const ASTPtr & where, const ASTPtr & prewhere);

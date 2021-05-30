@@ -53,7 +53,7 @@ IAST::Hash IAST::getTreeHash() const
     SipHash hash_state;
     updateTreeHash(hash_state);
     IAST::Hash res;
-    hash_state.get128(res.first, res.second);
+    hash_state.get128(res);
     return res;
 }
 

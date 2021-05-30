@@ -34,7 +34,7 @@ public:
 
     // The name and readiness of the credentials must be verified before calling these.
     bool checkLDAPCredentials(const String & server, const BasicCredentials & credentials,
-        const LDAPClient::SearchParamsList * search_params = nullptr, LDAPClient::SearchResultsList * search_results = nullptr) const;
+        const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
     bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
@@ -44,7 +44,7 @@ private:
     {
         std::size_t last_successful_params_hash = 0;
         std::chrono::steady_clock::time_point last_successful_authentication_timestamp;
-        LDAPClient::SearchResultsList last_successful_search_results;
+        LDAPClient::SearchResultsList last_successful_role_search_results;
     };
 
     using LDAPCache = std::unordered_map<String, LDAPCacheEntry>; // user name   -> cache entry
@@ -57,5 +57,7 @@ private:
     mutable LDAPCaches ldap_caches;
     std::optional<GSSAcceptorContext::Params> kerberos_params;
 };
+
+void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix);
 
 }

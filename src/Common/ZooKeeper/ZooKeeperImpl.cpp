@@ -796,8 +796,17 @@ void ZooKeeper::receiveEvent()
         /// In case we cannot read the response, we should indicate it as the error of that type
         ///  when the user cannot assume whether the request was processed or not.
         response->error = Error::ZCONNECTIONLOSS;
-        if (request_info.callback)
-            request_info.callback(*response);
+
+        try
+        {
+            if (request_info.callback)
+                request_info.callback(*response);
+        }
+        catch (...)
+        {
+            /// Throw initial exception, not exception from callback.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
 
         throw;
     }
@@ -1003,6 +1012,16 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
+void ZooKeeper::executeGenericRequest(
+    const ZooKeeperRequestPtr & request,
+    ResponseCallback callback)
+{
+    RequestInfo request_info;
+    request_info.request = request;
+    request_info.callback = callback;
+
+    pushRequest(std::move(request_info));
+}
 
 void ZooKeeper::create(
     const String & path,

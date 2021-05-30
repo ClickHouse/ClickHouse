@@ -335,9 +335,9 @@ def get_random_string(length):
 
 
 def get_used_disks_for_table(node, table_name):
-    return node.query(
+    return tuple(node.query(
         "select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(
-            table_name)).strip().split('\n')
+            table_name)).strip().split('\n'))
 
 
 def get_used_parts_for_table(node, table_name):
@@ -450,7 +450,7 @@ def test_jbod_overflow(start_cluster, name, engine):
             node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert all(disk == 'jbod1' for disk in used_disks)
+        assert used_disks == tuple('jbod1' for _ in used_disks)
 
         # should go to the external disk (jbod is overflown)
         data = []  # 10MB in total
@@ -469,11 +469,11 @@ def test_jbod_overflow(start_cluster, name, engine):
         node1.query("OPTIMIZE TABLE {} FINAL".format(name))
         time.sleep(2)
 
-        disks_for_merges = node1.query(
+        disks_for_merges = tuple(node1.query(
             "SELECT disk_name FROM system.parts WHERE table == '{}' AND level >= 1 and active = 1 ORDER BY modification_time".format(
-                name)).strip().split('\n')
+                name)).strip().split('\n'))
 
-        assert all(disk == 'external' for disk in disks_for_merges)
+        assert disks_for_merges == tuple('external' for _ in disks_for_merges)
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")

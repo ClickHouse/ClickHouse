@@ -66,7 +66,7 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
     else if (auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
     else
-        throw Exception("Indexes column for IColumn::select must be ColumnUInt, got" + indexes.getName(),
+        throw Exception("Indexes column for IColumn::select must be ColumnUInt, got " + indexes.getName(),
                         ErrorCodes::LOGICAL_ERROR);
 }
 

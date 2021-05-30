@@ -18,6 +18,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 struct RankCorrelationData : public StatisticalSample<Float64, Float64>
@@ -57,6 +58,8 @@ public:
     {
         return "rankCorr";
     }
+
+    bool allocatesMemoryInArena() const override { return true; }
 
     DataTypePtr getReturnType() const override
     {

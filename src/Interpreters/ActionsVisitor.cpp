@@ -1,6 +1,5 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Core/Row.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -127,7 +126,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     return res;
 }
 
-static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, const Context & context)
+static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, ContextPtr context)
 {
     if (const auto * lit = node->as<ASTLiteral>())
     {
@@ -142,7 +141,7 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, c
         throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }
 
-static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, const Context & context)
+static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, ContextPtr context)
 {
     /// Will form a block with values from the set.
 
@@ -156,7 +155,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
     DataTypePtr tuple_type;
     Row tuple_values;
     const auto & list = node->as<ASTExpressionList &>();
-    bool transform_null_in = context.getSettingsRef().transform_null_in;
+    bool transform_null_in = context->getSettingsRef().transform_null_in;
     for (const auto & elem : list.children)
     {
         if (num_columns == 1)
@@ -205,7 +204,9 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
                 tuple = &literal->value.get<Tuple>();
             }
 
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
+            assert(tuple || func);
+
+            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size(); //-V1004
             if (tuple_size != num_columns)
                 throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
                     ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -245,7 +246,7 @@ Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
     const DataTypes & set_element_types,
-    const Context & context)
+    ContextPtr context)
 {
     auto [right_arg_value, right_arg_type] = evaluateConstantExpression(right_arg, context);
 
@@ -259,7 +260,7 @@ Block createBlockForSet(
     };
 
     Block block;
-    bool tranform_null_in = context.getSettingsRef().transform_null_in;
+    bool tranform_null_in = context->getSettingsRef().transform_null_in;
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_type_depth == right_type_depth)
@@ -288,9 +289,9 @@ Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const std::shared_ptr<ASTFunction> & right_arg,
     const DataTypes & set_element_types,
-    const Context & context)
+    ContextPtr context)
 {
-    auto get_tuple_type_from_ast = [&context](const auto & func) -> DataTypePtr
+    auto get_tuple_type_from_ast = [context](const auto & func) -> DataTypePtr
     {
         if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
         {
@@ -337,7 +338,7 @@ Block createBlockForSet(
 
 SetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
-    const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
+    ContextPtr context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
 {
     const IAST & args = *node->arguments;
 
@@ -371,7 +372,8 @@ SetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
+    SetPtr set
+        = std::make_shared<Set>(size_limits, create_ordered_set, context->getSettingsRef().transform_null_in);
     set->setHeader(block.cloneEmpty());
     set->insertFromBlock(block);
     set->finishInsert();
@@ -429,11 +431,11 @@ public:
 };
 
 ActionsMatcher::Data::Data(
-    const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
+    ContextPtr context_, SizeLimits set_size_limit_, size_t subquery_depth_,
     const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
     PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
     bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_)
-    : context(context_)
+    : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
     , source_columns(source_columns_)
@@ -444,7 +446,7 @@ ActionsMatcher::Data::Data(
     , only_consts(only_consts_)
     , create_source_for_in(create_source_for_in_)
     , visit_depth(0)
-    , actions_stack(std::move(actions_dag), context)
+    , actions_stack(std::move(actions_dag), context_)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
 {
 }
@@ -454,8 +456,7 @@ bool ActionsMatcher::Data::hasColumn(const String & column_name) const
     return actions_stack.getLastActionsIndex().contains(column_name);
 }
 
-ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, const Context & context_)
-    : context(context_)
+ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_) : WithContext(context_)
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::move(actions_dag);
@@ -650,7 +651,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
         return NameAndTypePair(child_column_name, node->result_type);
 
     if (!data.only_consts)
-        throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.actions_stack.dumpNames(),
+        throw Exception("Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
                         ErrorCodes::UNKNOWN_IDENTIFIER);
 
     return {};
@@ -698,7 +699,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         else
             func->setAlias(data.getUniqueName("_ut_" + name));
 
-        auto function_builder = FunctionFactory::instance().get(func->name, data.context);
+        auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 
         columns.push_back(std::move(func));
@@ -803,12 +804,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 auto argument_name = node.arguments->children.at(0)->getColumnName();
 
                 data.addFunction(
-                        FunctionFactory::instance().get(node.name + "IgnoreSet", data.context),
+                        FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
                         { argument_name, argument_name },
                         column_name);
             }
             return;
         }
+    }
+
+    /// A special function `indexHint`. Everything that is inside it is not calculated
+    if (node.name == "indexHint")
+    {
+        // Arguments are removed. We add function instead of constant column to avoid constant folding.
+        data.addFunction(FunctionFactory::instance().get("indexHint", data.getContext()), {}, column_name);
+        return;
     }
 
     if (node.is_window_function)
@@ -846,7 +855,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     FunctionOverloadResolverPtr function_builder;
     try
     {
-        function_builder = FunctionFactory::instance().get(node.name, data.context);
+        function_builder = FunctionFactory::instance().get(node.name, data.getContext());
     }
     catch (Exception & e)
     {
@@ -941,7 +950,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
             {
                 auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
-                table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
+                table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
                 auto column_string = ColumnString::create();
                 column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
                 ColumnWithTypeAndName column(
@@ -1005,7 +1014,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
                         lambda_dag,
-                        ExpressionActionsSettings::fromContext(data.context));
+                        ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
@@ -1019,10 +1028,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
                     String lambda_name = data.getUniqueName("__lambda");
 
-                    auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
+                    auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
                             lambda_actions, captured, lambda_arguments, result_type, result_name);
-                    auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
-                    data.addFunction(function_capture_adapter, captured, lambda_name);
+                    data.addFunction(function_capture, captured, lambda_name);
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                     argument_names[i] = lambda_name;
@@ -1125,8 +1133,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            auto table_id = data.context.resolveStorageID(right_in_operand);
-            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.context);
+            auto table_id = data.getContext()->resolveStorageID(right_in_operand);
+            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.getContext());
 
             if (table)
             {
@@ -1151,7 +1159,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
             return subquery_for_set.set;
         }
 
-        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
+        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1163,7 +1171,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           */
         if (!subquery_for_set.source && data.create_source_for_in)
         {
-            auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
+            auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
             subquery_for_set.source = std::make_unique<QueryPlan>();
             interpreter->buildQueryPlan(*subquery_for_set.source);
         }
@@ -1178,7 +1186,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         const auto & index = data.actions_stack.getLastActionsIndex();
         if (index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return makeExplicitSet(&node, last_actions, false, data.context, data.set_size_limit, data.prepared_sets);
+            return makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, data.prepared_sets);
         else
             return {};
     }

@@ -40,7 +40,7 @@ void CharInputStream::consume()
         throw IllegalStateException("cannot consume EOF");
     }
 
-    if (p < s) ++p;
+    ++p;
 }
 
 void CharInputStream::seek(size_t i)

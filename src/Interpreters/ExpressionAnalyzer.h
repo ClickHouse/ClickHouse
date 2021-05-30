@@ -16,7 +16,6 @@ namespace DB
 {
 
 class Block;
-class Context;
 struct Settings;
 
 struct ExpressionActionsChain;
@@ -48,8 +47,12 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
+    ~ExpressionAnalyzerData();
+
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
+
+    std::unique_ptr<QueryPlan> joined_plan;
 
     /// Columns after ARRAY JOIN. If there is no ARRAY JOIN, it's source_columns.
     NamesAndTypesList columns_after_array_join;
@@ -78,7 +81,7 @@ struct ExpressionAnalyzerData
   *
   * NOTE: if `ast` is a SELECT query from a table, the structure of this table should not change during the lifetime of ExpressionAnalyzer.
   */
-class ExpressionAnalyzer : protected ExpressionAnalyzerData, private boost::noncopyable
+class ExpressionAnalyzer : protected ExpressionAnalyzerData, private boost::noncopyable, protected WithContext
 {
 private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
@@ -96,9 +99,11 @@ public:
     ExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        const Context & context_)
+        ContextPtr context_)
     :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
     {}
+
+    ~ExpressionAnalyzer();
 
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
 
@@ -107,7 +112,7 @@ public:
     ///     If also project_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
     ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
-    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true);
+    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
     /// Does not execute subqueries.
@@ -145,13 +150,12 @@ protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        const Context & context_,
+        ContextPtr context_,
         size_t subquery_depth_,
         bool do_global_,
         SubqueriesForSets subqueries_for_sets_);
 
     ASTPtr query;
-    const Context & context;
     const ExtractedSettings settings;
     size_t subquery_depth;
 
@@ -205,6 +209,7 @@ struct ExpressionAnalysisResult
     bool has_order_by   = false;
     bool has_window = false;
 
+    String where_column_name;
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
@@ -226,6 +231,9 @@ struct ExpressionAnalysisResult
     /// Columns from the SELECT list, before renaming them to aliases. Used to
     /// perform SELECT DISTINCT.
     Names selected_columns;
+
+    /// Columns to read from storage if any.
+    Names required_columns;
 
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
@@ -272,7 +280,7 @@ public:
     SelectQueryExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        const Context & context_,
+        ContextPtr context_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
@@ -295,6 +303,7 @@ public:
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
+    std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }

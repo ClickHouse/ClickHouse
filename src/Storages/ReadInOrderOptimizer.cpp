@@ -34,7 +34,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
     forbidden_columns = syntax_result->getArrayJoinSourceNameSet();
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, const Context & context) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
 {
     Names sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     if (!metadata_snapshot->hasSortingKey())
@@ -44,7 +44,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
     int read_direction = required_sort_description.at(0).direction;
 
     size_t prefix_size = std::min(required_sort_description.size(), sorting_key_columns.size());
-    auto aliase_columns = metadata_snapshot->getColumns().getAliases();
+    auto aliased_columns = metadata_snapshot->getColumns().getAliases();
 
     for (size_t i = 0; i < prefix_size; ++i)
     {
@@ -55,13 +55,18 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
         ///  or in some simple cases when order key element is wrapped into monotonic function.
         auto apply_order_judge = [&] (const ExpressionActions::Actions & actions, const String & sort_column)
         {
+            /// If required order depend on collation, it cannot be matched with primary key order.
+            /// Because primary keys cannot have collations.
+            if (required_sort_description[i].collator)
+                return false;
+
             int current_direction = required_sort_description[i].direction;
-            /// For the path:  order by (sort_column, ...)
+            /// For the path: order by (sort_column, ...)
             if (sort_column == sorting_key_columns[i] && current_direction == read_direction)
             {
                 return true;
             }
-            /// For the path:  order by (function(sort_column), ...)
+            /// For the path: order by (function(sort_column), ...)
             /// Allow only one simple monotonic functions with one argument
             /// Why not allow multi monotonic functions?
             else
@@ -125,7 +130,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
         /// currently we only support alias column without any function wrapper
         /// ie: `order by aliased_column` can have this optimization, but `order by function(aliased_column)` can not.
         /// This suits most cases.
-        if (context.getSettingsRef().optimize_respect_aliases && aliase_columns.contains(required_sort_description[i].column_name))
+        if (context->getSettingsRef().optimize_respect_aliases && aliased_columns.contains(required_sort_description[i].column_name))
         {
             auto column_expr = metadata_snapshot->getColumns().get(required_sort_description[i].column_name).default_desc.expression->clone();
             replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), forbidden_columns, context);

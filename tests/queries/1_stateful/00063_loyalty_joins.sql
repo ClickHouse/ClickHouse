@@ -23,7 +23,7 @@ ORDER BY loyalty ASC;
 SELECT
     loyalty, 
     count()
-FROM 
+FROM
 (
     SELECT UserID
     FROM test.hits
@@ -46,12 +46,12 @@ ORDER BY loyalty ASC;
 SELECT
     loyalty, 
     count()
-FROM 
+FROM
 (
     SELECT
         loyalty, 
         UserID
-    FROM 
+    FROM
     (
         SELECT UserID
         FROM test.hits
@@ -81,7 +81,7 @@ FROM test.hits ANY INNER JOIN
     SELECT
         UserID, 
         toInt8(if(yandex > google, yandex / (yandex + google), -google / (yandex + google)) * 10) AS loyalty
-    FROM 
+    FROM
     (
         SELECT
             UserID, 
