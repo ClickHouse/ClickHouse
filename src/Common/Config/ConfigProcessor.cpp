@@ -36,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_LOAD_CONFIG;
 }
 
 /// For cutting preprocessed path to this base
@@ -464,13 +465,17 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     if (fs::exists(path))
     {
         fs::path p(path);
-        if (p.extension() == ".xml")
+        if (p.extension() == ".yaml" || p.extension() == ".yml")
+        {
+            config = YAMLParser::parse(path);
+        }
+        else if (p.extension() == ".xml" || p.extension() == ".conf" || p.extension().empty())
         {
             config = dom_parser.parse(path);
         }
-        else if (p.extension() == ".yaml" || p.extension() == ".yml")
+        else
         {
-            config = YAMLParser::parse(path);
+            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", path);
         }
     }
     else
