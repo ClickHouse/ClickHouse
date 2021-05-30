@@ -364,14 +364,26 @@ protected:
     }
 };
 
+class ParserComparisonWithSubqueryExpression : public IParserBase
+{
+private:
+    static const char * operators[];
+    ParserComparisonExpression next_parser;
+    ParserConcatExpression elem_parser;
+    static bool addFunctionIn(String operator_name, ASTPtr & node, bool is_any);
+    static bool modifySubquery(String operator_name, ASTPtr subquery_node, bool is_any);
+protected:
+    const char * getName() const override { return "comparison with ANY/ALL expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** Parser for nullity checking with IS (NOT) NULL.
   */
 class ParserNullityChecking : public IParserBase
 {
 private:
-    ParserComparisonExpression elem_parser;
-
+    ParserComparisonWithSubqueryExpression elem_parser;
 protected:
     const char * getName() const override { return "nullity checking"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

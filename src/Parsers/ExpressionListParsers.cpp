@@ -9,8 +9,7 @@
 
 
 namespace DB
-{
-
+{ 
 
 const char * ParserMultiplicativeExpression::operators[] =
 {
@@ -53,6 +52,19 @@ const char * ParserComparisonExpression::operators[] =
     "NOT IN",        "notIn",
     "GLOBAL IN",     "globalIn",
     "GLOBAL NOT IN", "globalNotIn",
+    nullptr
+};
+
+const char * ParserComparisonWithSubqueryExpression::operators[] =
+{
+    "==",            "equals",
+    "!=",            "notEquals",
+    "<>",            "notEquals",
+    "<=",            "lessOrEquals",
+    ">=",            "greaterOrEquals",
+    "<",             "less",
+    ">",             "greater",
+    "=",             "equals",
     nullptr
 };
 
@@ -357,6 +369,119 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     }
 
     return true;
+}
+
+bool ParserComparisonWithSubqueryExpression::modifySubquery(String operator_name, ASTPtr subquery_node, bool is_any)
+{
+        ASTPtr select_with_union_node = subquery_node->children[0];
+        if (select_with_union_node->children[0]->children.size() != 1)
+            return false;
+        ASTPtr select_node = select_with_union_node->children[0]->children[0];
+        ASTPtr exp_list = select_node->children[0];
+        auto function = std::make_shared<ASTFunction>();
+        function->arguments = exp_list;
+        function->children.push_back(exp_list);
+
+        ASTPtr new_exp_list = std::make_shared<ASTExpressionList>();
+        new_exp_list->children.push_back(function);
+
+        if (operator_name == "greaterOrEquals" || operator_name == "greater")
+        {
+            function->name = is_any ? "min" : "max";
+            select_node->children[0] = new_exp_list;
+            return true;
+        }
+
+        if (operator_name == "lessOrEquals" || operator_name == "less")
+        {
+            function->name = is_any ? "max" : "min";
+            select_node->children[0] = new_exp_list;
+            return true;
+        }
+    return false;
+}
+
+bool ParserComparisonWithSubqueryExpression::addFunctionIn(String operator_name, ASTPtr & node, bool is_any)
+{
+
+    auto function_in = std::make_shared<ASTFunction>();
+    auto exp_list_in = std::make_shared<ASTExpressionList>();
+    exp_list_in->children.push_back(node->children[0]->children[0]);
+    exp_list_in->children.push_back(node->children[0]->children[1]);
+    function_in->name = "in";
+    function_in->children.push_back(exp_list_in);
+    function_in->arguments = exp_list_in;
+
+    if (operator_name == "equals" && is_any)
+    {
+        node = function_in;
+        return true;
+    }
+
+    if (operator_name == "notEquals" && !is_any)
+    {
+        auto function_not = std::make_shared<ASTFunction>();
+        auto exp_list_not = std::make_shared<ASTExpressionList>();
+        exp_list_not->children.push_back(function_in);
+        function_not->name = "not";
+        function_not->children.push_back(exp_list_not);
+        function_not->arguments = exp_list_not;
+        node = function_not;
+        return true;
+    }
+    return false;
+}
+
+bool ParserComparisonWithSubqueryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    Pos begin = pos;
+    ASTPtr elem;
+    if (!elem_parser.parse(pos, elem, expected))
+        return next_parser.parse(pos, node, expected);
+
+    /// try to find any of the valid operators
+    const char ** it;
+    for (it = operators; *it; it += 2)
+        if (parseOperator(pos, *it, expected))
+            break;
+
+    if (!*it)
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
+
+    bool is_any = true;
+    if (!ParserKeyword("ANY").ignore(pos, expected))
+    {
+        is_any = false;
+        if (!ParserKeyword("ALL").ignore(pos, expected))
+        {
+            pos = begin;
+            return next_parser.parse(pos, node, expected);
+        }
+    }
+
+    ASTPtr subquery_node;
+    if (!ParserSubquery().parse(pos, subquery_node, expected))
+        return false;
+
+    /// the first argument of the function is the previous element, the second is the next one
+    String operator_name = it[1];
+
+    /// the function corresponding to the operator
+    auto function = std::make_shared<ASTFunction>();
+
+    /// function arguments
+    auto exp_list = std::make_shared<ASTExpressionList>();
+    exp_list->children.push_back(elem);
+    exp_list->children.push_back(subquery_node);
+
+    function->name = operator_name;
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+    node = function;
+    return modifySubquery(operator_name, subquery_node, is_any) || addFunctionIn(operator_name, node, is_any);
 }
 
 bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
