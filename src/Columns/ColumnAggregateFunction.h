@@ -94,8 +94,7 @@ private:
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_,
-                            const ConstArenas & arenas_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
