@@ -16,6 +16,7 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
+-   [UNFREEZE PARTITION](#alter_unfreeze-partition) — Removes a backup of a partition.
 -   [FETCH PARTITION](#alter_fetch-partition) — Downloads a partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 
@@ -172,7 +173,7 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 !!! note "Note"
     If you use [a set of disks for data storage in a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
 
-The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs ‘chmod’ for all files, forbidding writing into them.
+The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs `chmod` for all files, forbidding writing into them.
 
 After creating the backup, you can copy the data from `/var/lib/clickhouse/shadow/` to the remote server and then delete it from the local server. Note that the `ALTER t FREEZE PARTITION` query is not replicated. It creates a local backup only on the local server.
 
@@ -189,6 +190,14 @@ To restore data from a backup, do the following:
 Restoring from a backup doesn’t require stopping the server.
 
 For more information about backups and restoring data, see the [Data Backup](../../../operations/backup.md) section.
+
+## UNFREEZE PARTITION {#alter_unfreeze-partition}
+
+``` sql
+ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
+```
+
+Removes "freezed" partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
 
 ## CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
 
