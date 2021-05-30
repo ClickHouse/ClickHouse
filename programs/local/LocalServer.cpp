@@ -464,9 +464,7 @@ try
             if (exit_strings.end() != exit_strings.find(trim(input, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
                 break;
 
-            if (!processQueries(input)) {
-                break;
-            }
+            processQueries(input);
         } while (true);
 
         std::cout << "Bye." << std::endl;
@@ -483,7 +481,7 @@ try
             String queries_from_file;
             ReadBufferFromFile in(config().getString("queries-file"));
             readStringUntilEOF(queries_from_file, in);
-            queries_str += queries_ from_file;
+            queries_str += queries_from_file;
         }
 
         processQueries(queries_str);
