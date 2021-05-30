@@ -3,6 +3,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
+#include <Common/NetworkMetrics.h>
+#include <Common/IOMetrics.h>
+#include <Common/OpenFDMetrics.h>
+#include <Common/SchedMetrics.h>
 
 #include <condition_variable>
 #include <mutex>
@@ -80,6 +84,10 @@ private:
 
 #if defined(OS_LINUX)
     MemoryStatisticsOS memory_stat;
+    OpenFDMetrics open_fd;
+    SchedMetrics sched;
+    NetworkMetrics net_stat;
+    IOMetrics io_stat;
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;

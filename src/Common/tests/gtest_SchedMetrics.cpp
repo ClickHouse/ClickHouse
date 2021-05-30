@@ -1,9 +1,10 @@
 #include <Common/SchedMetrics.h>
 #include <iostream>
+#include <gtest/gtest.h>
 
-int main() 
+TEST(SchedMetrics, SimpleTest) 
 {
-    for (int i = 0; i < 100000; i++) 
+    for (int i = 0; i < 10; i++) 
     {
         DB::SchedMetrics a;
         DB::SchedMetrics::Data x = a.get();

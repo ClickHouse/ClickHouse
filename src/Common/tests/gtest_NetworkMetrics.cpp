@@ -1,9 +1,11 @@
 #include <Common/NetworkMetrics.h>
 #include <iostream>
+#include <gtest/gtest.h>
 
-int main()
+TEST(NetworkMetrics, SimpleTest) 
 {
-    for (int i = 0; i < 10; i++) 
+    std::cout << "NetworkMetrics\n";
+    for (int i = 0; i < 10; i++)
     {
         DB::NetworkMetrics a;
         DB::NetworkMetrics::Data x = a.get();

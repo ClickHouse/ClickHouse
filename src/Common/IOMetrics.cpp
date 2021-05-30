@@ -49,6 +49,9 @@ IOMetrics::Data IOMetrics::get() const
         readStringUntilWhitespace(unused, in);        
         if (unused == "")
             break;
+        String device = unused;
+        while (device.back() == ' ' || device.back() == '\t') 
+            device.pop_back();
         skipWhitespaceIfAny(in);
         try
         {
@@ -59,15 +62,15 @@ IOMetrics::Data IOMetrics::get() const
             break;
         }
         data.tps_total += ret;
-        data.dev_tps.push_back(ret);
+        data.dev_tps.push_back({device, ret});
         skipWhitespaceIfAny(in);
         readFloatText(ret, in);
         data.read_total += ret;
-        data.dev_read.push_back(ret);
+        data.dev_read.push_back({device, ret});
         skipWhitespaceIfAny(in);
         readFloatText(ret, in);
         data.write_total += ret;
-        data.dev_write.push_back(ret);
+        data.dev_write.push_back({device, ret});
         readString(unused, in); 
         cnt++;
     }
@@ -96,8 +99,11 @@ IOMetrics::Data IOMetrics::get() const
         readStringUntilWhitespace(unused, in1);
         if (unused == "")
             break;
+        String device = unused;
         skipWhitespaceIfAny(in1);
-        for (int i= 0; i < 18; i++) 
+        while (device.back() == ' ' || device.back() == '\t') 
+            device.pop_back();
+        for (int i = 0; i < 18; i++) 
         {
             try
             {
@@ -113,11 +119,11 @@ IOMetrics::Data IOMetrics::get() const
         }
         readFloatText(ret, in1);
         data.queue_size_total += ret;
-        data.dev_queue_size.push_back(ret);
+        data.dev_queue_size.push_back({device, ret});
         skipWhitespaceIfAny(in1);
         readFloatText(ret, in1);
         data.util_total += ret;
-        data.dev_util.push_back(ret);
+        data.dev_util.push_back({device, ret});
         cnt++;
     }
 

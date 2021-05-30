@@ -12,7 +12,6 @@ namespace DB
      struct Data
      {
         uint32_t total_csw;
-        std::vector<uint32_t> pid_csw;
             
         Data()
         {

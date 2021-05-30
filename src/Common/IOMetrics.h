@@ -1,4 +1,7 @@
 #include <vector>
+#include <utility>
+
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -19,11 +22,11 @@ public:
         float read_total;
         float write_avg;
         float write_total;
-        std::vector<float> dev_read;
-        std::vector<float> dev_write;
-        std::vector<float> dev_queue_size;
-        std::vector<float> dev_util;
-        std::vector<float> dev_tps;
+        std::vector<std::pair<String, float>> dev_read;
+        std::vector<std::pair<String, float>> dev_write;
+        std::vector<std::pair<String, float>> dev_queue_size;
+        std::vector<std::pair<String, float>> dev_util;
+        std::vector<std::pair<String, float>> dev_tps;
 
         Data()
         {

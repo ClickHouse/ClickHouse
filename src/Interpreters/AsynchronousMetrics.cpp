@@ -236,6 +236,68 @@ void AsynchronousMetrics::update()
     }
 #endif
 
+#if defined(OS_LINUX)
+    {
+        IOMetrics::Data data = io_stat.get();
+        new_values["TotalTPS"] = data.tps_total;
+        new_values["AvgTPS"] = data.tps_avg;
+        new_values["TotalQueueSize"] = data.queue_size_total;
+        new_values["AvgQueueSize"] = data.queue_size_avg;
+        new_values["TotalUtilization"] = data.util_total;
+        new_values["AvgUtilization"] = data.util_avg;
+        new_values["AvgRead"] = data.read_avg;
+        new_values["TotalRead"] = data.read_total;
+        new_values["AvgWrite"] = data.write_avg;
+        new_values["TotalWrite"] = data.write_total;
+        
+        for (auto &it : data.dev_tps) {
+            String name = "TPSOn" + it.first;
+            new_values[name] = it.second;
+        }
+
+        for (auto &it : data.dev_queue_size) {
+            String name = "QueueSizeOn" + it.first;
+            new_values[name] = it.second;
+        }
+        for (auto &it : data.dev_read) {
+            String name = "ReadOn" + it.first;
+            new_values[name] = it.second;
+        }
+        for (auto &it : data.dev_write) {
+            String name = "WriteOn" + it.first;
+            new_values[name] = it.second;
+        }
+    }
+#endif    
+
+#if defined(OS_LINUX)
+    {
+        NetworkMetrics::Data data = net_stat.get();
+        new_values["ReceivedBytes"] = data.received_bytes;        
+        new_values["ReceivedPackets"] = data.received_packets;        
+        new_values["TransmittedBytes"] = data.transmitted_bytes;        
+        new_values["TransmittedPackets"] = data.transmitted_packets;        
+        new_values["TCPRetransmits"] = data.tcp_retransmit;        
+        new_values["TCPCount"] = data.tcp;        
+        new_values["UDPCount"] = data.udp;        
+        new_values["DistinctHosts"] = data.distinct_hosts;        
+    }
+#endif
+
+#if defined(OS_LINUX)
+    {
+        OpenFDMetrics::Data data = open_fd.get();
+        new_values["OpenedFileDescriptors"] = data.cnt;
+    }
+#endif
+
+#if defined(OS_LINUX)
+    {
+        SchedMetrics::Data data = sched.get();
+        new_values["ContextSwithcesCount"] = data.total_csw;
+    }
+#endif
+     
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
 

@@ -8,7 +8,8 @@ class OpenFDMetrics
 
 public:
 
-    struct Data{
+    struct Data
+    {
         uint16_t cnt;
 
         Data() {

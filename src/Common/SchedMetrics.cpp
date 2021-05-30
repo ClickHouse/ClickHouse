@@ -41,9 +41,9 @@ SchedMetrics::Data SchedMetrics::get() const
             for (auto &x : name) 
             {
                 ok &= x >= '0' && x <= '9';
-            }
-            if (ok)
-               pids.push_back(cur->d_name); 
+            } 
+            if (ok) 
+                pids.push_back(cur->d_name);   
        }
     }
 
@@ -72,11 +72,9 @@ SchedMetrics::Data SchedMetrics::get() const
             skipWhitespaceIfAny(in);
             readIntText(ret, in);
             data.total_csw += ret;
-            data.pid_csw.push_back(ret);
             skipWhitespaceIfAny(in);
             readIntText(ret, in);
             data.total_csw += ret;
-            data.pid_csw.back() += ret;
         } 
         catch(...)
         {
