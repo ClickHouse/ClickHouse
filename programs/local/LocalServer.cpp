@@ -453,17 +453,40 @@ try
 #else
         LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
-    }
 
-    do
-    {
-        if (!processQueries()) {
-            break;
-        }
-    } while (true);
+        do
+        {
+            auto input = lr.readLine(boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default")), ":-] ");
 
-    if (is_interactive) {
+            if (input.empty())
+                break;
+
+            if (exit_strings.end() != exit_strings.find(trim(input, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+                break;
+
+            if (!processQueries(input)) {
+                break;
+            }
+        } while (true);
+
         std::cout << "Bye." << std::endl;
+    }
+    else
+    {
+        String initial_create_query = getInitialCreateTableQuery();
+        String queries_str = initial_create_query;
+
+        if (config().has("query"))
+            queries_str += config().getRawString("query");
+        else
+        {
+            String queries_from_file;
+            ReadBufferFromFile in(config().getString("queries-file"));
+            readStringUntilEOF(queries_from_file, in);
+            queries_str += queries_ from_file;
+        }
+
+        processQueries(queries_str);
     }
     global_context->shutdown();
     global_context.reset();
@@ -514,29 +537,8 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
-bool LocalServer::processQueries()
+void LocalServer::processQueries(String queries_str)
 {
-    String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query;
-    if (is_interactive) {
-        auto input = lr.readLine(boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default")), ":-] ");
-        if (input.empty())
-            return false;
-
-        if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
-            return false;
-
-        queries_str += input;
-    } else if (config().has("query"))
-        queries_str += config().getRawString("query");
-    else
-    {
-        String queries_from_file;
-        ReadBufferFromFile in(config().getString("queries-file"));
-        readStringUntilEOF(queries_from_file, in);
-        queries_str += queries_from_file;
-    }
-
     const auto & settings = global_context->getSettingsRef();
 
     std::vector<String> queries;

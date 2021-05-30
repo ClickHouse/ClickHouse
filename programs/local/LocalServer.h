@@ -39,7 +39,7 @@ private:
     void tryInitPath();
     void applyCmdOptions(ContextPtr context);
     void applyCmdSettings(ContextPtr context);
-    bool processQueries();
+    void processQueries(String queries_str);
     void setupUsers();
     void cleanup();
 
