@@ -192,7 +192,7 @@ dictGetDescendants(dict_name, key, level)
 
 -   `dict_name` — Имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
 -   `key` — Значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
--   `level` — уровень иерархии. Если `level = 0` возвращаются все потомки до конца. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `level` — уровень иерархии. Если `level = 0`, возвращаются все потомки. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
