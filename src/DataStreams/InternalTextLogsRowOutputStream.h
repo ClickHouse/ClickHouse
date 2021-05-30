@@ -8,7 +8,7 @@ namespace DB
 
 /// Prints internal server logs
 /// Input blocks have to have the same structure as SystemLogsQueue::getSampleBlock()
-/// NOTE: IRowOutputStream does not suite well for this case
+/// NOTE: IRowOutputFormat does not suite well for this case
 class InternalTextLogsRowOutputStream : public IBlockOutputStream
 {
 public:

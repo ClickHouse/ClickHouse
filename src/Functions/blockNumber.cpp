@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -18,7 +18,7 @@ private:
 
 public:
     static constexpr auto name = "blockNumber";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionBlockNumber>();
     }

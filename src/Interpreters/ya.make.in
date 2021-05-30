@@ -17,7 +17,7 @@ NO_COMPILER_WARNINGS()
 
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -F tests | grep -v -F JIT | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F JIT | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

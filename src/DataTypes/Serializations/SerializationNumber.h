@@ -9,7 +9,7 @@ namespace DB
 template <typename T>
 class SerializationNumber : public SimpleTextSerialization
 {
-    static_assert(IsNumber<T>);
+    static_assert(is_arithmetic_v<T>);
 
 public:
     using FieldType = T;

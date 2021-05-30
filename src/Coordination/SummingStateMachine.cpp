@@ -21,7 +21,7 @@ SummingStateMachine::SummingStateMachine()
 {
 }
 
-nuraft::ptr<nuraft::buffer> SummingStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> SummingStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     int64_t value_to_add = deserializeValue(data);
 
@@ -84,7 +84,7 @@ void SummingStateMachine::createSnapshotInternal(nuraft::snapshot & s)
 
 void SummingStateMachine::save_logical_snp_obj(
     nuraft::snapshot & s,
-    size_t & obj_id,
+    uint64_t & obj_id,
     nuraft::buffer & data,
     bool /*is_first_obj*/,
     bool /*is_last_obj*/)
@@ -112,7 +112,7 @@ void SummingStateMachine::save_logical_snp_obj(
 int SummingStateMachine::read_logical_snp_obj(
     nuraft::snapshot & s,
     void* & /*user_snp_ctx*/,
-    size_t obj_id,
+    uint64_t obj_id,
     nuraft::ptr<nuraft::buffer> & data_out,
     bool & is_last_obj)
 {
@@ -142,7 +142,7 @@ int SummingStateMachine::read_logical_snp_obj(
     else
     {
         // Object ID > 0: second object, put actual value.
-        data_out = nuraft::buffer::alloc(sizeof(size_t));
+        data_out = nuraft::buffer::alloc(sizeof(uint64_t));
         nuraft::buffer_serializer bs(data_out);
         bs.put_u64(ctx->value);
         is_last_obj = true;

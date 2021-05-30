@@ -16,13 +16,13 @@ NamesAndTypesList StorageSystemEvents::getNamesAndTypes()
     };
 }
 
-void StorageSystemEvents::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemEvents::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
         UInt64 value = ProfileEvents::global_counters[i];
 
-        if (0 != value || context.getSettingsRef().system_events_show_zero_values)
+        if (0 != value || context->getSettingsRef().system_events_show_zero_values)
         {
             res_columns[0]->insert(ProfileEvents::getName(ProfileEvents::Event(i)));
             res_columns[1]->insert(value);
