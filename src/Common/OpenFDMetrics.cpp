@@ -34,7 +34,7 @@ OpenFDMetrics::Data OpenFDMetrics::get() const
 
     ReadBufferFromString in(cmd_output);
 
-    uint16_t ret;
+    uint32_t ret;
      
     skipWhitespaceIfAny(in);
     readIntText(ret, in); 
