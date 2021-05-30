@@ -514,7 +514,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
     ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
-    func->deserialize(data.back(), read_buffer, &arena);
+    func->deserialize(data.back(), read_buffer, std::nullopt, &arena);
 }
 
 void ColumnAggregateFunction::insertDefault()
@@ -549,7 +549,7 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
       *  Probably this will not work under UBSan.
       */
     ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena - 1);
-    func->deserialize(data.back(), read_buffer, &dst_arena);
+    func->deserialize(data.back(), read_buffer, std::nullopt, &dst_arena);
 
     return read_buffer.position();
 }

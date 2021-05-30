@@ -17,6 +17,8 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
+#include <common/logger_useful.h>
+#include <Common/ClickHouseRevision.h>
 
 
 namespace DB
@@ -38,7 +40,7 @@ struct AggregateFunctionMapData
     std::map<T, Array> merged_maps;
 };
 
-/** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of of at least 2 arrays -
+/** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -
   * ordered keys and variable number of argument values aggregated by corresponding keys.
   *
   * sumMap function is the most useful when using SummingMergeTree to sum Nested columns, which name ends in "Map".
@@ -83,6 +85,18 @@ public:
         values_serializations.reserve(values_types.size());
         for (const auto & type : values_types)
             values_serializations.emplace_back(type->getDefaultSerialization());
+    }
+
+    bool isVersioned() const override { return true; }
+
+    size_t getDefaultVersion() const override { return 1; }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (revision >= 54448)
+            return 1;
+        else
+            return 0;
     }
 
     DataTypePtr getReturnType() const override
@@ -250,8 +264,12 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
+        if (!version)
+            version = getDefaultVersion();
+
+        LOG_TRACE(&Poco::Logger::get("kssenii"), "version to serialize: {}, stack: {}", *version, StackTrace().toString());
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
         writeVarUInt(size, buf);
@@ -260,12 +278,30 @@ public:
         {
             keys_serialization->serializeBinary(elem.first, buf);
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_serializations[col]->serializeBinary(elem.second[col], buf);
+            {
+                switch (*version)
+                {
+                    case 0:
+                    {
+                        values_serializations[col]->serializeBinary(elem.second[col], buf);
+                        break;
+                    }
+                    case 1:
+                    {
+                        SerializationNumber<Int64>().serializeBinary(elem.second[col], buf);
+                        break;
+                    }
+                }
+            }
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
+        if (!version)
+            version = getDefaultVersion();
+
+        LOG_TRACE(&Poco::Logger::get("kssenii"), "version to deserialize: {}, stack: {}", *version, StackTrace().toString());
         auto & merged_maps = this->data(place).merged_maps;
         size_t size = 0;
         readVarUInt(size, buf);
@@ -278,7 +314,21 @@ public:
             Array values;
             values.resize(values_types.size());
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_serializations[col]->deserializeBinary(values[col], buf);
+            {
+                switch (*version)
+                {
+                    case 0:
+                    {
+                        values_serializations[col]->deserializeBinary(values[col], buf);
+                        break;
+                    }
+                    case 1:
+                    {
+                        SerializationNumber<Int64>().deserializeBinary(values[col], buf);
+                        break;
+                    }
+                }
+            }
 
             if constexpr (IsDecimalNumber<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;

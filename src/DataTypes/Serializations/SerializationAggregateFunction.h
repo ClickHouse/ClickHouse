@@ -12,11 +12,12 @@ class SerializationAggregateFunction final : public ISerialization
 {
 private:
     AggregateFunctionPtr function;
+    size_t version;
 
 public:
     static constexpr bool is_parametric = true;
 
-    SerializationAggregateFunction(const AggregateFunctionPtr & function_): function(function_) {}
+    SerializationAggregateFunction(const AggregateFunctionPtr & function_, size_t version_): function(function_), version(version_) {}
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;

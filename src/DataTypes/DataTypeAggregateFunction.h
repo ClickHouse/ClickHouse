@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <DataTypes/IDataType.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -17,19 +18,24 @@ private:
     AggregateFunctionPtr function;
     DataTypes argument_types;
     Array parameters;
+    mutable size_t version;
 
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
-        : function(function_), argument_types(argument_types_), parameters(parameters_)
+    DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_,
+                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt)
+        : function(function_)
+        , argument_types(argument_types_)
+        , parameters(parameters_)
+        , version(version_ ? *version_ : function_->getDefaultVersion())
     {
     }
 
-    std::string getFunctionName() const { return function->getName(); }
+    String getFunctionName() const { return function->getName(); }
     AggregateFunctionPtr getFunction() const { return function; }
 
-    std::string doGetName() const override;
+    String doGetName() const override;
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
@@ -50,8 +56,9 @@ public:
     bool shouldAlignRightInPrettyFormats() const override { return false; }
 
     SerializationPtr doGetDefaultSerialization() const override;
+
+    bool isVersioned() const { return function->isVersioned(); }
+    void setVersion(size_t version_) const { version = version_; }
 };
 
-
 }
-

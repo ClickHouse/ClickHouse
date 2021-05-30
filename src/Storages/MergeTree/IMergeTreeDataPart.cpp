@@ -19,6 +19,7 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace CurrentMetrics
@@ -1026,10 +1027,24 @@ void IMergeTreeDataPart::loadColumns(bool require)
             loaded_columns.writeText(*buf);
         }
         volume->getDisk()->moveFile(path + ".tmp", path);
+        LOG_TRACE(&Poco::Logger::get("kssenii"), "Loaded from metadata");
     }
     else
     {
+        //LOG_TRACE(&Poco::Logger::get("kssenii"), "Loading columns stacktrace: {}", col.name, col.type->getName());
         loaded_columns.readText(*volume->getDisk()->readFile(path));
+        LOG_TRACE(&Poco::Logger::get("kssenii"), "Loaded from disk");
+        for (auto & col : loaded_columns)
+        {
+            LOG_TRACE(&Poco::Logger::get("kssenii"), "Setting version for columns: {}, {}", col.name, col.type->getName());
+            if (auto agg = typeid_cast<const DataTypeAggregateFunction *>(col.type.get()))
+                agg->setVersion(0);
+        }
+    }
+
+    for (auto & col : loaded_columns)
+    {
+        LOG_TRACE(&Poco::Logger::get("kssenii"), "Loaded columns: {}, {}", col.name, col.type->getName());
     }
 
     setColumns(loaded_columns);

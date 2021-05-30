@@ -1652,7 +1652,7 @@ namespace
             {
                 aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
-                aggregate_function->deserialize(data, buf, &arena);
+                aggregate_function->deserialize(data, buf, std::nullopt, &arena);
                 return data;
             }
             catch (...)

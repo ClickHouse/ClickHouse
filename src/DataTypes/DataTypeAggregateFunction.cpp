@@ -20,6 +20,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/ClickHouseRevision.h>
 
 
 namespace DB
@@ -35,10 +36,14 @@ namespace ErrorCodes
 }
 
 
-std::string DataTypeAggregateFunction::doGetName() const
+String DataTypeAggregateFunction::doGetName() const
 {
+    LOG_TRACE(&Poco::Logger::get("kssenii"), "doGetName stack trace:{}", StackTrace().toString());
     WriteBufferFromOwnString stream;
-    stream << "AggregateFunction(" << function->getName();
+    stream << "AggregateFunction(";
+    if (version)
+        stream << version << ", ";
+    stream << function->getName();
 
     if (!parameters.empty())
     {
@@ -61,9 +66,9 @@ std::string DataTypeAggregateFunction::doGetName() const
 
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
+    /// FIXME: ColumnAggregateFunction also uses function->serialize methods
     return ColumnAggregateFunction::create(function);
 }
-
 
 /// Create empty state
 Field DataTypeAggregateFunction::getDefault() const
@@ -79,7 +84,7 @@ Field DataTypeAggregateFunction::getDefault() const
     try
     {
         WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
-        function->serialize(place, buffer_from_field);
+        function->serialize(place, buffer_from_field, version);
     }
     catch (...)
     {
@@ -100,26 +105,46 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationAggregateFunction>(function);
+    LOG_TRACE(&Poco::Logger::get("kssenii"), "get serializaton version: {}, name: {}, stack: {}", version, getName(), StackTrace().toString());
+    return std::make_shared<SerializationAggregateFunction>(function, version);
 }
 
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
+    LOG_TRACE(&Poco::Logger::get("kssenii"), "create data type: {}", StackTrace().toString());
+
     String function_name;
     AggregateFunctionPtr function;
     DataTypes argument_types;
     Array params_row;
+    std::optional<size_t> version;
 
     if (!arguments || arguments->children.empty())
         throw Exception("Data type AggregateFunction requires parameters: "
             "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (const auto * parametric = arguments->children[0]->as<ASTFunction>())
+    ASTPtr data_type_ast = arguments->children[0];
+    size_t argument_types_start_idx = 1;
+
+    /* If aggregate function definition doesn't have version, it will have in AST children args [ASTFunction, types...] - in case
+     * it is parametric, or [ASTIdentifier, types...] - otherwise. If aggregate function has version in AST, then it will be:
+     * [ASTLitearl, ASTFunction (or ASTIdentifier), types].
+     */
+    if (auto version_ast = arguments->children[0]->as<ASTLiteral>())
+    {
+        version = version_ast->value.safeGet<UInt64>();
+        data_type_ast = arguments->children[1];
+        argument_types_start_idx = 2;
+    }
+
+    if (const auto * parametric = data_type_ast->as<ASTFunction>())
     {
         if (parametric->parameters)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
+
         function_name = parametric->name;
+        LOG_TRACE(&Poco::Logger::get("kssenii"), "Paramtric function name: {}", function_name);
 
         if (parametric->arguments)
         {
@@ -140,11 +165,11 @@ static DataTypePtr create(const ASTPtr & arguments)
             }
         }
     }
-    else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))
+    else if (auto opt_name = tryGetIdentifierName(data_type_ast))
     {
         function_name = *opt_name;
     }
-    else if (arguments->children[0]->as<ASTLiteral>())
+    else if (data_type_ast->as<ASTLiteral>())
     {
         throw Exception("Aggregate function name for data type AggregateFunction must be passed as identifier (without quotes) or function",
             ErrorCodes::BAD_ARGUMENTS);
@@ -153,7 +178,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Unexpected AST element passed as aggregate function name for data type AggregateFunction. Must be identifier or function.",
             ErrorCodes::BAD_ARGUMENTS);
 
-    for (size_t i = 1; i < arguments->children.size(); ++i)
+    for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
 
     if (function_name.empty())
@@ -161,13 +186,12 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     AggregateFunctionProperties properties;
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
-    return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row);
+    return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataType("AggregateFunction", create);
 }
-
 
 }
