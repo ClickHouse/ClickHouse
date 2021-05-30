@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypeCustom.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/FieldVisitors.h>
 
 #include <IO/ReadHelpers.h>
 

@@ -30,15 +30,15 @@ NamesAndTypesList StorageSystemSettingsProfiles::getNamesAndTypes()
 }
 
 
-void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
-    const auto & access_control = context.getAccessControlManager();
+    context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<SettingsProfile>();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_num_elements = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]).getData();
     auto & column_apply_to_all = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
@@ -54,7 +54,7 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, const
                        const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_num_elements.push_back(elements.size());
 

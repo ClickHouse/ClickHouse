@@ -32,7 +32,7 @@ public:
     virtual String getAuthPluginData() = 0;
 
     virtual void authenticate(
-        const String & user_name, std::optional<String> auth_response, Context & context,
+        const String & user_name, std::optional<String> auth_response, ContextPtr context,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) = 0;
 };
 
@@ -49,7 +49,7 @@ public:
     String getAuthPluginData() override { return scramble; }
 
     void authenticate(
-        const String & user_name, std::optional<String> auth_response, Context & context,
+        const String & user_name, std::optional<String> auth_response, ContextPtr context,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool /* is_secure_connection */, const Poco::Net::SocketAddress & address) override;
 
 private:
@@ -69,7 +69,7 @@ public:
     String getAuthPluginData() override { return scramble; }
 
     void authenticate(
-        const String & user_name, std::optional<String> auth_response, Context & context,
+        const String & user_name, std::optional<String> auth_response, ContextPtr context,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) override;
 
 private:

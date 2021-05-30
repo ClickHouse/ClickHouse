@@ -37,10 +37,10 @@ private:
     Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 
     IServer & server;
-    Context connection_context;
-    bool ssl_enabled;
-    Int32 connection_id;
-    Int32 secret_key;
+    ContextPtr connection_context;
+    bool ssl_enabled = false;
+    Int32 connection_id = 0;
+    Int32 secret_key = 0;
 
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;

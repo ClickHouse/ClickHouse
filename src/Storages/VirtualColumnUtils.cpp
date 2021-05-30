@@ -14,6 +14,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -26,6 +27,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -122,8 +128,23 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 }
 
-bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, Block block, ASTPtr & expression_ast)
+bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
 {
+    if (block.rows() == 0)
+        throw Exception("Cannot prepare filter with empty block", ErrorCodes::LOGICAL_ERROR);
+
+    /// Take the first row of the input block to build a constant block
+    auto columns = block.getColumns();
+    Columns const_columns(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (isColumnConst(*columns[i]))
+            const_columns[i] = columns[i]->cloneResized(1);
+        else
+            const_columns[i] = ColumnConst::create(columns[i]->cloneResized(1), 1);
+    }
+    block.setColumns(const_columns);
+
     bool unmodified = true;
     const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where() && !select.prewhere())
@@ -134,10 +155,6 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, 
         condition_ast = makeASTFunction("and", select.prewhere()->clone(), select.where()->clone());
     else
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
-
-    // Prepare a constant block with valid expressions
-    for (size_t i = 0; i < block.columns(); ++i)
-        block.getByPosition(i).column = block.getByPosition(i).type->createColumnConstWithDefaultValue(1);
 
     // Provide input columns as constant columns to check if an expression is constant.
     std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & node)
@@ -167,8 +184,11 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, 
     return unmodified;
 }
 
-void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context, ASTPtr expression_ast)
+void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
 {
+    if (block.rows() == 0)
+        return;
+
     if (!expression_ast)
         prepareFilterBlockWithQuery(query, context, block, expression_ast);
 
@@ -179,7 +199,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     buildSets(expression_ast, analyzer);
-    ExpressionActionsPtr actions = analyzer.getActions(false);
+    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);
@@ -191,10 +211,15 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
     ConstantFilterDescription constant_filter(*filter_column);
 
     if (constant_filter.always_true)
+    {
         return;
+    }
 
     if (constant_filter.always_false)
+    {
         block = block.cloneEmpty();
+        return;
+    }
 
     FilterDescription filter(*filter_column);
 

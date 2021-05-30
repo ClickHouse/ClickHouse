@@ -11,6 +11,7 @@
 
 namespace DB
 {
+struct Settings;
 /// Counts bitmap operation on numbers.
 template <typename T, typename Data>
 class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>
@@ -21,6 +22,8 @@ public:
     String getName() const override { return Data::name(); }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -55,6 +58,8 @@ public:
     String getName() const override { return Data::name(); }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

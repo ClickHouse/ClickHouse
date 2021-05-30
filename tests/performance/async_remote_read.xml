@@ -1,4 +1,7 @@
 <test>
+    <settings>
+        <async_socket_for_remote>1</async_socket_for_remote>
+    </settings>
     <query>
         SELECT sum(x)
         FROM

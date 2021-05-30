@@ -1,6 +1,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
 
@@ -8,14 +8,14 @@ namespace DB
 {
 
 /// Get the connection Id. It's used for MySQL handler only.
-class FunctionConnectionId : public IFunction
+class FunctionConnectionId : public IFunction, WithConstContext
 {
 public:
     static constexpr auto name = "connectionId";
 
-    explicit FunctionConnectionId(const Context & context_) : context(context_) {}
+    explicit FunctionConnectionId(ContextConstPtr context_) : WithConstContext(context_) {}
 
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConnectionId>(context); }
+    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionConnectionId>(context_); }
 
     String getName() const override { return name; }
 
@@ -25,11 +25,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return result_type->createColumnConst(input_rows_count, context.getClientInfo().connection_id);
+        return result_type->createColumnConst(input_rows_count, getContext()->getClientInfo().connection_id);
     }
-
-private:
-    const Context & context;
 };
 
 void registerFunctionConnectionId(FunctionFactory & factory)
