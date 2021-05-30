@@ -176,7 +176,7 @@ dictGetChildren(dict_name, key)
 
 -   Потомки первого уровня для ключа.
 
-Тип: [Array(UInt64)](../../sql-reference/data-types/array.md).
+Тип: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 ## dictGetDescendant {#dictgetdescendant}
 
