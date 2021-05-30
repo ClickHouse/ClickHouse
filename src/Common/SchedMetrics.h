@@ -4,13 +4,13 @@
 namespace DB
 {
 
- class SchedMetrics
- {
+class SchedMetrics
+{
 
- public:
+public:
         
-     struct Data
-     {
+    struct Data
+    {
         uint32_t total_csw;
             
         Data()

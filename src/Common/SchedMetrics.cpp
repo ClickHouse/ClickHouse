@@ -84,5 +84,4 @@ SchedMetrics::Data SchedMetrics::get() const
 
     return data;
 }
-
 };
