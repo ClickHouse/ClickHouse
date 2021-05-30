@@ -1,5 +1,6 @@
 #include <Common/NetworkMetrics.h>
 #include <iostream>
+
 #include <gtest/gtest.h>
 
 TEST(NetworkMetrics, SimpleTest) 

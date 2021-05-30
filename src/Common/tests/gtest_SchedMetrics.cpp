@@ -1,5 +1,6 @@
 #include <Common/SchedMetrics.h>
 #include <iostream>
+
 #include <gtest/gtest.h>
 
 TEST(SchedMetrics, SimpleTest) 
