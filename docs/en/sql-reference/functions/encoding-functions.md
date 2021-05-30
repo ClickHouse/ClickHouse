@@ -156,7 +156,7 @@ Performs the opposite operation of [hex](#hex). It interprets each pair of hexad
 If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
 !!! note "Note"
-    If `unhex()` is invoked from within the `clickhouse-client`, binary strings display using UTF-8. 
+    If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8. 
 
 Alias: `UNHEX`.
 
