@@ -27,7 +27,7 @@ ConfigReloader::ConfigReloader(
     , updater(std::move(updater_))
 {
     if (!already_loaded)
-        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
+        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true);
 }
 
 
@@ -66,7 +66,7 @@ void ConfigReloader::run()
             if (quit)
                 return;
 
-            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false, /* initial_loading = */ false);
+            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false);
         }
         catch (...)
         {
@@ -76,7 +76,7 @@ void ConfigReloader::run()
     }
 }
 
-void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading)
+void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
 {
     std::lock_guard lock(reload_mutex);
 
@@ -131,14 +131,13 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
 
         try
         {
-            updater(loaded_config.configuration, initial_loading);
+            updater(loaded_config.configuration);
         }
         catch (...)
         {
             if (throw_on_error)
                 throw;
             tryLogCurrentException(log, "Error updating configuration from '" + path + "' config.");
-            return;
         }
 
         LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", path);

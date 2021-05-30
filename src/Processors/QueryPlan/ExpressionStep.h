@@ -4,32 +4,48 @@
 namespace DB
 {
 
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ExpressionTransform;
-class JoiningTransform;
+class InflatingExpressionTransform;
 
 /// Calculates specified expression. See ExpressionTransform.
 class ExpressionStep : public ITransformingStep
 {
 public:
+    using Transform = ExpressionTransform;
 
-    explicit ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_);
+    explicit ExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_);
     String getName() const override { return "Expression"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
     void updateInputStream(DataStream input_stream, bool keep_header);
 
     void describeActions(FormatSettings & settings) const override;
 
-    const ActionsDAGPtr & getExpression() const { return actions_dag; }
-
-    void describeActions(JSONBuilder::JSONMap & map) const override;
+    const ExpressionActionsPtr & getExpression() const { return expression; }
 
 private:
-    ActionsDAGPtr actions_dag;
+    ExpressionActionsPtr expression;
+};
+
+/// TODO: add separate step for join.
+class InflatingExpressionStep : public ITransformingStep
+{
+public:
+    using Transform = InflatingExpressionTransform;
+
+    explicit InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_);
+    String getName() const override { return "InflatingExpression"; }
+
+    void transformPipeline(QueryPipeline & pipeline) override;
+
+    void describeActions(FormatSettings & settings) const override;
+
+private:
+    ExpressionActionsPtr expression;
 };
 
 }

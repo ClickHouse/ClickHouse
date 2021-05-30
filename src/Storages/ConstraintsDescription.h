@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTConstraintDeclaration.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ struct ConstraintsDescription
 
     static ConstraintsDescription parse(const String & str);
 
-    ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
+    ConstraintsExpressions getExpressions(const Context & context, const NamesAndTypesList & source_columns_) const;
 
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);

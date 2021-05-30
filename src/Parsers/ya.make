@@ -1,19 +1,15 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
 )
 
-
 SRCS(
     ASTAlterQuery.cpp
     ASTAsterisk.cpp
     ASTColumnDeclaration.cpp
     ASTColumnsMatcher.cpp
-    ASTColumnsTransformers.cpp
     ASTConstraintDeclaration.cpp
     ASTCreateQuery.cpp
     ASTCreateQuotaQuery.cpp
@@ -21,8 +17,8 @@ SRCS(
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
-    ASTDictionary.cpp
     ASTDictionaryAttributeDeclaration.cpp
+    ASTDictionary.cpp
     ASTDropAccessEntityQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
@@ -38,8 +34,6 @@ SRCS(
     ASTOptimizeQuery.cpp
     ASTOrderByElement.cpp
     ASTPartition.cpp
-    ASTProjectionDeclaration.cpp
-    ASTProjectionSelectQuery.cpp
     ASTQualifiedAsterisk.cpp
     ASTQueryParameter.cpp
     ASTQueryWithOnCluster.cpp
@@ -56,22 +50,24 @@ SRCS(
     ASTShowAccessEntitiesQuery.cpp
     ASTShowCreateAccessEntityQuery.cpp
     ASTShowGrantsQuery.cpp
+    ASTShowPrivilegesQuery.cpp
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
-    ASTTTLElement.cpp
     ASTTablesInSelectQuery.cpp
+    ASTTTLElement.cpp
     ASTUserNameWithHost.cpp
-    ASTWindowDefinition.cpp
     ASTWithAlias.cpp
-    ASTWithElement.cpp
     CommonParsers.cpp
     ExpressionElementParsers.cpp
     ExpressionListParsers.cpp
+    formatAST.cpp
+    formatSettingName.cpp
     IAST.cpp
+    iostream_debug_helpers.cpp
     IParserBase.cpp
-    InsertQuerySettingsPushDownVisitor.cpp
     Lexer.cpp
+    makeASTForLogicalFunction.cpp
     MySQL/ASTAlterCommand.cpp
     MySQL/ASTAlterQuery.cpp
     MySQL/ASTCreateDefines.cpp
@@ -85,6 +81,10 @@ SRCS(
     MySQL/ASTDeclareReference.cpp
     MySQL/ASTDeclareSubPartition.cpp
     MySQL/ASTDeclareTableOptions.cpp
+    parseDatabaseAndTableName.cpp
+    parseIdentifierOrStringLiteral.cpp
+    parseIntervalKind.cpp
+    parseQuery.cpp
     ParserAlterQuery.cpp
     ParserCase.cpp
     ParserCheckQuery.cpp
@@ -96,8 +96,8 @@ SRCS(
     ParserCreateUserQuery.cpp
     ParserDataType.cpp
     ParserDescribeTableQuery.cpp
-    ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
+    ParserDictionary.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
     ParserExplainQuery.cpp
@@ -107,7 +107,6 @@ SRCS(
     ParserKillQueryQuery.cpp
     ParserOptimizeQuery.cpp
     ParserPartition.cpp
-    ParserProjectionSelectQuery.cpp
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp
@@ -131,20 +130,10 @@ SRCS(
     ParserUseQuery.cpp
     ParserUserNameWithHost.cpp
     ParserWatchQuery.cpp
-    ParserWithElement.cpp
-    QueryWithOutputSettingsPushDownVisitor.cpp
-    TokenIterator.cpp
-    formatAST.cpp
-    formatSettingName.cpp
-    iostream_debug_helpers.cpp
-    makeASTForLogicalFunction.cpp
-    obfuscateQueries.cpp
-    parseDatabaseAndTableName.cpp
-    parseIdentifierOrStringLiteral.cpp
-    parseIntervalKind.cpp
-    parseQuery.cpp
     parseUserName.cpp
     queryToString.cpp
+    QueryWithOutputSettingsPushDownVisitor.cpp
+    TokenIterator.cpp
 
 )
 

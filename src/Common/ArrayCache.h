@@ -13,8 +13,6 @@
 #include <boost/noncopyable.hpp>
 #include <ext/scope_guard.h>
 
-#include <common/getPageSize.h>
-
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
@@ -328,6 +326,8 @@ private:
         return (x + (rounding - 1)) / rounding * rounding;
     }
 
+    static constexpr size_t page_size = 4096;
+
     /// Sizes and addresses of allocated memory will be aligned to specified boundary.
     static constexpr size_t alignment = 16;
 
@@ -505,7 +505,6 @@ private:
 
         /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
         ///  allocate a new chunk.
-        size_t page_size = static_cast<size_t>(::getPageSize());
         size_t required_chunk_size = std::max(min_chunk_size, roundUp(size, page_size));
         if (total_chunks_size + required_chunk_size <= max_total_size)
         {

@@ -1,15 +1,15 @@
+import pytest
+
 import os
 import time
-from multiprocessing.dummy import Pool
-
-import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
+from multiprocessing.dummy import Pool
+
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', main_configs=['configs/wide_parts_only.xml'])
-
+node1 = cluster.add_instance('node1')
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -38,23 +38,20 @@ def check_exists(table, part_path, column_file):
 
 
 def test_update_mutation(started_cluster):
-    node1.query(
-        "CREATE TABLE table_for_update(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()")
+    node1.query("CREATE TABLE table_for_update(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()")
 
     node1.query("INSERT INTO table_for_update SELECT number, number, toString(number) from numbers(100)")
 
     assert int(node1.query("SELECT sum(value1) FROM table_for_update").strip()) == sum(range(100))
 
-    node1.query("ALTER TABLE table_for_update UPDATE value1 = value1 * value1 WHERE 1",
-                settings={"mutations_sync": "2"})
+    node1.query("ALTER TABLE table_for_update UPDATE value1 = value1 * value1 WHERE 1", settings={"mutations_sync" : "2"})
     assert int(node1.query("SELECT sum(value1) FROM table_for_update").strip()) == sum(i * i for i in range(100))
 
     check_hardlinks("table_for_update", "all_1_1_0_2", "key.bin", 2)
     check_hardlinks("table_for_update", "all_1_1_0_2", "value2.bin", 2)
     check_hardlinks("table_for_update", "all_1_1_0_2", "value1.bin", 1)
 
-    node1.query("ALTER TABLE table_for_update UPDATE key=key, value1=value1, value2=value2 WHERE 1",
-                settings={"mutations_sync": "2"})
+    node1.query("ALTER TABLE table_for_update UPDATE key=key, value1=value1, value2=value2 WHERE 1", settings={"mutations_sync": "2"})
 
     assert int(node1.query("SELECT sum(value1) FROM table_for_update").strip()) == sum(i * i for i in range(100))
 
@@ -64,14 +61,13 @@ def test_update_mutation(started_cluster):
 
 
 def test_modify_mutation(started_cluster):
-    node1.query(
-        "CREATE TABLE table_for_modify(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()")
+    node1.query("CREATE TABLE table_for_modify(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()")
 
     node1.query("INSERT INTO table_for_modify SELECT number, number, toString(number) from numbers(100)")
 
     assert int(node1.query("SELECT sum(value1) FROM table_for_modify").strip()) == sum(range(100))
 
-    node1.query("ALTER TABLE table_for_modify MODIFY COLUMN value2 UInt64", settings={"mutations_sync": "2"})
+    node1.query("ALTER TABLE table_for_modify MODIFY COLUMN value2 UInt64", settings={"mutations_sync" : "2"})
 
     assert int(node1.query("SELECT sum(value2) FROM table_for_modify").strip()) == sum(range(100))
 
@@ -81,8 +77,7 @@ def test_modify_mutation(started_cluster):
 
 
 def test_drop_mutation(started_cluster):
-    node1.query(
-        "CREATE TABLE table_for_drop(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()")
+    node1.query("CREATE TABLE table_for_drop(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()")
 
     node1.query("INSERT INTO table_for_drop SELECT number, number, toString(number) from numbers(100)")
 
@@ -100,8 +95,7 @@ def test_drop_mutation(started_cluster):
 
 
 def test_delete_and_drop_mutation(started_cluster):
-    node1.query(
-        "CREATE TABLE table_for_delete_and_drop(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()")
+    node1.query("CREATE TABLE table_for_delete_and_drop(key UInt64, value1 UInt64, value2 String) ENGINE MergeTree() ORDER BY tuple()")
 
     node1.query("INSERT INTO table_for_delete_and_drop SELECT number, number, toString(number) from numbers(100)")
 
@@ -116,21 +110,19 @@ def test_delete_and_drop_mutation(started_cluster):
     p.apply_async(mutate)
 
     for _ in range(1, 100):
-        result = node1.query(
-            "SELECT COUNT() FROM system.mutations WHERE table = 'table_for_delete_and_drop' and is_done=0")
+        result = node1.query("SELECT COUNT() FROM system.mutations WHERE table = 'table_for_delete_and_drop' and is_done=0")
         try:
             if int(result.strip()) == 2:
                 break
         except:
-            print("Result", result)
+            print "Result", result
             pass
 
         time.sleep(0.5)
 
     node1.query("SYSTEM START MERGES")
 
-    assert_eq_with_retry(node1, "SELECT COUNT() FROM table_for_delete_and_drop",
-                         str(sum(1 for i in range(100) if i % 2 != 0)))
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM table_for_delete_and_drop", str(sum(1 for i in range(100) if i % 2 != 0)))
 
     check_hardlinks("table_for_delete_and_drop", "all_1_1_0_3", "key.bin", 1)
     check_hardlinks("table_for_delete_and_drop", "all_1_1_0_3", "value1.bin", 1)

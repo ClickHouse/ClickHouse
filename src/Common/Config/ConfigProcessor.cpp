@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <sstream>
 #include <functional>
 #include <filesystem>
 #include <Poco/DOM/Text.h>
@@ -16,15 +17,9 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <common/getResource.h>
-#include <common/errnoToString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
-
-namespace fs = std::filesystem;
 
 using namespace Poco::XML;
 
@@ -234,9 +229,9 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 
 static std::string layerFromHost()
 {
-    struct utsname buf;
+    utsname buf;
     if (uname(&buf))
-        throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
+        throw Poco::Exception(std::string("uname failed: ") + std::strerror(errno));
 
     std::string layer = numberFromHost(buf.nodename);
     if (layer.empty())
@@ -456,7 +451,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     XMLDocumentPtr config;
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
-    if (fs::exists(path))
+    if (std::filesystem::exists(path))
     {
         config = dom_parser.parse(path);
     }
@@ -540,7 +535,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     if (has_zk_includes)
         *has_zk_includes = !contributing_zk_paths.empty();
 
-    WriteBufferFromOwnString comment;
+    std::stringstream comment;
     comment <<     " This file was generated automatically.\n";
     comment << "     Do not edit it: it is likely to be discarded and generated again before it's read next time.\n";
     comment << "     Files used to generate this file:";
@@ -615,7 +610,6 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     {
         if (preprocessed_path.empty())
         {
-            fs::path preprocessed_configs_path("preprocessed_configs/");
             auto new_path = loaded_config.config_path;
             if (new_path.substr(0, main_config_path.size()) == main_config_path)
                 new_path.replace(0, main_config_path.size(), "");
@@ -634,17 +628,15 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 }
                 else
                 {
-                    fs::path loaded_config_path(loaded_config.configuration->getString("path"));
-                    preprocessed_dir = loaded_config_path / preprocessed_configs_path;
+                    preprocessed_dir = loaded_config.configuration->getString("path") + "/preprocessed_configs/";
                 }
             }
             else
             {
-                fs::path preprocessed_dir_path(preprocessed_dir);
-                preprocessed_dir = (preprocessed_dir_path / preprocessed_configs_path).string();
+                preprocessed_dir += "/preprocessed_configs/";
             }
 
-            preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
+            preprocessed_path = preprocessed_dir + new_path;
             auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
             if (!preprocessed_path_parent.toString().empty())
                 Poco::File(preprocessed_path_parent).createDirectories();

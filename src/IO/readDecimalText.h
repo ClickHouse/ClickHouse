@@ -3,7 +3,6 @@
 #include <limits>
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
-#include <common/wide_integer_to_string.h>
 
 
 namespace DB
@@ -121,7 +120,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (!tryReadIntText(addition_exp, buf))
                 {
                     if constexpr (_throw_on_error)
-                        throw ParsingException("Cannot parse exponent while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
+                        throw Exception("Cannot parse exponent while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return false;
                 }
@@ -134,7 +133,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (digits_only)
                 {
                     if constexpr (_throw_on_error)
-                        throw ParsingException("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
+                        throw Exception("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
                     return false;
                 }
                 stop = true;
@@ -161,7 +160,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
             " Expected to read decimal with scale {} and precision {}";
 
         if constexpr (is_big_int_v<typename T::NativeType>)
-            throw Exception(fmt::format(pattern, digits, x.value, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(fmt::format(pattern, digits, bigintToString(x.value), exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         else
             throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }

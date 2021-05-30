@@ -19,7 +19,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNested.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -62,38 +61,36 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 
 void ColumnDescription::writeText(WriteBuffer & buf) const
 {
-    /// NOTE: Serialization format is insane.
-
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
-    writeEscapedString(type->getName(), buf);
+    DB::writeText(type->getName(), buf);
 
     if (default_desc.expression)
     {
         writeChar('\t', buf);
         DB::writeText(DB::toString(default_desc.kind), buf);
         writeChar('\t', buf);
-        writeEscapedString(queryToString(default_desc.expression), buf);
+        DB::writeText(queryToString(default_desc.expression), buf);
     }
 
     if (!comment.empty())
     {
         writeChar('\t', buf);
         DB::writeText("COMMENT ", buf);
-        writeEscapedString(queryToString(ASTLiteral(Field(comment))), buf);
+        DB::writeText(queryToString(ASTLiteral(Field(comment))), buf);
     }
 
     if (codec)
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(codec), buf);
+        DB::writeText(queryToString(codec), buf);
     }
 
     if (ttl)
     {
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
-        writeEscapedString(queryToString(ttl), buf);
+        DB::writeText(queryToString(ttl), buf);
     }
 
     writeChar('\n', buf);
@@ -101,41 +98,32 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
 
 void ColumnDescription::readText(ReadBuffer & buf)
 {
-    readBackQuotedString(name, buf);
-    assertChar(' ', buf);
-
-    String type_string;
-    readEscapedString(type_string, buf);
-    type = DataTypeFactory::instance().get(type_string);
-
-    if (checkChar('\t', buf))
+    ParserColumnDeclaration column_parser(/* require type */ true);
+    String column_line;
+    readEscapedStringUntilEOL(column_line, buf);
+    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
     {
-        String modifiers;
-        readEscapedStringUntilEOL(modifiers, buf);
+        name = col_ast->name;
+        type = DataTypeFactory::instance().get(col_ast->type);
 
-        ParserColumnDeclaration column_parser(/* require type */ true);
-        ASTPtr ast = parseQuery(column_parser, "x T " + modifiers, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
-        if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
+        if (col_ast->default_expression)
         {
-            if (col_ast->default_expression)
-            {
-                default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
-                default_desc.expression = std::move(col_ast->default_expression);
-            }
-
-            if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
-
-            if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false);
-
-            if (col_ast->ttl)
-                ttl = col_ast->ttl;
+            default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
+            default_desc.expression = std::move(col_ast->default_expression);
         }
-        else
-            throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);
+
+        if (col_ast->comment)
+            comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
+
+        if (col_ast->codec)
+            codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false);
+
+        if (col_ast->ttl)
+            ttl = col_ast->ttl;
     }
+    else
+        throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);
 }
 
 
@@ -196,7 +184,6 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -208,10 +195,7 @@ void ColumnsDescription::remove(const String & column_name)
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
     for (auto list_it = range.first; list_it != range.second;)
-    {
-        removeSubcolumns(list_it->name, list_it->type);
         list_it = columns.get<0>().erase(list_it);
-    }
 }
 
 void ColumnsDescription::rename(const String & column_from, const String & column_to)
@@ -284,7 +268,6 @@ void ColumnsDescription::flattenNested()
         }
 
         ColumnDescription column = std::move(*it);
-        removeSubcolumns(column.name, column.type);
         it = columns.get<0>().erase(it);
 
         const DataTypes & elements = type_tuple->getElements();
@@ -298,7 +281,6 @@ void ColumnsDescription::flattenNested()
             nested_column.name = Nested::concatenateName(column.name, names[i]);
             nested_column.type = std::make_shared<DataTypeArray>(elements[i]);
 
-            addSubcolumns(nested_column.name, nested_column.type);
             columns.get<0>().insert(it, std::move(nested_column));
         }
     }
@@ -340,6 +322,7 @@ NamesAndTypesList ColumnsDescription::getAll() const
     return ret;
 }
 
+
 bool ColumnsDescription::has(const String & column_name) const
 {
     return columns.get<1>().find(column_name) != columns.get<1>().end();
@@ -349,16 +332,6 @@ bool ColumnsDescription::hasNested(const String & column_name) const
 {
     auto range = getNameRange(columns, column_name);
     return range.first != range.second && range.first->name.length() > column_name.length();
-}
-
-bool ColumnsDescription::hasSubcolumn(const String & column_name) const
-{
-    return subcolumns.find(column_name) != subcolumns.end();
-}
-
-bool ColumnsDescription::hasInStorageOrSubcolumn(const String & column_name) const
-{
-    return has(column_name) || hasSubcolumn(column_name);
 }
 
 const ColumnDescription & ColumnsDescription::get(const String & column_name) const
@@ -398,56 +371,12 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
     return NameAndTypePair(it->name, it->type);
 }
 
-NameAndTypePair ColumnsDescription::getPhysicalOrSubcolumn(const String & column_name) const
-{
-    if (auto it = columns.get<1>().find(column_name); it != columns.get<1>().end()
-        && it->default_desc.kind != ColumnDefaultKind::Alias)
-    {
-        return NameAndTypePair(it->name, it->type);
-    }
-
-    if (auto it = subcolumns.find(column_name); it != subcolumns.end())
-    {
-        return it->second;
-    }
-
-    throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-        "There is no physical column or subcolumn {} in table.", column_name);
-}
-
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
     return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
 }
 
-bool ColumnsDescription::hasPhysicalOrSubcolumn(const String & column_name) const
-{
-    return hasPhysical(column_name) || subcolumns.find(column_name) != subcolumns.end();
-}
-
-static NamesAndTypesList getWithSubcolumns(NamesAndTypesList && source_list)
-{
-    NamesAndTypesList ret;
-    for (const auto & col : source_list)
-    {
-        ret.emplace_back(col.name, col.type);
-        for (const auto & subcolumn : col.type->getSubcolumnNames())
-            ret.emplace_back(col.name, subcolumn, col.type, col.type->getSubcolumnType(subcolumn));
-    }
-
-    return ret;
-}
-
-NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
-{
-    return getWithSubcolumns(getAll());
-}
-
-NamesAndTypesList ColumnsDescription::getAllPhysicalWithSubcolumns() const
-{
-    return getWithSubcolumns(getAllPhysical());
-}
 
 bool ColumnsDescription::hasDefaults() const
 {
@@ -483,13 +412,6 @@ std::optional<ColumnDefault> ColumnsDescription::getDefault(const String & colum
 }
 
 
-bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
-{
-    const auto it = columns.get<1>().find(column_name);
-
-    return it != columns.get<1>().end() && it->codec != nullptr;
-}
-
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
     const auto it = columns.get<1>().find(column_name);
@@ -503,16 +425,6 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    const auto it = columns.get<1>().find(column_name);
-
-    if (it == columns.get<1>().end() || !it->codec)
-        return default_codec->getFullCodecDesc();
-
-    return it->codec;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
@@ -554,35 +466,15 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
         ColumnDescription column;
         column.readText(buf);
         buf.ignore(1); /// ignore new line
-        result.add(column);
+        result.add(std::move(column));
     }
 
     assertEOF(buf);
     return result;
 }
 
-void ColumnsDescription::addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage)
-{
-    for (const auto & subcolumn_name : type_in_storage->getSubcolumnNames())
-    {
-        auto subcolumn = NameAndTypePair(name_in_storage, subcolumn_name,
-            type_in_storage, type_in_storage->getSubcolumnType(subcolumn_name));
 
-        if (has(subcolumn.name))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
-
-        subcolumns[subcolumn.name] = subcolumn;
-    }
-}
-
-void ColumnsDescription::removeSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage)
-{
-    for (const auto & subcolumn_name : type_in_storage->getSubcolumnNames())
-        subcolumns.erase(name_in_storage + "." + subcolumn_name);
-}
-
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context)
 {
     for (const auto & child : default_expr_list->children)
         if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
@@ -593,8 +485,8 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
-            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         return actions->getSampleBlock();
     }

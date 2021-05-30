@@ -30,8 +30,9 @@
 #include <cstddef>
 #include <cstring>
 #include <type_traits>
-#include <common/extended_types.h>
 
+using int128_t = __int128;
+using uint128_t = unsigned __int128;
 
 namespace impl
 {
@@ -105,7 +106,7 @@ using UnsignedOfSize = typename SelectType
     uint16_t,
     uint32_t,
     uint64_t,
-    __uint128_t
+    uint128_t
 >::Result;
 
 /// Holds the result of dividing an unsigned N-byte variable by 10^N resulting in
@@ -312,8 +313,7 @@ namespace convert
     }
 }
 
-template <typename T>
-static inline int digits10(T x)
+static inline int digits10(uint128_t x)
 {
     if (x < 10ULL)
         return 1;
@@ -346,11 +346,8 @@ static inline int digits10(T x)
     return 12 + digits10(x / 1000000000000ULL);
 }
 
-template <typename T>
-static inline char * writeUIntText(T x, char * p)
+static inline char * writeUIntText(uint128_t x, char * p)
 {
-    static_assert(is_unsigned_v<T>);
-
     int len = digits10(x);
     auto pp = p + len;
     while (x >= 100)
@@ -373,28 +370,14 @@ static inline char * writeLeadingMinus(char * pos)
     return pos + 1;
 }
 
-template <typename T>
-static inline char * writeSIntText(T x, char * pos)
+static inline char * writeSIntText(int128_t x, char * pos)
 {
-    static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
+    static const int128_t min_int128 = int128_t(0x8000000000000000ll) << 64;
 
-    using UnsignedT = make_unsigned_t<T>;
-    static constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
-
-    if (unlikely(x == min_int))
+    if (unlikely(x == min_int128))
     {
-        if constexpr (std::is_same_v<T, Int128>)
-        {
-            const char * res = "-170141183460469231731687303715884105728";
-            memcpy(pos, res, strlen(res));
-            return pos + strlen(res);
-        }
-        else if constexpr (std::is_same_v<T, Int256>)
-        {
-            const char * res = "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
-            memcpy(pos, res, strlen(res));
-            return pos + strlen(res);
-        }
+        memcpy(pos, "-170141183460469231731687303715884105728", 40);
+        return pos + 40;
     }
 
     if (x < 0)
@@ -402,7 +385,7 @@ static inline char * writeSIntText(T x, char * pos)
         x = -x;
         pos = writeLeadingMinus(pos);
     }
-    return writeUIntText(UnsignedT(x), pos);
+    return writeUIntText(static_cast<uint128_t>(x), pos);
 }
 
 }
@@ -420,25 +403,13 @@ inline char * itoa(char8_t i, char * p)
 }
 
 template <>
-inline char * itoa(UInt128 i, char * p)
+inline char * itoa<uint128_t>(uint128_t i, char * p)
 {
     return impl::writeUIntText(i, p);
 }
 
 template <>
-inline char * itoa(Int128 i, char * p)
-{
-    return impl::writeSIntText(i, p);
-}
-
-template <>
-inline char * itoa(UInt256 i, char * p)
-{
-    return impl::writeUIntText(i, p);
-}
-
-template <>
-inline char * itoa(Int256 i, char * p)
+inline char * itoa<int128_t>(int128_t i, char * p)
 {
     return impl::writeSIntText(i, p);
 }

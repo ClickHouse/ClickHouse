@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ClickHouseRevision.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -19,10 +20,10 @@ struct TemporaryFileStream
     CompressedReadBuffer compressed_in;
     BlockInputStreamPtr block_in;
 
-    explicit TemporaryFileStream(const std::string & path)
+    TemporaryFileStream(const std::string & path)
         : file_in(path)
         , compressed_in(file_in)
-        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
     {}
 
     TemporaryFileStream(const std::string & path, const Block & header_)
@@ -39,7 +40,6 @@ struct TemporaryFileStream
         CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
         NativeBlockOutputStream output(compressed_buf, 0, header);
         copyData(input, output, is_cancelled);
-        compressed_buf.finalize();
     }
 };
 

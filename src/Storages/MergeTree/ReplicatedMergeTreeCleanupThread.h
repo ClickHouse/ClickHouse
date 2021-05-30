@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
@@ -58,8 +58,8 @@ private:
     /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
     void clearOldMutations();
 
-    using NodeCTimeAndVersionCache = std::map<String, std::pair<Int64, Int32>>;
-    NodeCTimeAndVersionCache cached_block_stats;
+    using NodeCTimeCache = std::map<String, Int64>;
+    NodeCTimeCache cached_block_stats;
 
     struct NodeWithStat;
     /// Returns list of blocks (with their stat) sorted by ctime in descending order.

@@ -3,11 +3,7 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 #include <Common/quoteString.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -27,7 +23,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     : columns(other.columns)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
-    , projections(other.projections.clone())
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
@@ -36,7 +31,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
-    , comment(other.comment)
 {
 }
 
@@ -48,7 +42,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     columns = other.columns;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
-    projections = other.projections.clone();
     partition_key = other.partition_key;
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
@@ -60,14 +53,9 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     else
         settings_changes.reset();
     select = other.select;
-    comment = other.comment;
     return *this;
 }
 
-void StorageInMemoryMetadata::setComment(const String & comment_)
-{
-    comment = comment_;
-}
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 {
@@ -84,11 +72,6 @@ void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_i
 void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
 {
     constraints = std::move(constraints_);
-}
-
-void StorageInMemoryMetadata::setProjections(ProjectionsDescription projections_)
-{
-    projections = std::move(projections_);
 }
 
 void StorageInMemoryMetadata::setTableTTLs(const TTLTableDescription & table_ttl_)
@@ -134,16 +117,6 @@ const ConstraintsDescription & StorageInMemoryMetadata::getConstraints() const
     return constraints;
 }
 
-const ProjectionsDescription & StorageInMemoryMetadata::getProjections() const
-{
-    return projections;
-}
-
-bool StorageInMemoryMetadata::hasProjections() const
-{
-    return !projections.empty();
-}
-
 TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
 {
     return table_ttl;
@@ -151,7 +124,7 @@ TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
 
 bool StorageInMemoryMetadata::hasAnyTableTTL() const
 {
-    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
+    return hasAnyMoveTTL() || hasRowsTTL();
 }
 
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
@@ -174,16 +147,6 @@ bool StorageInMemoryMetadata::hasRowsTTL() const
     return table_ttl.rows_ttl.expression != nullptr;
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
-{
-    return table_ttl.rows_where_ttl;
-}
-
-bool StorageInMemoryMetadata::hasAnyRowsWhereTTL() const
-{
-    return !table_ttl.rows_where_ttl.empty();
-}
-
 TTLDescriptions StorageInMemoryMetadata::getMoveTTLs() const
 {
     return table_ttl.move_ttl;
@@ -194,26 +157,6 @@ bool StorageInMemoryMetadata::hasAnyMoveTTL() const
     return !table_ttl.move_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRecompressionTTLs() const
-{
-    return table_ttl.recompression_ttl;
-}
-
-bool StorageInMemoryMetadata::hasAnyRecompressionTTL() const
-{
-    return !table_ttl.recompression_ttl.empty();
-}
-
-TTLDescriptions StorageInMemoryMetadata::getGroupByTTLs() const
-{
-    return table_ttl.group_by_ttl;
-}
-
-bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
-{
-    return !table_ttl.group_by_ttl.empty();
-}
-
 ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns) const
 {
     if (updated_columns.empty())
@@ -222,7 +165,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
     ColumnDependencies res;
 
     NameSet indices_columns;
-    NameSet projections_columns;
     NameSet required_ttl_columns;
     NameSet updated_ttl_columns;
 
@@ -244,9 +186,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
     for (const auto & index : getSecondaryIndices())
         add_dependent_columns(index.expression, indices_columns);
 
-    for (const auto & projection : getProjections())
-        add_dependent_columns(&projection, projections_columns);
-
     if (hasRowsTTL())
     {
         auto rows_expression = getRowsTTL().expression;
@@ -257,9 +196,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
                 updated_ttl_columns.insert(column.name);
         }
     }
-
-    for (const auto & entry : getRecompressionTTLs())
-        add_dependent_columns(entry.expression, required_ttl_columns);
 
     for (const auto & [name, entry] : getColumnTTLs())
     {
@@ -272,8 +208,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);
-    for (const auto & column : projections_columns)
-        res.emplace(column, ColumnDependency::PROJECTION);
     for (const auto & column : required_ttl_columns)
         res.emplace(column, ColumnDependency::TTL_EXPRESSION);
     for (const auto & column : updated_ttl_columns)
@@ -320,10 +254,9 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-    auto all_columns = getColumns().getAllWithSubcolumns();
     std::unordered_map<String, DataTypePtr> columns_map;
-    columns_map.reserve(all_columns.size());
 
+    NamesAndTypesList all_columns = getColumns().getAll();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
 
@@ -336,11 +269,15 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
     {
         auto it = columns_map.find(name);
         if (it != columns_map.end())
+        {
             res.insert({it->second->createColumn(), it->second, it->first});
+        }
         else
+        {
             throw Exception(
-                "Column " + backQuote(name) + " not found in table " + (storage_id.empty() ? "" : storage_id.getNameForLogs()),
+                "Column " + backQuote(name) + " not found in table " + storage_id.getNameForLogs(),
                 ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        }
     }
 
     return res;
@@ -477,7 +414,7 @@ namespace
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
-        WriteBufferFromOwnString ss;
+        std::stringstream ss;
         for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
         {
             if (it != available_columns.begin())
@@ -508,7 +445,7 @@ namespace
 
 void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
-    NamesAndTypesList available_columns = getColumns().getAllPhysicalWithSubcolumns();
+    NamesAndTypesList available_columns = getColumns().getAllPhysical();
     available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
 
     const String list_of_columns = listOfColumns(available_columns);

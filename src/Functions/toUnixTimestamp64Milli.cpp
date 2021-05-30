@@ -4,11 +4,17 @@
 namespace DB
 {
 
+struct TransformToMilli
+{
+    static constexpr auto name = "toUnixTimestamp64Milli";
+    static constexpr auto target_scale = 3;
+    using SourceDataType = DataTypeDateTime64;
+    using ResultDataType = DataTypeInt64;
+};
+
 void registerToUnixTimestamp64Milli(FunctionFactory & factory)
 {
-    factory.registerFunction("toUnixTimestamp64Milli",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionToUnixTimestamp64>(3, "toUnixTimestamp64Milli")); });
+    factory.registerFunction<FunctionUnixTimestamp64<TransformToMilli>>();
 }
 
 }

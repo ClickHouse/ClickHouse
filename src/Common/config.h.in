@@ -5,7 +5,6 @@
 #cmakedefine01 USE_RE2_ST
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_HDFS
-#cmakedefine01 USE_INTERNAL_HDFS3_LIBRARY
 #cmakedefine01 USE_AWS_S3
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_UNWIND
@@ -15,4 +14,3 @@
 #cmakedefine01 USE_GRPC
 #cmakedefine01 USE_STATS
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
-#cmakedefine01 USE_DATASKETCHES

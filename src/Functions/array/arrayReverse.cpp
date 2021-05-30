@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,7 +24,7 @@ class FunctionArrayReverse : public IFunction
 {
 public:
     static constexpr auto name = "arrayReverse";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReverse>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayReverse>(); }
 
     String getName() const override { return name; }
 
@@ -41,7 +41,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override;
 
 private:
     template <typename T>
@@ -53,11 +53,11 @@ private:
 };
 
 
-ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const
 {
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
     if (!array)
-        throw Exception("Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+        throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
     auto res_ptr = array->cloneEmpty();
@@ -96,7 +96,7 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
                 + " of null map of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-    return res_ptr;
+    block.getByPosition(result).column = std::move(res_ptr);
 }
 
 

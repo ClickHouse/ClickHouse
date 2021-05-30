@@ -1,5 +1,4 @@
 #include "MergeTreeDataPartCompact.h"
-#include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Poco/File.h>
@@ -21,9 +20,8 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT, parent_part_)
+        const std::optional<String> & relative_path_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT)
 {
 }
 
@@ -32,9 +30,8 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT, parent_part_)
+        const std::optional<String> & relative_path_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT)
 {
 }
 
@@ -59,7 +56,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const CompressionCodecPtr & default_codec_,
+    const CompressionCodecPtr & default_codec,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
@@ -74,7 +71,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
         indices_to_recalc, index_granularity_info.marks_file_extension,
-        default_codec_, writer_settings, computed_index_granularity);
+        default_codec, writer_settings, computed_index_granularity);
 }
 
 
@@ -124,9 +121,9 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     index_granularity.setInitialized();
 }
 
-bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
+bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const IDataType &) const
 {
-    if (!getColumnPosition(column.name))
+    if (!getColumnPosition(column_name))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);

@@ -19,16 +19,13 @@
 
 #include <Storages/System/StorageSystemMacros.h>
 #include <Storages/System/StorageSystemMerges.h>
-#include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Storages/System/StorageSystemOne.h>
 #include <Storages/System/StorageSystemParts.h>
-#include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
-#include <Storages/System/StorageSystemProjectionPartsColumns.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
@@ -40,9 +37,6 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
-#include <Storages/System/StorageSystemErrors.h>
-#include <Storages/System/StorageSystemDDLWorkerQueue.h>
-
 #if !defined(ARCADIA_BUILD)
     #include <Storages/System/StorageSystemLicenses.h>
     #include <Storages/System/StorageSystemTimeZones.h>
@@ -88,8 +82,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemFunctions>(system_database, "functions");
     attach<StorageSystemEvents>(system_database, "events");
     attach<StorageSystemSettings>(system_database, "settings");
-    attach<SystemMergeTreeSettings<false>>(system_database, "merge_tree_settings");
-    attach<SystemMergeTreeSettings<true>>(system_database, "replicated_merge_tree_settings");
+    attach<SystemMergeTreeSettings>(system_database, "merge_tree_settings");
     attach<StorageSystemBuildOptions>(system_database, "build_options");
     attach<StorageSystemFormats>(system_database, "formats");
     attach<StorageSystemTableFunctions>(system_database, "table_functions");
@@ -113,7 +106,6 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemQuotasUsage>(system_database, "quotas_usage");
     attach<StorageSystemUserDirectories>(system_database, "user_directories");
     attach<StorageSystemPrivileges>(system_database, "privileges");
-    attach<StorageSystemErrors>(system_database, "errors");
 #if !defined(ARCADIA_BUILD)
     attach<StorageSystemLicenses>(system_database, "licenses");
     attach<StorageSystemTimeZones>(system_database, "time_zones");
@@ -128,10 +120,8 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attachSystemTablesLocal(system_database);
 
     attach<StorageSystemParts>(system_database, "parts");
-    attach<StorageSystemProjectionParts>(system_database, "projection_parts");
     attach<StorageSystemDetachedParts>(system_database, "detached_parts");
     attach<StorageSystemPartsColumns>(system_database, "parts_columns");
-    attach<StorageSystemProjectionPartsColumns>(system_database, "projection_parts_columns");
     attach<StorageSystemDisks>(system_database, "disks");
     attach<StorageSystemStoragePolicies>(system_database, "storage_policies");
     attach<StorageSystemProcesses>(system_database, "processes");
@@ -140,14 +130,12 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attach<StorageSystemMutations>(system_database, "mutations");
     attach<StorageSystemReplicas>(system_database, "replicas");
     attach<StorageSystemReplicationQueue>(system_database, "replication_queue");
-    attach<StorageSystemDDLWorkerQueue>(system_database, "distributed_ddl_queue");
     attach<StorageSystemDistributionQueue>(system_database, "distribution_queue");
     attach<StorageSystemDictionaries>(system_database, "dictionaries");
     attach<StorageSystemModels>(system_database, "models");
     attach<StorageSystemClusters>(system_database, "clusters");
     attach<StorageSystemGraphite>(system_database, "graphite_retentions");
     attach<StorageSystemMacros>(system_database, "macros");
-    attach<StorageSystemReplicatedFetches>(system_database, "replicated_fetches");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(system_database, "zookeeper");

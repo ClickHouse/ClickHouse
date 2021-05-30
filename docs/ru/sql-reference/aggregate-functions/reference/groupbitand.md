@@ -10,7 +10,7 @@ toc_priority: 125
 groupBitAnd(expr)
 ```
 
-**Аргументы**
+**Параметры**
 
 `expr` – выражение, результат которого имеет тип данных `UInt*`.
 
@@ -45,3 +45,4 @@ binary     decimal
 00000100 = 4
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitand/) <!--hide-->

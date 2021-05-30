@@ -1,4 +1,4 @@
-SELECT
+SELECT 
     uniq(x),
     uniqExact(x),
     uniqHLL12(x),
@@ -9,7 +9,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(x + y),
     uniqExact(x + y),
     uniqHLL12(x + y),
@@ -17,12 +17,12 @@ SELECT
     uniqCombined64(x + y)
 FROM 
 (
-    SELECT
+    SELECT 
         number % 2 AS x,
         number % 3 AS y
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(x),
     uniqExact(x),
     uniqHLL12(x),
@@ -33,7 +33,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(x),
     uniqExact(x),
     uniqHLL12(x),
@@ -44,7 +44,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(x),
     uniqExact(x),
     uniqHLL12(x),
@@ -55,7 +55,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(x),
     uniqExact(x),
     uniqHLL12(x),
@@ -74,7 +74,7 @@ FROM
 )
 SELECT uniq(concatAssumeInjective(\'x\', \'y\'))
 FROM numbers(10)
-SELECT
+SELECT 
     uniq(x),
     uniqExact(x),
     uniqHLL12(x),
@@ -85,7 +85,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(x + y),
     uniqExact(x + y),
     uniqHLL12(x + y),
@@ -93,12 +93,12 @@ SELECT
     uniqCombined64(x + y)
 FROM 
 (
-    SELECT
+    SELECT 
         number % 2 AS x,
         number % 3 AS y
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(-x),
     uniqExact(-x),
     uniqHLL12(-x),
@@ -109,7 +109,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(bitNot(x)),
     uniqExact(bitNot(x)),
     uniqHLL12(bitNot(x)),
@@ -120,7 +120,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(bitNot(-x)),
     uniqExact(bitNot(-x)),
     uniqHLL12(bitNot(-x)),
@@ -131,7 +131,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT
+SELECT 
     uniq(-bitNot(-x)),
     uniqExact(-bitNot(-x)),
     uniqHLL12(-bitNot(-x)),

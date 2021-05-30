@@ -1,8 +1,3 @@
----
-toc_priority: 45
-toc_title: hdfs
----
-
 # hdfs {#hdfs}
 
 Создаёт таблицу из файла в HDFS. Данная табличная функция похожа на табличные функции [url](url.md) и [file](file.md).
@@ -61,3 +56,4 @@ LIMIT 2
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/hdfs/) <!--hide-->

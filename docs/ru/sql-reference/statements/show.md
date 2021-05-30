@@ -1,8 +1,3 @@
----
-toc_priority: 37
-toc_title: SHOW
----
-
 # SHOW Queries {#show-queries}
 
 ## SHOW CREATE TABLE {#show-create-table}
@@ -15,83 +10,12 @@ SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [F
 
 ## SHOW DATABASES {#show-databases}
 
+``` sql
+SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
+```
+
 Выводит список всех баз данных.
-
-```sql
-SHOW DATABASES [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
-```
-
-Этот запрос идентичен запросу:
-
-```sql
-SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
-```
-
-### Примеры {#examples}
-
-Получение списка баз данных, имена которых содержат последовательность символов 'de':
-
-``` sql
-SHOW DATABASES LIKE '%de%'
-```
-
-Результат:
-
-``` text
-┌─name────┐
-│ default │
-└─────────┘
-```
-
-Получение списка баз данных, имена которых содержат последовательность символов 'de' независимо от регистра:
-
-``` sql
-SHOW DATABASES ILIKE '%DE%'
-```
-
-Результат:
-
-``` text
-┌─name────┐
-│ default │
-└─────────┘
-```
-
-Получение списка баз данных, имена которых не содержат последовательность символов 'de':
-
-``` sql
-SHOW DATABASES NOT LIKE '%de%'
-```
-
-Результат:
-
-``` text
-┌─name───────────────────────────┐
-│ _temporary_and_external_tables │
-│ system                         │
-│ test                           │
-│ tutorial                       │
-└────────────────────────────────┘
-```
-
-Получение первых двух строк из списка имен баз данных:
-
-``` sql
-SHOW DATABASES LIMIT 2
-```
-
-Результат:
-
-``` text
-┌─name───────────────────────────┐
-│ _temporary_and_external_tables │
-│ default                        │
-└────────────────────────────────┘
-```
-
-### Смотрите также {#see-also}
-
--   [CREATE DATABASE](https://clickhouse.tech/docs/ru/sql-reference/statements/create/database/#query-language-create-database)
+Запрос полностью аналогичен запросу `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -113,85 +37,32 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 Выводит список таблиц.
 
-```sql
-SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+``` sql
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-Если условие `FROM` не указано, запрос возвращает список таблиц из текущей базы данных.
+Если секция `FROM` не используется, то запрос возвращает список таблиц из текущей базы данных.
 
-Этот запрос идентичен запросу:
-
-```sql
-SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
-```
-
-### Примеры {#examples}
-
-Получение списка таблиц, имена которых содержат последовательность символов 'user':
+Результат, идентичный тому, что выдаёт запрос `SHOW TABLES` можно получить также запросом следующего вида:
 
 ``` sql
-SHOW TABLES FROM system LIKE '%user%'
+SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-Результат:
+**Пример**
 
-``` text
-┌─name─────────────┐
-│ user_directories │
-│ users            │
-└──────────────────┘
-```
-
-Получение списка таблиц, имена которых содержат последовательность символов 'user' без учета регистра:
+Следующий запрос выбирает первые две строки из списка таблиц в базе данных `system`, чьи имена содержат `co`.
 
 ``` sql
-SHOW TABLES FROM system ILIKE '%USER%'
+SHOW TABLES FROM system LIKE '%co%' LIMIT 2
 ```
-
-Результат:
-
-``` text
-┌─name─────────────┐
-│ user_directories │
-│ users            │
-└──────────────────┘
-```
-
-Получение списка таблиц, имена которых не содержат символ 's':
-
-``` sql
-SHOW TABLES FROM system NOT LIKE '%s%'
-```
-
-Результат:
-
-``` text
-┌─name─────────┐
-│ metric_log   │
-│ metric_log_0 │
-│ metric_log_1 │
-└──────────────┘
-```
-
-Получение первых двух строк из списка таблиц:
-
-``` sql
-SHOW TABLES FROM system LIMIT 2
-```
-
-Результат:
 
 ``` text
 ┌─name───────────────────────────┐
 │ aggregate_function_combinators │
-│ asynchronous_metric_log        │
+│ collations                     │
 └────────────────────────────────┘
 ```
-
-### Смотрите также {#see-also}
-
--   [Create Tables](https://clickhouse.tech/docs/ru/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.tech/docs/ru/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -249,8 +120,10 @@ SHOW GRANTS [FOR user]
 ### Синтаксис {#show-create-user-syntax}
 
 ``` sql
-SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
+SHOW CREATE USER [name | CURRENT_USER]
 ```
+
+
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
@@ -259,8 +132,10 @@ SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ### Синтаксис {#show-create-role-syntax}
 
 ``` sql
-SHOW CREATE ROLE name1 [, name2 ...]
+SHOW CREATE ROLE name
 ```
+
+
 
 ## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
 
@@ -269,8 +144,9 @@ SHOW CREATE ROLE name1 [, name2 ...]
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
+SHOW CREATE [ROW] POLICY name ON [database.]table
 ```
+
 
 ## SHOW CREATE QUOTA {#show-create-quota-statement}
 
@@ -279,8 +155,9 @@ SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
+SHOW CREATE QUOTA [name | CURRENT]
 ```
+
 
 ## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
 
@@ -289,141 +166,7 @@ SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
+SHOW CREATE [SETTINGS] PROFILE name
 ```
 
-## SHOW USERS {#show-users-statement}
-
-Выводит список [пользовательских аккаунтов](../../operations/access-rights.md#user-account-management). Для просмотра параметров пользовательских аккаунтов, см. системную таблицу [system.users](../../operations/system-tables/users.md#system_tables-users).
-
-### Синтаксис {#show-users-syntax}
-
-``` sql
-SHOW USERS
-```
- 
-## SHOW ROLES {#show-roles-statement}
-
-Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
-
-### Синтаксис {#show-roles-syntax}
-
-``` sql
-SHOW [CURRENT|ENABLED] ROLES
-```
-
-## SHOW PROFILES {#show-profiles-statement}
-
-Выводит список [профилей настроек](../../operations/access-rights.md#settings-profiles-management). Для просмотра других параметров профилей настроек, см. системную таблицу [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
-
-### Синтаксис {#show-profiles-syntax}
-
-``` sql
-SHOW [SETTINGS] PROFILES
-```
-
-## SHOW POLICIES {#show-policies-statement}
-
-Выводит список [политик доступа к строкам](../../operations/access-rights.md#row-policy-management) для указанной таблицы. Для просмотра других параметров, см. системную таблицу [system.row_policies](../../operations/system-tables/row_policies.md#system_tables-row_policies).
-
-### Синтаксис {#show-policies-syntax}
-
-``` sql
-SHOW [ROW] POLICIES [ON [db.]table]
-```
-
-## SHOW QUOTAS {#show-quotas-statement}
-
-Выводит список [квот](../../operations/access-rights.md#quotas-management). Для просмотра параметров квот, см. системную таблицу [system.quotas](../../operations/system-tables/quotas.md#system_tables-quotas).
-
-### Синтаксис {#show-quotas-syntax}
-
-``` sql
-SHOW QUOTAS
-```  
-    
-## SHOW QUOTA {#show-quota-statement}
-
-Выводит потребление [квоты](../../operations/quotas.md) для всех пользователей или только для текущего пользователя. Для просмотра других параметров, см. системные таблицы [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) и [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
-
-### Синтаксис {#show-quota-syntax}
-
-``` sql
-SHOW [CURRENT] QUOTA
-```
-
-## SHOW ACCESS {#show-access-statement}
-
-Выводит список всех [пользователей](../../operations/access-rights.md#user-account-management), [ролей](../../operations/access-rights.md#role-management), [профилей](../../operations/access-rights.md#settings-profiles-management) и пр., а также все [привилегии](../../sql-reference/statements/grant.md#grant-privileges).
-
-### Синтаксис {#show-access-syntax}
-
-``` sql
-SHOW ACCESS
-```
-
-## SHOW SETTINGS {#show-settings}
-
-Возвращает список системных настроек и их значений. Использует данные из таблицы [system.settings](../../operations/system-tables/settings.md).
-
-**Синтаксис**
-
-```sql
-SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
-```
-
-**Секции**
-
-При использовании `LIKE|ILIKE` можно задавать шаблон для имени настройки. Этот шаблон может содержать символы подстановки, такие как `%` или `_`. При использовании `LIKE` шаблон чувствителен к регистру, а при использовании `ILIKE` — не чувствителен.
-
-Если используется `CHANGED`, запрос вернет только те настройки, значения которых были изменены, т.е. отличны от значений по умолчанию.
-
-**Примеры**
-
-Запрос с использованием `LIKE`:
-
-```sql
-SHOW SETTINGS LIKE 'send_timeout';
-```
-Результат:
-
-```text
-┌─name─────────┬─type────┬─value─┐
-│ send_timeout │ Seconds │ 300   │
-└──────────────┴─────────┴───────┘
-```
-
-Запрос с использованием `ILIKE`:
-
-```sql
-SHOW SETTINGS ILIKE '%CONNECT_timeout%'
-```
-
-Результат:
-
-```text
-┌─name────────────────────────────────────┬─type─────────┬─value─┐
-│ connect_timeout                         │ Seconds      │ 10    │
-│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
-│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
-└─────────────────────────────────────────┴──────────────┴───────┘
-```
-
-Запрос с использованием `CHANGED`:
-
-```sql
-SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
-```
-
-Результат:
-
-```text
-┌─name─────────────┬─type───┬─value───────┐
-│ max_memory_usage │ UInt64 │ 10000000000 │
-└──────────────────┴────────┴─────────────┘
-```
-
-**См. также**
-
--   Таблица [system.settings](../../operations/system-tables/settings.md)
-
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/show/) <!--hide-->

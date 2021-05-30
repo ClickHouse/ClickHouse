@@ -33,6 +33,7 @@ namespace ErrorCodes
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
     : IInputFormat(std::move(header_), in_)
 {
+    prepareReader();
 }
 
 Chunk ParquetBlockInputFormat::generate()
@@ -40,16 +41,13 @@ Chunk ParquetBlockInputFormat::generate()
     Chunk res;
     const Block & header = getPort().getHeader();
 
-    if (!file_reader)
-        prepareReader();
-
     if (row_group_current >= row_group_total)
         return res;
 
     std::shared_ptr<arrow::Table> table;
     arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, column_indices, &table);
     if (!read_status.ok())
-        throw ParsingException{"Error while reading Parquet data: " + read_status.ToString(),
+        throw Exception{"Error while reading Parquet data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
 
     ++row_group_current;
@@ -64,7 +62,7 @@ void ParquetBlockInputFormat::resetParser()
 
     file_reader.reset();
     column_indices.clear();
-    row_group_current = 0;
+    prepareReader();
 }
 
 void ParquetBlockInputFormat::prepareReader()
@@ -96,7 +94,6 @@ void registerInputFormatProcessorParquet(FormatFactory &factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample);
             });
-    factory.markFormatAsColumnOriented("Parquet");
 }
 
 }

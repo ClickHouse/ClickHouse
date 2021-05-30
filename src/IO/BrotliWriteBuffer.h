@@ -18,13 +18,10 @@ public:
 
     ~BrotliWriteBuffer() override;
 
-    void finalize() override { finish(); }
+    void finish();
 
 private:
     void nextImpl() override;
-
-    void finish();
-    void finishImpl();
 
     class BrotliStateWrapper;
     std::unique_ptr<BrotliStateWrapper> brotli;

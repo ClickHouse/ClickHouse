@@ -11,6 +11,7 @@
 #include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
+#include <ext/scope_guard.h>
 
 #include <Poco/Net/NetException.h>
 
@@ -44,7 +45,7 @@ static void check(Coordination::Error code, const std::string & path)
 }
 
 
-void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
+void ZooKeeper::init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
                      int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
 {
     log = &Poco::Logger::get("ZooKeeper");
@@ -60,16 +61,12 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
         if (hosts.empty())
             throw KeeperException("No hosts passed to ZooKeeper constructor.", Coordination::Error::ZBADARGUMENTS);
 
+        std::vector<std::string> hosts_strings;
+        splitInto<','>(hosts_strings, hosts);
         Coordination::ZooKeeper::Nodes nodes;
-        nodes.reserve(hosts.size());
+        nodes.reserve(hosts_strings.size());
 
-        Strings shuffled_hosts = hosts;
-        /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        pcg64 generator(randomSeed());
-        std::shuffle(shuffled_hosts.begin(), shuffled_hosts.end(), generator);
-
-        bool dns_error = false;
-        for (auto & host_string : shuffled_hosts)
+        for (auto & host_string : hosts_strings)
         {
             try
             {
@@ -80,27 +77,14 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
 
                 nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
             }
-            catch (const Poco::Net::HostNotFoundException & e)
-            {
-                /// Most likely it's misconfiguration and wrong hostname was specified
-                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
-            }
             catch (const Poco::Net::DNSException & e)
             {
-                /// Most likely DNS is not available now
-                dns_error = true;
-                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", host_string, e.displayText());
+                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
             }
         }
 
         if (nodes.empty())
-        {
-            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
-            if (dns_error)
-                throw KeeperException("Cannot resolve any of provided ZooKeeper hosts due to DNS error", Coordination::Error::ZCONNECTIONLOSS);
-            else
-                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
-        }
+            throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
 
         impl = std::make_unique<Coordination::ZooKeeper>(
                 nodes,
@@ -112,9 +96,9 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
         if (chroot.empty())
-            LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(hosts, ","));
+            LOG_TRACE(log, "Initialized, hosts: {}", hosts);
         else
-            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(hosts, ","), chroot);
+            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", hosts, chroot);
     }
     else if (implementation == "testkeeper")
     {
@@ -131,16 +115,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
         throw KeeperException("Zookeeper root doesn't exist. You should create root node " + chroot + " before start.", Coordination::Error::ZNONODE);
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts_string, const std::string & identity_, int32_t session_timeout_ms_,
-                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
-{
-    Strings hosts_strings;
-    splitInto<','>(hosts_strings, hosts_string);
-
-    init(implementation_, hosts_strings, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
-}
-
-ZooKeeper::ZooKeeper(const Strings & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
+ZooKeeper::ZooKeeper(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
                      int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
 {
     init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
@@ -153,14 +128,16 @@ struct ZooKeeperArgs
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_name, keys);
 
-        session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
-        operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
+        std::vector<std::string> hosts_strings;
+
+        session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
+        operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT;
         implementation = "zookeeper";
         for (const auto & key : keys)
         {
             if (startsWith(key, "node"))
             {
-                hosts.push_back(
+                hosts_strings.push_back(
                         (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "") +
                         config.getString(config_name + "." + key + ".host") + ":"
                         + config.getString(config_name + "." + key + ".port", "2181")
@@ -190,6 +167,17 @@ struct ZooKeeperArgs
                 throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
         }
 
+        /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
+        pcg64 generator(randomSeed());
+        std::shuffle(hosts_strings.begin(), hosts_strings.end(), generator);
+
+        for (auto & host : hosts_strings)
+        {
+            if (!hosts.empty())
+                hosts += ',';
+            hosts += host;
+        }
+
         if (!chroot.empty())
         {
             if (chroot.front() != '/')
@@ -199,7 +187,7 @@ struct ZooKeeperArgs
         }
     }
 
-    Strings hosts;
+    std::string hosts;
     std::string identity;
     int session_timeout_ms;
     int operation_timeout_ms;
@@ -211,18 +199,6 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 {
     ZooKeeperArgs args(config, config_name);
     init(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot);
-}
-
-bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
-{
-    ZooKeeperArgs args(config, config_name);
-
-    // skip reload testkeeper cause it's for test and data in memory
-    if (args.implementation == implementation && implementation == "testkeeper")
-        return false;
-
-    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot)
-        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
 
 
@@ -601,7 +577,7 @@ void ZooKeeper::removeChildren(const std::string & path)
 }
 
 
-void ZooKeeper::removeChildrenRecursive(const std::string & path, const String & keep_child_node)
+void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
     Strings children = getChildren(path);
     while (!children.empty())
@@ -610,15 +586,14 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             removeChildrenRecursive(path + "/" + children.back());
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-                ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
             children.pop_back();
         }
         multi(ops);
     }
 }
 
-void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node)
+void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
@@ -629,14 +604,14 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         Strings batch;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            String child_path = path + "/" + children.back();
-            tryRemoveChildrenRecursive(child_path);
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-            {
-                batch.push_back(child_path);
-                ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
-            }
+            batch.push_back(path + "/" + children.back());
             children.pop_back();
+            tryRemoveChildrenRecursive(batch.back());
+
+            Coordination::RemoveRequest request;
+            request.path = batch.back();
+
+            ops.emplace_back(std::make_shared<Coordination::RemoveRequest>(std::move(request)));
         }
 
         /// Try to remove the children with a faster method - in bulk. If this fails,
@@ -677,7 +652,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
-    auto callback = [state](const Coordination::GetResponse & response)
+    auto callback = [state](const Coordination::ExistsResponse & response)
     {
         state->code = int32_t(response.error);
         if (state->code)
@@ -697,9 +672,8 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
     while (!condition || !condition())
     {
-        /// Use getData insteand of exists to avoid watch leak.
-        impl->get(path, callback, watch);
-
+        /// NOTE: if the node doesn't exist, the watch will leak.
+        impl->exists(path, callback, watch);
         if (!condition)
             state->event.wait();
         else if (!state->event.tryWait(1000))
@@ -921,10 +895,6 @@ Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & re
     }
 }
 
-void ZooKeeper::finalize()
-{
-    impl->finalize();
-}
 
 size_t KeeperMultiException::getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
@@ -1003,5 +973,4 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
     request->version = version;
     return request;
 }
-
 }

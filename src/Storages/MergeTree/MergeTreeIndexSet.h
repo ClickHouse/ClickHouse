@@ -14,7 +14,7 @@ namespace DB
 
 class MergeTreeIndexSet;
 
-struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleSet : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleSet(
         const String & index_name_,
@@ -42,7 +42,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorSet final : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorSet : IMergeTreeIndexAggregator
 {
     explicit MergeTreeIndexAggregatorSet(
         const String & index_name_,
@@ -79,7 +79,7 @@ private:
 };
 
 
-class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionSet : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionSet(
@@ -87,7 +87,7 @@ public:
         const Block & index_sample_block_,
         size_t max_rows_,
         const SelectQueryInfo & query,
-        ContextPtr context);
+        const Context & context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -113,7 +113,7 @@ private:
 };
 
 
-class MergeTreeIndexSet final : public IMergeTreeIndex
+class MergeTreeIndexSet : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexSet(
@@ -129,7 +129,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, ContextPtr context) const override;
+            const SelectQueryInfo & query, const Context & context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 

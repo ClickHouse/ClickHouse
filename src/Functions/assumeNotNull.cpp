@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
@@ -6,8 +6,6 @@
 
 
 namespace DB
-{
-namespace
 {
 
 /// Implements the function assumeNotNull which takes 1 argument and works as follows:
@@ -19,7 +17,7 @@ class FunctionAssumeNotNull : public IFunction
 public:
     static constexpr auto name = "assumeNotNull";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionAssumeNotNull>();
     }
@@ -39,18 +37,18 @@ public:
         return removeNullable(arguments[0]);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
-        const ColumnPtr & col = arguments[0].column;
+        const ColumnPtr & col = block.getByPosition(arguments[0]).column;
+        ColumnPtr & res_col = block.getByPosition(result).column;
 
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
-            return nullable_col->getNestedColumnPtr();
+            res_col = nullable_col->getNestedColumnPtr();
         else
-            return col;
+            res_col = col;
     }
 };
 
-}
 
 void registerFunctionAssumeNotNull(FunctionFactory & factory)
 {
