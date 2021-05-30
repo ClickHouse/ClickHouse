@@ -157,6 +157,49 @@ Type: [Array(UInt64)](../../sql-reference/functions/ext-dict-functions.md).
 
 Тип — `UInt8`.
 
+## dictGetChildren {#dictgetchildren}
+
+Возвращает потомков первого уровня в виде массива индексов. Это обратное преобразование для [dictGetHierarchy](#dictgethierarchy).
+
+**Синтаксис** 
+
+``` sql
+dictGetChildren(dict_name, key)
+```
+
+**Аргументы** 
+
+-   `dict_name` — Имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — Значение ключа.[Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
+
+**Returned values**
+
+-   Потомки первого уровня для ключа.
+
+Тип: [Array(UInt64)](../../sql-reference/data-types/array.md).
+
+## dictGetDescendant {#dictgetdescendant}
+
+Возвращает всех потомков, как если бы [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.  
+
+**Синтаксис**
+
+``` sql
+dictGetDescendants(dict_name, key, level)
+```
+
+**Аргументы** 
+
+-   `dict_name` — Имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — Значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md)
+-   `level` — уровень иерархии. Если `level = 0` возвращаются все потомки до конца. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Потомки для ключа.
+
+ТИп: [Array(UInt64)](../../sql-reference/data-types/array.md).
+
 ## Прочие функции {#ext_dict_functions-other}
 
 ClickHouse поддерживает специализированные функции, которые приводят значения атрибутов словаря к определённому типу данных независимо от конфигурации словаря.

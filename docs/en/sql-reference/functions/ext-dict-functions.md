@@ -162,6 +162,49 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 Type: `UInt8`.
 
+## dictGetChildren {#dictgetchildren}
+
+Returns first-level children as an array of indexes. It is a inverse transformation for [dictGetHierarchy](#dictgethierarchy).
+
+**Syntax** 
+
+``` sql
+dictGetChildren(dict_name, key)
+```
+
+**Arguments** 
+
+-   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value. 
+
+**Returned values**
+
+-   First-level descendants for the key.
+
+Type: [Array(UInt64)](../../sql-reference/data-types/array.md).
+
+## dictGetDescendant {#dictgetdescendant}
+
+Returns all descendants as if [dictGetChildren](#dictgetchildren) was applied `level` times recursively.  
+
+**Syntax**
+
+``` sql
+dictGetDescendants(dict_name, key, level)
+```
+
+**Arguments** 
+
+-   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
+-   `level` — hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned values**
+
+-   Descendants for the key.
+
+Type: [Array(UInt64)](../../sql-reference/data-types/array.md).
+
 ## Other Functions {#ext_dict_functions-other}
 
 ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
