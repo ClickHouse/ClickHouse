@@ -506,7 +506,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
                             const Poco::Util::AbstractConfiguration & config,
                             const std::string & config_prefix,
                             DictionarySourcePtr source_ptr,
-                            ContextPtr /* context */,
+                            ContextConstPtr /* context */,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
         if (dict_struct.key)

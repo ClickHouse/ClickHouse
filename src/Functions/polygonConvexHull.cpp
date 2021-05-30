@@ -33,7 +33,7 @@ public:
 
     explicit FunctionPolygonConvexHull() = default;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionPolygonConvexHull>();
     }
