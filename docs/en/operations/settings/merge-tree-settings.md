@@ -115,6 +115,17 @@ Default value: 604800 (1 week).
 
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
 
+## non_replicated_deduplication_window {#non-replicated-deduplication-window }
+
+The number of most recently inserted blocks for which should be stores hash sums to check for duplicates for non-replicated MergeTree tables.
+
+Possible values:
+
+-   Any positive integer.
+-   0 (disable deduplication).
+
+Default value: 0.
+
 ## old_parts_lifetime {#old-parts-lifetime}
 
 The time (in seconds) of storing inactive parts to protect against data loss during spontaneous server reboots.
