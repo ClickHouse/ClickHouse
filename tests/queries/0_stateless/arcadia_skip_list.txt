@@ -240,3 +240,4 @@
 01880_remote_ipv6
 01882_scalar_subquery_exception
 01882_check_max_parts_to_merge_at_once
+01890_materialized_distributed_join
