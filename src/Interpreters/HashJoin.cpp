@@ -930,10 +930,10 @@ NO_INLINE IColumn::Filter joinRightColumns(
             }
         }
 
-        bool joined_on = !added_columns.isRowFiltered(i);
-        auto find_result = key_getter.findKey(map, i, pool);
+        bool row_acceptable = !added_columns.isRowFiltered(i);
+        auto find_result = row_acceptable ? key_getter.findKey(map, i, pool) : decltype(key_getter.findKey(map, i, pool))();
 
-        if (joined_on && find_result.isFound())
+        if (row_acceptable && find_result.isFound())
         {
             auto & mapped = find_result.getMapped();
 
