@@ -48,7 +48,6 @@ private:
 
     void shutdownRaftServer();
 
-
 public:
     KeeperServer(
         int server_id_,

@@ -39,12 +39,7 @@ Block blockForKeys(
 /// Used for applying settings to copied context in some register[...]Source functions
 ContextPtr copyContextAndApplySettings(
     const std::string & config_prefix,
-    ContextPtr context,
-    const Poco::Util::AbstractConfiguration & config);
-
-void applySettingsToContext(
-    const std::string & config_prefix,
-    ContextPtr context,
+    ContextConstPtr context,
     const Poco::Util::AbstractConfiguration & config);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.

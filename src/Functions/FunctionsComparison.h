@@ -557,13 +557,13 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(ContextPtr context_)
+    explicit FunctionComparison(ContextConstPtr context_)
         : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
 
 private:
-    ContextPtr context;
+    ContextConstPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>

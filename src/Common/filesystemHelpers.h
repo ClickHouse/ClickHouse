@@ -29,4 +29,10 @@ String getFilesystemName([[maybe_unused]] const String & mount_point);
 
 struct statvfs getStatVFS(const String & path);
 
+/// Returns true if path starts with prefix path
+bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path);
+
+/// Returns true if path starts with prefix path
+bool pathStartsWith(const String & path, const String & prefix_path);
+
 }

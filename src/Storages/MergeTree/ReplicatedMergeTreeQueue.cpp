@@ -268,10 +268,9 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 
     bool some_mutations_are_probably_done = false;
 
-    auto from_it = in_partition->second.lower_bound(part_info.getDataVersion());
-    for (auto it = from_it; it != in_partition->second.end(); ++it)
+    for (auto & it : in_partition->second)
     {
-        MutationStatus & status = *it->second;
+        MutationStatus & status = *it.second;
 
         if (remove_part && remove_covered_parts)
             status.parts_to_do.removePartAndCoveredParts(part_name);
