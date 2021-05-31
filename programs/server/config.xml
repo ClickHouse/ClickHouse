@@ -974,9 +974,9 @@
 
     <!-- Text classification -->
 
-    <encoding_frequencies_path>charset_freq.txt</encoding_frequencies_path>
-    <programming_lang_frequencies_path>programming_freq.txt</programming_lang_frequencies_path>
-    <emotional_dict_path>emotional_dictionary_rus.txt</emotional_dict_path>
+    <encoding_frequencies_path>/ClickHouse/programs/server/charset_freq.txt</encoding_frequencies_path>
+    <programming_lang_frequencies_path>/ClickHouse/programs/server/programming_freq.txt</programming_lang_frequencies_path>
+    <emotional_dict_path>/ClickHouse/programs/server/emotional_dictionary_rus.txt</emotional_dict_path>
 
     <top_level_domains_lists>
         <!--
