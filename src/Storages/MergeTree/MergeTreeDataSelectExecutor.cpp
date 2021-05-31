@@ -144,11 +144,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const auto & settings = context->getSettingsRef();
     if (!query_info.projection)
     {
-        if (settings.allow_experimental_projection_optimization && settings.force_optimize_projection
-            && !metadata_snapshot->projections.empty())
-            throw Exception("No projection is used when allow_experimental_projection_optimization = 1", ErrorCodes::PROJECTION_NOT_USED);
-
-        return readFromParts(
+        auto plan = readFromParts(
             data.getDataPartsVector(),
             column_names_to_return,
             metadata_snapshot,
@@ -159,6 +155,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read,
             query_info.merge_tree_data_select_cache.get());
+
+        if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
+            && !metadata_snapshot->projections.empty())
+            throw Exception(
+                "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
+                ErrorCodes::PROJECTION_NOT_USED);
+
+        return plan;
     }
 
     LOG_DEBUG(
