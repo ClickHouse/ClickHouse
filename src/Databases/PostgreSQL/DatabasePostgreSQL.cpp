@@ -12,11 +12,12 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/escapeForFileName.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
+#include <Common/filesystemHelpers.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -209,9 +210,9 @@ void DatabasePostgreSQL::attachTable(const String & table_name, const StoragePtr
 
     detached_or_dropped.erase(table_name);
 
-    Poco::File table_marked_as_removed(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
-    if (table_marked_as_removed.exists())
-        table_marked_as_removed.remove();
+    fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+    if (fs::exists(table_marked_as_removed))
+        fs::remove(table_marked_as_removed);
 }
 
 
@@ -256,16 +257,8 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
     if (detached_or_dropped.count(table_name))
         throw Exception(fmt::format("Table {}.{} is already dropped/detached", database_name, table_name), ErrorCodes::TABLE_IS_DROPPED);
 
-    Poco::File mark_table_removed(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
-
-    try
-    {
-        mark_table_removed.createFile();
-    }
-    catch (...)
-    {
-        throw;
-    }
+    fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+    FS::createFile(mark_table_removed);
 
     if (cache_tables)
         cached_tables.erase(table_name);
@@ -276,7 +269,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    Poco::File(getMetadataPath()).remove(true);
+    fs::remove_all(getMetadataPath());
 }
 
 
@@ -284,14 +277,14 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool
 {
     {
         std::lock_guard<std::mutex> lock{mutex};
-        Poco::DirectoryIterator iterator(getMetadataPath());
+        fs::directory_iterator iter(getMetadataPath());
 
         /// Check for previously dropped tables
-        for (Poco::DirectoryIterator end; iterator != end; ++iterator)
+        for (fs::directory_iterator end; iter != end; ++iter)
         {
-            if (iterator->isFile() && endsWith(iterator.name(), suffix))
+            if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
             {
-                const auto & file_name = iterator.name();
+                const auto & file_name = iter->path().filename().string();
                 const auto & table_name = unescapeForFileName(file_name.substr(0, file_name.size() - strlen(suffix)));
                 detached_or_dropped.emplace(table_name);
             }
@@ -325,9 +318,9 @@ void DatabasePostgreSQL::removeOutdatedTables()
         {
             auto table_name = *iter;
             iter = detached_or_dropped.erase(iter);
-            Poco::File table_marked_as_removed(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
-            if (table_marked_as_removed.exists())
-                table_marked_as_removed.remove();
+            fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+            if (fs::exists(table_marked_as_removed))
+                fs::remove(table_marked_as_removed);
         }
         else
             ++iter;
