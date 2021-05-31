@@ -2,6 +2,8 @@
 
 #if USE_AWS_S3
 
+#include <Columns/ColumnString.h>
+
 #include <IO/S3Common.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
@@ -379,13 +381,13 @@ public:
         current_block_with_partition_by_expr.setColumns(columns);
         partition_by_expr->execute(current_block_with_partition_by_expr);
 
-        const auto & key_column = current_block_with_partition_by_expr.getByName(partition_by_column_name);
+        const auto * key_column = checkAndGetColumn<ColumnString>(current_block_with_partition_by_expr.getByName(partition_by_column_name).column.get());
 
         std::unordered_map<String, size_t> sub_chunks_indices;
         IColumn::Selector selector;
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
-            auto & value = (*key_column.column)[row].get<String>();
+            auto value = key_column->getDataAt(row);
             auto [it, inserted] = sub_chunks_indices.emplace(value, sub_chunks_indices.size());
             selector.push_back(it->second);
         }
