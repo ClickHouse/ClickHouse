@@ -428,6 +428,9 @@ public:
     ///
     /// After the method is executed successfully, you must wait for callbacks
     ///  (don't destroy callback data before it will be called).
+    /// TODO: The above line is the description of an error-prone interface. It's better
+    ///  to replace callbacks with std::future results, so the caller shouldn't think about
+    ///  lifetime of the callback data.
     ///
     /// All callbacks are executed sequentially (the execution of callbacks is serialized).
     ///
