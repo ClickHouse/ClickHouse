@@ -35,7 +35,7 @@ public:
 
     explicit FunctionPolygonsDistance() = default;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionPolygonsDistance>();
     }

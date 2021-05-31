@@ -8,14 +8,14 @@ namespace DB
 {
 
 /// Get the connection Id. It's used for MySQL handler only.
-class FunctionConnectionId : public IFunction, WithContext
+class FunctionConnectionId : public IFunction, WithConstContext
 {
 public:
     static constexpr auto name = "connectionId";
 
-    explicit FunctionConnectionId(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionConnectionId(ContextConstPtr context_) : WithConstContext(context_) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionConnectionId>(context_); }
+    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionConnectionId>(context_); }
 
     String getName() const override { return name; }
 

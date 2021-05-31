@@ -18,7 +18,7 @@ private:
 
 public:
     static constexpr auto name = "blockNumber";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionBlockNumber>();
     }

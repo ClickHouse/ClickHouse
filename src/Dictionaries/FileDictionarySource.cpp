@@ -1,13 +1,15 @@
 #include "FileDictionarySource.h"
 
-#include <Poco/File.h>
 #include <filesystem>
 
+#include <Poco/File.h>
+
+#include <common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/filesystemHelpers.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
@@ -26,28 +28,14 @@ namespace ErrorCodes
 
 FileDictionarySource::FileDictionarySource(
     const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, ContextPtr context_, bool check_config)
+    Block & sample_block_, ContextConstPtr context_, bool created_from_ddl)
     : filepath{filepath_}
     , format{format_}
     , sample_block{sample_block_}
     , context(context_)
 {
-    if (check_config)
-    {
-        auto source_file_path = std::filesystem::path(filepath);
-        auto source_file_absolute_path = std::filesystem::canonical(source_file_path);
-
-        String user_files_path_string_value = context->getUserFilesPath();
-        auto user_files_path = std::filesystem::path(user_files_path_string_value);
-        auto user_files_absolute_path = std::filesystem::canonical(user_files_path);
-
-        auto [_, user_files_absolute_path_mismatch_it] = std::mismatch(source_file_absolute_path.begin(), source_file_absolute_path.end(), user_files_absolute_path.begin(), user_files_absolute_path.end());
-
-        bool user_files_absolute_path_include_source_file_absolute_path = user_files_absolute_path_mismatch_it == user_files_absolute_path.end();
-
-        if (!user_files_absolute_path_include_source_file_absolute_path)
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path_string_value);
-    }
+    if (created_from_ddl && !pathStartsWith(filepath, context->getUserFilesPath()))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, context->getUserFilesPath());
 }
 
 
@@ -89,9 +77,9 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextConstPtr context,
                                  const std::string & /* default_database */,
-                                 bool check_config) -> DictionarySourcePtr
+                                 bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `file` does not support attribute expressions");
@@ -101,7 +89,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
-        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, check_config);
+        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, created_from_ddl);
     };
 
     factory.registerSource("file", create_table_source);

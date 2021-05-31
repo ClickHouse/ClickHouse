@@ -228,7 +228,7 @@ bitCount(x)
 
 -   Number of bits set to one in the input number.
 
-The function doesn’t convert input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)). So, for example, `bitCount(toUInt8(-1)) = 8`.
+The function does not convert input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)). So, for example, `bitCount(toUInt8(-1)) = 8`.
 
 Type: `UInt8`.
 

@@ -1,4 +1,8 @@
-# NOTE: User and query level settings are set up in "users.xml" file.
+# This is an example of a configuration file "config.xml" rewritten in YAML
+# You can read this documentation for detailed information about YAML configuration:
+# https://clickhouse.tech/docs/en/operations/configuration-files/
+
+# NOTE: User and query level settings are set up in "users.yaml" file.
 # If you have accidentally specified user-level settings here, server won't start.
 # You can either move the settings to the right place inside "users.xml" file
 # or add skip_check_for_incorrect_settings: 1 here.
