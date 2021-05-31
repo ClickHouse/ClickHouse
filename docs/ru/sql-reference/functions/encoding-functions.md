@@ -176,7 +176,7 @@ unhex(arg)
 
 **Возвращаемое значение**
 
--   Бинарная строка.
+-   Бинарная строка (BLOB).
 
 Тип: [String](../../sql-reference/data-types/string.md).
 
