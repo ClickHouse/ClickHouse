@@ -13,7 +13,7 @@ class FunctionUptime : public IFunction
 {
 public:
     static constexpr auto name = "uptime";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionUptime>(context->getUptimeSeconds());
     }

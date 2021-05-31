@@ -19,7 +19,7 @@ class FunctionErrorCodeToName : public IFunction
 {
 public:
     static constexpr auto name = "errorCodeToName";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionErrorCodeToName>();
     }
