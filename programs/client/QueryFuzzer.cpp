@@ -349,19 +349,9 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
                 // The offsets are fuzzed normally through 'children'.
                 def.frame_begin_offset
                     = std::make_shared<ASTLiteral>(getRandomField(0));
-                def.children.push_back(def.frame_begin_offset);
             }
             else
             {
-                // Don't keep the offset if it is not used, because it will
-                // acquire random mutations that will surely make it invalid.
-                const auto old_size = def.children.size();
-                def.children.erase(
-                    std::remove(def.children.begin(), def.children.end(),
-                        def.frame_begin_offset),
-                    def.children.end());
-                assert(def.children.size() == old_size - 1
-                    || def.frame_begin_offset == nullptr);
                 def.frame_begin_offset = nullptr;
             }
             break;
@@ -377,14 +367,9 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             {
                 def.frame_end_offset
                     = std::make_shared<ASTLiteral>(getRandomField(0));
-                def.children.push_back(def.frame_end_offset);
             }
             else
             {
-                def.children.erase(
-                    std::remove(def.children.begin(), def.children.end(),
-                        def.frame_end_offset),
-                    def.children.end());
                 def.frame_end_offset = nullptr;
             }
             break;
