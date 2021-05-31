@@ -11,10 +11,10 @@ import json
 import csv
 
 
-MAX_RETRY = 2
+MAX_RETRY = 3
 NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
-PARALLEL_GROUP_SIZE = 100
+PARALLEL_GROUP_SIZE = 200
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
 DOCKERD_LOGS_PATH = "/ClickHouse/tests/integration/dockerd.log"
