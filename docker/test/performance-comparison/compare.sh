@@ -1028,6 +1028,9 @@ do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
         echo "$query_file" >> report/query-files.txt
 
+        # All metainformation will be saved in flamegraph title and subtitle directly
+        flamegraph_filename=$(clickhouse-local -q "SELECT generateUUIDv4();")
+
         # Build separate .svg flamegraph for each query.
         # -F is somewhat unsafe because it might match not the beginning of the
         # string, but this is unlikely and escaping the query for grep is a pain.
@@ -1035,7 +1038,7 @@ do
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
-            | ~/fg/flamegraph.pl --hash > "$query_file.$version.svg" &
+            | ~/fg/flamegraph.pl --title="$version" --subtitle="$query_file" --hash > "$flamegraph_filename.svg" &
     done
 done
 wait
@@ -1044,10 +1047,11 @@ unset IFS
 # Create differential flamegraphs.
 while IFS= read -r query_file
 do
+    flamegraph_filename=$(clickhouse-local -q "SELECT generateUUIDv4();")
     ~/fg/difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
-        | ~/fg/flamegraph.pl > "$query_file.diff.svg" &
+        | ~/fg/flamegraph.pl --title="Differential" --subtitle="$query_file" > "$flamegraph_filename.svg" &
 done < report/query-files.txt
 wait
 
@@ -1152,7 +1156,7 @@ function upload_results
     then
         echo Database for test results is not specified, will not upload them.
         return 0
-    fi 
+    fi
 
     set +x # Don't show password in the log
     client=(clickhouse-client
@@ -1298,4 +1302,3 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
-
