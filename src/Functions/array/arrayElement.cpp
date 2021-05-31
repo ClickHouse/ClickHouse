@@ -41,7 +41,7 @@ class FunctionArrayElement : public IFunction
 {
 public:
     static constexpr auto name = "arrayElement";
-    static FunctionPtr create(ContextPtr context);
+    static FunctionPtr create(ContextConstPtr context);
 
     String getName() const override;
 
@@ -449,7 +449,7 @@ struct ArrayElementGenericImpl
 }
 
 
-FunctionPtr FunctionArrayElement::create(ContextPtr)
+FunctionPtr FunctionArrayElement::create(ContextConstPtr)
 {
     return std::make_shared<FunctionArrayElement>();
 }
