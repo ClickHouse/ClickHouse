@@ -399,7 +399,7 @@ String DatabaseConnectionMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseConnectionMySQL::loadStoredObjects(ContextPtr, bool, bool /*force_attach*/)
+void DatabaseConnectionMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
 {
 
     std::lock_guard<std::mutex> lock{mutex};

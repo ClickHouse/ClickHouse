@@ -335,7 +335,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
     }
 }
 
-static void setQuerySpecificSettings(ASTPtr & ast, ContextPtr context)
+static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
 {
     if (auto * ast_insert_into = dynamic_cast<ASTInsertQuery *>(ast.get()))
     {
@@ -347,7 +347,7 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextPtr context)
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
-    ContextPtr context,
+    ContextMutablePtr context,
     bool internal,
     QueryProcessingStage::Enum stage,
     bool has_query_tail,
@@ -910,7 +910,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 BlockIO executeQuery(
     const String & query,
-    ContextPtr context,
+    ContextMutablePtr context,
     bool internal,
     QueryProcessingStage::Enum stage,
     bool may_have_embedded_data)
@@ -935,7 +935,7 @@ BlockIO executeQuery(
 
 BlockIO executeQuery(
     const String & query,
-    ContextPtr context,
+    ContextMutablePtr context,
     bool internal,
     QueryProcessingStage::Enum stage,
     bool may_have_embedded_data,
@@ -954,7 +954,7 @@ void executeQuery(
     ReadBuffer & istr,
     WriteBuffer & ostr,
     bool allow_into_outfile,
-    ContextPtr context,
+    ContextMutablePtr context,
     std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
 {
     PODArray<char> parse_buf;
