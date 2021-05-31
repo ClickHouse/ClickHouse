@@ -1,6 +1,7 @@
 #include <Functions/FunctionsTextClassification.h>
 #include <Functions/FunctionFactory.h>
 //#include "/home/sergey/ClickHouse/contrib/cld2/public/compact_lang_det.h"
+#if USE_CLD2
 #include "compact_lang_det.h"
 
 namespace DB
@@ -117,3 +118,4 @@ void registerFunctionLanguageDetectUTF8(FunctionFactory & factory)
 }
 
 }
+#endif
