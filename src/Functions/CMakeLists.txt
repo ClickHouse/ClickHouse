@@ -80,8 +80,11 @@ if(USE_BASE64)
 endif()
 
 target_link_libraries(clickhouse_functions PRIVATE lz4)
-target_link_libraries(clickhouse_functions PRIVATE cld2)
-target_include_directories(clickhouse_functions SYSTEM PRIVATE ${CLD2_INCLUDE_DIR})
+
+if (USE_CLD2)
+    target_link_libraries(clickhouse_functions PRIVATE cld2)
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/cld2/public")
+endif()
 
 if (USE_H3)
     target_link_libraries(clickhouse_functions PRIVATE ${H3_LIBRARY})

@@ -101,7 +101,6 @@ struct ProgrammingClassificationImpl
         ColumnString::Offsets & res_offsets)
     {
         static std::unordered_map<String, std::unordered_map<String, Float64>> programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
-        std::unordered_map<String, Float64> data_freq;
 
         res_data.reserve(1024);
         res_offsets.resize(offsets.size());
@@ -112,6 +111,7 @@ struct ProgrammingClassificationImpl
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&data[prev_offset]);
+            std::unordered_map<String, Float64> data_freq;
             String str_data = haystack;
 
             String prev_command;

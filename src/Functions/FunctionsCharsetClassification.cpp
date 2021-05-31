@@ -4,8 +4,7 @@
 #include <Common/UTF8Helpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include "/home/sergey/ClickHouse/contrib/cld2/public/compact_lang_det.h"
-//#include <cld2/compact_lang_det.h>
+
 #include <cstring>
 #include <cmath>
 #include <unordered_map>
