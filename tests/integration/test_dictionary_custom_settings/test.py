@@ -12,7 +12,7 @@ DICTIONARY_FILES = [
 ]
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('node', dictionaties=DICTIONARY_FILES)
+instance = cluster.add_instance('node', dictionaries=DICTIONARY_FILES)
 
 
 def prepare():
