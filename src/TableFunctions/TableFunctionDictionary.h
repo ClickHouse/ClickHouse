@@ -20,9 +20,9 @@ public:
         return name;
     }
 
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    void parseArguments(const ASTPtr & ast_function, ContextConstPtr context) override;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextConstPtr context) const override;
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription) const override;
 

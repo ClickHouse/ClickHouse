@@ -27,8 +27,8 @@ private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "MySQL"; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    ColumnsDescription getActualTableStructure(ContextConstPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextConstPtr context) override;
 
     String remote_database_name;
     String remote_table_name;

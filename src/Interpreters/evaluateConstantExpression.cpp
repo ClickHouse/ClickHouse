@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 
-std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextConstPtr context)
 {
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
@@ -41,7 +41,8 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
     String name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
-    ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
+    ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast,
+        syntax_result, const_pointer_cast<Context>(context)).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.
     Block block_with_constants{{ ColumnConst::create(ColumnUInt8::create(1, 0), 1), std::make_shared<DataTypeUInt8>(), "_dummy" }};
@@ -65,7 +66,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 }
 
 
-ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextConstPtr context)
 {
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
@@ -73,7 +74,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr conte
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
-ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, ContextConstPtr context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
         return std::make_shared<ASTLiteral>(id->name());
@@ -81,7 +82,7 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, Cont
     return evaluateConstantExpressionAsLiteral(node, context);
 }
 
-ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextConstPtr context)
 {
     ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(node, context);
     auto & literal = res->as<ASTLiteral &>();

@@ -64,7 +64,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextConstPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
     void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 

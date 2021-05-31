@@ -116,7 +116,7 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_dir_path, const std::string & table_path)
+void checkCreationIsAllowed(ContextConstPtr context_global, const std::string & db_dir_path, const std::string & table_path)
 {
     if (context_global->getApplicationType() != Context::ApplicationType::SERVER)
         return;
@@ -131,7 +131,7 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
 }
 }
 
-Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context)
+Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextConstPtr context)
 {
     String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
     Poco::Path poco_path = Poco::Path(table_path);

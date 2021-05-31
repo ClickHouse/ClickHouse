@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
@@ -74,7 +74,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     return storage;
 }
 
-ColumnsDescription ITableFunctionFileLike::getActualTableStructure(ContextPtr context) const
+ColumnsDescription ITableFunctionFileLike::getActualTableStructure(ContextConstPtr context) const
 {
     if (structure.empty())
     {

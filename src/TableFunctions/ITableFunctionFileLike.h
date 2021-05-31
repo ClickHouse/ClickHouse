@@ -19,9 +19,9 @@ private:
         const String & source, const String & format, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method) const = 0;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextConstPtr context) const override;
 
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    void parseArguments(const ASTPtr & ast_function, ContextConstPtr context) override;
 
     bool hasStaticStructure() const override { return true; }
 

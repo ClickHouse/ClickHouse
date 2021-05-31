@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
+void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextConstPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (function)
@@ -29,12 +29,13 @@ void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /
     throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
 }
 
-ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionView::getActualTableStructure(ContextConstPtr context) const
 {
     assert(create.select);
     assert(create.children.size() == 1);
     assert(create.children[0]->as<ASTSelectWithUnionQuery>());
-    auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+    auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0],
+        const_pointer_cast<Context>(context));
     return ColumnsDescription(sample.getNamesAndTypesList());
 }
 

@@ -20,8 +20,8 @@ private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "View"; }
 
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextConstPtr context) override;
+    ColumnsDescription getActualTableStructure(ContextConstPtr context) const override;
 
     ASTCreateQuery create;
 };

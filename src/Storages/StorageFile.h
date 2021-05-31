@@ -62,7 +62,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextConstPtr context);
 
     /// Check if the format is column-oriented.
     /// Is is useful because column oriented formats could effectively skip unknown columns

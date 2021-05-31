@@ -582,7 +582,7 @@ void ColumnsDescription::removeSubcolumns(const String & name_in_storage, const 
         subcolumns.erase(name_in_storage + "." + subcolumn_name);
 }
 
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextConstPtr context)
 {
     for (const auto & child : default_expr_list->children)
         if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
@@ -591,7 +591,9 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     try
     {
         auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
-        const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
+        const auto actions = ExpressionAnalyzer(default_expr_list,
+            syntax_analyzer_result,
+            const_pointer_cast<Context>(context)).getActions(true);
         for (const auto & action : actions->getActions())
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
                 throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);

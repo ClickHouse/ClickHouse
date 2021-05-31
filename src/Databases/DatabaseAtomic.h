@@ -45,7 +45,7 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextConstPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
     void loadStoredObjects(ContextPtr context, bool has_force_restore_data_flag, bool force_attach) override;
 

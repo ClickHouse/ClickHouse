@@ -136,7 +136,7 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
+    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextConstPtr context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Is the database empty.
     virtual bool empty() const = 0;

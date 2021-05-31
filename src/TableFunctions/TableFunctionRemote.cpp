@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     ASTs & args_func = ast_function->children;
 
@@ -256,7 +256,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextConstPtr context) const
 {
     assert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);

@@ -82,7 +82,7 @@ bool DatabaseConnectionMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(ContextConstPtr local_context, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);

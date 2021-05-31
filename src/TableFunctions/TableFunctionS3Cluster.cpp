@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
@@ -93,7 +93,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
 }
 
 
-ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextConstPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }

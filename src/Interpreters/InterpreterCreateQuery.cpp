@@ -373,7 +373,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, bool attach)
+    const ASTExpressionList & columns_ast, ContextConstPtr context_, bool attach)
 {
     /// First, deduce implicit types.
 

@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
@@ -74,7 +74,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
         secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionS3::getActualTableStructure(ContextConstPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }

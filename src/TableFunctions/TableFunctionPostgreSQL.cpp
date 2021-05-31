@@ -44,7 +44,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextConstPtr context) const
 {
     const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     auto columns = fetchPostgreSQLTableStructure(
@@ -57,7 +57,7 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr c
 }
 
 
-void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
 

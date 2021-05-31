@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
+void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextConstPtr /*context*/)
 {
     ASTs & args_func = ast_function->children;
 
@@ -74,7 +74,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
         max_array_length = args[3]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 }
 
-ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextConstPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }

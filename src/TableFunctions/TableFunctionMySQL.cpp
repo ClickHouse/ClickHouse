@@ -39,7 +39,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -77,7 +77,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
             ErrorCodes::BAD_ARGUMENTS);
 }
 
-ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextConstPtr context) const
 {
     const auto & settings = context->getSettingsRef();
     const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings, settings.mysql_datatypes_support_level);

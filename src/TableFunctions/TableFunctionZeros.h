@@ -24,7 +24,7 @@ private:
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextConstPtr context) const override;
 };
 
 

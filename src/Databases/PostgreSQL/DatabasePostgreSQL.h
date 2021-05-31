@@ -49,7 +49,7 @@ public:
 
     void loadStoredObjects(ContextPtr, bool, bool force_attach) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextConstPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
     bool isTableExist(const String & name, ContextConstPtr context) const override;
     StoragePtr tryGetTable(const String & name, ContextConstPtr context) const override;

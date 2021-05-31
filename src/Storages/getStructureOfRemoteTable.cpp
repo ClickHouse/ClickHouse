@@ -29,7 +29,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
-    ContextPtr context,
+    ContextConstPtr context,
     const ASTPtr & table_func_ptr)
 {
     String query;
@@ -117,7 +117,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
-    ContextPtr context,
+    ContextConstPtr context,
     const ASTPtr & table_func_ptr)
 {
     const auto & shards_info = cluster.getShardsInfo();

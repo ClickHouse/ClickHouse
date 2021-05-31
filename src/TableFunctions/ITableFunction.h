@@ -47,10 +47,10 @@ public:
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
 
-    virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
+    virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextConstPtr /*context*/) {}
 
     /// Returns actual table structure probably requested from remote server, may fail
-    virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
+    virtual ColumnsDescription getActualTableStructure(ContextConstPtr /*context*/) const = 0;
 
     /// Create storage according to the query.
     StoragePtr

@@ -33,7 +33,7 @@ namespace
 }
 
 
-void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     ASTs & args_func = ast_function->children;
 
@@ -57,7 +57,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 }
 
 
-const Strings & TableFunctionMerge::getSourceTables(ContextPtr context) const
+const Strings & TableFunctionMerge::getSourceTables(ContextConstPtr context) const
 {
     if (source_tables)
         return *source_tables;
@@ -91,7 +91,7 @@ const Strings & TableFunctionMerge::getSourceTables(ContextPtr context) const
 }
 
 
-ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextConstPtr context) const
 {
     for (const auto & table_name : getSourceTables(context))
     {

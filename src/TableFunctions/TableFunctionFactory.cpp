@@ -31,7 +31,7 @@ void TableFunctionFactory::registerFunction(const std::string & name, Value crea
 
 TableFunctionPtr TableFunctionFactory::get(
     const ASTPtr & ast_function,
-    ContextPtr context) const
+    ContextConstPtr context) const
 {
     const auto * table_function = ast_function->as<ASTFunction>();
     auto res = tryGet(table_function->name, context);
@@ -50,7 +50,7 @@ TableFunctionPtr TableFunctionFactory::get(
 
 TableFunctionPtr TableFunctionFactory::tryGet(
         const std::string & name_param,
-        ContextPtr) const
+        ContextConstPtr) const
 {
     String name = getAliasToOrName(name_param);
     TableFunctionPtr res;

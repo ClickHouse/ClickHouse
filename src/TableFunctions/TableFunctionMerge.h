@@ -19,9 +19,9 @@ private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Merge"; }
 
-    const Strings & getSourceTables(ContextPtr context) const;
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    const Strings & getSourceTables(ContextConstPtr context) const;
+    ColumnsDescription getActualTableStructure(ContextConstPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextConstPtr context) override;
 
     String source_database;
     String source_table_regexp;

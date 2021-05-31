@@ -20,7 +20,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 
 template <bool multithreaded>
-ColumnsDescription TableFunctionZeros<multithreaded>::getActualTableStructure(ContextPtr /*context*/) const
+ColumnsDescription TableFunctionZeros<multithreaded>::getActualTableStructure(ContextConstPtr /*context*/) const
 {
     /// NOTE: https://bugs.llvm.org/show_bug.cgi?id=47418
     return ColumnsDescription{{{"zero", std::make_shared<DataTypeUInt8>()}}};

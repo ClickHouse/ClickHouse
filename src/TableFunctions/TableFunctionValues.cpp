@@ -68,7 +68,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
+void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextConstPtr /*context*/)
 {
     ASTs & args_func = ast_function->children;
 
@@ -93,7 +93,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionValues::getActualTableStructure(ContextConstPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }

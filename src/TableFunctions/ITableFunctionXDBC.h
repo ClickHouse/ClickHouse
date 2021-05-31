@@ -21,15 +21,15 @@ private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
-    virtual BridgeHelperPtr createBridgeHelper(ContextPtr context,
+    virtual BridgeHelperPtr createBridgeHelper(ContextConstPtr context,
         Poco::Timespan http_timeout_,
         const std::string & connection_string_) const = 0;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextConstPtr context) const override;
 
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    void parseArguments(const ASTPtr & ast_function, ContextConstPtr context) override;
 
-    void startBridgeIfNot(ContextPtr context) const;
+    void startBridgeIfNot(ContextConstPtr context) const;
 
     String connection_string;
     String schema_name;
@@ -47,7 +47,7 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(ContextPtr context,
+    BridgeHelperPtr createBridgeHelper(ContextConstPtr context,
         Poco::Timespan http_timeout_,
         const std::string & connection_string_) const override
     {
@@ -67,7 +67,7 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(ContextPtr context,
+    BridgeHelperPtr createBridgeHelper(ContextConstPtr context,
         Poco::Timespan http_timeout_,
         const std::string & connection_string_) const override
     {

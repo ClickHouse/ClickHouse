@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -57,7 +57,7 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
     }
 }
 
-void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
+void ITableFunctionXDBC::startBridgeIfNot(ContextConstPtr context) const
 {
     if (!helper)
     {
@@ -67,7 +67,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
     }
 }
 
-ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr context) const
+ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextConstPtr context) const
 {
     startBridgeIfNot(context);
 

@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnsDescription parseColumnsListFromString(const std::string & structure, ContextPtr context)
+ColumnsDescription parseColumnsListFromString(const std::string & structure, ContextConstPtr context)
 {
     ParserColumnDeclarationList parser;
     const Settings & settings = context->getSettingsRef();

@@ -39,8 +39,8 @@ protected:
 
     const char * getStorageTypeName() const override { return "S3Cluster"; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr) const override;
-    void parseArguments(const ASTPtr &, ContextPtr) override;
+    ColumnsDescription getActualTableStructure(ContextConstPtr) const override;
+    void parseArguments(const ASTPtr &, ContextConstPtr) override;
 
     String cluster_name;
     String filename;

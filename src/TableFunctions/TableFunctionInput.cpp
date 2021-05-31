@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     const auto * function = ast_function->as<ASTFunction>();
 
@@ -38,7 +38,7 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
     structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionInput::getActualTableStructure(ContextConstPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }

@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, ContextConstPtr context)
 {
     // Parse args
     ASTs & args_func = ast_function->children;
@@ -38,7 +38,7 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
     dictionary_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextConstPtr context) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
     auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
