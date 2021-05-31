@@ -148,6 +148,40 @@ struct WatchResponse : virtual Response
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
 
+struct SetACLRequest : virtual Request
+{
+    String path;
+    ACLs acls;
+    int32_t version = -1;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + acls.size() * sizeof(ACL); }
+};
+
+struct SetACLResponse : virtual Response
+{
+    Stat stat;
+
+    size_t bytesSize() const override { return sizeof(Stat); }
+};
+
+struct GetACLRequest : virtual Request
+{
+    String path;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+    size_t bytesSize() const override { return path.size(); }
+};
+
+struct GetACLResponse : virtual Response
+{
+    ACLs acl;
+    Stat stat;
+    size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
+};
+
 struct CreateRequest : virtual Request
 {
     String path;

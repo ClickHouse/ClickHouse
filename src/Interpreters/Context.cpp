@@ -314,8 +314,8 @@ struct ContextSharedPart
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
 #if USE_NURAFT
-    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+    mutable std::mutex keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperStorageDispatcher> keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -463,12 +463,6 @@ struct ContextSharedPart
             dictionaries_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
-
-            #if USE_EMBEDDED_COMPILER
-            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
-            #endif
-
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
             models_repository_guard.reset();
@@ -1678,16 +1672,16 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 void Context::initializeKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
 
-    if (shared->nu_keeper_storage_dispatcher)
+    if (shared->keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        shared->nu_keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
-        shared->nu_keeper_storage_dispatcher->initialize(config);
+        shared->keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
+        shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
     }
 #endif
 }
@@ -1695,22 +1689,22 @@ void Context::initializeKeeperStorageDispatcher() const
 #if USE_NURAFT
 std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
 {
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
-    if (!shared->nu_keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    if (!shared->keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->nu_keeper_storage_dispatcher;
+    return shared->keeper_storage_dispatcher;
 }
 #endif
 
 void Context::shutdownKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
-    if (shared->nu_keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    if (shared->keeper_storage_dispatcher)
     {
-        shared->nu_keeper_storage_dispatcher->shutdown();
-        shared->nu_keeper_storage_dispatcher.reset();
+        shared->keeper_storage_dispatcher->shutdown();
+        shared->keeper_storage_dispatcher.reset();
     }
 #endif
 }
