@@ -29,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
-    extern const int TOO_MANY_ROWS;
 }
 
 
