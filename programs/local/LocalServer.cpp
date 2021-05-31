@@ -343,6 +343,9 @@ try
     {
         clearTerminal();
         showClientVersion();
+
+        //for visual convenience
+        std::cout << endl;
     }
 
     if (!is_interactive)
@@ -417,9 +420,17 @@ try
 
     if (is_interactive)
     {
-        auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
-        if (history_file_from_env)
-            history_file = history_file_from_env;
+        /// Load command history if present.
+        if (config().has("history_file"))
+            history_file = config().getString("history_file");
+        else
+        {
+            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+            if (history_file_from_env)
+                history_file = history_file_from_env;
+            else if (!home_path.empty())
+                history_file = home_path + "/.clickhouse-client-history";
+        }
 
         if (!history_file.empty() && !Poco::File(history_file).exists())
             Poco::File(history_file).createFile();
