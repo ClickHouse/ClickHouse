@@ -907,6 +907,10 @@ public:
         size_t max_threads;
 
         const size_t min_free_disk_space;
+
+        bool compile_aggregate_expressions;
+        size_t min_count_to_compile_aggregate_expression;
+
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
@@ -916,6 +920,8 @@ public:
             bool empty_result_for_aggregation_by_empty_set_,
             VolumePtr tmp_volume_, size_t max_threads_,
             size_t min_free_disk_space_,
+            bool compile_aggregate_expressions_,
+            size_t min_count_to_compile_aggregate_expression_,
             const Block & intermediate_header_ = {})
             : src_header(src_header_),
             intermediate_header(intermediate_header_),
@@ -925,14 +931,16 @@ public:
             max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
             empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
             tmp_volume(tmp_volume_), max_threads(max_threads_),
-            min_free_disk_space(min_free_disk_space_)
+            min_free_disk_space(min_free_disk_space_),
+            compile_aggregate_expressions(compile_aggregate_expressions_),
+            min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0)
         {
             intermediate_header = intermediate_header_;
         }

@@ -1,5 +1,7 @@
 #include <future>
 #include <Poco/Util/Application.h>
+
+#include <common/FunctorToStaticMethodAdaptor.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
@@ -21,6 +23,7 @@
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
+#include <Interpreters/JIT/compileFunction.h>
 
 
 namespace ProfileEvents
@@ -477,6 +480,11 @@ void NO_INLINE Aggregator::executeImpl(
         executeImplBatch<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
 }
 
+static CHJIT & getJITInstance()
+{
+    static CHJIT jit;
+    return jit;
+}
 
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplBatch(
@@ -537,16 +545,13 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     /// Generic case.
 
-    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
-
-    /// For all rows.
-    for (size_t i = 0; i < rows; ++i)
+    auto get_aggregate_data = [&](size_t row) -> AggregateDataPtr
     {
-        AggregateDataPtr aggregate_data = nullptr;
+        AggregateDataPtr aggregate_data;
 
         if constexpr (!no_more_keys)
         {
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
@@ -567,23 +572,148 @@ void NO_INLINE Aggregator::executeImplBatch(
         else
         {
             /// Add only if the key already exists.
-            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+            auto find_result = state.findKey(method.data, row, *aggregates_pool);
             if (find_result.isFound())
                 aggregate_data = find_result.getMapped();
             else
                 aggregate_data = overflow_row;
         }
 
-        places[i] = aggregate_data;
-    }
+        // std::cerr << "Row " << row << " returned place " << static_cast<void *>(aggregate_data) << std::endl;
+        return aggregate_data;
+    };
+
+    #if USE_EMBEDDED_COMPILER
+    std::vector<ColumnData> columns_data;
+    std::vector<AggregateFunctionToCompile> functions_to_compile;
+    size_t aggregate_instructions_size = 0;
 
     /// Add values to the aggregate functions.
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
-        if (inst->offsets)
-            inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        const auto * function = inst->that;
+        if (function && function->isCompilable())
+        {
+            AggregateFunctionToCompile function_to_compile
+            {
+                .function = inst->that,
+                .aggregate_data_offset = inst->state_offset
+            };
+
+            columns_data.emplace_back(getColumnData(inst->batch_arguments[0]));
+            functions_to_compile.emplace_back(std::move(function_to_compile));
+        }
+
+        ++aggregate_instructions_size;
+    }
+
+    if (params.compile_aggregate_expressions && functions_to_compile.size() == aggregate_instructions_size)
+    {
+        std::string functions_dump;
+
+        for (const auto & func : functions_to_compile)
+        {
+            const auto * function = func.function;
+
+            std::string function_dump;
+
+            auto return_type_name = function->getReturnType()->getName();
+
+            function_dump += return_type_name;
+            function_dump += ' ';
+            function_dump += function->getName();
+            function_dump += '(';
+
+            const auto & argument_types = function->getArgumentTypes();
+            for (const auto & argument_type : argument_types)
+            {
+                function_dump += argument_type->getName();
+                function_dump += ',';
+            }
+
+            if (!argument_types.empty())
+                function_dump.pop_back();
+
+            function_dump += ')';
+
+            functions_dump += function_dump;
+            functions_dump += ' ';
+        }
+
+        static std::unordered_map<std::string, CHJIT::CompiledModuleInfo> aggregation_functions_dump_to_compiled_module_info;
+        CHJIT::CompiledModuleInfo compiled_module;
+
+        auto it = aggregation_functions_dump_to_compiled_module_info.find(functions_dump);
+        if (it != aggregation_functions_dump_to_compiled_module_info.end())
+        {
+            compiled_module = it->second;
+            LOG_TRACE(log, "Get compiled aggregate functions {} from cache", functions_dump);
+
+        }
         else
-            inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+        {
+            compiled_module = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_dump);
+            aggregation_functions_dump_to_compiled_module_info[functions_dump] = compiled_module;
+        }
+
+        LOG_TRACE(log, "Use compiled expression {}", functions_dump);
+
+        JITCompiledAggregateFunction aggregate_function = reinterpret_cast<JITCompiledAggregateFunction>(getJITInstance().findCompiledFunction(compiled_module, functions_dump));
+        GetAggregateDataFunction get_aggregate_data_function = FunctorToStaticMethodAdaptor<decltype(get_aggregate_data)>::unsafeCall;
+        GetAggregateDataContext get_aggregate_data_context = reinterpret_cast<char *>(&get_aggregate_data);
+        aggregate_function(rows, columns_data.data(), get_aggregate_data_function, get_aggregate_data_context);
+    }
+    else
+    #endif
+    {
+        std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
+
+        /// For all rows.
+        for (size_t i = 0; i < rows; ++i)
+        {
+            AggregateDataPtr aggregate_data;
+
+            if constexpr (!no_more_keys)
+            {
+                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+                /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+                if (emplace_result.isInserted())
+                {
+                    /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                    emplace_result.setMapped(nullptr);
+
+                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                    createAggregateStates(aggregate_data);
+
+                    emplace_result.setMapped(aggregate_data);
+                }
+                else
+                    aggregate_data = emplace_result.getMapped();
+
+                assert(aggregate_data != nullptr);
+            }
+            else
+            {
+                /// Add only if the key already exists.
+                auto find_result = state.findKey(method.data, i, *aggregates_pool);
+                if (find_result.isFound())
+                    aggregate_data = find_result.getMapped();
+                else
+                    aggregate_data = overflow_row;
+            }
+
+            places[i] = aggregate_data;
+        }
+
+        /// Add values to the aggregate functions.
+        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        {
+            if (inst->offsets)
+                inst->batch_that->addBatchArray(rows, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+            else
+                inst->batch_that->addBatch(rows, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+        }
     }
 }
 

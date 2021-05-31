@@ -12,6 +12,14 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {
@@ -384,6 +392,24 @@ public:
         auto & column = assert_cast<ColVecResult &>(to);
         column.getData().push_back(this->data(place).get());
     }
+
+    #if USE_EMBEDDED_COMPILER
+
+    virtual bool isCompilable() const override { return Type == AggregateFunctionTypeSum; }
+
+    virtual void compile(llvm::IRBuilderBase & builder, llvm::Value * aggregate_function_place, const DataTypePtr & value_type, llvm::Value * value) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * return_native_type = toNativeType(b, removeNullable(getReturnType()));
+        auto * sum_value_ptr = b.CreatePointerCast(aggregate_function_place, return_native_type->getPointerTo());
+        auto * sum_value = b.CreateLoad(return_native_type, sum_value_ptr);
+        auto * value_cast_to_result = nativeCast(b, value_type, value, return_native_type);
+        auto * sum_result_value = sum_value->getType()->isIntegerTy() ? b.CreateAdd(sum_value, value_cast_to_result) : b.CreateFAdd(sum_value, value_cast_to_result);
+        b.CreateStore(sum_result_value, sum_value_ptr);
+    }
+
+    #endif
 
 private:
     UInt32 scale;
