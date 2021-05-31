@@ -1,6 +1,6 @@
 ---
 toc_priority: 38
-toc_title: "Операторы"
+toc_title: "\u041e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u044b"
 ---
 
 # Операторы {#operatory}
@@ -297,3 +297,4 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/operators/) <!--hide-->

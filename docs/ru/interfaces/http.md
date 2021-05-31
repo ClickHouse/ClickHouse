@@ -1,6 +1,6 @@
 ---
 toc_priority: 19
-toc_title: "HTTP-интерфейс"
+toc_title: "\u0048\u0054\u0054\u0050\u002d\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441"
 ---
 
 # HTTP-интерфейс {#http-interface}
@@ -635,3 +635,4 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 * Connection #0 to host localhost left intact
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/http_interface/) <!--hide-->

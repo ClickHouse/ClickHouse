@@ -112,7 +112,7 @@ Finds the highest continent in the hierarchy for the region.
 **Syntax**
 
 ``` sql
-regionToTopContinent(id[, geobase])
+regionToTopContinent(id[, geobase]);
 ```
 
 **Arguments**
@@ -136,7 +136,7 @@ In the Yandex geobase, the population might be recorded for child regions, but n
 
 ### regionIn(lhs, rhs\[, geobase\]) {#regioninlhs-rhs-geobase}
 
-Checks whether a ‘lhs’ region belongs to a ‘rhs’ region. Returns a UInt8 number equal to 1 if it belongs, or 0 if it does not belong.
+Checks whether a ‘lhs’ region belongs to a ‘rhs’ region. Returns a UInt8 number equal to 1 if it belongs, or 0 if it doesn’t belong.
 The relationship is reflexive – any region also belongs to itself.
 
 ### regionHierarchy(id\[, geobase\]) {#regionhierarchyid-geobase}
@@ -146,7 +146,8 @@ Example: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
 ### regionToName(id\[, lang\]) {#regiontonameid-lang}
 
-Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
+Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn’t exist, an empty string is returned.
 
 `ua` and `uk` both mean Ukrainian.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->

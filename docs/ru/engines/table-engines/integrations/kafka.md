@@ -1,5 +1,5 @@
 ---
-toc_priority: 8
+toc_priority: 5
 toc_title: Kafka
 ---
 
@@ -193,3 +193,4 @@ ClickHouse может поддерживать учетные данные Kerbe
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/kafka/) <!--hide-->

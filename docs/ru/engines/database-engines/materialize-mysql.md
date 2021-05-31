@@ -157,3 +157,4 @@ SELECT * FROM mysql.test;
 └───┴─────┴──────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/database-engines/materialize-mysql/) <!--hide-->

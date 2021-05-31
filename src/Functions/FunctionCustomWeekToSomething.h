@@ -3,14 +3,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/CustomWeekTransforms.h>
-#include <Functions/IFunction.h>
-#include <Functions/TransformDateTime64.h>
+#include <Functions/IFunctionImpl.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -24,7 +23,7 @@ class FunctionCustomWeekToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionCustomWeekToSomething>(); }
 
     String getName() const override { return name; }
 
@@ -144,15 +143,15 @@ public:
 
         if (checkAndGetDataType<DataTypeDate>(&type))
         {
-            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), DEFAULT_WEEK_MODE, date_lut)
+                    == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), DEFAULT_WEEK_MODE, date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }
         else
         {
-            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), DEFAULT_WEEK_MODE, date_lut)
+                    == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), DEFAULT_WEEK_MODE, date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }

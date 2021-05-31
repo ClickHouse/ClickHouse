@@ -113,22 +113,12 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         if (shutdown)
             return on_error();
 
-        /// We must not to allocate any memory after we emplaced a job in a queue.
-        /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
+        jobs.emplace(std::move(job), priority);
+        ++scheduled_jobs;
 
-        /// Check if there are enough threads to process job.
-        if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
+        if (threads.size() < std::min(max_threads, scheduled_jobs))
         {
-            try
-            {
-                threads.emplace_front();
-            }
-            catch (...)
-            {
-                /// Most likely this is a std::bad_alloc exception
-                return on_error();
-            }
-
+            threads.emplace_front();
             try
             {
                 threads.front() = Thread([this, it = threads.begin()] { worker(it); });
@@ -136,15 +126,19 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             catch (...)
             {
                 threads.pop_front();
+
+                /// Remove the job and return error to caller.
+                /// Note that if we have allocated at least one thread, we may continue
+                /// (one thread is enough to process all jobs).
+                /// But this condition indicate an error nevertheless and better to refuse.
+
+                jobs.pop();
+                --scheduled_jobs;
                 return on_error();
             }
         }
-
-        jobs.emplace(std::move(job), priority);
-        ++scheduled_jobs;
-        new_job_or_shutdown.notify_one();
     }
-
+    new_job_or_shutdown.notify_one();
     return ReturnType(true);
 }
 
@@ -171,10 +165,6 @@ void ThreadPoolImpl<Thread>::wait()
 {
     {
         std::unique_lock lock(mutex);
-        /// Signal here just in case.
-        /// If threads are waiting on condition variables, but there are some jobs in the queue
-        /// then it will prevent us from deadlock.
-        new_job_or_shutdown.notify_all();
         job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
         if (first_exception)

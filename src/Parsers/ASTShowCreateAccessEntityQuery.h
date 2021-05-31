@@ -40,7 +40,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
 
-    void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabaseWithCurrent(const String & current_database);
 
 protected:
     String getKeyword() const;

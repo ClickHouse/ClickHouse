@@ -7,17 +7,20 @@
 namespace DB
 {
 
+class Context;
 class Cluster;
 
-class InterpreterCheckQuery : public IInterpreter, WithContext
+class InterpreterCheckQuery : public IInterpreter
 {
 public:
-    InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterCheckQuery(const ASTPtr & query_ptr_, const Context & context_);
 
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
+
+    const Context & context;
 };
 
 }

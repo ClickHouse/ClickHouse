@@ -21,7 +21,6 @@ namespace ProfileEvents
     extern const Event S3WriteBytes;
 }
 
-
 namespace DB
 {
 // S3 protocol does not allow to have multipart upload with more than 10000 parts.
@@ -87,7 +86,7 @@ void WriteBufferFromS3::allocateBuffer()
 void WriteBufferFromS3::finalize()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    MemoryTracker::LockExceptionInThread lock;
     finalizeImpl();
 }
 
@@ -110,6 +109,18 @@ void WriteBufferFromS3::finalizeImpl()
     }
 
     finalized = true;
+}
+
+WriteBufferFromS3::~WriteBufferFromS3()
+{
+    try
+    {
+        finalizeImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 void WriteBufferFromS3::createMultipartUpload()
@@ -228,7 +239,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
     auto outcome = client_ptr->PutObject(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}", bucket, key, req.GetContentLength());
+        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}", bucket, key);
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }

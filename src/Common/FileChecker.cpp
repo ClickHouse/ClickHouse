@@ -21,15 +21,7 @@ namespace ErrorCodes
 FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(std::move(disk_))
 {
     setPath(file_info_path_);
-    try
-    {
-        load();
-    }
-    catch (DB::Exception & e)
-    {
-        e.addMessage("Error loading file {}", files_info_path);
-        throw;
-    }
+    load();
 }
 
 void FileChecker::setPath(const String & file_info_path_)

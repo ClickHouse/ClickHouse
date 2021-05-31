@@ -48,8 +48,7 @@ Block EmbeddedRocksDBBlockInputStream::readImpl()
         size_t idx = 0;
         for (const auto & elem : sample_block)
         {
-            auto serialization = elem.type->getDefaultSerialization();
-            serialization->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
+            elem.type->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
             ++idx;
         }
     }

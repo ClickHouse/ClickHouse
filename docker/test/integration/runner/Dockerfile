@@ -31,7 +31,6 @@ RUN apt-get update \
     software-properties-common \
     libkrb5-dev \
     krb5-user \
-    g++ \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -80,8 +79,7 @@ RUN python3 -m pip install \
     redis \
     tzlocal \
     urllib3 \
-    requests-kerberos \
-    pyhdfs
+    requests-kerberos
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

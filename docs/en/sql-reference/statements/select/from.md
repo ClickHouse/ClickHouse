@@ -29,7 +29,7 @@ Now `SELECT` queries with `FINAL` are executed in parallel and slightly faster. 
 
 ### Drawbacks {#drawbacks}
 
-Queries that use `FINAL` are executed slightly slower than similar queries that do not, because:
+Queries that use `FINAL` are executed slightly slower than similar queries that don’t, because:
 
 -   Data is merged during query execution.
 -   Queries with `FINAL` read primary key columns in addition to the columns specified in the query.

@@ -12,7 +12,6 @@
 
 namespace DB
 {
-struct Settings;
 
 
 template <typename T>
@@ -54,8 +53,6 @@ public:
     {
         return std::make_shared<DataTypeNumber<T>>();
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

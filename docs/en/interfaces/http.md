@@ -52,7 +52,7 @@ X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","writ
 ```
 
 As you can see, curl is somewhat inconvenient in that spaces must be URL escaped.
-Although wget escapes everything itself, we do not recommend using it because it does not work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
+Although wget escapes everything itself, we don’t recommend using it because it doesn’t work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
 
 ``` bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
@@ -146,7 +146,7 @@ Deleting the table.
 $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-For successful requests that do not return a data table, an empty response body is returned.
+For successful requests that don’t return a data table, an empty response body is returned.
 
 
 ## Compression {#compression}
@@ -273,7 +273,7 @@ Possible header fields:
 -   `written_rows` — Number of rows written.
 -   `written_bytes` — Volume of data written in bytes.
 
-Running requests do not stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
+Running requests don’t stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 The optional ‘query_id’ parameter can be passed as the query ID (any string). For more information, see the section “Settings, replace_running_query”.
 
 The optional ‘quota_key’ parameter can be passed as the quota key (any string). For more information, see the section “Quotas”.
