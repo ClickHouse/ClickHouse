@@ -416,7 +416,7 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseAtomic::loadStoredObjects(ContextPtr local_context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseAtomic::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
 {
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
     if (has_force_restore_data_flag)

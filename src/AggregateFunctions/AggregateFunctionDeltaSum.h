@@ -15,6 +15,7 @@
 
 namespace DB
 {
+struct Settings;
 
 template <typename T>
 struct AggregationFunctionDeltaSumData
