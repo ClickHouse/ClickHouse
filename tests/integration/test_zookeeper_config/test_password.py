@@ -7,10 +7,10 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__, name="password")
 
 # TODO ACL not implemented in Keeper.
-node1 = cluster.add_instance('node1', with_zookeeper=True, use_keeper=False,
+node1 = cluster.add_instance('node1', with_zookeeper=True,
                              main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_with_password.xml"])
                                 
-node2 = cluster.add_instance('node2', with_zookeeper=True, use_keeper=False, main_configs=["configs/remote_servers.xml"])
+node2 = cluster.add_instance('node2', with_zookeeper=True, main_configs=["configs/remote_servers.xml"])
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
