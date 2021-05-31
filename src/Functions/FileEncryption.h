@@ -229,7 +229,7 @@ private:
     String EncryptPartialBlock(const char * partial_block, size_t size, const InitVector & iv, size_t off) const
     {
         if (size > block_size)
-            throw DB::Exception("Expecter partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off),
+            throw DB::Exception("Expected partial block, got block with size > block_size: size = " + std::to_string(size) + " and offset = " + std::to_string(off),
                                 DB::ErrorCodes::DATA_ENCRYPTION_ERROR);
 
         String plaintext(block_size, '\0');
