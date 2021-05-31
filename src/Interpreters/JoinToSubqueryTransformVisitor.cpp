@@ -498,10 +498,9 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 if (got_alias)
                 {
                     auto alias = aliases.find(ident->name())->second;
-                    bool alias_equals_column_name = alias->ptr()->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
-                         // FIXME: check test 01600_multiple_left_joins_with_aliases
-                         // || (alias_table == IdentifierSemantic::getTableName(ident->ptr())
-                         //     && ident->shortName() == alias->as<ASTIdentifier>()->shortName()))
+                    auto alias_ident = alias->clone();
+                    alias_ident->as<ASTIdentifier>()->restoreTable();
+                    bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
                     if (!alias_equals_column_name)
                         throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 }
