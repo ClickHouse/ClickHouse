@@ -1,13 +1,14 @@
 #include <gtest/gtest.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include "gtest_disk.h"
+
 
 #if !defined(__clang__)
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
+
 
 template <typename T>
 DB::DiskPtr createDisk();

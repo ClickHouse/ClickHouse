@@ -136,7 +136,7 @@ MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
-    ContextPtr context_,
+    ContextMutablePtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
@@ -144,7 +144,7 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
+    , WithMutableContext(context_->getGlobalContext())
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
@@ -773,7 +773,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     // Generate valid expressions for filtering
     bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
 
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, local_context, true /* strict */);
+    PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
@@ -877,13 +877,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             {
                 /// Create and correctly initialize global WAL object
                 write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
-                for (auto && part : write_ahead_log->restore(metadata_snapshot))
+                for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext()))
                     parts_from_wal.push_back(std::move(part));
             }
             else if (settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                for (auto && part : wal.restore(metadata_snapshot))
+                for (auto && part : wal.restore(metadata_snapshot, getContext()))
                     parts_from_wal.push_back(std::move(part));
             }
         }
@@ -2725,6 +2725,22 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             auto active_part_it = data_parts_by_info.find(original_active_part->info);
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
+
+            /// We do not check allow_s3_zero_copy_replication here because data may be shared
+            /// when allow_s3_zero_copy_replication turned on and off again
+
+            original_active_part->keep_s3_on_delete = false;
+
+            if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
+            {
+                if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
+                        && original_active_part->getUniqueId() == part_copy->getUniqueId())
+                {   /// May be when several volumes use the same S3 storage
+                    original_active_part->keep_s3_on_delete = true;
+                }
+                else
+                    original_active_part->keep_s3_on_delete = !unlockSharedData(*original_active_part);
+            }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
             data_parts_indexes.erase(active_part_it);

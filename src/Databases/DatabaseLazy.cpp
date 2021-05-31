@@ -35,7 +35,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    ContextPtr local_context,
+    ContextMutablePtr local_context,
     bool /* has_force_restore_data_flag */,
     bool /*force_attach*/)
 {

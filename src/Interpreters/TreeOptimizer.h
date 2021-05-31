@@ -19,7 +19,7 @@ public:
         ASTPtr & query,
         TreeRewriterResult & result,
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-        ContextPtr context);
+        ContextConstPtr context);
 
     static void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif);
 };
