@@ -379,6 +379,9 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
+    String condition_mask_column_name_left;
+    String condition_mask_column_name_right;
+
     Poco::Logger * log;
 
     Block totals;

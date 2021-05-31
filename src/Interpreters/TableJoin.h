@@ -108,7 +108,7 @@ private:
     ActionsDAGPtr applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const;
 
-    ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts) const;
+    static ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts);
 public:
     TableJoin() = default;
     TableJoin(const Settings &, VolumePtr tmp_volume);

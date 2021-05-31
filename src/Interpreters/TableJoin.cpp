@@ -497,7 +497,7 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
         on_filter_condition_asts_right.push_back(ast);
 }
 
-ASTPtr TableJoin::buildJoinConditionColumn(const ASTs & on_filter_condition_asts) const
+ASTPtr TableJoin::buildJoinConditionColumn(const ASTs & on_filter_condition_asts)
 {
     if (on_filter_condition_asts.empty())
         return nullptr;

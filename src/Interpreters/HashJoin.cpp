@@ -55,14 +55,13 @@ struct NotProcessedCrossJoin : public ExtraBlock
     size_t right_block;
 };
 
-UInt8ColumnDataPtr getJoinMask(const TableJoin & table_join, const Block & block, JoinTableSide side)
+UInt8ColumnDataPtr getColumnAsMask(const Block & block, const String & column_name)
 {
-    if (ASTPtr extra_cond = table_join.joinConditionColumn(side))
-    {
-        const auto & join_condition_col = JoinCommon::materializeColumn(block, extra_cond->getColumnName());
-        return &assert_cast<const ColumnUInt8 &>(*join_condition_col).getData();
-    }
-    return nullptr;
+    if (column_name.empty())
+        return nullptr;
+
+    const auto & join_condition_col = JoinCommon::materializeColumn(block, column_name);
+    return &assert_cast<const ColumnUInt8 &>(*join_condition_col).getData();
 }
 
 }
@@ -204,6 +203,11 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
     required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
+
+    if (auto cond_ast = table_join->joinConditionColumn(JoinTableSide::Left))
+        condition_mask_column_name_left = cond_ast->getColumnName();
+    if (auto cond_ast = table_join->joinConditionColumn(JoinTableSide::Right))
+        condition_mask_column_name_right = cond_ast->getColumnName();
 
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
@@ -644,7 +648,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    UInt8ColumnDataPtr join_mask = getJoinMask(*table_join, block, JoinTableSide::Right);
+    UInt8ColumnDataPtr join_mask = getColumnAsMask(block, condition_mask_column_name_right);
 
     /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
     UInt8 save_nullmap = 0;
@@ -751,9 +755,9 @@ public:
         : key_columns(key_columns_)
         , key_sizes(key_sizes_)
         , rows_to_add(block.rows())
-        , join_mask_column(join_mask_column_)
         , asof_type(join.getAsofType())
         , asof_inequality(join.getAsofInequality())
+        , join_mask_column(join_mask_column_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
         if (is_asof_join)
@@ -1117,7 +1121,7 @@ void HashJoin::joinBlockImpl(
       * For ASOF, the last column is used as the ASOF column
       */
 
-    UInt8ColumnDataPtr join_mask_column = getJoinMask(*table_join, block, JoinTableSide::Left);
+    UInt8ColumnDataPtr join_mask_column = getColumnAsMask(block, condition_mask_column_name_left);
 
     AddedColumns added_columns(
         block_with_columns_to_add,
