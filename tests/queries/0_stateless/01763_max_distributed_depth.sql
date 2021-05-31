@@ -9,7 +9,7 @@ CREATE TABLE tt6
 	`status` String
 
 )
-ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'tt6', rand());
+ENGINE = Distributed('test_shard_localhost', '', 'tt6', rand());
 
 INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 581 }
 
