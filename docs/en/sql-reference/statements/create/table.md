@@ -360,7 +360,7 @@ SELECT * FROM base.t1;
 You can add a comment to the table when you creating it.
 
 !!!note "Note"
-    The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md) and [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md).
+    The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
 	
 
 **Syntax**
