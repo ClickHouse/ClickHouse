@@ -9,11 +9,21 @@
 #include <Common/Exception.h>
 #include <common/types.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <cstddef>
 #include <memory>
 #include <vector>
 #include <type_traits>
 
+namespace llvm
+{
+    class LLVMContext;
+    class Value;
+    class IRBuilderBase;
+}
 
 namespace DB
 {
@@ -240,6 +250,17 @@ public:
     // would be more logically correct, but more complex. We only have a handful
     // of true window functions, so this hack-ish interface suffices.
     virtual bool isOnlyWindowFunction() const { return false; }
+
+    #if USE_EMBEDDED_COMPILER
+
+    virtual bool isCompilable() const { return false; }
+
+    virtual void compile(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_function_place*/, const DataTypePtr & /*value_type*/, llvm::Value * /*value*/) const
+    {
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    #endif
 
 protected:
     DataTypes argument_types;

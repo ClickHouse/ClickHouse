@@ -7,6 +7,7 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <Functions/IFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/JIT/CHJIT.h>
 
 namespace DB
@@ -28,6 +29,7 @@ struct ColumnData
 ColumnData getColumnData(const IColumn * column);
 
 using ColumnDataRowsSize = size_t;
+
 using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
 
 /** Compile function to native jit code using CHJIT instance.
@@ -40,6 +42,21 @@ using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
   * and will be filled by compiled function.
   */
 CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBase & function);
+
+using GetAggregateDataContext = char *;
+using GetAggregateDataFunction = AggregateDataPtr (*)(GetAggregateDataContext, size_t);
+using JITCompiledAggregateFunction = void (*)(ColumnDataRowsSize, ColumnData *, GetAggregateDataFunction, GetAggregateDataContext);
+
+struct AggregateFunctionToCompile
+{
+    const IAggregateFunction * function;
+    size_t aggregate_data_offset;
+};
+
+CHJIT::CompiledModuleInfo compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionToCompile> & functions, const std::string & result_name);
+
+using JITCompiledAggregateFunctionV2 = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
+CHJIT::CompiledModuleInfo compileAggregateFunctonsV2(CHJIT & jit, const std::vector<AggregateFunctionToCompile> & functions, const std::string & result_name);
 
 }
 
