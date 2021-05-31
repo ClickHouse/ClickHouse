@@ -13,12 +13,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     /// where YAML_CORPUS is a directory with different YAML configs for libfuzzer
     char buf[L_tmpnam];
     char* file_name = std::tmpnam(buf);
-    if (file_name == nullptr) {
+    if (file_name == nullptr)
+    {
         std::cerr << "Cannot create temp file!\n";
         return 1;
     }
     std::string cur_file(file_name);
-    
+
     std::string input = std::string(reinterpret_cast<const char*>(data), size);
     DB::YAMLParser parser;
 
