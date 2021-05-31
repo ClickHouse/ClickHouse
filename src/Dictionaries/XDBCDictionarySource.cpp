@@ -225,7 +225,7 @@ bool XDBCDictionarySource::isModified() const
     if (!invalidate_query.empty())
     {
         auto response = doInvalidateQuery(invalidate_query);
-        if (invalidate_query_response == response) //-V1051
+        if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
     }
@@ -307,7 +307,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  Block & /* sample_block */,
                                  ContextPtr /* context */,
                                  const std::string & /* default_database */,
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr {
+                                 bool /* check_config */) -> DictionarySourcePtr {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.");
         //        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".connection_string"));

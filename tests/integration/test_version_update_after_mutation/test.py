@@ -45,7 +45,7 @@ def test_mutate_and_upgrade(start_cluster):
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"
 
-    node1.query("INSERT INTO mt VALUES ('2020-02-13', 4);")
+    exec_query_with_retry(node1, "INSERT INTO mt VALUES ('2020-02-13', 4)")
 
     node2.query("SYSTEM SYNC REPLICA mt", timeout=5)
 

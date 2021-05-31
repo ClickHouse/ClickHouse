@@ -32,14 +32,15 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
     enablePeriodicUpdates(true);
 }
 
+
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config, const std::string & repository_name) const
 {
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.
-    bool created_from_ddl = !repository_name.empty();
-    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
+    bool dictionary_from_database = !repository_name.empty();
+    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), dictionary_from_database);
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const

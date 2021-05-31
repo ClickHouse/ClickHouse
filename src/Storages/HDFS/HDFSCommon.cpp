@@ -9,15 +9,14 @@
 #include <IO/Operators.h>
 #include <common/logger_useful.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int NETWORK_ERROR;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int NO_ELEMENTS_IN_CONFIG;
+extern const int BAD_ARGUMENTS;
+extern const int NETWORK_ERROR;
+extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
@@ -145,7 +144,6 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
         hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
-
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
     if (port != 0)
     {

@@ -129,7 +129,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
+    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     auto partition_file_path = part_path + "partition.dat";
     auto file = openForReading(disk, partition_file_path);
     value.resize(partition_key_sample.columns());
@@ -140,7 +140,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
+    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     store(partition_key_sample, disk, part_path, checksums);
 }
 
@@ -153,62 +153,28 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing);
-
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
     out->finalize();
 }
 
-void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context)
+void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row)
 {
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    auto partition_key_names_and_types = executePartitionByExpression(metadata_snapshot, block, context);
-    value.resize(partition_key_names_and_types.size());
-
-    /// Executing partition_by expression adds new columns to passed block according to partition functions.
-    /// The block is passed by reference and is used afterwards. `moduloLegacy` needs to be substituted back
-    /// with just `modulo`, because it was a temporary substitution.
-    static constexpr auto modulo_legacy_function_name = "moduloLegacy";
-
-    size_t i = 0;
-    for (const auto & element : partition_key_names_and_types)
-    {
-        auto & partition_column = block.getByName(element.name);
-
-        if (element.name.starts_with(modulo_legacy_function_name))
-            partition_column.name = "modulo" + partition_column.name.substr(std::strlen(modulo_legacy_function_name));
-
-        partition_column.column->get(row, value[i++]);
-    }
-}
-
-NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
-{
-    auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
-    adjusted_partition_key.expression->execute(block);
-    return adjusted_partition_key.sample_block.getNamesAndTypesList();
-}
-
-KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
-{
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    if (!partition_key.definition_ast)
-        return partition_key;
+    partition_key.expression->execute(block);
+    size_t partition_columns_num = partition_key.sample_block.columns();
+    value.resize(partition_columns_num);
 
-    ASTPtr ast_copy = partition_key.definition_ast->clone();
-
-    /// Implementation of modulo function was changed from 8bit result type to 16bit. For backward compatibility partition by expression is always
-    /// calculated according to previous version - `moduloLegacy`.
-    if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
+    for (size_t i = 0; i < partition_columns_num; ++i)
     {
-        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
-        return adjusted_partition_key;
+        const auto & column_name = partition_key.sample_block.getByPosition(i).name;
+        const auto & partition_column = block.getByName(column_name).column;
+        partition_column->get(row, value[i]);
     }
-
-    return partition_key;
 }
 
 }

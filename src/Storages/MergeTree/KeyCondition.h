@@ -293,16 +293,6 @@ public:
 
     String toString() const;
 
-    /// Condition description for EXPLAIN query.
-    struct Description
-    {
-        /// Which columns from PK were used, in PK order.
-        std::vector<std::string> used_keys;
-        /// Condition which was applied, mostly human-readable.
-        std::string condition;
-    };
-
-    Description getDescription() const;
 
     /** A chain of possibly monotone functions.
       * If the key column is wrapped in functions that can be monotonous in some value ranges
@@ -355,7 +345,6 @@ private:
             : function(function_), range(range_), key_column(key_column_) {}
 
         String toString() const;
-        String toString(const std::string_view & column_name, bool print_constants) const;
 
         Function function = FUNCTION_UNKNOWN;
 
@@ -418,12 +407,6 @@ private:
 
     bool canConstantBeWrappedByFunctions(
         const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
-
-    /// Check if ASTPtr node, passed to canConstantBeWrappedBy*, can be used by them for further checks.
-    /// Always call this method at start of other methods, which require key comparison, because it also checks if adjusted
-    /// key expression can also be used (with substitution from modulo to moduloLegacy). This is needed because partition key
-    /// is always modified, when passed into keyCondition, - with recursive substitution from modulo to moduloLegacy.
-    bool canConstantBeWrapped(const ASTPtr & node, const String & expr_name, String & result_expr_name);
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',

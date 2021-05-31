@@ -244,7 +244,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
 
     while (!in.eof())
     {
-        auto line = readLine(true);
+        auto line = readLine();
         if (startsWith(line, boundary))
         {
             set(in.position(), 0);
@@ -256,36 +256,29 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
     throw Poco::Net::HTMLFormException("No boundary line found");
 }
 
-std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
+std::string HTMLForm::MultipartReadBuffer::readLine(bool strict)
 {
     std::string line;
     char ch = 0;  // silence "uninitialized" warning from gcc-*
 
-    /// If we don't append CRLF, it means that we may have to prepend CRLF from previous content line, which wasn't the boundary.
-    if (in.read(ch))
+    while (in.read(ch) && ch != '\r' && ch != '\n')
         line += ch;
-    if (in.read(ch))
-        line += ch;
-    if (append_crlf && line == "\r\n")
-        return line;
 
-    while (!in.eof())
+    if (in.eof())
     {
-        while (in.read(ch) && ch != '\r')
+        if (strict)
+            throw Poco::Net::HTMLFormException("Unexpected end of message");
+        return line;
+    }
+
+    line += ch;
+
+    if (ch == '\r')
+    {
+        if (!in.read(ch) || ch != '\n')
+            throw Poco::Net::HTMLFormException("No CRLF found");
+        else
             line += ch;
-
-        if (in.eof()) break;
-
-        assert(ch == '\r');
-
-        if (in.peek(ch) && ch == '\n')
-        {
-            in.ignore();
-            if (append_crlf) line += "\r\n";
-            break;
-        }
-
-        line += ch;
     }
 
     return line;
@@ -307,12 +300,19 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     /// FIXME: there is an extra copy because we cannot traverse PeekableBuffer from checkpoint to position()
     ///        since it may store different data parts in different sub-buffers,
     ///        anyway calling makeContinuousMemoryFromCheckpointToPos() will also make an extra copy.
-    /// According to RFC2046 the preceding CRLF is a part of boundary line.
     std::string line = readLine(false);
-    boundary_hit = startsWith(line, "\r\n" + boundary);
-    bool has_next = !boundary_hit && !line.empty();
 
-    if (has_next)
+    /// According to RFC2046 the preceding CRLF is a part of boundary line.
+    if (line == "\r\n")
+    {
+        line = readLine(false);
+        boundary_hit = startsWith(line, boundary);
+        if (!boundary_hit) line = "\r\n";
+    }
+    else
+        boundary_hit = startsWith(line, boundary);
+
+    if (!line.empty())
         /// If we don't make sure that memory is contiguous then situation may happen, when part of the line is inside internal memory
         /// and other part is inside sub-buffer, thus we'll be unable to setup our working buffer properly.
         in.makeContinuousMemoryFromCheckpointToPos();
@@ -323,7 +323,7 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     /// Limit readable data to a single line.
     BufferBase::set(in.position(), line.size(), 0);
 
-    return has_next;
+    return !boundary_hit && !line.empty();
 }
 
 }

@@ -497,8 +497,7 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
-    ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
+    ASTFunction * function = dynamic_cast<ASTFunction *>(node.get());
 
     // Variant 1:
     // function_name ( * ) OVER window_name
@@ -511,7 +510,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserIdentifier window_name_parser;
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
-            function.window_name = getIdentifierName(window_name_ast);
+            function->window_name = getIdentifierName(window_name_ast);
             return true;
         }
         else
@@ -523,7 +522,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     // Variant 2:
     // function_name ( * ) OVER ( window_definition )
     ParserWindowDefinition parser_definition;
-    return parser_definition.parse(pos, function.window_definition, expected);
+    return parser_definition.parse(pos, function->window_definition, expected);
 }
 
 static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
@@ -795,119 +794,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
-{
-    /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_ast));
-
-    auto expr_list_args = std::make_shared<ASTExpressionList>();
-    expr_list_args->children.push_back(expr_ast);
-    expr_list_args->children.push_back(std::move(type_literal));
-
-    auto func_node = std::make_shared<ASTFunction>();
-    func_node->name = "CAST";
-    func_node->arguments = std::move(expr_list_args);
-    func_node->children.push_back(func_node->arguments);
-
-    return func_node;
-}
-
-template <TokenType ...tokens>
-static bool isOneOf(TokenType token)
-{
-    return ((token == tokens) || ...);
-}
-
-
-bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// Parse numbers (including decimals), strings and arrays of them.
-
-    const char * data_begin = pos->begin;
-    const char * data_end = pos->end;
-    bool is_string_literal = pos->type == TokenType::StringLiteral;
-    if (pos->type == TokenType::Number || is_string_literal)
-    {
-        ++pos;
-    }
-    else if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
-    {
-        TokenType last_token = TokenType::OpeningSquareBracket;
-        std::vector<TokenType> stack;
-        while (pos.isValid())
-        {
-            if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
-            {
-                stack.push_back(pos->type);
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
-                    return false;
-            }
-            else if (pos->type == TokenType::ClosingSquareBracket)
-            {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningRoundBracket>(last_token))
-                    return false;
-                if (stack.empty() || stack.back() != TokenType::OpeningSquareBracket)
-                    return false;
-                stack.pop_back();
-            }
-            else if (pos->type == TokenType::ClosingRoundBracket)
-            {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningSquareBracket>(last_token))
-                    return false;
-                if (stack.empty() || stack.back() != TokenType::OpeningRoundBracket)
-                    return false;
-                stack.pop_back();
-            }
-            else if (pos->type == TokenType::Comma)
-            {
-                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
-                    return false;
-            }
-            else if (isOneOf<TokenType::Number, TokenType::StringLiteral>(pos->type))
-            {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
-                    return false;
-            }
-            else
-            {
-                break;
-            }
-
-            /// Update data_end on every iteration to avoid appearances of extra trailing
-            /// whitespaces into data. Whitespaces are skipped at operator '++' of Pos.
-            data_end = pos->end;
-            last_token = pos->type;
-            ++pos;
-        }
-
-        if (!stack.empty())
-            return false;
-    }
-
-    ASTPtr type_ast;
-    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
-        && ParserDataType().parse(pos, type_ast, expected))
-    {
-        String s;
-        size_t data_size = data_end - data_begin;
-        if (is_string_literal)
-        {
-            ReadBufferFromMemory buf(data_begin, data_size);
-            readQuotedStringWithSQLStyle(s, buf);
-            assert(buf.count() == data_size);
-        }
-        else
-            s = String(data_begin, data_size);
-
-        auto literal = std::make_shared<ASTLiteral>(std::move(s));
-        node = createFunctionCast(literal, type_ast);
-        return true;
-    }
-
-    return false;
-}
-
-bool ParserCastAsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Either CAST(expr AS type) or CAST(expr, 'type')
     /// The latter will be parsed normally as a function later.
@@ -922,7 +809,20 @@ bool ParserCastAsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         && ParserDataType().parse(pos, type_node, expected)
         && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
     {
-        node = createFunctionCast(expr_node, type_node);
+        /// Convert to canonical representation in functional form: CAST(expr, 'type')
+
+        auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_node));
+
+        auto expr_list_args = std::make_shared<ASTExpressionList>();
+        expr_list_args->children.push_back(expr_node);
+        expr_list_args->children.push_back(std::move(type_literal));
+
+        auto func_node = std::make_shared<ASTFunction>();
+        func_node->name = "CAST";
+        func_node->arguments = std::move(expr_list_args);
+        func_node->children.push_back(func_node->arguments);
+
+        node = std::move(func_node);
         return true;
     }
 
@@ -2051,13 +1951,12 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserSubquery().parse(pos, node, expected)
-        || ParserCastOperator().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)
         || ParserLiteral().parse(pos, node, expected)
-        || ParserCastAsExpression().parse(pos, node, expected)
+        || ParserCastExpression().parse(pos, node, expected)
         || ParserExtractExpression().parse(pos, node, expected)
         || ParserDateAddExpression().parse(pos, node, expected)
         || ParserDateDiffExpression().parse(pos, node, expected)

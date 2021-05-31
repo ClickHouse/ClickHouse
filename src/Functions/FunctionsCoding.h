@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>

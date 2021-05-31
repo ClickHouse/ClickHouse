@@ -275,9 +275,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
     const auto rows = first_column->size();
 
     auto result = ColumnUInt8::create(rows);
-    auto & out = result->getData();
-
-    size_t keys_found = 0;
+    auto& out = result->getData();
 
     if (first_column->isNumeric())
     {
@@ -287,7 +285,6 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
-            keys_found += out[i];
         }
     }
     else
@@ -300,12 +297,10 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             out[i] = (found != ipNotFound());
-            keys_found += out[i];
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -417,7 +412,7 @@ void IPAddressDictionary::loadData()
                 return cmpres;
             });
         if (deleted_count > 0)
-            LOG_TRACE(logger, "removing {} non-unique subnets from input", deleted_count);
+            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv6_col = ip_column.emplace<IPv6Container>();
         ipv6_col.resize_fill(IPV6_BINARY_LENGTH * ip_records.size());
@@ -444,7 +439,7 @@ void IPAddressDictionary::loadData()
                 return compareTo(a, b);
             });
         if (deleted_count > 0)
-            LOG_TRACE(logger, "removing {} non-unique subnets from input", deleted_count);
+            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv4_col = ip_column.emplace<IPv4Container>();
         ipv4_col.reserve(ip_records.size());
@@ -685,8 +680,6 @@ void IPAddressDictionary::getItemsImpl(
 
     auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
 
-    size_t keys_found = 0;
-
     if (first_column->isNumeric())
     {
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
@@ -696,10 +689,7 @@ void IPAddressDictionary::getItemsImpl(
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
-            {
                 set_value(i, static_cast<OutputType>(vec[*found]));
-                ++keys_found;
-            }
             else
                 set_value(i, default_value_extractor[i]);
         }
@@ -714,17 +704,13 @@ void IPAddressDictionary::getItemsImpl(
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             if (found != ipNotFound())
-            {
                 set_value(i, static_cast<OutputType>(vec[*found]));
-                ++keys_found;
-            }
             else
                 set_value(i, default_value_extractor[i]);
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -934,9 +920,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr,
-                             ContextPtr /* context */,
-                             bool /*created_from_ddl*/) -> DictionaryPtr
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary of layout 'ip_trie' has to have one 'key'");

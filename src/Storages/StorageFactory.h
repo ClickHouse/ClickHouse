@@ -45,7 +45,6 @@ public:
         const ConstraintsDescription & constraints;
         bool attach;
         bool has_force_restore_data_flag;
-        const String & comment;
 
         ContextPtr getContext() const;
         ContextPtr getLocalContext() const;
@@ -57,7 +56,6 @@ public:
     {
         bool supports_settings = false;
         bool supports_skipping_indices = false;
-        bool supports_projections = false;
         bool supports_sort_order = false;
         bool supports_ttl = false;
         /// See also IStorage::supportsReplication()
@@ -92,7 +90,6 @@ public:
     void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
         .supports_settings = false,
         .supports_skipping_indices = false,
-        .supports_projections = false,
         .supports_sort_order = false,
         .supports_ttl = false,
         .supports_replication = false,

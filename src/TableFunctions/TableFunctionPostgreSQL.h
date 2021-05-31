@@ -5,7 +5,7 @@
 
 #if USE_LIBPQXX
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
 
 
 namespace DB

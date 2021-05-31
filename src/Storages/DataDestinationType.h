@@ -10,7 +10,6 @@ enum class DataDestinationType
     VOLUME,
     TABLE,
     DELETE,
-    SHARD,
 };
 
 }

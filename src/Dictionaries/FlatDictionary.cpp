@@ -130,17 +130,13 @@ ColumnUInt8::Ptr FlatDictionary::hasKeys(const Columns & key_columns, const Data
     auto result = ColumnUInt8::create(keys_size);
     auto & out = result->getData();
 
-    size_t keys_found = 0;
-
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
         const auto key = keys[key_index];
         out[key_index] = key < loaded_keys.size() && loaded_keys[key];
-        keys_found += out[key_index];
     }
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -158,20 +154,16 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
 
-    size_t keys_found = 0;
-
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
         std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
-        keys_found += result.has_value();
         return result;
     };
 
     auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return dictionary_hierarchy_array;
 }
@@ -195,20 +187,16 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
 
-    size_t keys_found = 0;
-
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
         std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
-        keys_found += result.has_value();
         return result;
     };
 
     auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -235,11 +223,9 @@ ColumnPtr FlatDictionary::getDescendants(
             parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
-    size_t keys_found;
-    auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+    auto result = getKeysDescendantsArray(keys, parent_to_child, level);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -406,23 +392,17 @@ void FlatDictionary::getItemsImpl(
     const auto & container = std::get<ContainerType<AttributeType>>(attribute.container);
     const auto rows = keys.size();
 
-    size_t keys_found = 0;
-
     for (size_t row = 0; row < rows; ++row)
     {
         const auto key = keys[row];
 
         if (key < loaded_keys.size() && loaded_keys[key])
-        {
             set_value(row, static_cast<OutputType>(container[key]));
-            ++keys_found;
-        }
         else
             set_value(row, default_value_extractor[row]);
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -502,12 +482,10 @@ BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_nam
 void registerDictionaryFlat(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & full_name,
-                            const DictionaryStructure & dict_struct,
-                            const Poco::Util::AbstractConfiguration & config,
-                            const std::string & config_prefix,
-                            DictionarySourcePtr source_ptr,
-                            ContextPtr /* context */,
-                            bool /* created_from_ddl */) -> DictionaryPtr
+                             const DictionaryStructure & dict_struct,
+                             const Poco::Util::AbstractConfiguration & config,
+                             const std::string & config_prefix,
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'flat'");

@@ -1,5 +1,5 @@
-if (MISSING_INTERNAL_LIBUV_LIBRARY)
-    message (WARNING "Can't find internal libuv needed for AMQP-CPP library")
+if (OS_DARWIN AND COMPILER_GCC)
+    # AMQP-CPP requires libuv which cannot be built with GCC in macOS due to a bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93082
     set (ENABLE_AMQPCPP OFF CACHE INTERNAL "")
 endif()
 
@@ -17,13 +17,11 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/CMakeLists.txt")
 endif ()
 
 set (USE_AMQPCPP 1)
-set (AMQPCPP_LIBRARY amqp-cpp)
+set (AMQPCPP_LIBRARY AMQP-CPP)
 
 set (AMQPCPP_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/include")
 list (APPEND AMQPCPP_INCLUDE_DIR
-        "${LIBUV_INCLUDE_DIR}"
+        "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/include"
         "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP")
-
-list (APPEND AMQPCPP_LIBRARY  "${LIBUV_LIBRARY}")
 
 message (STATUS "Using AMQP-CPP=${USE_AMQPCPP}: ${AMQPCPP_INCLUDE_DIR} : ${AMQPCPP_LIBRARY}")

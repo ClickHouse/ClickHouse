@@ -119,12 +119,9 @@ StorageMaterializedView::StorageMaterializedView(
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
-    ContextPtr local_context,
-    QueryProcessingStage::Enum to_stage,
-    const StorageMetadataPtr &,
-    SelectQueryInfo & query_info) const
+    ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
-    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getInMemoryMetadataPtr(), query_info);
+    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, query_info);
 }
 
 Pipe StorageMaterializedView::read(

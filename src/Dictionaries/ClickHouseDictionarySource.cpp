@@ -105,11 +105,6 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
-{
-    return createStreamForQuery(load_all_query, result_size_hint);
-}
-
 BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
@@ -157,32 +152,19 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
+BlockInputStreamPtr ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
-    BlockInputStreamPtr stream;
-
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
 
     if (configuration.is_local)
     {
-        stream = executeQuery(query, context, true).getInputStream();
+        auto stream = executeQuery(query, context, true).getInputStream();
         stream = std::make_shared<ConvertingBlockInputStream>(stream, empty_sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
-    }
-    else
-    {
-        stream = std::make_shared<RemoteBlockInputStream>(pool, query, empty_sample_block, context);
+        return stream;
     }
 
-    if (result_size_hint)
-    {
-        stream->setProgressCallback([result_size_hint](const Progress & progress)
-        {
-            *result_size_hint += progress.total_rows_to_read;
-        });
-    }
-
-    return stream;
+    return std::make_shared<RemoteBlockInputStream>(pool, query, empty_sample_block, context);
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
@@ -211,7 +193,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr context,
                                  const std::string & default_database [[maybe_unused]],
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr
+                                 bool /* check_config */) -> DictionarySourcePtr
     {
         bool secure = config.getBool(config_prefix + ".secure", false);
         auto context_copy = Context::createCopy(context);

@@ -109,7 +109,6 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
     auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),
         getActualTableStructure(context),
-        String{},
         source_database,
         getSourceTables(context),
         context);

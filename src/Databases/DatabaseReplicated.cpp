@@ -511,10 +511,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         executeQuery(query, query_context, true);
     }
 
+    size_t dropped_dicts = 0;
     size_t moved_tables = 0;
     std::vector<UUID> dropped_tables;
-    size_t dropped_dictionaries = 0;
-
     for (const auto & table_name : tables_to_detach)
     {
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, table_name);
@@ -522,14 +521,18 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed, will retry");
 
         auto table = tryGetTable(table_name, getContext());
-
-        if (!table->storesDataOnDisk())
+        if (isDictionaryExist(table_name))
+        {
+            /// We can safely drop any dictionaries because they do not store data
+            LOG_DEBUG(log, "Will DROP DICTIONARY {}", backQuoteIfNeed(table_name));
+            DatabaseAtomic::removeDictionary(getContext(), table_name);
+            ++dropped_dicts;
+        }
+        else if (!table->storesDataOnDisk())
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
-            dropped_dictionaries += table->isDictionary();
-
-            table->flushAndShutdown();
+            table->shutdown();
             DatabaseAtomic::dropTable(getContext(), table_name, true);
         }
         else
@@ -547,7 +550,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     if (!tables_to_detach.empty())
         LOG_WARNING(log, "Cleaned {} outdated objects: dropped {} dictionaries and {} tables, moved {} tables",
-                    tables_to_detach.size(), dropped_dictionaries, dropped_tables.size() - dropped_dictionaries, moved_tables);
+                    tables_to_detach.size(), dropped_dicts, dropped_tables.size(), moved_tables);
 
     /// Now database is cleared from outdated tables, let's rename ReplicatedMergeTree tables to actual names
     for (const auto & old_to_new : replicated_tables_to_rename)
@@ -761,6 +764,33 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
         txn->addOp(zkutil::makeSetRequest(metadata_zk_path, statement, -1));
     }
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
+}
+
+void DatabaseReplicated::createDictionary(ContextPtr local_context,
+                                          const String & dictionary_name,
+                                          const ASTPtr & query)
+{
+    auto txn = local_context->getZooKeeperMetadataTransaction();
+    assert(!ddl_worker->isCurrentlyActive() || txn);
+    if (txn && txn->isInitialQuery())
+    {
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(dictionary_name);
+        String statement = getObjectDefinitionFromCreateQuery(query->clone());
+        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+    }
+    DatabaseAtomic::createDictionary(local_context, dictionary_name, query);
+}
+
+void DatabaseReplicated::removeDictionary(ContextPtr local_context, const String & dictionary_name)
+{
+    auto txn = local_context->getZooKeeperMetadataTransaction();
+    assert(!ddl_worker->isCurrentlyActive() || txn);
+    if (txn && txn->isInitialQuery())
+    {
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(dictionary_name);
+        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+    }
+    DatabaseAtomic::removeDictionary(local_context, dictionary_name);
 }
 
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)

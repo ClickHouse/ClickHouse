@@ -1,13 +1,11 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
 #include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
-#include "Disks/Executor.h"
 
 #include <memory>
 #include <mutex>
@@ -15,7 +13,6 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Path.h>
 #include <Poco/Timestamp.h>
-#include "Poco/Util/AbstractConfiguration.h"
 
 
 namespace CurrentMetrics
@@ -179,17 +176,17 @@ public:
     virtual void removeRecursive(const String & path) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
-    /// Differs from removeFile for S3/HDFS disks
+    /// Differs from removeFile for S3 disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFile(const String & path, bool) { removeFile(path); }
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
-    /// Differs from removeRecursive for S3/HDFS disks
+    /// Differs from removeRecursive for S3 disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedRecursive(const String & path, bool) { removeRecursive(path); }
 
     /// Remove file or directory if it exists.
-    /// Differs from removeFileIfExists for S3/HDFS disks
+    /// Differs from removeFileIfExists for S3 disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
 
@@ -214,32 +211,23 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
-    /// Performs action on disk startup.
-    virtual void startup() { }
-
     /// Return some uniq string for file, overrode for S3
     /// Required for distinguish different copies of the same part on S3
     virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file exists and ClickHouse has an access to it
     /// Overrode in DiskS3
-    /// Required for S3 to ensure that replica has access to data written by other node
+    /// Required for S3 to ensure that replica has access to data wroten by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
+
+    /// Returns executor to perform asynchronous operations.
+    virtual Executor & getExecutor() { return *executor; }
 
     /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
-
-    /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) { }
-
-protected:
-    friend class DiskDecorator;
-
-    /// Returns executor to perform asynchronous operations.
-    virtual Executor & getExecutor() { return *executor; }
 
 private:
     std::unique_ptr<Executor> executor;

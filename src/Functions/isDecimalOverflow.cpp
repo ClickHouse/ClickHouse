@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -85,7 +85,7 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool //-V657
+        auto call = [&](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;

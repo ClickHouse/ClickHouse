@@ -7,7 +7,7 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <ext/map.h>
 #include <ext/range.h>
@@ -187,11 +187,11 @@ using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true
 
 
 /// Also works with arrays.
-class ConcatOverloadResolver : public IFunctionOverloadResolver
+class ConcatOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
+    static FunctionOverloadResolverImplPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
     explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) {}
 
@@ -199,18 +199,18 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
         {
-            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
+            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayConcat", context)).buildImpl(arguments);
         }
         else
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+            return std::make_unique<DefaultFunction>(
                 FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnType(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(
