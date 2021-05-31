@@ -72,8 +72,8 @@ private:
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
-    Names on_filter_names_left;
-    Names on_filter_names_right;
+    ASTs on_filter_condition_asts_left;
+    ASTs on_filter_condition_asts_right;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -108,6 +108,7 @@ private:
     ActionsDAGPtr applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const;
 
+    ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts) const;
 public:
     TableJoin() = default;
     TableJoin(const Settings &, VolumePtr tmp_volume);
@@ -159,7 +160,7 @@ public:
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     void addJoinCondition(const ASTPtr & ast, bool is_left);
-    const Names & joinConditionColumnNames(JoinTableSide side) const;
+    ASTPtr joinConditionColumn(JoinTableSide side) const;
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }

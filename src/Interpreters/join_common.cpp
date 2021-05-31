@@ -185,6 +185,12 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
+ColumnPtr materializeColumn(const Block & block, const String & column_name)
+{
+    const auto & src_column = block.getByName(column_name).column;
+    return recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst());
+}
+
 Columns materializeColumns(const Block & block, const Names & names)
 {
     Columns materialized;
@@ -192,8 +198,7 @@ Columns materializeColumns(const Block & block, const Names & names)
 
     for (const auto & column_name : names)
     {
-        const auto & src_column = block.getByName(column_name).column;
-        materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
+        materialized.emplace_back(materializeColumn(block, column_name));
     }
 
     return materialized;

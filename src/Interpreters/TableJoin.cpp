@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
 #include <Core/Settings.h>
@@ -134,6 +135,8 @@ ASTPtr TableJoin::leftKeysList() const
 {
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
     keys_list->children = key_asts_left;
+    if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Left))
+        keys_list->children.push_back(extra_cond);
     return keys_list;
 }
 
@@ -142,6 +145,8 @@ ASTPtr TableJoin::rightKeysList() const
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
     if (hasOn())
         keys_list->children = key_asts_right;
+    if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Right))
+        keys_list->children.push_back(extra_cond);
     return keys_list;
 }
 
@@ -487,22 +492,36 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
     }
 
     if (is_left)
-    {
-        on_filter_names_left.push_back(ast->getColumnName());
-        key_asts_left.push_back(ast);
-    }
+        on_filter_condition_asts_left.push_back(ast);
     else
-    {
-        on_filter_names_right.push_back(ast->getAliasOrColumnName());
-        key_asts_right.push_back(ast);
-    }
+        on_filter_condition_asts_right.push_back(ast);
 }
 
-const Names & TableJoin::joinConditionColumnNames(JoinTableSide side) const
+ASTPtr TableJoin::buildJoinConditionColumn(const ASTs & on_filter_condition_asts) const
+{
+    if (on_filter_condition_asts.empty())
+        return nullptr;
+
+    if (on_filter_condition_asts.size() > 1)
+    {
+        auto function = std::make_shared<ASTFunction>();
+        function->name = "and";
+        function->arguments = std::make_shared<ASTExpressionList>();
+        function->children.push_back(function->arguments);
+        function->arguments->children = on_filter_condition_asts;
+
+        return function;
+    }
+    else
+        return on_filter_condition_asts[0];
+
+}
+
+ASTPtr TableJoin::joinConditionColumn(JoinTableSide side) const
 {
     if (side == JoinTableSide::Left)
-        return on_filter_names_left;
-    return on_filter_names_right;
+        return buildJoinConditionColumn(on_filter_condition_asts_left);
+    return buildJoinConditionColumn(on_filter_condition_asts_right);
 }
 
 }
