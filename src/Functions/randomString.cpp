@@ -97,7 +97,7 @@ public:
 class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
-    explicit FunctionRandomString(ContextPtr context) : selector(context)
+    explicit FunctionRandomString(ContextConstPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
@@ -113,7 +113,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionRandomString>(context);
     }

@@ -24,7 +24,7 @@ class FunctionCustomWeekToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
 
     String getName() const override { return name; }
 
