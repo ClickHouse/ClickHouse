@@ -411,13 +411,7 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
     };
 
     impl->exists(path, callback, watch_callback);
-
-    if (!event.tryWait(operation_timeout_ms))
-    {
-        impl->finalize();
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-
+    event.wait();
     return code;
 }
 
@@ -453,12 +447,7 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
     };
 
     impl->get(path, callback, watch_callback);
-    if (!event.tryWait(operation_timeout_ms))
-    {
-        impl->finalize();
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-
+    event.wait();
     return code;
 }
 
@@ -526,11 +515,7 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
     };
 
     impl->set(path, data, version, callback);
-    if (!event.tryWait(operation_timeout_ms))
-    {
-        impl->finalize();
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
+    event.wait();
     return code;
 }
 
@@ -579,11 +564,7 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
     };
 
     impl->multi(requests, callback);
-    if (!event.tryWait(operation_timeout_ms))
-    {
-        impl->finalize();
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
+    event.wait();
     return code;
 }
 
@@ -719,7 +700,9 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         /// Use getData insteand of exists to avoid watch leak.
         impl->get(path, callback, watch);
 
-        if (!state->event.tryWait(1000))
+        if (!condition)
+            state->event.wait();
+        else if (!state->event.tryWait(1000))
             continue;
 
         if (state->code == int32_t(Coordination::Error::ZNONODE))
