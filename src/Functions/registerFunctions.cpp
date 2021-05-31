@@ -36,7 +36,6 @@ void registerFunctionsStringSimilarity(FunctionFactory &);
 void registerFunctionsCharsetClassification(FunctionFactory &);
 void registerFunctionsTonalityClassification(FunctionFactory &);
 void registerFunctionsProgrammingClassification(FunctionFactory &);
-void registerFunctionLanguageDetectUTF8(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
@@ -55,6 +54,10 @@ void registerFunctionBayesAB(FunctionFactory &);
 #endif
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
+
+#if USE_CLD2
+void registerFunctionLanguageDetectUTF8(FunctionFactory &);
+#endif
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
@@ -99,7 +102,6 @@ void registerFunctions()
     registerFunctionsCharsetClassification(factory);
     registerFunctionsTonalityClassification(factory);
     registerFunctionsProgrammingClassification(factory);
-    registerFunctionLanguageDetectUTF8(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
@@ -113,6 +115,10 @@ void registerFunctions()
     registerFunctionTupleHammingDistance(factory);
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
+    
+#if USE_CLD2
+    registerFunctionLanguageDetectUTF8(factory);
+#endif
 
 #if !defined(ARCADIA_BUILD)
     registerFunctionBayesAB(factory);
