@@ -6144,7 +6144,7 @@ bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(const St
                 {
                     Coordination::Requests ops;
                     removePartFromZooKeeper(part_names[i], ops, exists_resp.stat.numChildren > 0);
-                    remove_futures.emplace_back(zookeeper->tryAsyncMulti(ops));
+                    remove_futures.emplace_back(zookeeper->tryAsyncMultiNoThrow(ops));
                 }
             }
 
@@ -6205,7 +6205,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             {
                 Coordination::Requests ops;
                 removePartFromZooKeeper(part_names[i], ops, exists_resp.stat.numChildren > 0);
-                remove_futures.emplace_back(zookeeper->tryAsyncMulti(ops));
+                remove_futures.emplace_back(zookeeper->tryAsyncMultiNoThrow(ops));
             }
             else
             {

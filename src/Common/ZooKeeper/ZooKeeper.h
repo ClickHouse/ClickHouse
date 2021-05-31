@@ -39,9 +39,6 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 /// watch notification.
 /// Callback-based watch interface is also provided.
 ///
-/// Read-only methods retry retry_num times if recoverable errors like OperationTimeout
-/// or ConnectionLoss are encountered.
-///
 /// Modifying methods do not retry, because it leads to problems of the double-delete type.
 ///
 /// Methods with names not starting at try- raise KeeperException on any error.
@@ -220,39 +217,55 @@ public:
     /// auto result1 = future1.get();
     /// auto result2 = future2.get();
     ///
-    /// Future should not be destroyed before the result is gotten.
+    /// NoThrow versions never throw any exception on future.get(), even on SessionExpired error.
 
     using FutureCreate = std::future<Coordination::CreateResponse>;
     FutureCreate asyncCreate(const std::string & path, const std::string & data, int32_t mode);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureCreate tryAsyncCreateNoThrow(const std::string & path, const std::string & data, int32_t mode);
 
     using FutureGet = std::future<Coordination::GetResponse>;
-    FutureGet asyncGet(const std::string & path);
-
-    FutureGet asyncTryGet(const std::string & path);
+    FutureGet asyncGet(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureGet tryAsyncGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureExists = std::future<Coordination::ExistsResponse>;
-    FutureExists asyncExists(const std::string & path);
+    FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureExists tryAsyncExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
-    FutureGetChildren asyncGetChildren(const std::string & path);
+    FutureGetChildren asyncGetChildren(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureGetChildren tryAsyncGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureSet tryAsyncSetNoThrow(const std::string & path, const std::string & data, int32_t version = -1);
 
     using FutureRemove = std::future<Coordination::RemoveResponse>;
     FutureRemove asyncRemove(const std::string & path, int32_t version = -1);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureRemove tryAsyncRemoveNoThrow(const std::string & path, int32_t version = -1);
 
+    using FutureMulti = std::future<Coordination::MultiResponse>;
+    FutureMulti asyncMulti(const Coordination::Requests & ops);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureMulti tryAsyncMultiNoThrow(const Coordination::Requests & ops);
+
+    /// Very specific methods introduced without following general style. Implements
+    /// some custom throw/no throw logic on future.get().
+    ///
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
     /// * The versions do not match
     /// * The node has children
     FutureRemove asyncTryRemove(const std::string & path, int32_t version = -1);
 
-    using FutureMulti = std::future<Coordination::MultiResponse>;
-    FutureMulti asyncMulti(const Coordination::Requests & ops);
-
-    /// Like the previous one but don't throw any exceptions on future.get()
-    FutureMulti tryAsyncMulti(const Coordination::Requests & ops);
+    /// Doesn't throw in the following cases:
+    /// * The node doesn't exist
+    FutureGet asyncTryGet(const std::string & path);
 
     void finalize();
 
@@ -262,7 +275,7 @@ private:
     void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
               int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
 
-    /// The following methods don't throw exceptions but return error codes.
+    /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
     Coordination::Error removeImpl(const std::string & path, int32_t version);
     Coordination::Error getImpl(
