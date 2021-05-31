@@ -2,6 +2,10 @@
 #    include <Common/config.h>
 #endif
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
 #include <Functions/FunctionFactory.h>
 
 
@@ -115,7 +119,7 @@ void registerFunctions()
     registerFunctionTupleHammingDistance(factory);
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
-    
+
 #if USE_CLD2
     registerFunctionLanguageDetectUTF8(factory);
 #endif
