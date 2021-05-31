@@ -26,10 +26,7 @@ files = []
 tests = []
 tests_names = []
 
-pr_url = ""
-pr_index = 0
-commit_url = ""
-commit_hash = ""
+args = None
 
 class FileEntry:
     def __init__(self, path, lines_with_hits, funcs_with_hits, tests_with_hits):
@@ -52,7 +49,7 @@ class FileEntry:
 class DirEntry:
     def __init__(self, path):
         self.name = path
-        self.url = path
+        self.url = path + "index.html"
 
         self.files = []
 
@@ -137,12 +134,11 @@ def get_entries():
     prefix = ""
 
     for i, (path, funcs_instrumented, lines_instrumented) in enumerate(files):
+        # TODO Exclude contribs and base/ while reading the report
         if "contrib/" in path or "base/" in path:
             continue
 
-        index = path.find("src") + 4
-        prefix = path[:index]
-        path = path[index:]
+        path = path[path.find("src") + 4:]
 
         dirs, file_name = os.path.split(path)
 
@@ -166,29 +162,29 @@ def get_entries():
             out.append(DirEntry(dirs))
             out[-1].add_file(test_file)
 
-    return prefix, sorted(out, key=lambda x: x.name)
+    return sorted(out, key=lambda x: x.name)
 
 def render(tpl, **kwargs):
     kwargs.update({
         "bounds": bounds,
         "colors": colors,
         "tests_total": len(tests),
-        "pr_url": pr_url,
-        "pr_index": pr_index,
-        "commit_url": commit_url,
-        "commit_hash": commit_hash
+        "pr_url": args.pr_url,
+        "pr_index": args.pr_index,
+        "commit_url": args.commit_url,
+        "commit_hash": args.commit_hash
     })
 
     return tpl.render(kwargs)
 
-def generate_dir_page(out_dir, entry: DirEntry, env, upper_level=False):
+def generate_dir_page(entry: DirEntry, env, upper_level=False):
     special_entries = []
 
     if not upper_level:
-        special_entries.append(DirEntry("../"))
+        special_entries.append(DirEntry("../")) # upper dir
 
     special_entries.append(entry)
-    special_entries[-1].url=""
+    special_entries[-1].url="" # current dir
 
     template = env.get_template('directory.html')
 
@@ -196,19 +192,19 @@ def generate_dir_page(out_dir, entry: DirEntry, env, upper_level=False):
 
     if upper_level:
         for e in entries:
-            e.url = e.name
+            e.url = e.name + "/index.html"
 
-    path = os.path.join(out_dir, entry.name)
+    path = os.path.join(args.html_dir, entry.name)
 
     os.makedirs(path, exist_ok=True)
 
     with open(os.path.join(path, "index.html"), "w") as f:
         f.write(render(template, entries=entries, special_entries=special_entries))
 
-def generate_file_page(out_dir, prefix, entry: FileEntry, env):
+def generate_file_page(entry: FileEntry, env):
     template = env.get_template('file.html')
 
-    src_file_path = prefix + entry.full_path
+    src_file_path = os.path.join(args.sources_dir, "src", entry.full_path)
 
     if not os.path.exists(src_file_path):
         print("No file", src_file_path)
@@ -233,10 +229,10 @@ def generate_file_page(out_dir, prefix, entry: FileEntry, env):
             not_covered_lines=not_covered_lines,
             not_covered_funcs=not_covered_funcs)
 
-        with open(os.path.join(out_dir, entry.full_path) + ".html", "w") as f:
+        with open(os.path.join(args.html_dir, entry.full_path) + ".html", "w") as f:
             f.write(output)
 
-def generate_html(out_dir, files, tests, tests_names):
+def generate_html():
     file_loader = FileSystemLoader(os.path.abspath(os.path.dirname(__file__)) + '/templates', encoding='utf8')
 
     env = Environment(loader=file_loader)
@@ -244,19 +240,19 @@ def generate_html(out_dir, files, tests, tests_names):
     env.lstrip_blocks = True
     env.rstrip_blocks = True
 
-    prefix, entries = get_entries()
+    entries = get_entries()
 
     root_entry = DirEntry("")
 
     for dir_entry in tqdm(entries):
         root_entry.add_file(dir_entry)
 
-        generate_dir_page(out_dir, dir_entry, env)
+        generate_dir_page(dir_entry, env)
 
         for sf_entry in tqdm(dir_entry.files):
-            generate_file_page(out_dir, prefix, sf_entry, env)
+            generate_file_page(sf_entry, env)
 
-    generate_dir_page(out_dir, root_entry, env, upper_level=True)
+    generate_dir_page(root_entry, env, upper_level=True)
 
 def read_report(f: TextIO):
     global files
@@ -311,27 +307,23 @@ def main():
 
     parser.add_argument('ccr_report_file')
     parser.add_argument('html_dir')
+    parser.add_argument('sources_dir')
     parser.add_argument('pr_url')
     parser.add_argument('pr_index')
     parser.add_argument('commit_url')
     parser.add_argument('commit_hash')
 
+    global args
+
     args = parser.parse_args()
 
-    global pr_url
-    global pr_index
-    global commit_url
-    global commit_hash
-
-    pr_url = args.pr_url
-    pr_index = args.pr_index
-    commit_url = args.commit_url
-    commit_hash = args.commit_hash
+    print("Will use {} as output directory".format(args.html_dir))
+    print("Will use {} as root CH directory (with src/ inside)".format(args.sources_dir))
 
     with open(args.ccr_report_file, "r") as f:
         read_report(f)
 
-    generate_html(args.html_dir, files, tests, tests_names)
+    generate_html()
 
 if __name__ == '__main__':
     main()

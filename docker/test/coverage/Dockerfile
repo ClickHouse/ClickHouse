@@ -19,7 +19,6 @@ ENV DATASETS="hits visits"
 ENV SOURCE_DIR=/build
 
 ENV OUTPUT_DIR=/output
-ENV GENHTML_REPORT_DIR=/output/report
 
 ENV IGNORE='.*contrib.*'
 
