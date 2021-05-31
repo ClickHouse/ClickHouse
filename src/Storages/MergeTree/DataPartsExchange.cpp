@@ -498,7 +498,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
     const UUID & part_uuid,
     const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
+    const Context & context,
     ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
