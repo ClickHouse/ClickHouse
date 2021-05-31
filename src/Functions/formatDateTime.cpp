@@ -309,7 +309,7 @@ public:
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 1. Should be integer",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDateTime64(arguments[0].type))
+            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDateTime64(arguments[0].type)))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 2 or 3. Should be a integer or a date with time",
