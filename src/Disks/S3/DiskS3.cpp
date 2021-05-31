@@ -139,52 +139,6 @@ public:
     }
 
 private:
-    std::unique_ptr<ReadBufferFromS3> initialize()
-    {
-        size_t offset = absolute_position;
-        for (size_t i = 0; i < metadata.s3_objects.size(); ++i)
-        {
-            current_buf_idx = i;
-            const auto & [path, size] = metadata.s3_objects[i];
-            if (size > offset)
-            {
-                auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.s3_root_path + path, max_single_read_retries, buf_size);
-                buf->seek(offset, SEEK_SET);
-                return buf;
-            }
-            offset -= size;
-        }
-        return nullptr;
-    }
-
-    bool nextImpl() override
-    {
-        /// Find first available buffer that fits to given offset.
-        if (!current_buf)
-            current_buf = initialize();
-
-        /// If current buffer has remaining data - use it.
-        if (current_buf && current_buf->next())
-        {
-            working_buffer = current_buf->buffer();
-            absolute_position += working_buffer.size();
-            return true;
-        }
-
-        /// If there is no available buffers - nothing to read.
-        if (current_buf_idx + 1 >= metadata.s3_objects.size())
-            return false;
-
-        ++current_buf_idx;
-        const auto & path = metadata.s3_objects[current_buf_idx].first;
-        current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.s3_root_path + path, max_single_read_retries, buf_size);
-        current_buf->next();
-        working_buffer = current_buf->buffer();
-        absolute_position += working_buffer.size();
-
-        return true;
-    }
-
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
     DiskS3::Metadata metadata;
