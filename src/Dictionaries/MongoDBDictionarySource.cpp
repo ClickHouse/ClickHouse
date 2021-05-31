@@ -13,9 +13,9 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
         Block & sample_block,
-        ContextPtr,
+        ContextConstPtr,
         const std::string & /* default_database */,
-        bool /* check_config */)
+        bool /* created_from_ddl */)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
         return std::make_unique<MongoDBDictionarySource>(dict_struct,

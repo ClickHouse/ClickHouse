@@ -593,6 +593,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
 
     query_info.query = query_ptr;
+    query_info.has_window = query_analyzer->hasWindow();
 
     if (storage && !options.only_analyze)
     {
@@ -636,9 +637,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         if (analysis_result.prewhere_info)
         {
-            ExpressionActions(
-                analysis_result.prewhere_info->prewhere_actions,
-                ExpressionActionsSettings::fromContext(context)).execute(header);
+            header = analysis_result.prewhere_info->prewhere_actions->updateHeader(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
         }
@@ -1257,7 +1256,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             // 4) preliminary distinct.
             // Some of these were already executed at the shards (first_stage),
             // see the counterpart code and comments there.
-            if (expressions.need_aggregate)
+            if (from_aggregation_stage)
+            {
+                if (query_analyzer->hasWindow())
+                    throw Exception("Window functions does not support processing from WithMergeableStateAfterAggregation", ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else if (expressions.need_aggregate)
             {
                 executeExpression(query_plan, expressions.before_window,
                     "Before window functions");
@@ -1292,9 +1296,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                   */
 
                 if (from_aggregation_stage)
-                    executeMergeSorted(query_plan, "for ORDER BY");
-                else if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
-                    executeMergeSorted(query_plan, "for ORDER BY");
+                    executeMergeSorted(query_plan, "after aggregation stage for ORDER BY");
+                else if (!expressions.first_stage
+                    && !expressions.need_aggregate
+                    && !expressions.has_window
+                    && !(query.group_by_with_totals && !aggregate_final))
+                    executeMergeSorted(query_plan, "for ORDER BY, without aggregation");
                 else    /// Otherwise, just sort.
                     executeOrder(
                         query_plan,
@@ -1896,11 +1903,12 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         // TODO figure out how to make set for projections
         query_info.sets = query_analyzer->getPreparedSets();
-        auto actions_settings = ExpressionActionsSettings::fromContext(context);
         auto & prewhere_info = analysis_result.prewhere_info;
 
         if (prewhere_info)
         {
+            auto actions_settings = ExpressionActionsSettings::fromContext(context, CompileExpressions::yes);
+
             query_info.prewhere_info = std::make_shared<PrewhereInfo>();
             query_info.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings);
 
