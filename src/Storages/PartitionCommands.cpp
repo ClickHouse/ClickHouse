@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
-
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
     if (command_ast->type == ASTAlterCommand::DROP_PARTITION)
@@ -68,8 +67,11 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
                 res.to_database = command_ast->to_database;
                 res.to_table = command_ast->to_table;
                 break;
-            default:
+            case DataDestinationType::SHARD:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::SHARD;
                 break;
+            case DataDestinationType::DELETE:
+                throw Exception("ALTER with this destination type is not handled. This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         if (res.move_destination_type != PartitionCommand::MoveDestinationType::TABLE)
             res.move_destination_name = command_ast->move_destination_name;

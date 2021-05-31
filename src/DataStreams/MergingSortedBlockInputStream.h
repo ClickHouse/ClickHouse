@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Row.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 

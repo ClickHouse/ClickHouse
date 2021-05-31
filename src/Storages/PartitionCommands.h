@@ -66,6 +66,7 @@ struct PartitionCommand
         DISK,
         VOLUME,
         TABLE,
+        SHARD,
     };
 
     std::optional<MoveDestinationType> move_destination_type;

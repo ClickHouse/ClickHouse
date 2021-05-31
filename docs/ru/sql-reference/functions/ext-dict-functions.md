@@ -3,6 +3,9 @@ toc_priority: 58
 toc_title: "Функции для работы с внешними словарями"
 ---
 
+!!! attention "Внимание"
+    Для словарей, созданных с помощью [DDL-запросов](../../sql-reference/statements/create/dictionary.md), в параметре `dict_name` указывается полное имя словаря вместе с базой данных, например: `<database>.<dict_name>`. Если база данных не указана, используется текущая.
+
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
 Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
@@ -241,7 +244,7 @@ dictHas('dict_name', id)
 -   0, если ключа нет.
 -   1, если ключ есть.
 
-Тип — `UInt8`.
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 ## dictGetHierarchy {#dictgethierarchy}
 
@@ -262,7 +265,7 @@ dictGetHierarchy('dict_name', key)
 
 -   Цепочка предков заданного ключа.
 
-Type: [Array(UInt64)](../../sql-reference/functions/ext-dict-functions.md).
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 ## dictIsIn {#dictisin}
 
@@ -281,7 +284,120 @@ Type: [Array(UInt64)](../../sql-reference/functions/ext-dict-functions.md).
 -   0, если `child_id_expr` — не дочерний элемент `ancestor_id_expr`.
 -   1, если `child_id_expr` — дочерний элемент `ancestor_id_expr` или если `child_id_expr` и есть `ancestor_id_expr`.
 
-Тип — `UInt8`.
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+## dictGetChildren {#dictgetchildren}
+
+Возвращает потомков первого уровня в виде массива индексов. Это обратное преобразование для [dictGetHierarchy](#dictgethierarchy).
+
+**Синтаксис** 
+
+``` sql
+dictGetChildren(dict_name, key)
+```
+
+**Аргументы** 
+
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
+
+**Возвращаемые значения**
+
+-   Потомки первого уровня для ключа.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Рассмотрим иерархический словарь:
+
+``` text
+┌─id─┬─parent_id─┐
+│  1 │         0 │
+│  2 │         1 │
+│  3 │         1 │
+│  4 │         2 │
+└────┴───────────┘
+```
+
+Потомки первого уровня:
+
+``` sql
+SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetChildren('hierarchy_flat_dictionary', number)─┐
+│ [1]                                                  │
+│ [2,3]                                                │
+│ [4]                                                  │
+│ []                                                   │
+└──────────────────────────────────────────────────────┘
+```
+
+## dictGetDescendant {#dictgetdescendant}
+
+Возвращает всех потомков, как если бы функция [dictGetChildren](#dictgetchildren) была выполнена `level` раз рекурсивно.  
+
+**Синтаксис**
+
+``` sql
+dictGetDescendants(dict_name, key, level)
+```
+
+**Аргументы** 
+
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `level` — уровень иерархии. Если `level = 0`, возвращаются все потомки. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Потомки для ключа.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Рассмотрим иерархический словарь:
+
+``` text
+┌─id─┬─parent_id─┐
+│  1 │         0 │
+│  2 │         1 │
+│  3 │         1 │
+│  4 │         2 │
+└────┴───────────┘
+```
+Все потомки:
+
+``` sql
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetDescendants('hierarchy_flat_dictionary', number)─┐
+│ [1,2,3,4]                                               │
+│ [2,3,4]                                                 │
+│ [4]                                                     │
+│ []                                                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+Потомки первого уровня:
+
+``` sql
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetDescendants('hierarchy_flat_dictionary', number, 1)─┐
+│ [1]                                                        │
+│ [2,3]                                                      │
+│ [4]                                                        │
+│ []                                                         │
+└────────────────────────────────────────────────────────────┘
+```
 
 ## Прочие функции {#ext_dict_functions-other}
 
