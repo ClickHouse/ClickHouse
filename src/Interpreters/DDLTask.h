@@ -98,7 +98,7 @@ struct DDLTaskBase
 
     virtual String getShardID() const = 0;
 
-    virtual ContextPtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
+    virtual ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
 
     inline String getActiveNodePath() const { return entry_path + "/active/" + host_id_str; }
     inline String getFinishedNodePath() const { return entry_path + "/finished/" + host_id_str; }
@@ -136,7 +136,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
 
     String getShardID() const override;
     void parseQueryFromEntry(ContextPtr context) override;
-    ContextPtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
+    ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
 };

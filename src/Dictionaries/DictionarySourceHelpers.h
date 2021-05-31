@@ -37,7 +37,7 @@ Block blockForKeys(
     const std::vector<size_t> & requested_rows);
 
 /// Used for applying settings to copied context in some register[...]Source functions
-ContextPtr copyContextAndApplySettings(
+ContextMutablePtr copyContextAndApplySettings(
     const std::string & config_prefix,
     ContextConstPtr context,
     const Poco::Util::AbstractConfiguration & config);
