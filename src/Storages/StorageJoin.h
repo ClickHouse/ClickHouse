@@ -29,6 +29,7 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
+    /// Only delete is supported.
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
@@ -43,6 +44,8 @@ public:
     /// Takes rwlock for read to prevent parallel StorageJoin updates during processing data block
     /// (but not during processing whole query, it's safe for joinGet that doesn't involve `used_flags` from HashJoin)
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
+
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     Pipe read(
         const Names & column_names,
@@ -71,8 +74,7 @@ private:
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
     /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
     mutable std::shared_mutex rwlock;
-
-    mutable std::mutex mutex;
+    mutable std::mutex mutate_mutex;
 
     void insertBlock(const Block & block) override;
     void finishInsert() override {}

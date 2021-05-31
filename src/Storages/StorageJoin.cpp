@@ -68,11 +68,18 @@ StorageJoin::StorageJoin(
     restore();
 }
 
+BlockOutputStreamPtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+{
+    std::lock_guard mutate_lock(mutate_mutex);
+    return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
+}
 
 void StorageJoin::truncate(
     const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder&)
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard mutate_lock(mutate_mutex);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+
     disk->removeRecursive(path);
     disk->createDirectories(path);
     disk->createDirectories(path + "tmp/");
@@ -83,44 +90,46 @@ void StorageJoin::truncate(
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    for (const auto & command: commands)
-    {
-        switch (command.type)
-        {
-            case MutationCommand::Type::DELETE:
-                break;
-            case MutationCommand::Type::UPDATE:
-                throw Exception("Table engine Join doesn't support update mutation, please use insert instead", ErrorCodes::NOT_IMPLEMENTED);
-            default:
-                throw Exception("Table engine Join doesn't support this mutation", ErrorCodes::NOT_IMPLEMENTED);
-        }
-    }
+    for (const auto & command : commands)
+        if (command.type != MutationCommand::DELETE)
+            throw Exception("Table engine Join supports only DELETE mutations", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 {
-    // Only delete is supported
-    std::lock_guard lock(mutex);
+    /// Firstly accuire lock for mutation, that locks changes of data.
+    /// We cannot accuire rwlock here, because read lock is needed
+    /// for execution of mutation interpreter.
+    std::lock_guard mutate_lock(mutate_mutex);
+
+    constexpr auto tmp_backup_file_name = "tmp/mut.bin";
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage = getStorageID();
-    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-    auto in = interpreter->execute();
-    in->readPrefix();
 
-    auto new_data = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
-
-    const String backup_file_name = "1.bin"; // id starts from 1
-    auto backup_buf = disk->writeFile(path + "tmp/" + backup_file_name);
+    auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeBlockOutputStream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
 
-    while (const Block & block = in->read())
+    auto new_data = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+
+    // New scope controls lifetime of InputStream.
     {
-        new_data->addJoinedBlock(block, true);
-        if (persistent)
-            backup_stream.write(block);
+        auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
+        auto in = interpreter->execute();
+        in->readPrefix();
+
+        while (const Block & block = in->read())
+        {
+            new_data->addJoinedBlock(block, true);
+            if (persistent)
+                backup_stream.write(block);
+        }
+
+        in->readSuffix();
     }
+
+    /// Now accuire exclusive lock and modify storage.
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     join = std::move(new_data);
     increment = 1;
@@ -140,7 +149,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
                 disk->removeFileIfExists(path + file_name);
         }
 
-        disk->replaceFile(path + "tmp/" + backup_file_name, path + backup_file_name);
+        disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
     }
 }
 
