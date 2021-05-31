@@ -160,7 +160,7 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     out->finalize();
 }
 
-void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context)
+void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, const Context & context)
 {
     if (!metadata_snapshot->hasPartitionKey())
         return;
@@ -185,14 +185,14 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     }
 }
 
-NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
+NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, const Context & context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
     adjusted_partition_key.expression->execute(block);
     return adjusted_partition_key.sample_block.getNamesAndTypesList();
 }
 
-KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     if (!partition_key.definition_ast)
