@@ -74,7 +74,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -2212,14 +2215,14 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
-    Poco::File force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = force_file.exists();
+    fs::path force_file(getFlagsPath() + "force_drop_table");
+    bool force_file_exists = fs::exists(force_file);
 
     if (force_file_exists)
     {
         try
         {
-            force_file.remove();
+            fs::remove(force_file);
             return;
         }
         catch (...)
@@ -2241,9 +2244,9 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
                     "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
                     backQuoteIfNeed(database), backQuoteIfNeed(table),
                     size_str, max_size_to_drop_str,
-                    force_file.path(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
-                    force_file.path(),
-                    force_file.path(), force_file.path());
+                    force_file.string(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
+                    force_file.string(),
+                    force_file.string(), force_file.string());
 }
 
 

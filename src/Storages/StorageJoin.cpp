@@ -17,8 +17,8 @@
 #include <Common/Exception.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Processors/Pipe.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 #include <Poco/String.h> /// toLower
 
 
