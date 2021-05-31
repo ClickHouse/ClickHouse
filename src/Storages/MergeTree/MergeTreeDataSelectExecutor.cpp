@@ -166,11 +166,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         ProjectionDescription::typeToString(query_info.projection->desc->type),
         query_info.projection->desc->name);
 
-    // if (query_info.projection->merge_tree_data_select_base_cache->sum_marks
-    //         + query_info.projection->merge_tree_data_select_projection_cache->sum_marks
-    //     == 0)
-    //     return std::make_unique<QueryPlan>();
-
     MergeTreeData::DataPartsVector projection_parts;
     MergeTreeData::DataPartsVector normal_parts;
     for (const auto & part : parts)

@@ -3855,8 +3855,6 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    //candidate.merge_tree_data_select_base_cache = std::make_unique<MergeTreeDataSelectCache>();
-    //candidate.merge_tree_data_select_projection_cache = std::make_unique<MergeTreeDataSelectCache>();
     auto sum_marks = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
