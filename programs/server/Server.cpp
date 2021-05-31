@@ -708,19 +708,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// encoding frequencies
     {
         const std::string & encode_frequency_path = config().getString("encoding_frequencies_path", path);
-        FrequencyHolder::getInstance().parseEncodingFrequencies(path + encode_frequency_path);
+        FrequencyHolder::getInstance().parseEncodingFrequencies(encode_frequency_path);
     }
 
     /// programming languages frequencies
     {
         const std::string & programming_frequency_path = config().getString("programming_lang_frequencies_path", path);
-        FrequencyHolder::getInstance().parseProgrammingFrequency(path + programming_frequency_path);
+        FrequencyHolder::getInstance().parseProgrammingFrequency(programming_frequency_path);
     }
 
     /// emotional dictionary
     {
         const std::string & emotional_dict_path = config().getString("emotional_dict_path", path);
-        FrequencyHolder::getInstance().parseEmotionalDict(path + emotional_dict_path);
+        FrequencyHolder::getInstance().parseEmotionalDict(emotional_dict_path);
     }
 
 
