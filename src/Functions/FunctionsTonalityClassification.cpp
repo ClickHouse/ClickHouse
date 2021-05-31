@@ -23,8 +23,8 @@ struct TonalityClassificationImpl
 
     static String get_tonality(const Float64 & tonality_level)
     {
-        if (tonality_level < 0.25) { return "NEG"; }
-        if (tonality_level > 0.5) { return "POS"; }
+        if (tonality_level < 0.15) { return "NEG"; }
+        if (tonality_level > 0.45) { return "POS"; }
         return "NEUT";
     }
 
@@ -55,7 +55,8 @@ struct TonalityClassificationImpl
                 if (emotional_dict.find(word) != emotional_dict.cend())
                 {
                     count_words += 1;
-                    weight += emotional_dict[word];
+                    Float64 cur_weight = emotional_dict[word];
+                    weight += cur_weight;
                 }
                 word = "";
             }
@@ -114,7 +115,8 @@ struct TonalityClassificationImpl
                     if (emotional_dict.find(word) != emotional_dict.cend())
                     {
                         count_words += 1;
-                        weight += emotional_dict[word];
+                        Float64 cur_weight = emotional_dict[word];
+                        weight += cur_weight;
                     }
                     word = "";
                 }

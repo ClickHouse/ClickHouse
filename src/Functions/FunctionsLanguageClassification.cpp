@@ -1,7 +1,7 @@
 #include <Functions/FunctionsTextClassification.h>
 #include <Functions/FunctionFactory.h>
 #include "/home/sergey/ClickHouse/contrib/cld2/public/compact_lang_det.h"
-
+//#include <cld2/compact_lang_det.h>
 
 namespace DB
 {

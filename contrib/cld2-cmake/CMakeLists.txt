@@ -29,4 +29,4 @@ set (SRCS
 add_library(cld2 ${SRCS})
 set_property(TARGET cld2 PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_compile_options (cld2 PRIVATE -Wno-reserved-id-macro -Wno-c++11-narrowing)
-target_include_directories(cld2 PUBLIC "${LIBRARY_DIR}/public")
+target_include_directories(cld2 SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/public")
