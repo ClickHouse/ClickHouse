@@ -155,10 +155,6 @@ def build_website(args):
         os.path.join(args.src_dir, 'utils', 'list-versions', 'version_date.tsv'),
         os.path.join(args.output_dir, 'data', 'version_date.tsv'))
 
-    shutil.copy2(
-        os.path.join(args.website_dir, 'js', 'embedd.min.js'),
-        os.path.join(args.output_dir, 'js', 'embedd.min.js'))
-
     for root, _, filenames in os.walk(args.output_dir):
         for filename in filenames:
             if filename == 'main.html':

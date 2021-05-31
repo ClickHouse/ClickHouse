@@ -140,7 +140,7 @@ public:
     /// Find existing session or create a new.
     std::shared_ptr<NamedSession> acquireSession(
         const String & session_id,
-        ContextPtr context,
+        ContextMutablePtr context,
         std::chrono::steady_clock::duration timeout,
         bool throw_if_not_found)
     {
@@ -314,8 +314,8 @@ struct ContextSharedPart
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
 #if USE_NURAFT
-    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+    mutable std::mutex keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperStorageDispatcher> keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -463,12 +463,6 @@ struct ContextSharedPart
             dictionaries_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
-
-            #if USE_EMBEDDED_COMPILER
-            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
-            #endif
-
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
             models_repository_guard.reset();
@@ -519,7 +513,7 @@ SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shar
 
 void SharedContextHolder::reset() { shared.reset(); }
 
-ContextPtr Context::createGlobal(ContextSharedPart * shared)
+ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
 {
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared;
@@ -536,19 +530,19 @@ SharedContextHolder Context::createShared()
     return SharedContextHolder(std::make_unique<ContextSharedPart>());
 }
 
-ContextPtr Context::createCopy(const ContextConstPtr & other)
+ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     return std::shared_ptr<Context>(new Context(*other));
 }
 
-ContextPtr Context::createCopy(const ContextWeakConstPtr & other)
+ContextMutablePtr Context::createCopy(const ContextWeakConstPtr & other)
 {
     auto ptr = other.lock();
     if (!ptr) throw Exception("Can't copy an expired context", ErrorCodes::LOGICAL_ERROR);
     return createCopy(ptr);
 }
 
-ContextPtr Context::createCopy(const ContextPtr & other)
+ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
 }
@@ -1085,7 +1079,7 @@ void Context::addViewSource(const StoragePtr & storage)
 }
 
 
-StoragePtr Context::getViewSource()
+StoragePtr Context::getViewSource() const
 {
     return view_source;
 }
@@ -1319,7 +1313,7 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
     shared->macros.set(std::move(macros));
 }
 
-ContextPtr Context::getQueryContext() const
+ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
     if (!ptr) throw Exception("There is no query or query context has expired", ErrorCodes::THERE_IS_NO_QUERY);
@@ -1332,21 +1326,21 @@ bool Context::isInternalSubquery() const
     return ptr && ptr.get() != this;
 }
 
-ContextPtr Context::getSessionContext() const
+ContextMutablePtr Context::getSessionContext() const
 {
     auto ptr = session_context.lock();
     if (!ptr) throw Exception("There is no session or session context has expired", ErrorCodes::THERE_IS_NO_SESSION);
     return ptr;
 }
 
-ContextPtr Context::getGlobalContext() const
+ContextMutablePtr Context::getGlobalContext() const
 {
     auto ptr = global_context.lock();
     if (!ptr) throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
     return ptr;
 }
 
-ContextPtr Context::getBufferContext() const
+ContextMutablePtr Context::getBufferContext() const
 {
     if (!buffer_context) throw Exception("There is no buffer context", ErrorCodes::LOGICAL_ERROR);
     return buffer_context;
@@ -1678,16 +1672,16 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 void Context::initializeKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
 
-    if (shared->nu_keeper_storage_dispatcher)
+    if (shared->keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        shared->nu_keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
-        shared->nu_keeper_storage_dispatcher->initialize(config);
+        shared->keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
+        shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
     }
 #endif
 }
@@ -1695,22 +1689,22 @@ void Context::initializeKeeperStorageDispatcher() const
 #if USE_NURAFT
 std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
 {
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
-    if (!shared->nu_keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    if (!shared->keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->nu_keeper_storage_dispatcher;
+    return shared->keeper_storage_dispatcher;
 }
 #endif
 
 void Context::shutdownKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
-    if (shared->nu_keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    if (shared->keeper_storage_dispatcher)
     {
-        shared->nu_keeper_storage_dispatcher->shutdown();
-        shared->nu_keeper_storage_dispatcher.reset();
+        shared->keeper_storage_dispatcher->shutdown();
+        shared->keeper_storage_dispatcher.reset();
     }
 #endif
 }
@@ -1877,7 +1871,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 }
 
 
-void Context::reloadClusterConfig()
+void Context::reloadClusterConfig() const
 {
     while (true)
     {
@@ -1964,7 +1958,7 @@ bool Context::hasTraceCollector() const
 }
 
 
-std::shared_ptr<QueryLog> Context::getQueryLog()
+std::shared_ptr<QueryLog> Context::getQueryLog() const
 {
     auto lock = getLock();
 
@@ -1975,7 +1969,7 @@ std::shared_ptr<QueryLog> Context::getQueryLog()
 }
 
 
-std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
+std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 {
     auto lock = getLock();
 
@@ -1986,7 +1980,7 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
 }
 
 
-std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
+std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 {
     auto lock = getLock();
 
@@ -2004,7 +1998,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
 }
 
 
-std::shared_ptr<TraceLog> Context::getTraceLog()
+std::shared_ptr<TraceLog> Context::getTraceLog() const
 {
     auto lock = getLock();
 
@@ -2015,7 +2009,7 @@ std::shared_ptr<TraceLog> Context::getTraceLog()
 }
 
 
-std::shared_ptr<TextLog> Context::getTextLog()
+std::shared_ptr<TextLog> Context::getTextLog() const
 {
     auto lock = getLock();
 
@@ -2026,7 +2020,7 @@ std::shared_ptr<TextLog> Context::getTextLog()
 }
 
 
-std::shared_ptr<MetricLog> Context::getMetricLog()
+std::shared_ptr<MetricLog> Context::getMetricLog() const
 {
     auto lock = getLock();
 
@@ -2048,7 +2042,7 @@ std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
 }
 
 
-std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog()
+std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog() const
 {
     auto lock = getLock();
 
@@ -2646,11 +2640,14 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
     return metadata_transaction;
 }
 
-PartUUIDsPtr Context::getPartUUIDs()
+PartUUIDsPtr Context::getPartUUIDs() const
 {
     auto lock = getLock();
     if (!part_uuids)
-        part_uuids = std::make_shared<PartUUIDs>();
+        /// For context itself, only this initialization is not const.
+        /// We could have done in constructor.
+        /// TODO: probably, remove this from Context.
+        const_cast<PartUUIDsPtr &>(part_uuids) = std::make_shared<PartUUIDs>();
 
     return part_uuids;
 }
@@ -2669,11 +2666,11 @@ void Context::setReadTaskCallback(ReadTaskCallback && callback)
     next_task_callback = callback;
 }
 
-PartUUIDsPtr Context::getIgnoredPartUUIDs()
+PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 {
     auto lock = getLock();
     if (!ignored_part_uuids)
-        ignored_part_uuids = std::make_shared<PartUUIDs>();
+        const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
 }

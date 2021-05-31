@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -34,7 +34,7 @@ class FunctionArraySlice : public IFunction
 {
 public:
     static constexpr auto name = "arraySlice";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArraySlice>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionArraySlice>(); }
 
     String getName() const override { return name; }
 

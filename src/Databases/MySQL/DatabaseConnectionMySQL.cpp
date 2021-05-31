@@ -20,6 +20,7 @@
 #    include <Parsers/parseQuery.h>
 #    include <Parsers/queryToString.h>
 #    include <Storages/StorageMySQL.h>
+#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Common/escapeForFileName.h>
 #    include <Common/parseAddress.h>
 #    include <Common/setThreadName.h>
@@ -253,12 +254,13 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
                 std::move(mysql_pool),
                 database_name_in_mysql,
                 table_name,
-                false,
-                "",
+                /* replace_query_ */ false,
+                /* on_duplicate_clause = */ "",
                 ColumnsDescription{columns_name_and_type},
                 ConstraintsDescription{},
                 String{},
-                getContext()));
+                getContext(),
+                MySQLSettings{}));
     }
 }
 
@@ -316,7 +318,7 @@ void DatabaseConnectionMySQL::shutdown()
     }
 
     for (const auto & [table_name, modify_time_and_storage] : tables_snapshot)
-        modify_time_and_storage.second->shutdown();
+        modify_time_and_storage.second->flushAndShutdown();
 
     std::lock_guard lock(mutex);
     local_tables_cache.clear();
@@ -343,7 +345,7 @@ void DatabaseConnectionMySQL::cleanOutdatedTables()
             {
                 const auto table_lock = (*iterator)->lockExclusively(RWLockImpl::NO_QUERY, lock_acquire_timeout);
 
-                (*iterator)->shutdown();
+                (*iterator)->flushAndShutdown();
                 (*iterator)->is_dropped = true;
                 iterator = outdated_tables.erase(iterator);
             }
@@ -397,7 +399,7 @@ String DatabaseConnectionMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseConnectionMySQL::loadStoredObjects(ContextPtr, bool, bool /*force_attach*/)
+void DatabaseConnectionMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
 {
 
     std::lock_guard<std::mutex> lock{mutex};

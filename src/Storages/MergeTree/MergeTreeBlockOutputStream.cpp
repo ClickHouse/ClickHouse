@@ -23,7 +23,7 @@ void MergeTreeBlockOutputStream::writePrefix()
 
 void MergeTreeBlockOutputStream::write(const Block & block)
 {
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;

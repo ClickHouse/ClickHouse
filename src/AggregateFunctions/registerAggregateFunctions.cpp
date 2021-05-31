@@ -6,6 +6,7 @@
 
 namespace DB
 {
+struct Settings;
 
 class AggregateFunctionFactory;
 void registerAggregateFunctionAvg(AggregateFunctionFactory &);
@@ -62,6 +63,7 @@ void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFact
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
+void registerAggregateFunctionSegmentLengthSum(AggregateFunctionFactory &);
 
 void registerAggregateFunctions()
 {
@@ -111,6 +113,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionStudentTTest(factory);
 
         registerWindowFunctions(factory);
+
+        registerAggregateFunctionSegmentLengthSum(factory);
     }
 
     {
