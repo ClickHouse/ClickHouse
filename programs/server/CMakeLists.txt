@@ -31,37 +31,4 @@ clickhouse_program_add(server)
 
 install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
 
-# TODO We actually need this on Mac, FreeBSD.
-if (OS_LINUX)
-    # Embed default config files as a resource into the binary.
-    # This is needed for two purposes:
-    # 1. Allow to run the binary without download of any other files.
-    # 2. Allow to implement "sudo clickhouse install" tool.
-
-    foreach(RESOURCE_FILE config.xml users.xml embedded.xml play.html)
-        set(RESOURCE_OBJ ${RESOURCE_FILE}.o)
-        set(RESOURCE_OBJS ${RESOURCE_OBJS} ${RESOURCE_OBJ})
-
-        # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
-        # PPC64LE fails to do this with objcopy, use ld or lld instead
-        if (ARCH_PPC64LE)
-            add_custom_command(OUTPUT ${RESOURCE_OBJ}
-                COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${CMAKE_LINKER} -m elf64lppc -r -b binary -o "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}" ${RESOURCE_FILE})
-        else()
-            add_custom_command(OUTPUT ${RESOURCE_OBJ}
-                COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${RESOURCE_FILE} "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}"
-                COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
-                    "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}" "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}")
-        endif()
-        set_source_files_properties(${RESOURCE_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
-    endforeach(RESOURCE_FILE)
-
-    add_library(clickhouse_server_configs STATIC ${RESOURCE_OBJS})
-    set_target_properties(clickhouse_server_configs PROPERTIES LINKER_LANGUAGE C)
-
-    # whole-archive prevents symbols from being discarded for unknown reason
-    # CMake can shuffle each of target_link_libraries arguments with other
-    # libraries in linker command. To avoid this we hardcode whole-archive
-    # library into single string.
-    add_dependencies(clickhouse-server-lib clickhouse_server_configs)
-endif ()
+clickhouse_embed_binaries(server config.xml users.xml embedded.xml play.html)

@@ -118,7 +118,7 @@ private:
     const std::string boundary;
     bool boundary_hit = true;
 
-    std::string readLine(bool strict = true);
+    std::string readLine(bool append_crlf);
 
     bool nextImpl() override;
 };

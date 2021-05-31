@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
@@ -31,7 +31,7 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNeighbor>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionNeighbor>(); }
 
     /// Get the name of the function.
     String getName() const override { return name; }

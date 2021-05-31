@@ -13,6 +13,8 @@
 namespace DB
 {
 
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -1571,35 +1573,35 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     // instead of adding separate logic for them.
 
     factory.registerFunction("rank", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("dense_rank", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("row_number", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
         });
 
     factory.registerFunction("lagInFrame", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
         });
 
     factory.registerFunction("leadInFrame", [](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters)
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);

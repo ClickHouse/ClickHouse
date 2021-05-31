@@ -132,8 +132,8 @@ private:
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
 
-    ContextPtr connection_context;
-    ContextPtr query_context;
+    ContextMutablePtr connection_context;
+    ContextMutablePtr query_context;
 
     size_t unknown_packet_in_send_data = 0;
 

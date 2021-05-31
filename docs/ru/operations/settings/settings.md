@@ -347,7 +347,31 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
-Включает или отключает использование значений по умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для текстовых форматов).
+Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки. 
+
+Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
+
+Возможные значения:
+
+-   0 — вставка `NULL` в столбец, не позволяющий хранить `NULL`, приведет к возникновению исключения.
+-   1 — ячейки с `NULL` инициализируются значением столбца по умолчанию.
+
+Значение по умолчанию: `1`.
+
+## insert_null_as_default {#insert_null_as_default}
+
+Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable). 
+Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
+
+Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
+
+Возможные значения:
+
+-   0 — вставка `NULL` в столбец, не позволяющий хранить `NULL`, приведет к возникновению исключения.
+-   1 — вместо `NULL` вставляется значение столбца по умолчанию.
+
+Значение по умолчанию: `1`.
 
 ## input_format_skip_unknown_fields {#settings-input-format-skip-unknown-fields}
 
@@ -2043,6 +2067,16 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Значение по умолчанию: 16.
 
+## background_fetches_pool_size {#background_fetches_pool_size}
+
+Задает количество потоков для скачивания кусков данных для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе. Для использования в продакшене с частыми небольшими вставками или медленным кластером ZooKeeper рекомендуется использовать значение по умолчанию.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 8.
+
 ## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
 
 Задает количество потоков для выполнения фоновых задач. Работает для таблиц с движком [Distributed](../../engines/table-engines/special/distributed.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
@@ -2767,12 +2801,12 @@ SELECT * FROM test2;
 
 ## prefer_column_name_to_alias {#prefer-column-name-to-alias}
 
-Включает или отключает замену названий столбцов на синонимы в выражениях и секциях запросов, см. [Примечания по использованию синонимов](../../sql-reference/syntax.md#syntax-expression_aliases). Включите эту настройку, чтобы синтаксис синонимов в ClickHouse был более совместим с большинством других СУБД.
+Включает или отключает замену названий столбцов на псевдонимы (alias) в выражениях и секциях запросов, см. [Примечания по использованию синонимов](../../sql-reference/syntax.md#syntax-expression_aliases). Включите эту настройку, чтобы синтаксис псевдонимов в ClickHouse был более совместим с большинством других СУБД.
 
 Возможные значения:
 
-- 0 — синоним подставляется вместо имени столбца.
-- 1 — синоним не подставляется вместо имени столбца.
+- 0 — псевдоним подставляется вместо имени столбца.
+- 1 — псевдоним не подставляется вместо имени столбца.
 
 Значение по умолчанию: `0`.
 
@@ -2856,6 +2890,70 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 │ 108 │
 │ 109 │
 └─────┘
+```
+## http_connection_timeout {#http_connection_timeout}
+
+Тайм-аут для HTTP-соединения (в секундах).
+
+Возможные значения:
+
+-   0 - бесконечный тайм-аут.
+-   Любое положительное целое число.
+
+Значение по умолчанию: `1`.
+
+## http_send_timeout {#http_send_timeout}
+
+Тайм-аут для отправки данных через HTTP-интерфейс (в секундах).
+
+Возможные значения:
+
+-   0 - бесконечный тайм-аут.
+-   Любое положительное целое число.
+
+Значение по умолчанию: `1800`.
+
+## http_receive_timeout {#http_receive_timeout}
+
+Тайм-аут для получения данных через HTTP-интерфейс (в секундах).
+
+Возможные значения:
+
+-   0 - бесконечный тайм-аут.
+-   Любое положительное целое число.
+
+Значение по умолчанию: `1800`.
+
+## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+
+Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
+
+Возможные значения:
+
+-   0 — функции с одинаковым аргументом не объединяются.
+-   1 — функции с одинаковым аргументом объединяются.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
+SET optimize_fuse_sum_count_avg = 1;
+EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+```
+
+Результат:
+
+``` text
+SELECT
+    sum(a),
+    sumCount(b).1,
+    sumCount(b).2,
+    (sumCount(b).1) / (sumCount(b).2)
+FROM fuse_tbl
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

@@ -84,21 +84,18 @@ TemporaryTableHolder::TemporaryTableHolder(
     const ConstraintsDescription & constraints,
     const ASTPtr & query,
     bool create_for_global_subquery)
-    : TemporaryTableHolder
-      (
-          context_,
-          [&](const StorageID & table_id)
-          {
-              auto storage = StorageMemory::create(
-                      table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
+    : TemporaryTableHolder(
+        context_,
+        [&](const StorageID & table_id)
+        {
+            auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
-              if (create_for_global_subquery)
-                  storage->delayReadForGlobalSubqueries();
+            if (create_for_global_subquery)
+                storage->delayReadForGlobalSubqueries();
 
-              return storage;
-          },
-          query
-      )
+            return storage;
+        },
+        query)
 {
 }
 
@@ -531,13 +528,13 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
 
-DatabaseCatalog::DatabaseCatalog(ContextPtr global_context_)
-    : WithContext(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
+DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
+    : WithMutableContext(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
     TemporaryLiveViewCleaner::init(global_context_);
 }
 
-DatabaseCatalog & DatabaseCatalog::init(ContextPtr global_context_)
+DatabaseCatalog & DatabaseCatalog::init(ContextMutablePtr global_context_)
 {
     if (database_catalog)
     {

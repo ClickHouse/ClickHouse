@@ -15,7 +15,7 @@ class KeyCondition;
 
 struct MergeTreeDataSelectSamplingData
 {
-    bool use_sampling;
+    bool use_sampling = false;
     std::shared_ptr<ASTFunction> filter_function;
     ActionsDAGPtr filter_expression;
 };
@@ -166,6 +166,7 @@ private:
     void selectPartsToReadWithUUIDFilter(
         MergeTreeData::DataPartsVector & parts,
         const std::unordered_set<String> & part_values,
+        MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,

@@ -169,8 +169,13 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), connection_pool, table_name,
-                ColumnsDescription{*columns}, ConstraintsDescription{}, local_context);
+            StorageID(database_name, table_name),
+            connection_pool,
+            table_name,
+            ColumnsDescription{*columns},
+            ConstraintsDescription{},
+            String{},
+            local_context);
 
         if (cache_tables)
             cached_tables[table_name] = storage;
@@ -275,7 +280,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextPtr /* context */, bool, bool /*force_attach*/)
+void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool, bool /*force_attach*/)
 {
     {
         std::lock_guard<std::mutex> lock{mutex};

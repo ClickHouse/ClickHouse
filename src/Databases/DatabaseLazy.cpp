@@ -35,7 +35,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    ContextPtr local_context,
+    ContextMutablePtr local_context,
     bool /* has_force_restore_data_flag */,
     bool /*force_attach*/)
 {
@@ -203,7 +203,7 @@ void DatabaseLazy::shutdown()
     for (const auto & kv : tables_snapshot)
     {
         if (kv.second.table)
-            kv.second.table->shutdown();
+            kv.second.table->flushAndShutdown();
     }
 
     std::lock_guard lock(mutex);

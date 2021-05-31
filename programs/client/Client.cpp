@@ -181,7 +181,7 @@ private:
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
     SharedContextHolder shared_context = Context::createShared();
-    ContextPtr context = Context::createGlobal(shared_context.get());
+    ContextMutablePtr context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -1366,6 +1366,27 @@ private:
             {
                 const auto * exception = server_exception ? server_exception.get() : client_exception.get();
                 fmt::print(stderr, "Error on processing query '{}': {}\n", ast_to_process->formatForErrorMessage(), exception->message());
+
+                // Try to reconnect after errors, for two reasons:
+                // 1. We might not have realized that the server died, e.g. if
+                //    it sent us a <Fatal> trace and closed connection properly.
+                // 2. The connection might have gotten into a wrong state and
+                //    the next query will get false positive about
+                //    "Unknown packet from server".
+                try
+                {
+                    connection->forceConnected(connection_parameters.timeouts);
+                }
+                catch (...)
+                {
+                    // Just report it, we'll terminate below.
+                    fmt::print(stderr,
+                        "Error while reconnecting to the server: Code: {}: {}\n",
+                        getCurrentExceptionCode(),
+                        getCurrentExceptionMessage(true));
+
+                    assert(!connection->isConnected());
+                }
             }
 
             if (!connection->isConnected())
@@ -1469,11 +1490,6 @@ private:
                 server_exception.reset();
                 client_exception.reset();
                 have_error = false;
-
-                // We have to reinitialize connection after errors, because it
-                // might have gotten into a wrong state and we'll get false
-                // positives about "Unknown packet from server".
-                connection->forceConnected(connection_parameters.timeouts);
             }
             else if (ast_to_process->formatForErrorMessage().size() > 500)
             {
@@ -2278,7 +2294,7 @@ private:
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
             std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                      << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                      << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
         else
             std::cout << ". ";
     }
