@@ -62,13 +62,6 @@ public:
             nested->shutdown();
     }
 
-    void flush() override
-    {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            nested->flush();
-    }
-
     void drop() override
     {
         std::lock_guard lock{nested_mutex};
@@ -80,7 +73,7 @@ public:
             const Names & column_names,
             const StorageMetadataPtr & metadata_snapshot,
             SelectQueryInfo & query_info,
-            ContextPtr context,
+            const Context & context,
             QueryProcessingStage::Enum processed_stage,
             size_t max_block_size,
             unsigned num_streams) override
@@ -103,7 +96,7 @@ public:
                     ActionsDAG::MatchColumnsMode::Name);
             auto convert_actions = std::make_shared<ExpressionActions>(
                 convert_actions_dag,
-                ExpressionActionsSettings::fromSettings(context->getSettingsRef(), CompileExpressions::yes));
+                ExpressionActionsSettings::fromSettings(context.getSettingsRef()));
 
             pipe.addSimpleTransform([&](const Block & header)
             {
@@ -116,7 +109,7 @@ public:
     BlockOutputStreamPtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
-            ContextPtr context) override
+            const Context & context) override
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();

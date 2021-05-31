@@ -2,6 +2,7 @@
 
 #include <DataStreams/IBlockInputStream.h>
 
+#include <Core/Row.h>
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
@@ -9,7 +10,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeProjections.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -44,6 +44,11 @@ class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 
+
+namespace ErrorCodes
+{
+}
+
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
@@ -69,16 +74,14 @@ public:
         const MergeTreePartInfo & info_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
-        Type part_type_,
-        const IMergeTreeDataPart * parent_part_);
+        Type part_type_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
-        Type part_type_,
-        const IMergeTreeDataPart * parent_part_);
+        Type part_type_);
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
@@ -130,8 +133,6 @@ public:
 
     void remove(bool keep_s3 = false) const;
 
-    void projectionRemove(const String & parent_to, bool keep_s3 = false) const;
-
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
@@ -162,9 +163,6 @@ public:
     std::pair<time_t, time_t> getMinMaxTime() const;
 
     bool isEmpty() const { return rows_count == 0; }
-
-    /// Compute part block id for zero level part. Otherwise throws an exception.
-    String getZeroLevelPartBlockID() const;
 
     const MergeTreeData & storage;
 
@@ -199,21 +197,18 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
-    /// Flag for keep S3 data when zero-copy replication over S3 turned on.
-    mutable bool keep_s3_on_delete = false;
-
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
      * Part state should be modified under data_parts mutex.
      *
      * Possible state transitions:
-     * Temporary -> Precommitted:    we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:     we could not add a part to active set and are doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:    we successfully committed a part to active dataset
-     * Precommitted -> Outdated:     a part was replaced by a covering part or DROP PARTITION
-     * Outdated -> Deleting:         a cleaner selected this part for deletion
-     * Deleting -> Outdated:         if an ZooKeeper error occurred during the deletion, we will retry deletion
-     * Committed -> DeleteOnDestroy: if part was moved to another disk
+     * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
+     * Precommitted -> Outdated:    we could not add a part to active set and are doing a rollback (for example it is duplicated part)
+     * Precommitted -> Committed:   we successfully committed a part to active dataset
+     * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
+     * Outdated -> Deleting:        a cleaner selected this part for deletion
+     * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
+     * Committed -> DeleteOnDestroy if part was moved to another disk
      */
     enum class State
     {
@@ -352,23 +347,6 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
-    bool isProjectionPart() const { return parent_part != nullptr; }
-
-    const IMergeTreeDataPart * getParentPart() const { return parent_part; }
-
-    const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
-
-    void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part)
-    {
-        projection_parts.emplace(projection_name, std::move(projection_part));
-    }
-
-    bool hasProjection(const String & projection_name) const
-    {
-        return projection_parts.find(projection_name) != projection_parts.end();
-    }
-
-    void loadProjections(bool require_columns_checksums, bool check_consistency);
 
     /// Return set of metadat file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -410,11 +388,6 @@ protected:
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
     const Type part_type;
-
-    /// Not null when it's a projection part.
-    const IMergeTreeDataPart * parent_part;
-
-    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
     void removeIfNeeded();
 

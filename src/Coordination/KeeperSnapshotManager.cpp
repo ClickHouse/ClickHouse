@@ -23,16 +23,16 @@ namespace ErrorCodes
 
 namespace
 {
-    uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
+    size_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
     {
         std::filesystem::path path(snapshot_path);
         std::string filename = path.stem();
         Strings name_parts;
         splitInto<'_'>(name_parts, filename);
-        return parse<uint64_t>(name_parts[1]);
+        return parse<size_t>(name_parts[1]);
     }
 
-    std::string getSnapshotFileName(uint64_t up_to_log_idx)
+    std::string getSnapshotFileName(size_t up_to_log_idx)
     {
         return std::string{"snapshot_"} + std::to_string(up_to_log_idx) + ".bin";
     }
@@ -139,7 +139,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     writeBinary(snapshot.session_id, out);
     writeBinary(snapshot.snapshot_container_size, out);
     size_t counter = 0;
-    for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
+    for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++it, ++counter)
     {
         const auto & path = it->key;
         const auto & node = it->value;
@@ -148,13 +148,6 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 
         writeBinary(path, out);
         writeNode(node, out);
-
-        /// Last iteration: check and exit here without iterator increment. Otherwise
-        /// false positive race condition on list end is possible.
-        if (counter == snapshot.snapshot_container_size - 1)
-            break;
-
-        ++it;
     }
 
     size_t size = snapshot.session_and_timeout.size();
@@ -221,7 +214,7 @@ SnapshotMetadataPtr KeeperStorageSnapshot::deserialize(KeeperStorage & storage, 
     return result;
 }
 
-KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_)
+KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, size_t up_to_log_idx_)
     : storage(storage_)
     , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
     , session_id(storage->session_id_counter)
@@ -273,7 +266,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(const std::string & snapshots_path_
 }
 
 
-std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
+std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx)
 {
     ReadBufferFromNuraftBuffer reader(buffer);
 
@@ -314,7 +307,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
     return nullptr;
 }
 
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const
 {
     const std::string & snapshot_path = existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
@@ -359,7 +352,7 @@ void KeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
         removeSnapshot(existing_snapshots.begin()->first);
 }
 
-void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
+void KeeperSnapshotManager::removeSnapshot(size_t log_idx)
 {
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())

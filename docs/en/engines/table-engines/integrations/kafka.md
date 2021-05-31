@@ -1,5 +1,5 @@
 ---
-toc_priority: 8
+toc_priority: 5
 toc_title: Kafka
 ---
 
@@ -40,7 +40,7 @@ Required parameters:
 
 -   `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
 -   `kafka_topic_list` — A list of Kafka topics.
--   `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
+-   `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you don’t want messages to be duplicated in the cluster, use the same group name everywhere.
 -   `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
 Optional parameters:

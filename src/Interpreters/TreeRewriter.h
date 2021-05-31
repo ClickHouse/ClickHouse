@@ -3,9 +3,8 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -14,6 +13,7 @@ namespace DB
 class ASTFunction;
 struct ASTTablesInSelectQueryElement;
 class TableJoin;
+class Context;
 struct Settings;
 struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
@@ -92,10 +92,12 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 ///  * scalar subqueries are executed replaced with constants
 ///  * unneeded columns are removed from SELECT clause
 ///  * duplicated columns are removed from ORDER BY, LIMIT BY, USING(...).
-class TreeRewriter : WithContext
+class TreeRewriter
 {
 public:
-    explicit TreeRewriter(ContextPtr context_) : WithContext(context_) {}
+    TreeRewriter(const Context & context_)
+        : context(context_)
+    {}
 
     /// Analyze and rewrite not select query
     TreeRewriterResultPtr analyze(
@@ -115,7 +117,9 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings);
+    const Context & context;
+
+    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, const Settings & settings);
 };
 
 }

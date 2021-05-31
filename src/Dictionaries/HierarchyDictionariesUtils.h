@@ -196,8 +196,6 @@ namespace detail
       * Hierarchy result is ElementsAndOffsets structure, for each element there is descendants array,
       * with size offset[element_index] - (element_index > 0 ? offset[element_index - 1] : 0).
       *
-      * @param valid_keys - number of keys that are valid in parent_to_child map
-      *
       * Example:
       * id  parent_id
       * 1   0
@@ -220,13 +218,11 @@ namespace detail
     ElementsAndOffsets<KeyType> getDescendants(
         const PaddedPODArray<KeyType> & keys,
         const HashMap<KeyType, PaddedPODArray<KeyType>> & parent_to_child,
-        Strategy strategy,
-        size_t & valid_keys)
+        Strategy strategy)
     {
         /// If strategy is GetAllDescendantsStrategy we try to cache and later reuse previously calculated descendants.
         /// If strategy is GetDescendantsAtSpecificLevelStrategy we does not use cache strategy.
         size_t keys_size = keys.size();
-        valid_keys = 0;
 
         PaddedPODArray<KeyType> descendants;
         descendants.reserve(keys_size);
@@ -269,7 +265,6 @@ namespace detail
                 descendants_offsets.emplace_back(descendants.size());
                 continue;
             }
-            ++valid_keys;
 
             next_keys_to_process_stack.emplace_back(KeyAndDepth{requested_key, 0});
 
@@ -430,52 +425,43 @@ ColumnUInt8::Ptr getKeysIsInHierarchyColumn(
 }
 
 /// Returns descendants array column for keys
-///
-/// @param valid_keys - number of keys that are valid in parent_to_child map
 template <typename KeyType>
 ColumnPtr getKeysDescendantsArray(
     const PaddedPODArray<KeyType> & requested_keys,
     const HashMap<KeyType, PaddedPODArray<KeyType>> & parent_to_child,
-    size_t level,
-    size_t & valid_keys)
+    size_t level)
 {
     if (level == 0)
     {
         detail::GetAllDescendantsStrategy strategy { .level = level };
-        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child, strategy, valid_keys);
+        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child, strategy);
         return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
     }
     else
     {
         detail::GetDescendantsAtSpecificLevelStrategy strategy { .level = level };
-        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child, strategy, valid_keys);
+        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child, strategy);
         return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
     }
 }
 
 /** Default getHierarchy implementation for dictionaries that does not have structure with child to parent representation.
   * Implementation will build such structure with getColumn calls, and then getHierarchy for such structure.
-  *
-  * @param valid_keys - number of keys (from @key_column) for which information about parent exists.
-  * @return ColumnArray with hierarchy arrays for keys from key_column.
+  * Returns ColumnArray with hierarchy arrays for keys from key_column.
   */
 ColumnPtr getKeysHierarchyDefaultImplementation(
     const IDictionary * dictionary,
     ColumnPtr key_column,
-    const DataTypePtr & key_type,
-    size_t & valid_keys);
+    const DataTypePtr & key_type);
 
 /** Default isInHierarchy implementation for dictionaries that does not have structure with child to parent representation.
   * Implementation will build such structure with getColumn calls, and then getHierarchy for such structure.
-  *
-  * @param valid_keys - number of keys (from @key_column) for which information about parent exists.
-  * @return UInt8 column if key from in_key_column is in key hierarchy from key_column.
+  * Returns UInt8 column if key from in_key_column is in key hierarchy from key_column.
   */
 ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     const IDictionary * dictionary,
     ColumnPtr key_column,
     ColumnPtr in_key_column,
-    const DataTypePtr & key_type,
-    size_t & valid_keys);
+    const DataTypePtr & key_type);
 
 }

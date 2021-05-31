@@ -3,9 +3,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
 #include <Processors/QueryPlan/MergeSortingStep.h>
@@ -13,10 +11,8 @@
 #include <Processors/QueryPlan/PartialSortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/TableJoin.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -73,8 +69,8 @@ static size_t tryAddNewFilterStep(
     /// Add new Filter step before Aggregating.
     /// Expression/Filter -> Aggregating -> Something
     auto & node = nodes.emplace_back();
-    node.children.emplace_back(&node);
-    std::swap(node.children[0], child_node->children[0]);
+    node.children.swap(child_node->children);
+    child_node->children.emplace_back(&node);
     /// Expression/Filter -> Aggregating -> Filter -> Something
 
     /// New filter column is the first one.
@@ -86,7 +82,7 @@ static size_t tryAddNewFilterStep(
     return 3;
 }
 
-static Names getAggregatingKeys(const Aggregator::Params & params)
+static Names getAggregatinKeys(const Aggregator::Params & params)
 {
     Names keys;
     keys.reserve(params.keys.size());
@@ -116,36 +112,17 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
         const auto & params = aggregating->getParams();
-        Names keys = getAggregatingKeys(params);
+        Names keys = getAggregatinKeys(params);
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys))
             return updated_steps;
-    }
-
-    if (typeid_cast<CreatingSetsStep *>(child.get()))
-    {
-        /// CreatingSets does not change header.
-        /// We can push down filter and update header.
-        ///                       - Something
-        /// Filter - CreatingSets - CreatingSet
-        ///                       - CreatingSet
-        auto input_streams = child->getInputStreams();
-        input_streams.front() = filter->getOutputStream();
-        child = std::make_unique<CreatingSetsStep>(input_streams);
-        std::swap(parent, child);
-        std::swap(parent_node->children, child_node->children);
-        std::swap(parent_node->children.front(), child_node->children.front());
-        ///              - Filter - Something
-        /// CreatingSets - CreatingSet
-        ///              - CreatingSet
-        return 2;
     }
 
     if (auto * totals_having = typeid_cast<TotalsHavingStep *>(child.get()))
     {
         /// If totals step has HAVING expression, skip it for now.
         /// TODO:
-        /// We can merge HAVING expression with current filer.
+        /// We can merge HAING expression with current filer.
         /// Also, we can push down part of HAVING which depend only on aggregation keys.
         if (totals_having->getActions())
             return 0;
@@ -191,36 +168,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
     }
 
-    if (auto * join = typeid_cast<JoinStep *>(child.get()))
-    {
-        const auto & table_join  = join->getJoin()->getTableJoin();
-        /// Push down is for left table only. We need to update JoinStep for push down into right.
-        /// Only inner and left join are supported. Other types may generate default values for left table keys.
-        /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-        if (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == ASTTableJoin::Kind::Left)
-        {
-            const auto & left_header = join->getInputStreams().front().header;
-            const auto & res_header = join->getOutputStream().header;
-            Names allowed_keys;
-            for (const auto & name : table_join.keyNamesLeft())
-            {
-                /// Skip key if it is renamed.
-                /// I don't know if it is possible. Just in case.
-                if (!left_header.has(name) || !res_header.has(name))
-                    continue;
-
-                /// Skip if type is changed. Push down expression expect equal types.
-                if (!left_header.getByName(name).type->equals(*res_header.getByName(name).type))
-                    continue;
-
-                allowed_keys.push_back(name);
-            }
-
-            if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_keys))
-                return updated_steps;
-        }
-    }
-
     /// TODO.
     /// We can filter earlier if expression does not depend on WITH FILL columns.
     /// But we cannot just push down condition, because other column may be filled with defaults.
@@ -244,48 +191,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         Names allowed_inputs = child->getOutputStream().header.getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
             return updated_steps;
-    }
-
-    if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
-    {
-        /// Union does not change header.
-        /// We can push down filter and update header.
-        auto union_input_streams = child->getInputStreams();
-        for (auto & input_stream : union_input_streams)
-            input_stream.header = filter->getOutputStream().header;
-
-        ///                - Something
-        /// Filter - Union - Something
-        ///                - Something
-
-        child = std::make_unique<UnionStep>(union_input_streams, union_step->getMaxThreads());
-
-        std::swap(parent, child);
-        std::swap(parent_node->children, child_node->children);
-        std::swap(parent_node->children.front(), child_node->children.front());
-
-        ///       - Filter - Something
-        /// Union - Something
-        ///       - Something
-
-        for (size_t i = 1; i < parent_node->children.size(); ++i)
-        {
-            auto & filter_node = nodes.emplace_back();
-            filter_node.children.push_back(parent_node->children[i]);
-            parent_node->children[i] = &filter_node;
-
-            filter_node.step = std::make_unique<FilterStep>(
-                filter_node.children.front()->step->getOutputStream(),
-                filter->getExpression()->clone(),
-                filter->getFilterColumnName(),
-                filter->removesFilterColumn());
-        }
-
-        ///       - Filter - Something
-        /// Union - Filter - Something
-        ///       - Filter - Something
-
-        return 3;
     }
 
     return 0;

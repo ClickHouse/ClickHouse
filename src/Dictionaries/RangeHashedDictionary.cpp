@@ -195,20 +195,17 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, con
 
     ColumnUInt8::Ptr result;
 
-    size_t keys_found = 0;
-
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-        result = hasKeysImpl<ValueType>(attribute, ids, dates, keys_found);
+        result = hasKeysImpl<ValueType>(attribute, ids, dates);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -217,15 +214,12 @@ template <typename AttributeType>
 ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
     const Attribute & attribute,
     const PaddedPODArray<UInt64> & ids,
-    const PaddedPODArray<RangeStorageType> & dates,
-    size_t & keys_found) const
+    const PaddedPODArray<RangeStorageType> & dates) const
 {
     auto result = ColumnUInt8::create(ids.size());
     auto& out = result->getData();
 
     const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
-
-    keys_found = 0;
 
     for (const auto row : ext::range(0, ids.size()))
     {
@@ -243,8 +237,10 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
                     return v.range.contains(date);
                 });
 
-            out[row] = val_it != std::end(ranges_and_values);
-            keys_found += out[row];
+            if (val_it != std::end(ranges_and_values))
+                out[row] = true;
+            else
+                out[row] = false;
         }
         else
             out[row] = false;
@@ -264,8 +260,8 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
-                            getDictionaryID().getNameForLogs());
+            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
+                            getDictionaryID().getNameForLogs()};
     }
 }
 
@@ -315,8 +311,8 @@ void RangeHashedDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "{}: dictionary source is empty and 'require_nonempty' property is set.");
+        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.",
+                        ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 template <typename T>
@@ -400,8 +396,6 @@ void RangeHashedDictionary::getItemsImpl(
 
     const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
 
-    size_t keys_found = 0;
-
     for (const auto row : ext::range(0, ids.size()))
     {
         const auto it = attr.find(ids[row]);
@@ -419,8 +413,7 @@ void RangeHashedDictionary::getItemsImpl(
 
             if (val_it != std::end(ranges_and_values))
             {
-                ++keys_found;
-                auto & value = val_it->value;
+                auto& value = val_it->value;
 
                 if (value)
                     set_value(row, static_cast<OutputType>(*value), false); // NOLINT
@@ -439,7 +432,6 @@ void RangeHashedDictionary::getItemsImpl(
     }
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 
@@ -505,7 +497,7 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(con
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", full_name, attribute_name);
+        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
@@ -515,9 +507,8 @@ RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, 
 {
     const auto & attribute = getAttribute(attribute_name);
     if (attribute.type != type)
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "attribute {} has type {}",
-            attribute_name,
-            toString(attribute.type));
+        throw Exception{attribute_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+                        ErrorCodes::TYPE_MISMATCH};
 
     return attribute;
 }
@@ -622,9 +613,8 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
     ListType::forEach(callable);
 
     if (!callable.stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Unexpected range type for RangeHashed dictionary: {}",
-            dict_struct.range_min->type->getName());
+        throw Exception(
+            "Unexpected range type for RangeHashed dictionary: " + dict_struct.range_min->type->getName(), ErrorCodes::LOGICAL_ERROR);
 
     return callable.stream;
 }
@@ -636,17 +626,14 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr,
-                             ContextPtr /* context */,
-                             bool /*created_from_ddl*/) -> DictionaryPtr
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (dict_struct.key)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");
+            throw Exception{"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
 
         if (!dict_struct.range_min || !dict_struct.range_max)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "{}: dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
-                full_name);
+            throw Exception{full_name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
+                            ErrorCodes::BAD_ARGUMENTS};
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

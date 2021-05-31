@@ -26,7 +26,7 @@ Columns:
 
 -   `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
 
--   `marks` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint does not work for adaptive granularity).
+-   `marks` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn’t work for adaptive granularity).
 
 -   `rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of rows.
 

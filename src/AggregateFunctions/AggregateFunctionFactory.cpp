@@ -23,7 +23,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -89,17 +88,6 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
         AggregateFunctionPtr nested_function = getImpl(
             name, nested_types, nested_parameters, out_properties, has_null_arguments);
-
-        // Pure window functions are not real aggregate functions. Applying
-        // combinators doesn't make sense for them, they must handle the
-        // nullability themselves. Another special case is functions from Nothing
-        // that are rewritten to AggregateFunctionNothing, in this case
-        // nested_function is nullptr.
-        if (nested_function && nested_function->asWindowFunction())
-        {
-            return nested_function;
-        }
-
         return combinator->transformAggregateFunction(nested_function, out_properties, type_without_low_cardinality, parameters);
     }
 
@@ -133,7 +121,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         is_case_insensitive = true;
     }
 
-    ContextPtr query_context;
+    const Context * query_context = nullptr;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
@@ -149,8 +137,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
 
-        const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
-        return found.creator(name, argument_types, parameters, settings);
+        return found.creator(name, argument_types, parameters);
     }
 
     /// Combinators of aggregate functions.

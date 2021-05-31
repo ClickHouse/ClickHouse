@@ -1,24 +1,21 @@
 #pragma once
 
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/Field.h>
-#include <Interpreters/Context_fwd.h>
-#include <Common/Exception.h>
-#include <common/types.h>
-
 #include <cstddef>
 #include <memory>
 #include <vector>
 #include <type_traits>
 
+#include <common/types.h>
+#include <Common/Exception.h>
+#include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Field.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -105,7 +102,7 @@ public:
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
-    virtual bool allocatesMemoryInArena() const = 0;
+    virtual bool allocatesMemoryInArena() const { return false; }
 
     /// Inserts results into a column. This method might modify the state (e.g.
     /// sort an array), so must be called once, from single thread. The state
@@ -123,7 +120,7 @@ public:
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        ContextPtr /*context*/) const
+        const Context & /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -153,13 +150,6 @@ public:
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
-
-    virtual void mergeBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const AggregateDataPtr * rhs,
-        Arena * arena) const = 0;
 
     /** The same for single place.
       */
@@ -285,18 +275,6 @@ public:
                 if (places[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
         }
-    }
-
-    void mergeBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const AggregateDataPtr * rhs,
-        Arena * arena) const override
-    {
-        for (size_t i = 0; i < batch_size; ++i)
-            if (places[i])
-                static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
     }
 
     void addBatchSinglePlace(

@@ -9,7 +9,7 @@ Some aggregate functions can accept not only argument columns (used for compress
 
 ## histogram {#histogram}
 
-Calculates an adaptive histogram. It does not guarantee precise results.
+Calculates an adaptive histogram. It doesn’t guarantee precise results.
 
 ``` sql
 histogram(number_of_bins)(values)
@@ -79,7 +79,7 @@ FROM
 └────────┴───────┘
 ```
 
-In this case, you should remember that you do not know the histogram bin borders.
+In this case, you should remember that you don’t know the histogram bin borders.
 
 ## sequenceMatch(pattern)(timestamp, cond1, cond2, …) {#function-sequencematch}
 
@@ -114,7 +114,7 @@ Type: `UInt8`.
 
 -   `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
 
--   `.*` — Matches any number of events. You do not need conditional arguments to match this element of the pattern.
+-   `.*` — Matches any number of events. You don’t need conditional arguments to match this element of the pattern.
 
 -   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
 
@@ -172,7 +172,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 ## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
 
-Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
+Counts the number of event chains that matched the pattern. The function searches event chains that don’t overlap. It starts to search for the next chain after the current chain is matched.
 
 !!! warning "Warning"
     Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
@@ -253,7 +253,7 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 **Parameters**
 
--   `window` — Length of the sliding window, it is the time interval between the first and the last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
+-   `window` — Length of the sliding window, it is the time interval between first condition and last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
 -   `mode` — It is an optional argument. One or more modes can be set.
     -   `'strict'` — If same condition holds for sequence of events then such non-unique events would be skipped. 
     -   `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
@@ -312,7 +312,7 @@ FROM
     GROUP BY user_id
 )
 GROUP BY level
-ORDER BY level ASC;
+ORDER BY level ASC
 ```
 
 Result:

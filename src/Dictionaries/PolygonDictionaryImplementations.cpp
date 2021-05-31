@@ -166,18 +166,16 @@ DictionaryPtr createLayout(const std::string & ,
                            const DictionaryStructure & dict_struct,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
-                           DictionarySourcePtr source_ptr,
-                           ContextPtr /* context */,
-                           bool /*created_from_ddl*/)
+                           DictionarySourcePtr source_ptr)
 {
     const String database = config.getString(config_prefix + ".database", "");
     const String name = config.getString(config_prefix + ".name");
 
     if (!dict_struct.key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'key' is required for a polygon dictionary");
+        throw Exception{"'key' is required for a polygon dictionary", ErrorCodes::BAD_ARGUMENTS};
     if (dict_struct.key->size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The 'key' should consist of a single attribute for a polygon dictionary");
+        throw Exception{"The 'key' should consist of a single attribute for a polygon dictionary",
+                        ErrorCodes::BAD_ARGUMENTS};
 
     IPolygonDictionary::InputType input_type;
     IPolygonDictionary::PointType point_type;
@@ -208,19 +206,19 @@ DictionaryPtr createLayout(const std::string & ,
         point_type = IPolygonDictionary::PointType::Tuple;
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The key type {} is not one of the following allowed types for a polygon dictionary: {} {} {} {} ",
-            key_type->getName(),
-            multi_polygon_array.getName(),
-            multi_polygon_tuple.getName(),
-            simple_polygon_array.getName(),
-            simple_polygon_tuple.getName());
+        throw Exception{"The key type " + key_type->getName() +
+                        " is not one of the following allowed types for a polygon dictionary: " +
+                        multi_polygon_array.getName() + " " +
+                        multi_polygon_tuple.getName() + " " +
+                        simple_polygon_array.getName() + " " +
+                        simple_polygon_tuple.getName() + " ",
+                        ErrorCodes::BAD_ARGUMENTS};
 
     if (dict_struct.range_min || dict_struct.range_max)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "{}: elements range_min and range_max should be defined only "
-            "for a dictionary of layout 'range_hashed'",
-            name);
+        throw Exception{name
+                        + ": elements range_min and range_max should be defined only "
+                          "for a dictionary of layout 'range_hashed'",
+                        ErrorCodes::BAD_ARGUMENTS};
 
     const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 

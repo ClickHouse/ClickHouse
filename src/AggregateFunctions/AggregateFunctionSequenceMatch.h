@@ -15,7 +15,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -561,8 +560,6 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         this->data(place).sort();
@@ -590,8 +587,6 @@ public:
     String getName() const override { return "sequenceCount"; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {

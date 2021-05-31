@@ -26,7 +26,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -221,7 +220,7 @@ private:
     }
 
 public:
-    AggregateFunctionHistogramData() //-V730
+    AggregateFunctionHistogramData()
         : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
@@ -332,8 +331,6 @@ public:
         auto tuple = std::make_shared<DataTypeTuple>(types);
         return std::make_shared<DataTypeArray>(tuple);
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

@@ -10,7 +10,10 @@ toc_title: "Введение"
 
 ClickHouse поддерживает специальные функции для работы со словарями, которые можно использовать в запросах. Проще и эффективнее использовать словари с помощью функций, чем `JOIN` с таблицами-справочниками.
 
+В словаре нельзя хранить значения [NULL](../../sql-reference/syntax.md#null-literal).
+
 ClickHouse поддерживает:
 
--   [Встроенные словари](internal-dicts.md#internal_dicts) со специфическим [набором функций](../../sql-reference/functions/ext-dict-functions.md).
--   [Подключаемые (внешние) словари](external-dictionaries/external-dicts.md#dicts-external-dicts) с [набором функций](../../sql-reference/functions/ext-dict-functions.md).
+-   [Встроенные словари](internal-dicts.md#internal_dicts) со специфическим [набором функций](../../sql-reference/dictionaries/external-dictionaries/index.md).
+-   [Подключаемые (внешние) словари](external-dictionaries/external-dicts.md#dicts-external-dicts) с [набором функций](../../sql-reference/dictionaries/external-dictionaries/index.md).
+
