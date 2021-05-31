@@ -4874,7 +4874,7 @@ void StorageReplicatedMergeTree::alter(
             zookeeper->get(mutations_path, &mutations_stat);
 
             partition_block_numbers_holder =
-                    allocateBlockNumbersInAffectedPartitions(mutation_entry.commands, query_context, zookeeper);
+                allocateBlockNumbersInAffectedPartitions(mutation_entry.commands, query_context, zookeeper);
 
             mutation_entry.block_numbers = partition_block_numbers_holder.getBlockNumbers();
             mutation_entry.create_time = time(nullptr);

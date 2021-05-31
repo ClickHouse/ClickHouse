@@ -24,7 +24,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
     }
