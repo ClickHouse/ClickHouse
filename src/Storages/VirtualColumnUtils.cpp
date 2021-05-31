@@ -86,7 +86,7 @@ void buildSets(const ASTPtr & expression, ExpressionAnalyzer & analyzer)
     {
         const IAST & args = *func->arguments;
         const ASTPtr & arg = args.children.at(1);
-        if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
+        if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
         {
             analyzer.tryMakeSetForIndexFromSubquery(arg);
         }
