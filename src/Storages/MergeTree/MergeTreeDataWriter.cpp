@@ -132,7 +132,7 @@ void updateTTL(
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-        const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+        const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
