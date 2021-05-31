@@ -29,6 +29,9 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
+
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
     HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const;
@@ -68,6 +71,8 @@ private:
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
     /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
     mutable std::shared_mutex rwlock;
+
+    mutable std::mutex mutex;
 
     void insertBlock(const Block & block) override;
     void finishInsert() override {}

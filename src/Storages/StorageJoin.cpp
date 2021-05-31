@@ -1,24 +1,25 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageSet.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/joinDispatch.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/Exception.h>
 
-#include <Poco/String.h>    /// toLower
-#include <Poco/File.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Processors/Pipe.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Poco/String.h> /// toLower
 
 
 namespace DB
@@ -71,6 +72,7 @@ StorageJoin::StorageJoin(
 void StorageJoin::truncate(
     const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder&)
 {
+    std::lock_guard lock(mutex);
     disk->removeRecursive(path);
     disk->createDirectories(path);
     disk->createDirectories(path + "tmp/");
@@ -79,6 +81,68 @@ void StorageJoin::truncate(
     join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
 }
 
+void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    for (const auto & command: commands)
+    {
+        switch (command.type)
+        {
+            case MutationCommand::Type::DELETE:
+                break;
+            case MutationCommand::Type::UPDATE:
+                throw Exception("Table engine Join doesn't support update mutation, please use insert instead", ErrorCodes::NOT_IMPLEMENTED);
+            default:
+                throw Exception("Table engine Join doesn't support this mutation", ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
+}
+
+void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
+{
+    // Only delete is supported
+    std::lock_guard lock(mutex);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
+    auto in = interpreter->execute();
+    in->readPrefix();
+
+    auto new_data = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+
+    const String backup_file_name = "1.bin"; // id starts from 1
+    auto backup_buf = disk->writeFile(path + "tmp/" + backup_file_name);
+    auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
+    auto backup_stream = NativeBlockOutputStream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+
+    while (const Block & block = in->read())
+    {
+        new_data->addJoinedBlock(block, true);
+        if (persistent)
+            backup_stream.write(block);
+    }
+
+    join = std::move(new_data);
+    increment = 1;
+
+    if (persistent)
+    {
+        backup_stream.flush();
+        compressed_backup_buf.next();
+        backup_buf->next();
+        backup_buf->finalize();
+
+        std::vector<std::string> files;
+        disk->listFiles(path, files);
+        for (const auto & file_name: files)
+        {
+            if (file_name.ends_with(".bin"))
+                disk->removeFileIfExists(path + file_name);
+        }
+
+        disk->replaceFile(path + "tmp/" + backup_file_name, path + backup_file_name);
+    }
+}
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const
 {
