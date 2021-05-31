@@ -60,6 +60,8 @@ protected:
 
     String server_display_name;
 
+    String home_path;
+
     std::unique_ptr<Connection> connection; /// Connection to DB.
 
     ConnectionParameters connection_parameters;

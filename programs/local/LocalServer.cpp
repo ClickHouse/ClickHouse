@@ -344,8 +344,8 @@ try
         clearTerminal();
         showClientVersion();
 
-        //for visual convenience
-        std::cout << endl;
+        //For visual convenience
+        std::cout << std::endl;
     }
 
     if (!is_interactive)
@@ -425,6 +425,12 @@ try
             history_file = config().getString("history_file");
         else
         {
+            const char * home_path_cstr = getenv("HOME");
+            if (home_path_cstr)
+                home_path = home_path_cstr;
+
+            configReadClient(config(), home_path);
+
             auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
             if (history_file_from_env)
                 history_file = history_file_from_env;
