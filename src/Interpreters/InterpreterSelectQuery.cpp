@@ -1296,9 +1296,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                   */
 
                 if (from_aggregation_stage)
-                    executeMergeSorted(query_plan, "for ORDER BY");
-                else if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
-                    executeMergeSorted(query_plan, "for ORDER BY");
+                    executeMergeSorted(query_plan, "after aggregation stage for ORDER BY");
+                else if (!expressions.first_stage
+                    && !expressions.need_aggregate
+                    && !expressions.has_window
+                    && !(query.group_by_with_totals && !aggregate_final))
+                    executeMergeSorted(query_plan, "for ORDER BY, without aggregation");
                 else    /// Otherwise, just sort.
                     executeOrder(
                         query_plan,

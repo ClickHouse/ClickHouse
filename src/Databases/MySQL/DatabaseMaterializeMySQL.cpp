@@ -92,7 +92,7 @@ void DatabaseMaterializeMySQL<Base>::setException(const std::exception_ptr & exc
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::loadStoredObjects(ContextPtr context_, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializeMySQL<Base>::loadStoredObjects(ContextMutablePtr context_, bool has_force_restore_data_flag, bool force_attach)
 {
     Base::loadStoredObjects(context_, has_force_restore_data_flag, force_attach);
     if (!force_attach)

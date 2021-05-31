@@ -270,11 +270,11 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class FunctionJSON : public IFunction, WithContext
+class FunctionJSON : public IFunction, WithConstContext
 {
 public:
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionJSON>(context_); }
-    FunctionJSON(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionJSON>(context_); }
+    FunctionJSON(ContextConstPtr context_) : WithConstContext(context_) {}
 
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }

@@ -10,6 +10,8 @@ namespace DB
 
 struct ASTWindowDefinition : public IAST
 {
+    std::string parent_window_name;
+
     ASTPtr partition_by;
 
     ASTPtr order_by;

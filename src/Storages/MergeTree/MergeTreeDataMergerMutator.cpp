@@ -343,6 +343,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     if (parts_to_merge.empty())
     {
         SimpleMergeSelector::Settings merge_settings;
+        /// Override value from table settings
+        merge_settings.max_parts_to_merge_at_once = data_settings->max_parts_to_merge_at_once;
+
         if (aggressive)
             merge_settings.base = 1;
 

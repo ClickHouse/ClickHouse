@@ -25,7 +25,7 @@ namespace DB
 
 static void executeCreateQuery(
     const String & query,
-    ContextPtr context,
+    ContextMutablePtr context,
     const String & database,
     const String & file_name,
     bool has_force_restore_data_flag)
@@ -46,7 +46,7 @@ static void executeCreateQuery(
 
 
 static void loadDatabase(
-    ContextPtr context,
+    ContextMutablePtr context,
     const String & database,
     const String & database_path,
     bool force_restore_data)
@@ -84,7 +84,7 @@ static void loadDatabase(
 }
 
 
-void loadMetadata(ContextPtr context, const String & default_database_name)
+void loadMetadata(ContextMutablePtr context, const String & default_database_name)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
@@ -168,7 +168,7 @@ void loadMetadata(ContextPtr context, const String & default_database_name)
 }
 
 
-void loadMetadataSystem(ContextPtr context)
+void loadMetadataSystem(ContextMutablePtr context)
 {
     String path = context->getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
     String metadata_file = path + ".sql";
