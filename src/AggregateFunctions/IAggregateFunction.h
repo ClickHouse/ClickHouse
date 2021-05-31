@@ -115,6 +115,8 @@ public:
     /// window function.
     virtual void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const = 0;
 
+    virtual void insertResultIntoAndDestroyStatesBatch(size_t batch_size, AggregateDataPtr * places, size_t offset, IColumn & to, Arena * arena) const = 0;
+
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
     virtual void predictValues(
@@ -412,6 +414,48 @@ public:
             if (unlikely(!place))
                 init(place);
             static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
+        }
+    }
+
+    virtual void insertResultIntoAndDestroyStatesBatch(size_t batch_size, AggregateDataPtr * places, size_t offset, IColumn & to, Arena * arena) const override
+    {
+        if (unlikely(static_cast<const Derived *>(this)->isState()))
+            insertResultIntoAndDestroyStatesBatch<true>(batch_size, places, offset, to, arena);
+        else
+            insertResultIntoAndDestroyStatesBatch<false>(batch_size, places, offset, to, arena);
+    }
+
+private:
+
+    template <bool should_destroy>
+    ALWAYS_INLINE void insertResultIntoAndDestroyStatesBatch(size_t batch_size, AggregateDataPtr * places, size_t offset, IColumn & to, Arena * arena) const
+    {
+        size_t insert_index = 0;
+
+        if constexpr (should_destroy)
+        {
+            std::exception_ptr exception;
+
+            try
+            {
+                for (; insert_index < batch_size; ++insert_index)
+                {
+                    insertResultInto(places[insert_index] + offset, to, arena);
+                    static_cast<const Derived *>(this)->destroy(places[insert_index] + offset);
+                }
+            }
+            catch (...)
+            {
+                exception = std::current_exception();
+            }
+
+            for (; insert_index < batch_size; ++insert_index)
+                static_cast<const Derived *>(this)->destroy(places[insert_index] + offset);
+        }
+        else
+        {
+            for (; insert_index < batch_size; ++insert_index)
+                static_cast<const Derived *>(this)->insertResultInto(places[insert_index] + offset, to, arena);
         }
     }
 };

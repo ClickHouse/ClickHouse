@@ -1121,11 +1121,23 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     auto shuffled_key_sizes = method.shuffleKeyColumns(key_columns, key_sizes);
     const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes :  key_sizes;
 
+    size_t row = 0;
+    PaddedPODArray<AggregateDataPtr> places;
+    places.resize_fill(data.size());
+
     data.forEachValue([&](const auto & key, auto & mapped)
     {
         method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
-        insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
+        places[row] = mapped;
+        ++row;
     });
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        size_t offset = offsets_of_aggregate_states[i];
+        final_aggregate_columns[i]->reserve(places.size());
+        aggregate_functions[i]->insertResultIntoAndDestroyStatesBatch(places.size(), places.data(), offset, *final_aggregate_columns[i], arena);
+    }
 }
 
 template <typename Method, typename Table>
