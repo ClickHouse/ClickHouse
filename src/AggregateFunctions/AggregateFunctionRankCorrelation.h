@@ -18,6 +18,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 struct RankCorrelationData : public StatisticalSample<Float64, Float64>

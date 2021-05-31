@@ -453,7 +453,10 @@ if args.report == 'main':
             text += tableRow(r, attrs, anchor)
 
         text += tableEnd()
-        tables.append(text)
+
+        # Don't add an empty table.
+        if very_unstable_queries:
+            tables.append(text)
 
     add_unstable_queries()
 
@@ -552,13 +555,13 @@ if args.report == 'main':
         message_array.append(str(slower_queries) + ' slower')
 
     if unstable_partial_queries:
-        unstable_queries += unstable_partial_queries
-        error_tests += unstable_partial_queries
+        very_unstable_queries += unstable_partial_queries
         status = 'failure'
 
     # Don't show mildly unstable queries, only the very unstable ones we
     # treat as errors.
     if very_unstable_queries:
+        error_tests += very_unstable_queries
         status = 'failure'
         message_array.append(str(very_unstable_queries) + ' unstable')
 
