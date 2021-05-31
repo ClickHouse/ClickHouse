@@ -1,8 +1,8 @@
 #if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
+#    include "config_functions.h"
 #endif
 
-#ifdef USE_CLD2
+#if USE_CLD2
 
 #include <Functions/FunctionsTextClassification.h>
 #include <Functions/FunctionFactory.h>
