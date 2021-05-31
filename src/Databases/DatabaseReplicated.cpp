@@ -300,7 +300,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     current_zookeeper->multi(ops);
 }
 
-void DatabaseReplicated::loadStoredObjects(ContextPtr local_context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
 {
     tryConnectToZooKeeperAndInitDatabase(force_attach);
 

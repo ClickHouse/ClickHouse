@@ -16,7 +16,7 @@ class FunctionVersion : public IFunction
 {
 public:
     static constexpr auto name = "version";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionVersion>();
     }
