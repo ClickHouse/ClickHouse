@@ -35,7 +35,7 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 namespace
 {
     void tryAttachTable(
-        ContextPtr context,
+        ContextMutablePtr context,
         const ASTCreateQuery & query,
         DatabaseOrdinary & database,
         const String & database_name,
@@ -84,7 +84,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(ContextPtr local_context, bool has_force_restore_data_flag, bool /*force_attach*/)
+void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool /*force_attach*/)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,

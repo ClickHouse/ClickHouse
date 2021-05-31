@@ -159,7 +159,7 @@ private:
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
-    ContextPtr global_context;
+    ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception
