@@ -351,7 +351,7 @@ SELECT * FROM base.t1;
 Вы можете добавить комментарий к таблице при ее создании.
 
 !!!note "Замечание"
-    Комментарий поддерживается для всех движков таблиц, кроме [Kafka](../../../engines/table-engines/integrations/kafka.md) и [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md).
+    Комментарий поддерживается для всех движков таблиц, кроме [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) и [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
 	
 **Синтаксис**
 
