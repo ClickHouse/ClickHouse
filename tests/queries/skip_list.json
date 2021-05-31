@@ -408,6 +408,9 @@
     [
         /// Pessimistic list of tests which work badly in parallel.
         /// Probably they need better investigation.
+        "01184_long_insert_values_huge_strings", /// Memory limit
+        "01200_mutations_memory_consumption", /// Memory limit
+        "01231_distributed_aggregation_memory_efficient_mix_levels", /// Uses test_cluster_two_shards_different_databases
         "01541_max_memory_usage_for_user_long",
         "01542_dictionary_load_exception_race",
         "01545_system_errors", // looks at the difference of values in system.errors
