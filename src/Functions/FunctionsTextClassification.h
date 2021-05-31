@@ -34,7 +34,7 @@ class FunctionsTextClassification : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsTextClassification>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionsTextClassification>(); }
 
     String getName() const override { return name; }
 
