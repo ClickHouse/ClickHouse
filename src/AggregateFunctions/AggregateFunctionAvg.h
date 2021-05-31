@@ -12,6 +12,7 @@
 
 namespace DB
 {
+struct Settings;
 template <typename T>
 using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 

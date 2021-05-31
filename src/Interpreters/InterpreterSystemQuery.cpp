@@ -192,8 +192,8 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 }
 
 
-InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-        : WithContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
+InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
 {
 }
 
@@ -424,7 +424,7 @@ BlockIO InterpreterSystemQuery::execute()
 }
 
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextPtr system_context, bool need_ddl_guard)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
 
@@ -469,7 +469,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     return table;
 }
 
-void InterpreterSystemQuery::restartReplicas(ContextPtr system_context)
+void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 {
     std::vector<StorageID> replica_names;
     auto & catalog = DatabaseCatalog::instance();
