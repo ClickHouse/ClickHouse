@@ -174,7 +174,7 @@ Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal d
 
 **Returned value**
 
--   A binary string.
+-   A binary string (BLOB).
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -221,4 +221,3 @@ Accepts an integer. Returns a string containing the list of powers of two that t
 ## bitmaskToArray(num) {#bitmasktoarraynum}
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
-
