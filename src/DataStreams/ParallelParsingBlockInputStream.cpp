@@ -27,9 +27,6 @@ ParallelParsingBlockInputStream::ParallelParsingBlockInputStream(const Params & 
     // couple more units so that the segmentation thread doesn't spuriously
     // bump into reader thread on wraparound.
     processing_units.resize(params.max_threads + 2);
-
-    segmentator_thread = ThreadFromGlobalPool(
-        &ParallelParsingBlockInputStream::segmentatorThreadFunction, this, CurrentThread::getGroup());
 }
 
 ParallelParsingBlockInputStream::~ParallelParsingBlockInputStream()
@@ -215,6 +212,11 @@ void ParallelParsingBlockInputStream::onBackgroundException()
 
 Block ParallelParsingBlockInputStream::readImpl()
 {
+    if (unlikely(!parsing_started.exchange(true)))
+        segmentator_thread = ThreadFromGlobalPool(
+            &ParallelParsingBlockInputStream::segmentatorThreadFunction, this, CurrentThread::getGroup());
+
+
     if (isCancelledOrThrowIfKilled() || finished)
     {
         /**
