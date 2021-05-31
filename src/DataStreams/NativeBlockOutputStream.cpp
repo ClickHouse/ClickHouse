@@ -10,6 +10,7 @@
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
 {
@@ -41,7 +42,7 @@ void NativeBlockOutputStream::flush()
 }
 
 
-static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
+static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit, size_t revision)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
@@ -52,6 +53,13 @@ static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuf
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0; //-V1048
+
+    const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(&type);
+    if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+    {
+        auto version = aggregate_function_data_type->getVersionFromRevision(revision);
+        aggregate_function_data_type->setVersionIfEmpty(version);
+    }
 
     auto serialization = type.getDefaultSerialization();
 
@@ -123,7 +131,7 @@ void NativeBlockOutputStream::write(const Block & block)
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
-            writeData(*column.type, column.column, ostr, 0, 0);
+            writeData(*column.type, column.column, ostr, 0, 0, client_revision);
 
         if (index_ostr)
         {

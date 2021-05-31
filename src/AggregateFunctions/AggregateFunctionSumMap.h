@@ -269,30 +269,37 @@ public:
         if (!version)
             version = getDefaultVersion();
 
-        LOG_TRACE(&Poco::Logger::get("kssenii"), "version to serialize: {}, stack: {}", *version, StackTrace().toString());
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
         writeVarUInt(size, buf);
+
+        std::function<void(size_t, const Array &)> serialize;
+        switch (*version)
+        {
+            case 0:
+            {
+                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                break;
+            }
+            case 1:
+            {
+                serialize = [&](size_t col_idx, const Array & values)
+                {
+                    const auto & type = values_types[col_idx];
+                    if (isInteger(type))
+                        SerializationNumber<Int64>().serializeBinary(values[col_idx], buf);
+                    else
+                        values_serializations[col_idx]->serializeBinary(values[col_idx], buf);
+                };
+                break;
+            }
+        }
 
         for (const auto & elem : merged_maps)
         {
             keys_serialization->serializeBinary(elem.first, buf);
             for (size_t col = 0; col < values_types.size(); ++col)
-            {
-                switch (*version)
-                {
-                    case 0:
-                    {
-                        values_serializations[col]->serializeBinary(elem.second[col], buf);
-                        break;
-                    }
-                    case 1:
-                    {
-                        SerializationNumber<Int64>().serializeBinary(elem.second[col], buf);
-                        break;
-                    }
-                }
-            }
+                serialize(col, elem.second);
         }
     }
 
@@ -301,10 +308,31 @@ public:
         if (!version)
             version = getDefaultVersion();
 
-        LOG_TRACE(&Poco::Logger::get("kssenii"), "version to deserialize: {}, stack: {}", *version, StackTrace().toString());
         auto & merged_maps = this->data(place).merged_maps;
         size_t size = 0;
         readVarUInt(size, buf);
+
+        std::function<void(size_t, Array &)> deserialize;
+        switch (*version)
+        {
+            case 0:
+            {
+                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                break;
+            }
+            case 1:
+            {
+                deserialize = [&](size_t col_idx, Array & values)
+                {
+                    const auto & type = values_types[col_idx];
+                    if (isInteger(type))
+                        SerializationNumber<Int64>().deserializeBinary(values[col_idx], buf);
+                    else
+                        values_serializations[col_idx]->deserializeBinary(values[col_idx], buf);
+                };
+                break;
+            }
+        }
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -313,22 +341,9 @@ public:
 
             Array values;
             values.resize(values_types.size());
+
             for (size_t col = 0; col < values_types.size(); ++col)
-            {
-                switch (*version)
-                {
-                    case 0:
-                    {
-                        values_serializations[col]->deserializeBinary(values[col], buf);
-                        break;
-                    }
-                    case 1:
-                    {
-                        SerializationNumber<Int64>().deserializeBinary(values[col], buf);
-                        break;
-                    }
-                }
-            }
+                deserialize(col, values);
 
             if constexpr (IsDecimalNumber<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;

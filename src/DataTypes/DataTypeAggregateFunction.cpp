@@ -20,7 +20,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Common/ClickHouseRevision.h>
 
 
 namespace DB
@@ -89,10 +88,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    /// FIXME: There are a lot of function->serialize inside ColumnAggregateFunction.
-    /// Looks like it also needs version.
-    LOG_TRACE(&Poco::Logger::get("kssenii"), "KSSENII COLUMN");
-    return ColumnAggregateFunction::create(function);
+    return ColumnAggregateFunction::create(function, version);
 }
 
 
@@ -153,7 +149,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     /* If aggregate function definition doesn't have version, it will have in AST children args [ASTFunction, types...] - in case
      * it is parametric, or [ASTIdentifier, types...] - otherwise. If aggregate function has version in AST, then it will be:
-     * [ASTLitearl, ASTFunction (or ASTIdentifier), types].
+     * [ASTLitearl, ASTFunction (or ASTIdentifier), types...].
      */
     if (auto version_ast = arguments->children[0]->as<ASTLiteral>())
     {
@@ -168,7 +164,6 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
 
         function_name = parametric->name;
-        LOG_TRACE(&Poco::Logger::get("kssenii"), "Paramtric function name: {}", function_name);
 
         if (parametric->arguments)
         {

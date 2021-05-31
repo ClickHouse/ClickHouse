@@ -153,7 +153,7 @@ public:
         writePODBinary<bool>(this->data(place).seen, buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readIntBinary(this->data(place).sum, buf);
         readIntBinary(this->data(place).first, buf);

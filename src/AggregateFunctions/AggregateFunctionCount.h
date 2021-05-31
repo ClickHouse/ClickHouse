@@ -146,7 +146,7 @@ public:
         writeVarUInt(data(place).count, buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readVarUInt(data(place).count, buf);
     }

@@ -85,7 +85,7 @@ public:
         this->data(place).value.write(buf, *serialization_val);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).result.read(buf, *serialization_res, arena);
         this->data(place).value.read(buf, *serialization_val, arena);

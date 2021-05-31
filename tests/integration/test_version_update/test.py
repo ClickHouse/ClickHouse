@@ -2,35 +2,53 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
-
 cluster = ClickHouseCluster(__file__)
 
 
 node1 = cluster.add_instance('node1', main_configs=["configs/log_conf.xml"], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=["configs/log_conf.xml"],
-                                      image='yandex/clickhouse-server',
-                                      tag='21.5', with_installed_binary=True, stay_alive=True)
 
-node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server', tag='21.2', with_installed_binary=True, stay_alive=True)
+node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server', tag='21.2', with_installed_binary=True, stay_alive=True)
+
+# Use differents nodes because if there is node.restart_from_latest_version(), then in later tests
+# it will be with latest version, but shouldn't, order of tests in CI is shuffled.
+node3 = cluster.add_instance('node3', main_configs=["configs/log_conf.xml"],
+                                      image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
+node4 = cluster.add_instance('node4', main_configs=["configs/log_conf.xml"],
+                                      image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
+node5 = cluster.add_instance('node5', main_configs=["configs/log_conf.xml"],
+                                      image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
+node6 = cluster.add_instance('node6', main_configs=["configs/log_conf.xml"],
+                                      image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
 
 
-def insert_data(node):
-    node.query(""" INSERT INTO test_table
-                SELECT toDateTime('2020-10-01 19:20:30'), 1,
-                sumMapState(arrayMap(i -> 1, range(300)), arrayMap(i -> 1, range(300)));""")
+
+def insert_data(node, table_name='test_table', n=1, col2=1):
+    node.query(""" INSERT INTO {}
+                SELECT toDateTime(NOW()), {},
+                sumMapState(arrayMap(i -> 1, range(300)), arrayMap(i -> 1, range(300)))
+                FROM numbers({});""".format(table_name, col2, n))
 
 
-def create_and_fill_table(node):
-    node.query("DROP TABLE IF EXISTS test_table;")
-    node.query("""
-    CREATE TABLE test_table
-    (
-        `col1` DateTime,
-        `col2` Int64,
-        `col3` AggregateFunction(sumMap, Array(UInt8), Array(UInt8))
-    )
-    ENGINE = AggregatingMergeTree() ORDER BY (col1, col2) """)
-    insert_data(node)
+def create_table(node, name='test_table', version=None):
+    node.query("DROP TABLE IF EXISTS {};".format(name))
+    if version is None:
+        node.query("""
+        CREATE TABLE {}
+        (
+            `col1` DateTime,
+            `col2` Int64,
+            `col3` AggregateFunction(sumMap, Array(UInt8), Array(UInt8))
+        )
+        ENGINE = AggregatingMergeTree() ORDER BY (col1, col2) """.format(name))
+    else:
+        node.query("""
+        CREATE TABLE {}
+        (
+            `col1` DateTime,
+            `col2` Int64,
+            `col3` AggregateFunction({}, sumMap, Array(UInt8), Array(UInt8))
+        )
+        ENGINE = AggregatingMergeTree() ORDER BY (col1, col2) """.format(name, version))
 
 
 @pytest.fixture(scope="module")
@@ -43,104 +61,139 @@ def start_cluster():
 
 
 def test_modulo_partition_key_issue_23508(start_cluster):
-    node3.query("CREATE TABLE test (id Int64, v UInt64, value String) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/table1', '1', v) PARTITION BY id % 20 ORDER BY (id, v)")
-    node3.query("INSERT INTO test SELECT number, number, toString(number) FROM numbers(10)")
+    node2.query("CREATE TABLE test (id Int64, v UInt64, value String) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/table1', '1', v) PARTITION BY id % 20 ORDER BY (id, v)")
+    node2.query("INSERT INTO test SELECT number, number, toString(number) FROM numbers(10)")
 
-    expected = node3.query("SELECT number, number, toString(number) FROM numbers(10)")
-    partition_data = node3.query("SELECT partition, name FROM system.parts WHERE table='test' ORDER BY partition")
-    assert(expected == node3.query("SELECT * FROM test ORDER BY id"))
+    expected = node2.query("SELECT number, number, toString(number) FROM numbers(10)")
+    partition_data = node2.query("SELECT partition, name FROM system.parts WHERE table='test' ORDER BY partition")
+    assert(expected == node2.query("SELECT * FROM test ORDER BY id"))
 
-    node3.restart_with_latest_version()
+    node2.restart_with_latest_version()
 
-    assert(expected == node3.query("SELECT * FROM test ORDER BY id"))
-    assert(partition_data == node3.query("SELECT partition, name FROM system.parts WHERE table='test' ORDER BY partition"))
+    assert(expected == node2.query("SELECT * FROM test ORDER BY id"))
+    assert(partition_data == node2.query("SELECT partition, name FROM system.parts WHERE table='test' ORDER BY partition"))
 
 
+# Test from issue 16587
 def test_aggregate_function_versioning_issue_16587(start_cluster):
-    for node in [node1, node2]:
+    for node in [node1, node3]:
         node.query("DROP TABLE IF EXISTS test_table;")
         node.query("""
         CREATE TABLE test_table (`col1` DateTime, `col2` Int64)
         ENGINE = MergeTree() ORDER BY col1""")
-        node.query("insert into test_table select '2020-10-26 00:00:00', 70724110 from numbers(300)")
+        node.query("insert into test_table select '2020-10-26 00:00:00', 1929292 from numbers(300)")
 
     expected = "([1],[600])"
 
-    # Incorrect result on old server
-    result_on_old_version = node2.query("select sumMap(sm) from (select sumMap([1],[1]) as sm from remote('127.0.0.{1,2}', default.test_table) group by col1, col2);")
-    assert(result_on_old_version.strip() != expected)
+    result_on_old_version = node3.query("select sumMap(sm) from (select sumMap([1],[1]) as sm from remote('127.0.0.{1,2}', default.test_table) group by col1, col2);").strip()
+    assert(result_on_old_version != expected)
 
-    # Correct result on new server
-    result_on_new_version = node1.query("select sumMap(sm) from (select sumMap([1],[1]) as sm from remote('127.0.0.{1,2}', default.test_table) group by col1, col2);")
-    assert(result_on_new_version.strip() == expected)
+    result_on_new_version = node1.query("select sumMap(sm) from (select sumMap([1],[1]) as sm from remote('127.0.0.{1,2}', default.test_table) group by col1, col2);").strip()
+    assert(result_on_new_version == expected)
 
 
-def test_aggregate_function_versioning_fetch_data_from_new_to_old_server(start_cluster):
-    for node in [node1, node2]:
-        create_and_fill_table(node)
+def test_aggregate_function_versioning_fetch_data_from_old_to_new_server(start_cluster):
+    for node in [node1, node4]:
+        create_table(node)
+        insert_data(node)
 
     expected = "([1],[300])"
 
     new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(new_server_data == expected)
 
-    old_server_data = node2.query("select finalizeAggregation(col3) from default.test_table;").strip()
+    old_server_data = node4.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(old_server_data != expected)
 
-    data_from_old_to_new_server = node1.query("select finalizeAggregation(col3) from remote('node2', default.test_table);").strip()
+    data_from_old_to_new_server = node1.query("select finalizeAggregation(col3) from remote('node4', default.test_table);").strip()
     assert(data_from_old_to_new_server == old_server_data)
 
 
 def test_aggregate_function_versioning_server_upgrade(start_cluster):
-    for node in [node1, node2]:
-        create_and_fill_table(node)
+    for node in [node1, node5]:
+        create_table(node)
+    insert_data(node1, col2=5)
+    insert_data(node5, col2=1)
+
+    # Serialization with version 0.
+    old_server_data = node5.query("select finalizeAggregation(col3) from default.test_table;").strip()
+    assert(old_server_data == "([1],[44])")
+
+    # Upgrade server.
+    node5.restart_with_latest_version()
+
+    # Deserialized with version 0.
+    upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table;").strip()
+    assert(upgraded_server_data == "([1],[44])")
+
+    # Data from upgraded server to new server. Deserialize with version 0.
+    data_from_upgraded_to_new_server = node1.query("select finalizeAggregation(col3) from remote('node5', default.test_table);").strip()
+    assert(data_from_upgraded_to_new_server == upgraded_server_data == "([1],[44])")
+
+    upgraded_server_data = node5.query("select finalizeAggregation(col3) from remote('127.0.0.{1,2}', default.test_table);").strip()
+    assert(upgraded_server_data == "([1],[44])\n([1],[44])")
+
+    # Check insertion after server upgarde.
+    insert_data(node5, col2=2)
+
+    upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
+    assert(upgraded_server_data == "([1],[44])\n([1],[44])")
 
     new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(new_server_data == "([1],[300])")
-    old_server_data = node2.query("select finalizeAggregation(col3) from default.test_table;").strip()
-    assert(old_server_data == "([1],[44])")
 
-    node2.restart_with_latest_version()
+    # Insert from new server to upgraded server, data version 1.
+    node1.query("insert into table function remote('node5', default.test_table) select * from default.test_table;").strip()
+    upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
+    assert(upgraded_server_data == "([1],[44])\n([1],[44])\n([1],[44])")
 
-    # Check that after server upgrade aggregate function is serialized according to older version.
-    upgraded_server_data = node2.query("select finalizeAggregation(col3) from default.test_table;").strip()
-    assert(upgraded_server_data == "([1],[44])")
+    insert_data(node1)
+    new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
+    assert(new_server_data == "([1],[300])\n([1],[300])")
 
-    # Remote fetches are still with older version.
-    data_from_upgraded_to_new_server = node1.query("select finalizeAggregation(col3) from remote('node2', default.test_table);").strip()
-    assert(data_from_upgraded_to_new_server == upgraded_server_data == "([1],[44])")
+    # Create table with column with version 0 serialiazation to be used for futher check.
+    create_table(node1, name='test_table_0', version=0)
+    insert_data(node1, table_name='test_table_0', col2=3)
+    data = node1.query("select finalizeAggregation(col3) from default.test_table_0;").strip()
+    assert(data == "([1],[44])")
 
-    # Check it is ok to write into table with older version of aggregate function.
-    insert_data(node2)
-
-    # Hm, should newly inserted data be serialized as old version?
-    upgraded_server_data = node2.query("select finalizeAggregation(col3) from default.test_table;").strip()
-    assert(upgraded_server_data == "([1],[300])\n([1],[44])")
+    # Insert from new server to upgraded server, data version 0.
+    node1.query("insert into table function remote('node5', default.test_table) select * from default.test_table_0;").strip()
+    upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
+    assert(upgraded_server_data == "([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])")
 
 
 def test_aggregate_function_versioning_persisting_metadata(start_cluster):
-    for node in [node1, node2]:
-        create_and_fill_table(node)
-    node2.restart_with_latest_version()
+    for node in [node1, node6]:
+        create_table(node)
+        insert_data(node)
+    data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
+    assert(data == "([1],[300])")
+    data = node6.query("select finalizeAggregation(col3) from default.test_table;").strip()
+    assert(data == "([1],[44])")
 
-    for node in [node1, node2]:
+    node6.restart_with_latest_version()
+
+    for node in [node1, node6]:
         node.query("DETACH TABLE test_table")
         node.query("ATTACH TABLE test_table")
 
-    for node in [node1, node2]:
+    for node in [node1, node6]:
         insert_data(node)
 
     new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(new_server_data == "([1],[300])\n([1],[300])")
-    upgraded_server_data = node2.query("select finalizeAggregation(col3) from default.test_table;").strip()
+
+    upgraded_server_data = node6.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])")
 
-    for node in [node1, node2]:
+    for node in [node1, node6]:
         node.restart_clickhouse()
         insert_data(node)
 
     result = node1.query("select finalizeAggregation(col3) from remote('127.0.0.{1,2}', default.test_table);").strip()
-    assert(result == "([1],[300])\n([1],[300])\n([1],[300])\n([1],[300])")
-    result = node2.query("select finalizeAggregation(col3) from remote('127.0.0.{1,2}', default.test_table);").strip()
-    assert(result == "([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])")
+    assert(result == "([1],[300])\n([1],[300])\n([1],[300])\n([1],[300])\n([1],[300])\n([1],[300])")
+
+    result = node6.query("select finalizeAggregation(col3) from remote('127.0.0.{1,2}', default.test_table);").strip()
+    assert(result == "([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])")
 
