@@ -230,63 +230,85 @@ Pipe ReadFromMergeTree::read(
     return pipe;
 }
 
+namespace
+{
+
+struct PartRangesReadInfo
+{
+    std::vector<size_t> sum_marks_in_parts;
+
+    size_t sum_marks = 0;
+    size_t total_rows = 0;
+    size_t adaptive_parts = 0;
+    size_t index_granularity_bytes = 0;
+    size_t max_marks_to_use_cache = 0;
+    size_t min_marks_for_concurrent_read = 0;
+
+    bool use_uncompressed_cache = false;
+
+    PartRangesReadInfo(
+        const RangesInDataParts & parts,
+        const Settings & settings,
+        const MergeTreeSettings & data_settings)
+    {
+        /// Count marks for each part.
+        sum_marks_in_parts.resize(parts.size());
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            total_rows += parts[i].getRowsCount();
+            sum_marks_in_parts[i] = parts[i].getMarksCount();
+            sum_marks += sum_marks_in_parts[i];
+
+            if (parts[i].data_part->index_granularity_info.is_adaptive)
+                ++adaptive_parts;
+        }
+
+        if (adaptive_parts > parts.size() / 2)
+            index_granularity_bytes = data_settings.index_granularity_bytes;
+
+        max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
+            settings.merge_tree_max_rows_to_use_cache,
+            settings.merge_tree_max_bytes_to_use_cache,
+            data_settings.index_granularity,
+            index_granularity_bytes);
+
+        min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
+            settings.merge_tree_min_rows_for_concurrent_read,
+            settings.merge_tree_min_bytes_for_concurrent_read,
+            data_settings.index_granularity,
+            index_granularity_bytes,
+            sum_marks);
+
+        use_uncompressed_cache = settings.use_uncompressed_cache;
+        if (sum_marks > max_marks_to_use_cache)
+            use_uncompressed_cache = false;
+    }
+};
+
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts_with_ranges,
     const Names & column_names)
 {
     const auto & settings = context->getSettingsRef();
-
-    /// Count marks for each part.
-    std::vector<size_t> sum_marks_in_parts(parts_with_ranges.size());
-    size_t sum_marks = 0;
-    size_t total_rows = 0;
-
     const auto data_settings = data.getSettings();
-    size_t adaptive_parts = 0;
-    for (size_t i = 0; i < parts_with_ranges.size(); ++i)
-    {
-        total_rows += parts_with_ranges[i].getRowsCount();
-        sum_marks_in_parts[i] = parts_with_ranges[i].getMarksCount();
-        sum_marks += sum_marks_in_parts[i];
 
-        if (parts_with_ranges[i].data_part->index_granularity_info.is_adaptive)
-            ++adaptive_parts;
-    }
+    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
-    size_t index_granularity_bytes = 0;
-    if (adaptive_parts > parts_with_ranges.size() / 2)
-        index_granularity_bytes = data_settings->index_granularity_bytes;
-
-    const size_t max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
-        settings.merge_tree_max_rows_to_use_cache,
-        settings.merge_tree_max_bytes_to_use_cache,
-        data_settings->index_granularity,
-        index_granularity_bytes);
-
-    const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-        settings.merge_tree_min_rows_for_concurrent_read,
-        settings.merge_tree_min_bytes_for_concurrent_read,
-        data_settings->index_granularity,
-        index_granularity_bytes,
-        sum_marks);
-
-    bool use_uncompressed_cache = settings.use_uncompressed_cache;
-    if (sum_marks > max_marks_to_use_cache)
-        use_uncompressed_cache = false;
-
-    if (0 == sum_marks)
+    if (0 == info.sum_marks)
         return {};
 
     size_t num_streams = requested_num_streams;
     if (num_streams > 1)
     {
         /// Reduce the number of num_streams if the data is small.
-        if (sum_marks < num_streams * min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
-            num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts_with_ranges.size());
+        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
+            num_streams = std::max((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
     }
 
     return read(std::move(parts_with_ranges), column_names, ReadType::Default,
-                num_streams, min_marks_for_concurrent_read, use_uncompressed_cache);
+                num_streams, info.min_marks_for_concurrent_read, info.use_uncompressed_cache);
 }
 
 static ActionsDAGPtr createProjection(const Block & header)
@@ -305,44 +327,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
-    size_t sum_marks = 0;
-    size_t adaptive_parts = 0;
-    std::vector<size_t> sum_marks_in_parts(parts_with_ranges.size());
     const auto data_settings = data.getSettings();
 
-    for (size_t i = 0; i < parts_with_ranges.size(); ++i)
-    {
-        sum_marks_in_parts[i] = parts_with_ranges[i].getMarksCount();
-        sum_marks += sum_marks_in_parts[i];
-
-        if (parts_with_ranges[i].data_part->index_granularity_info.is_adaptive)
-            ++adaptive_parts;
-    }
-
-    size_t index_granularity_bytes = 0;
-    if (adaptive_parts > parts_with_ranges.size() / 2)
-        index_granularity_bytes = data_settings->index_granularity_bytes;
-
-    const size_t max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
-        settings.merge_tree_max_rows_to_use_cache,
-        settings.merge_tree_max_bytes_to_use_cache,
-        data_settings->index_granularity,
-        index_granularity_bytes);
-
-    const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-        settings.merge_tree_min_rows_for_concurrent_read,
-        settings.merge_tree_min_bytes_for_concurrent_read,
-        data_settings->index_granularity,
-        index_granularity_bytes,
-        sum_marks);
-
-    bool use_uncompressed_cache = settings.use_uncompressed_cache;
-    if (sum_marks > max_marks_to_use_cache)
-        use_uncompressed_cache = false;
+    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
     Pipes res;
 
-    if (sum_marks == 0)
+    if (info.sum_marks == 0)
         return {};
 
     /// Let's split ranges to avoid reading much data.
@@ -391,7 +382,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         return new_ranges;
     };
 
-    const size_t min_marks_per_stream = (sum_marks - 1) / requested_num_streams + 1;
+    const size_t min_marks_per_stream = (info.sum_marks - 1) / requested_num_streams + 1;
     bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
 
     Pipes pipes;
@@ -409,16 +400,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             RangesInDataPart part = parts_with_ranges.back();
             parts_with_ranges.pop_back();
 
-            size_t & marks_in_part = sum_marks_in_parts.back();
+            size_t & marks_in_part = info.sum_marks_in_parts.back();
 
             /// We will not take too few rows from a part.
-            if (marks_in_part >= min_marks_for_concurrent_read &&
-                need_marks < min_marks_for_concurrent_read)
-                need_marks = min_marks_for_concurrent_read;
+            if (marks_in_part >= info.min_marks_for_concurrent_read &&
+                need_marks < info.min_marks_for_concurrent_read)
+                need_marks = info.min_marks_for_concurrent_read;
 
             /// Do not leave too few rows in the part.
             if (marks_in_part > need_marks &&
-                marks_in_part - need_marks < min_marks_for_concurrent_read)
+                marks_in_part - need_marks < info.min_marks_for_concurrent_read)
                 need_marks = marks_in_part;
 
             MarkRanges ranges_to_get_from_part;
@@ -429,7 +420,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 ranges_to_get_from_part = part.ranges;
 
                 need_marks -= marks_in_part;
-                sum_marks_in_parts.pop_back();
+                info.sum_marks_in_parts.pop_back();
             }
             else
             {
@@ -463,7 +454,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                        : ReadFromMergeTree::ReadType::InReverseOrder;
 
         pipes.emplace_back(read(std::move(new_parts), column_names, read_type,
-                           requested_num_streams, min_marks_for_concurrent_read, use_uncompressed_cache));
+                           requested_num_streams, info.min_marks_for_concurrent_read, info.use_uncompressed_cache));
     }
 
     if (need_preliminary_merge)
@@ -609,36 +600,14 @@ static void addMergingFinal(
 
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_range,
+    RangesInDataParts && parts_with_ranges,
     const Names & column_names,
     ActionsDAGPtr & out_projection)
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
-    size_t sum_marks = 0;
-    size_t adaptive_parts = 0;
-    for (const auto & part : parts_with_range)
-    {
-        for (const auto & range : part.ranges)
-            sum_marks += range.end - range.begin;
 
-        if (part.data_part->index_granularity_info.is_adaptive)
-            ++adaptive_parts;
-    }
-
-    size_t index_granularity_bytes = 0;
-    if (adaptive_parts >= parts_with_range.size() / 2)
-        index_granularity_bytes = data_settings->index_granularity_bytes;
-
-    const size_t max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
-        settings.merge_tree_max_rows_to_use_cache,
-        settings.merge_tree_max_bytes_to_use_cache,
-        data_settings->index_granularity,
-        index_granularity_bytes);
-
-    bool use_uncompressed_cache = settings.use_uncompressed_cache;
-    if (sum_marks > max_marks_to_use_cache)
-        use_uncompressed_cache = false;
+    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
     size_t num_streams = requested_num_streams;
     if (num_streams > settings.max_final_threads)
@@ -650,15 +619,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     /// then we will create a pipe for each partition that will run selecting processor and merging processor
     /// for the parts with this partition. In the end we will unite all the pipes.
     std::vector<RangesInDataParts::iterator> parts_to_merge_ranges;
-    auto it = parts_with_range.begin();
+    auto it = parts_with_ranges.begin();
     parts_to_merge_ranges.push_back(it);
 
     if (settings.do_not_merge_across_partitions_select_final)
     {
-        while (it != parts_with_range.end())
+        while (it != parts_with_ranges.end())
         {
             it = std::find_if(
-                it, parts_with_range.end(), [&it](auto & part) { return it->data_part->info.partition_id != part.data_part->info.partition_id; });
+                it, parts_with_ranges.end(), [&it](auto & part) { return it->data_part->info.partition_id != part.data_part->info.partition_id; });
             parts_to_merge_ranges.push_back(it);
         }
         /// We divide threads for each partition equally. But we will create at least the number of partitions threads.
@@ -668,7 +637,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     else
     {
         /// If do_not_merge_across_partitions_select_final is false we just merge all the parts.
-        parts_to_merge_ranges.push_back(parts_with_range.end());
+        parts_to_merge_ranges.push_back(parts_with_ranges.end());
     }
 
     Pipes partition_pipes;
@@ -711,7 +680,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 continue;
 
             pipe = read(std::move(new_parts), column_names, ReadFromMergeTree::ReadType::InOrder,
-                num_streams, 0, use_uncompressed_cache);
+                num_streams, 0, info.use_uncompressed_cache);
 
             /// Drop temporary columns, added by 'sorting_key_expr'
             if (!out_projection)
@@ -761,11 +730,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         size_t num_streams_for_lonely_parts = num_streams * lonely_parts.size();
 
+
         const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             settings.merge_tree_min_rows_for_concurrent_read,
             settings.merge_tree_min_bytes_for_concurrent_read,
             data_settings->index_granularity,
-            index_granularity_bytes,
+            info.index_granularity_bytes,
             sum_marks_in_lonely_parts);
 
         /// Reduce the number of num_streams_for_lonely_parts if the data is small.
@@ -773,7 +743,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             num_streams_for_lonely_parts = std::max((sum_marks_in_lonely_parts + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, lonely_parts.size());
 
         auto pipe = read(std::move(lonely_parts), column_names, ReadFromMergeTree::ReadType::Default,
-                num_streams_for_lonely_parts, min_marks_for_concurrent_read, use_uncompressed_cache);
+                num_streams_for_lonely_parts, min_marks_for_concurrent_read, info.use_uncompressed_cache);
 
         /// Drop temporary columns, added by 'sorting_key_expr'
         if (!out_projection)
