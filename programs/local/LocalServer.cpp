@@ -100,7 +100,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings(ContextPtr context)
+void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
     context->applySettingsChanges(cmd_settings.changes());
 }
@@ -642,7 +642,7 @@ void LocalServer::init(int argc, char ** argv)
     argsToConfig(arguments, config(), 100);
 }
 
-void LocalServer::applyCmdOptions(ContextPtr context)
+void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
     context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
     applyCmdSettings(context);

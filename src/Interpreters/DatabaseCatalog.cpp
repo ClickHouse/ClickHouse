@@ -528,13 +528,13 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
 
-DatabaseCatalog::DatabaseCatalog(ContextPtr global_context_)
-    : WithContext(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
+DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
+    : WithMutableContext(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
     TemporaryLiveViewCleaner::init(global_context_);
 }
 
-DatabaseCatalog & DatabaseCatalog::init(ContextPtr global_context_)
+DatabaseCatalog & DatabaseCatalog::init(ContextMutablePtr global_context_)
 {
     if (database_catalog)
     {

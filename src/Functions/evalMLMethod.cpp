@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -28,11 +28,11 @@ class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
+    explicit FunctionEvalMLMethod(ContextConstPtr context_) : context(context_)
     {}
 
     String getName() const override
@@ -81,7 +81,7 @@ public:
         return agg_function->predictValues(arguments, context);
     }
 
-    ContextPtr context;
+    ContextConstPtr context;
 };
 
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Functions/TargetSpecific.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
@@ -172,7 +172,7 @@ namespace detail
  * /// default implementation.
  * class MyFunction : public MyDefaultImpl
  * {
- *     MyFunction(ContextPtr context) : selector(context) {
+ *     MyFunction(ContextConstPtr context) : selector(context) {
  *         /// Register all implementations in constructor.
  *         /// There could be as many implementation for every target as you want.
  *         selector.registerImplementation<TargetArch::Default, MyDefaultImpl>();
@@ -185,7 +185,7 @@ namespace detail
  *         selector.selectAndExecute(...);
  *     }
  *
- *     static FunctionPtr create(ContextPtr context) {
+ *     static FunctionPtr create(ContextConstPtr context) {
  *         return std::make_shared<MyFunction>(context);
  *     }
  * private:
@@ -193,12 +193,12 @@ namespace detail
  * };
  */
 template <typename FunctionInterface>
-class ImplementationSelector : WithContext
+class ImplementationSelector : WithConstContext
 {
 public:
     using ImplementationPtr = std::shared_ptr<FunctionInterface>;
 
-    ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
+    ImplementationSelector(ContextConstPtr context_) : WithConstContext(context_) {}
 
     /* Select the best implementation based on previous runs.
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
