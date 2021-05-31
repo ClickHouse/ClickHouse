@@ -399,9 +399,8 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, bool 
     {
         column_name_to_position.emplace(column.name, pos);
 
-        /// TODO: May be there is a better way or a better place for that.
         const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-        if (loaded_from_disk && aggregate_function_data_type)
+        if (loaded_from_disk && aggregate_function_data_type && aggregate_function_data_type->isVersioned())
             aggregate_function_data_type->setVersionIfEmpty(0);
 
         for (const auto & subcolumn : column.type->getSubcolumnNames())
@@ -1040,16 +1039,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         loaded_columns.readText(*volume->getDisk()->readFile(path));
         loaded_from_disk = true;
-
-        for (auto & col : loaded_columns)
-        {
-            LOG_TRACE(&Poco::Logger::get("kssenii"), "Setting version for columns: {}, {}", col.name, col.type->getName());
-        }
-    }
-
-    for (auto & col : loaded_columns)
-    {
-        LOG_TRACE(&Poco::Logger::get("kssenii"), "Loaded columns: {}, {}", col.name, col.type->getName());
     }
 
     setColumns(loaded_columns, loaded_from_disk);

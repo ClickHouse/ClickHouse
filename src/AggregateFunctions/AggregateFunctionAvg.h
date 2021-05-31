@@ -117,7 +117,7 @@ public:
             writeBinary(this->data(place).denominator, buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readBinary(this->data(place).numerator, buf);
 

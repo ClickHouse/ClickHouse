@@ -147,7 +147,7 @@ public:
         buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);

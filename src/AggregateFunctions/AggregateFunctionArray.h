@@ -125,7 +125,7 @@ public:
         nested_func->serialize(place, buf, version);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, version, arena);
     }

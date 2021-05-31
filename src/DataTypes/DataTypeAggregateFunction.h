@@ -3,7 +3,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <DataTypes/IDataType.h>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -15,7 +14,7 @@ namespace DB
   * Data type can support versioning for serialization of aggregate function state.
   * Version 0 also means no versioning. When a table with versioned data type is attached, its version is parsed from AST. If
   * there is no version in AST, then it is either attach with no version in metadata (then version is 0) or it
-  * is a new data type (then version is default). In distributed queries version of data type is known from data type name.
+  * is a new data type (then version is default - latest).
   */
 class DataTypeAggregateFunction final : public IDataType
 {
@@ -26,6 +25,7 @@ private:
     mutable std::optional<size_t> version;
 
     String getNameImpl(bool with_version) const;
+    size_t getVersion() const;
 
 public:
     static constexpr bool is_parametric = true;
@@ -65,13 +65,15 @@ public:
 
     SerializationPtr doGetDefaultSerialization() const override;
 
-    /// Version of aggregate function state serialization.
-    size_t getVersion() const;
+    bool isVersioned() const { return function->isVersioned(); }
 
-    /// Version is not empty only if it was parsed from AST.
-    /// It is ok to have an empty version value here - then for serialization
-    /// a default (latest) version is used. This method is used to force some
-    /// zero version to be used instead of default - if there was no version in AST.
+    size_t getVersionFromRevision(size_t revision) const { return function->getVersionFromRevision(revision); }
+
+    /// Version is not empty only if it was parsed from AST or implicitly cast to 0 or version according
+    /// to server revision.
+    /// It is ok to have an empty version value here - then for serialization a default (latest)
+    /// version is used. This method is used to force some zero version to be used instead of
+    /// default, or to set version for serialization in distributed queries.
     void setVersionIfEmpty(size_t version_) const
     {
         if (!version)
