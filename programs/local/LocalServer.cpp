@@ -22,6 +22,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/Config/configReadClient.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
