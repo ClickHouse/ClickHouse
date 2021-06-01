@@ -4,6 +4,7 @@
 #include "TestKeeper.h"
 
 #include <functional>
+#include <filesystem>
 #include <pcg-random/pcg_random.hpp>
 
 #include <common/logger_useful.h>
@@ -17,6 +18,7 @@
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -411,7 +413,13 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
     };
 
     impl->exists(path, callback, watch_callback);
-    event.wait();
+
+    if (!event.tryWait(operation_timeout_ms))
+    {
+        impl->finalize();
+        return Coordination::Error::ZOPERATIONTIMEOUT;
+    }
+
     return code;
 }
 
@@ -447,7 +455,12 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
     };
 
     impl->get(path, callback, watch_callback);
-    event.wait();
+    if (!event.tryWait(operation_timeout_ms))
+    {
+        impl->finalize();
+        return Coordination::Error::ZOPERATIONTIMEOUT;
+    }
+
     return code;
 }
 
@@ -515,7 +528,11 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
     };
 
     impl->set(path, data, version, callback);
-    event.wait();
+    if (!event.tryWait(operation_timeout_ms))
+    {
+        impl->finalize();
+        return Coordination::Error::ZOPERATIONTIMEOUT;
+    }
     return code;
 }
 
@@ -564,7 +581,11 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
     };
 
     impl->multi(requests, callback);
-    event.wait();
+    if (!event.tryWait(operation_timeout_ms))
+    {
+        impl->finalize();
+        return Coordination::Error::ZOPERATIONTIMEOUT;
+    }
     return code;
 }
 
@@ -593,7 +614,7 @@ void ZooKeeper::removeChildren(const std::string & path)
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+            ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
             children.pop_back();
         }
         multi(ops);
@@ -609,9 +630,9 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            removeChildrenRecursive(path + "/" + children.back());
+            removeChildrenRecursive(fs::path(path) / children.back());
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-                ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+                ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
             children.pop_back();
         }
         multi(ops);
@@ -629,7 +650,7 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         Strings batch;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            String child_path = path + "/" + children.back();
+            String child_path = fs::path(path) / children.back();
             tryRemoveChildrenRecursive(child_path);
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
             {
@@ -700,9 +721,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         /// Use getData insteand of exists to avoid watch leak.
         impl->get(path, callback, watch);
 
-        if (!condition)
-            state->event.wait();
-        else if (!state->event.tryWait(1000))
+        if (!state->event.tryWait(1000))
             continue;
 
         if (state->code == int32_t(Coordination::Error::ZNONODE))
