@@ -5,7 +5,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
@@ -17,6 +16,8 @@
 #include <Common/CurrentMetrics.h>
 #include <common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -27,8 +28,7 @@
 #    include <Storages/StorageMaterializeMySQL.h>
 #endif
 
-#include <filesystem>
-
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -354,10 +354,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
         db->drop(getContext());
 
         /// Old ClickHouse versions did not store database.sql files
-        Poco::File database_metadata_file(
-                getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
-        if (database_metadata_file.exists())
-            database_metadata_file.remove(false);
+        fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
+        if (fs::exists(database_metadata_file))
+            fs::remove(database_metadata_file);
     }
 
     return db;
@@ -783,7 +782,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         addUUIDMapping(table_id.uuid);
-        drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
+        drop_time = FS::getModificationTime(dropped_metadata_path);
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -892,16 +891,15 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     /// Even if table is not loaded, try remove its data from disk.
     /// TODO remove data from all volumes
-    String data_path = getContext()->getPath() + "store/" + getPathForUUID(table.table_id.uuid);
-    Poco::File table_data_dir{data_path};
-    if (table_data_dir.exists())
+    fs::path data_path = fs::path(getContext()->getPath()) / "store" / getPathForUUID(table.table_id.uuid);
+    if (fs::exists(data_path))
     {
-        LOG_INFO(log, "Removing data directory {} of dropped table {}", data_path, table.table_id.getNameForLogs());
-        table_data_dir.remove(true);
+        LOG_INFO(log, "Removing data directory {} of dropped table {}", data_path.string(), table.table_id.getNameForLogs());
+        fs::remove_all(data_path);
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
-    Poco::File(table.metadata_path).remove();
+    fs::remove(fs::path(table.metadata_path));
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);

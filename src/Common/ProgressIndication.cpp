@@ -34,7 +34,7 @@ void ProgressIndication::resetProgress()
     write_progress_on_update = false;
 }
 
-void ProgressIndication::setFileProgressCallback(ContextPtr context, bool write_progress_on_update_)
+void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
 {
     write_progress_on_update = write_progress_on_update_;
     context->setFileProgressCallback([&](const FileProgress & file_progress)

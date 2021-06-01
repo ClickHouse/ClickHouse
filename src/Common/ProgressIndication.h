@@ -36,7 +36,7 @@ public:
     /// In some cases there is a need to update progress value, when there is no access to progress_inidcation object.
     /// In this case it is added via context.
     /// `write_progress_on_update` is needed to write progress for loading files data via pipe in non-interactive mode.
-    void setFileProgressCallback(ContextPtr context, bool write_progress_on_update = false);
+    void setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update = false);
 
     /// How much seconds passed since query execution start.
     UInt64 elapsedSeconds() const { return watch.elapsedSeconds(); }
