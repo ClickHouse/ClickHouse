@@ -33,6 +33,7 @@ namespace DB
         extern const int CANNOT_CONVERT_TYPE;
         extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
         extern const int THERE_IS_NO_COLUMN;
+        extern const int BAD_ARGUMENTS;
     }
 
     static const std::initializer_list<std::pair<arrow::Type::type, const char *>> arrow_type_to_internal_type =
@@ -269,19 +270,21 @@ namespace DB
                 offsets_data.emplace_back(start + arrow_offsets.Value(i));
         }
     }
-
-    static DataTypePtr getInternalIndexesType(std::shared_ptr<arrow::DataType> arrow_type)
+    static ColumnPtr createAndFillColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> & arrow_column)
     {
-        switch (arrow_type->id())
+        switch (arrow_column->type()->id())
         {
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
             case ARROW_NUMERIC_TYPE: \
-                return std::make_shared<DataTypeNumber<CPP_NUMERIC_TYPE>>(); \
-
-            FOR_ARROW_INXEXES_TYPES(DISPATCH)
+            { \
+                    auto column = DataTypeNumber<CPP_NUMERIC_TYPE>().createColumn(); \
+                    fillColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, *column); \
+                    return column; \
+            }
+            FOR_ARROW_INDEXES_TYPES(DISPATCH)
 #    undef DISPATCH
             default:
-                throw Exception("Unsupported type for indexes in LowCardinality: " + arrow_type->name() + ".", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Unsupported type for indexes in LowCardinality: " + arrow_column->type()->name() + ".", ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -406,9 +409,8 @@ namespace DB
                 }
 
                 auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
-                auto indexes_column = getInternalIndexesType(arrow_indexes_column->type())->createColumn();
+                auto indexes_column = createAndFillColumnWithIndexesData(arrow_indexes_column);
 
-                readColumnFromArrowColumn(arrow_indexes_column, *indexes_column, column_name, format_name, is_nullable, dictionary_values);
                 auto new_column_lc = ColumnLowCardinality::create(dict_values, std::move(indexes_column));
                 column_lc = std::move(*new_column_lc);
                 break;
