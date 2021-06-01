@@ -57,13 +57,19 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
         return
 
     res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout)
+    out = res.stdout.decode('utf-8')
+    err = res.stderr.decode('utf-8')
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
-        logging.debug(f"Stderr:\n{res.stderr.decode('utf-8')}\n")
-        logging.debug(f"Stdout:\n{res.stdout.decode('utf-8')}\n")
-        logging.debug(f"Env:\n{env}\n")
+        logging.debug(f"Stderr:{err}")
+        logging.debug(f"Stdout:{out}")
+        logging.debug(f"Env: {env}")
         if not nothrow:
             raise Exception(f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}")
+    else:
+        logging.debug(f"Stderr: {err}")
+        logging.debug(f"Stdout: {out}")
+        return out
 
 # Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
 def get_free_port():
@@ -97,7 +103,7 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
 def subprocess_check_call(args, detach=False, nothrow=False):
     # Uncomment for debugging
     #logging.info('run:' + ' '.join(args))
-    run_and_check(args, detach=detach, nothrow=nothrow)
+    return run_and_check(args, detach=detach, nothrow=nothrow)
 
 
 def subprocess_call(args):
@@ -872,9 +878,10 @@ class ClickHouseCluster:
         return list(handle.attrs['NetworkSettings']['Networks'].values())[0]['IPAddress']
 
     def get_container_id(self, instance_name):
-        docker_id = self.get_instance_docker_id(instance_name)
-        handle = self.docker_client.containers.get(docker_id)
-        return handle.attrs['Id']
+        return self.get_instance_docker_id(instance_name)
+        # docker_id = self.get_instance_docker_id(instance_name)
+        # handle = self.docker_client.containers.get(docker_id)
+        # return handle.attrs['Id']
 
     def get_container_logs(self, instance_name):
         container_id = self.get_container_id(instance_name)
@@ -882,6 +889,7 @@ class ClickHouseCluster:
 
     def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, use_cli=True, **kwargs):
         if use_cli:
+            logging.debug(f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}")
             result = subprocess_check_call(["docker", "exec", container_id] + cmd, detach=detach, nothrow=nothrow)
             return result
         else:
@@ -1054,6 +1062,7 @@ class ClickHouseCluster:
                 for instance in ['zoo1', 'zoo2', 'zoo3']:
                     conn = self.get_kazoo_client(instance)
                     conn.get_children('/')
+                    conn.stop()
                 logging.debug("All instances of ZooKeeper Secure started")
                 return
             except Exception as ex:
@@ -1070,6 +1079,7 @@ class ClickHouseCluster:
                 for instance in ['zoo1', 'zoo2', 'zoo3']:
                     conn = self.get_kazoo_client(instance)
                     conn.get_children('/')
+                    conn.stop()
                 logging.debug("All instances of ZooKeeper started")
                 return
             except Exception as ex:
@@ -1519,15 +1529,17 @@ class ClickHouseCluster:
         return zk
 
     def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name='zoo1', repeats=1, sleep_for=1):
+        zk = self.get_kazoo_client(zoo_instance_name)
         logging.debug(f"run_kazoo_commands_with_retries: {zoo_instance_name}, {kazoo_callback}")
         for i in range(repeats - 1):
             try:
-                kazoo_callback(self.get_kazoo_client(zoo_instance_name))
+                kazoo_callback(zk)
                 return
             except KazooException as e:
                 logging.debug(repr(e))
                 time.sleep(sleep_for)
-        kazoo_callback(self.get_kazoo_client(zoo_instance_name))
+        kazoo_callback(zk)
+        zk.stop()
 
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)

@@ -442,7 +442,7 @@ def run_s3_mocks(started_cluster):
     for mock_filename, container, port in mocks:
         for attempt in range(10):
             ping_response = started_cluster.exec_in_container(started_cluster.get_container_id(container),
-                                                      ["curl", "-s", f"http://localhost:{port}/"], nothrow=True)
+                                                              ["curl", "-s", f"http://localhost:{port}/"], nothrow=True)
             if ping_response != 'OK':
                 if attempt == 9:
                     assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
