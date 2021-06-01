@@ -848,7 +848,7 @@ bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & right_arg = args[1];
 
     SetPtr prepared_set;
-    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
+    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTTableIdentifier>())
     {
         auto set_it = prepared_sets.find(PreparedSetKey::forSubquery(*right_arg));
         if (set_it == prepared_sets.end())

@@ -138,10 +138,9 @@ bool isCompatible(const IAST & node)
         if (name == "tuple" && function->arguments->children.size() <= 1)
             return false;
 
-        /// If the right hand side of IN is an identifier (example: x IN table), then it's not compatible.
+        /// If the right hand side of IN is a table identifier (example: x IN table), then it's not compatible.
         if ((name == "in" || name == "notIn")
-            && (function->arguments->children.size() != 2
-                || function->arguments->children[1]->as<ASTIdentifier>()))
+            && (function->arguments->children.size() != 2 || function->arguments->children[1]->as<ASTTableIdentifier>()))
             return false;
 
         for (const auto & expr : function->arguments->children)
