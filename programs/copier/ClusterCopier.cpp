@@ -742,10 +742,8 @@ ASTPtr ClusterCopier::removeAliasMaterializedAndTTLColumnsFromCreateQuery(const 
 
     auto new_columns_list = std::make_shared<ASTColumns>();
     new_columns_list->set(new_columns_list->columns, new_columns);
-    if (const auto * indices = query_ast->as<ASTCreateQuery>()->columns_list->indices)
-        new_columns_list->set(new_columns_list->indices, indices->clone());
-    if (const auto * projections = query_ast->as<ASTCreateQuery>()->columns_list->projections)
-        new_columns_list->set(new_columns_list->projections, projections->clone());
+
+    /// Skip indices and projections are not needed, because distributed table doesn't support it.
 
     new_query.replace(new_query.columns_list, new_columns_list);
 
