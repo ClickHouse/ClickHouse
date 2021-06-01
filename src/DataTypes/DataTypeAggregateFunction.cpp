@@ -151,7 +151,7 @@ static DataTypePtr create(const ASTPtr & arguments)
      * it is parametric, or [ASTIdentifier, types...] - otherwise. If aggregate function has version in AST, then it will be:
      * [ASTLitearl, ASTFunction (or ASTIdentifier), types...].
      */
-    if (auto version_ast = arguments->children[0]->as<ASTLiteral>())
+    if (auto * version_ast = arguments->children[0]->as<ASTLiteral>())
     {
         version = version_ast->value.safeGet<UInt64>();
         data_type_ast = arguments->children[1];

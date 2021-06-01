@@ -395,7 +395,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            auto aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
+            const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
             if (attach && aggregate_function_type && aggregate_function_type->isVersioned())
                 aggregate_function_type->setVersionIfEmpty(0);
 
