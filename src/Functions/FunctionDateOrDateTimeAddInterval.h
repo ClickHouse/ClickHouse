@@ -352,7 +352,7 @@ class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); }
 
     String getName() const override
     {

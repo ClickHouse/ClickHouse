@@ -27,7 +27,7 @@ namespace
 {
     constexpr size_t MAX_CONNECTIONS = 16;
 
-    inline UInt16 getPortFromContext(ContextConstPtr context, bool secure)
+    inline UInt16 getPortFromContext(ContextPtr context, bool secure)
     {
         return secure ? context->getTCPPortSecure().value_or(0) : context->getTCPPort();
     }
@@ -60,7 +60,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     const Block & sample_block_,
-    ContextConstPtr context_)
+    ContextPtr context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , configuration{configuration_}
@@ -209,7 +209,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextConstPtr context,
+                                 ContextPtr context,
                                  const std::string & default_database [[maybe_unused]],
                                  bool /* created_from_ddl */) -> DictionarySourcePtr
     {

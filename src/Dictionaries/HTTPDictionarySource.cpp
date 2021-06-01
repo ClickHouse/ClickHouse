@@ -31,7 +31,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block_,
-    ContextConstPtr context_,
+    ContextPtr context_,
     bool created_from_ddl)
     : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
@@ -231,7 +231,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
-                                   ContextConstPtr context,
+                                   ContextPtr context,
                                    const std::string & /* default_database */,
                                    bool created_from_ddl) -> DictionarySourcePtr {
         if (dict_struct.has_expressions)

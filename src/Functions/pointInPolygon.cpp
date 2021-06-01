@@ -60,7 +60,7 @@ public:
 
     explicit FunctionPointInPolygon(bool validate_) : validate(validate_) {}
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(
             context->getSettingsRef().validate_polygons);
