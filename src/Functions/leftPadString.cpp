@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -48,8 +49,7 @@ namespace
                 }
                 else
                 {
-                    for (size_t j = 0; j < length; ++j)
-                        res_data[res_prev_offset + j] = data[prev_offset + j];
+                    memcpy(&res_data[res_prev_offset], &data[prev_offset], length);
                 }
                 res_data[res_prev_offset + length] = 0;
                 res_prev_offset += length + 1;
@@ -145,43 +145,33 @@ namespace
                 padstr = pad_column->getValue<String>();
             }
 
-            MutableColumnPtr result;
-
-            if (!(execute<UInt8>(arguments, str_column, padstr, result) || execute<UInt16>(arguments, str_column, padstr, result)
-                  || execute<UInt32>(arguments, str_column, padstr, result) || execute<UInt64>(arguments, str_column, padstr, result)
-                  || execute<Int8>(arguments, str_column, padstr, result) || execute<Int16>(arguments, str_column, padstr, result)
-                  || execute<Int32>(arguments, str_column, padstr, result) || execute<Int64>(arguments, str_column, padstr, result)))
+            const ColumnConst * len_column = checkAndGetColumnConst<ColumnConst>(arguments[1].column.get());
+            if (!len_column)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of second ('len') argument of function {}. Must be a number.",
+                    "Illegal column {} of second ('len') argument of function {}. Must be a positive integer.",
                     arguments[1].column->getName(),
                     getName());
-
-            return result;
-        }
-
-    private:
-        template <typename NumType>
-        bool execute(
-            const ColumnsWithTypeAndName & arguments, const ColumnPtr & str_column, const String & padstr, MutableColumnPtr & result) const
-        {
-            const auto len_column = checkAndGetColumnConst<ColumnDecimal<NumType>>(arguments[1].column.get());
-            if (!len_column)
-                return false;
-            size_t len = len_column->template getValue<size_t>();
+            Int64 len = len_column->getInt(0);
+            if (len <= 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Illegal value {} of second ('len') argument of function {}. Must be a positive integer.",
+                    arguments[1].column->getName(),
+                    getName());
 
             if (const ColumnString * strings = checkAndGetColumn<ColumnString>(str_column.get()))
             {
                 auto col_res = ColumnString::create();
                 LeftPadStringImpl::vector(
                     strings->getChars(), strings->getOffsets(), len, padstr, col_res->getChars(), col_res->getOffsets());
-                result = std::move(col_res);
+                return col_res;
             }
             else if (const ColumnFixedString * strings_fixed = checkAndGetColumn<ColumnFixedString>(str_column.get()))
             {
                 auto col_res = ColumnFixedString::create(len);
                 LeftPadStringImpl::vectorFixed(strings_fixed->getChars(), strings_fixed->getN(), len, padstr, col_res->getChars());
-                result = std::move(col_res);
+                return col_res;
             }
             else
             {
@@ -191,7 +181,6 @@ namespace
                     arguments[0].column->getName(),
                     getName());
             }
-            return true;
         }
     };
 }
