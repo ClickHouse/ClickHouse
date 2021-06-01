@@ -1,9 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionCramersV.h>
-#include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/Helpers.h>
-#include "registerAggregateFunctions.h"
-#include <memory>
 
 
 namespace ErrorCodes
@@ -26,7 +22,7 @@ namespace DB
 
     void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory)
     {
-        factory.registerFunction("CramersV", createAggregateFunctionCramersV);
+        factory.registerFunction("cramersV", createAggregateFunctionCramersV);
     }
 
 }
