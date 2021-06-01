@@ -241,7 +241,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     auto zookeeper = storage.getZooKeeper();
 
     String quorum_str;
-    if (zookeeper->tryGet(storage.zookeeper_path + "/quorum/status", quorum_str))
+    if (zookeeper->tryGet(fs::path(storage.zookeeper_path) / "quorum" / "status", quorum_str))
     {
         ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
@@ -254,12 +254,12 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     }
 
     Strings part_names;
-    String parallel_quorum_parts_path = storage.zookeeper_path + "/quorum/parallel";
+    String parallel_quorum_parts_path = fs::path(storage.zookeeper_path) / "quorum" / "parallel";
     if (zookeeper->tryGetChildren(parallel_quorum_parts_path, part_names) == Coordination::Error::ZOK)
     {
         for (auto & part_name : part_names)
         {
-            if (zookeeper->tryGet(parallel_quorum_parts_path + "/" + part_name, quorum_str))
+            if (zookeeper->tryGet(fs::path(parallel_quorum_parts_path) / part_name, quorum_str))
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
                 if (!quorum_entry.replicas.count(storage.replica_name)
@@ -281,7 +281,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// How other replicas can access this one.
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
-    String is_active_path = storage.replica_path + "/is_active";
+    String is_active_path = fs::path(storage.replica_path) / "is_active";
 
     /** If the node is marked as active, but the mark is made in the same instance, delete it.
       * This is possible only when session in ZooKeeper expires.
@@ -305,7 +305,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(storage.replica_path + "/host", address.toString(), -1));
+    ops.emplace_back(zkutil::makeSetRequest(fs::path(storage.replica_path) / "host", address.toString(), -1));
 
     try
     {
@@ -314,7 +314,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     catch (const Coordination::Exception & e)
     {
         String existing_replica_host;
-        zookeeper->tryGet(storage.replica_path + "/host", existing_replica_host);
+        zookeeper->tryGet(fs::path(storage.replica_path) / "host", existing_replica_host);
 
         if (existing_replica_host.empty())
             existing_replica_host = "without host node";

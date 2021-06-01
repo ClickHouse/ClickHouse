@@ -251,4 +251,15 @@ Possible values:
 
 Default value: -1 (unlimited).
 
+## allow_floating_point_partition_key {#allow_floating_point_partition_key}
+
+Enables to allow floating-point number as a partition key.
+
+Possible values:
+
+-   0 — Floating-point partition key not allowed.
+-   1 — Floating-point partition key allowed.
+
+Default value: `0`.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->

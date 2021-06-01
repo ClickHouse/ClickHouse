@@ -7,16 +7,16 @@
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
-#include "Disks/Executor.h"
 
 #include <memory>
 #include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
-#include <Poco/Path.h>
 #include <Poco/Timestamp.h>
+#include <filesystem>
 #include "Poco/Util/AbstractConfiguration.h"
 
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -212,10 +212,10 @@ public:
     virtual DiskType::Type getType() const = 0;
 
     /// Invoked when Global Context is shutdown.
-    virtual void shutdown() { }
+    virtual void shutdown() {}
 
     /// Performs action on disk startup.
-    virtual void startup() { }
+    virtual void startup() {}
 
     /// Return some uniq string for file, overrode for S3
     /// Required for distinguish different copies of the same part on S3
@@ -233,7 +233,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) { }
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) {}
 
 protected:
     friend class DiskDecorator;
@@ -294,25 +294,27 @@ public:
 /// Return full path to a file on disk.
 inline String fullPath(const DiskPtr & disk, const String & path)
 {
-    return disk->getPath() + path;
+    return fs::path(disk->getPath()) / path;
 }
 
 /// Return parent path for the specified path.
 inline String parentPath(const String & path)
 {
-    return Poco::Path(path).parent().toString();
+    if (path.ends_with('/'))
+        return fs::path(path).parent_path().parent_path() / "";
+    return fs::path(path).parent_path() / "";
 }
 
 /// Return file name for the specified path.
 inline String fileName(const String & path)
 {
-    return Poco::Path(path).getFileName();
+    return fs::path(path).filename();
 }
 
 /// Return directory path for the specified path.
 inline String directoryPath(const String & path)
 {
-    return Poco::Path(path).setFileName("").toString();
+    return fs::path(path).parent_path() / "";
 }
 
 }
