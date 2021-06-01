@@ -23,18 +23,14 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Storages/StorageFactory.h>
-#include <boost/lexical_cast.hpp>
 #include <Common/typeid_cast.h>
 
 #include <Storages/WindowView/ReplaceWindowColumnBlockInputStream.h>
@@ -593,7 +589,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(cons
     return inner_create_query;
 }
 
-inline UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
+UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 {
     IntervalKind window_interval_kind;
     if (is_tumble)
@@ -628,7 +624,7 @@ inline UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
     __builtin_unreachable();
 }
 
-inline UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
+UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 {
     IntervalKind window_interval_kind;
     if (is_tumble)
