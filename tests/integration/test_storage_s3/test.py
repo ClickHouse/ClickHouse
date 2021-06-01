@@ -154,7 +154,7 @@ def test_distributed_put(cluster):
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test_{_partition_id}.csv"
     put_query = f"""insert into table function s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
-                    'CSV', '{table_format}') PARTITION BY toString(column3) values {values}"""
+                    'CSV', '{table_format}') PARTITION BY column3 values {values}"""
 
     run_query(instance, put_query)
 
