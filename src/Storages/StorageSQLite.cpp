@@ -26,12 +26,10 @@ StorageSQLite::StorageSQLite(
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_,
-    const String & remote_table_schema_)
+    ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
-    , remote_table_schema(remote_table_schema_)
     , global_context(context_)
     , db_ptr(db_ptr_)
 {
@@ -51,13 +49,11 @@ Pipe StorageSQLite::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    /// Connection is already made to the needed database, so it should not be present in the query;
-    /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
         query_info,
         metadata_snapshot->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
-        remote_table_schema,
+        "",
         remote_table_name,
         context_);
 
@@ -79,12 +75,10 @@ public:
         const StorageSQLite & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         std::shared_ptr<sqlite3> connection_,
-        const std::string & remote_database_name_,
         const std::string & remote_table_name_)
         : storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , connection(connection_)
-        , remote_database_name{remote_database_name_}
         , remote_table_name(remote_table_name_)
     {
     }
@@ -98,16 +92,14 @@ public:
     {
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << "INSERT INTO ";
-        if (!remote_database_name.empty())
-            sqlbuf << "\"" << remote_database_name << "\".";
-        sqlbuf << "\"" << remote_table_name << "\"";
+        sqlbuf << doubleQuoteString(remote_table_name);
         sqlbuf << " (";
 
         for (auto it = block.begin(); it != block.end(); ++it)
         {
             if (it != block.begin())
                 sqlbuf << ", ";
-            sqlbuf << "'" << it->name << "'";
+            sqlbuf << quoteString(it->name);
         }
 
         sqlbuf << ") VALUES ";
@@ -136,13 +128,12 @@ private:
     const StorageSQLite & storage;
     StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<sqlite3> connection;
-    std::string remote_database_name;
     std::string remote_table_name;
 };
 
 BlockOutputStreamPtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
 {
-    return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, db_ptr, "", remote_table_name);
+    return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, db_ptr, remote_table_name);
 }
 
 void registerStorageSQLite(StorageFactory & factory)
@@ -175,8 +166,7 @@ void registerStorageSQLite(StorageFactory & factory)
                 table_name,
                 args.columns,
                 args.constraints,
-                args.getContext(),
-                "");
+                args.getContext());
         },
         {
             .source_access_type = AccessType::SQLITE,

@@ -1,5 +1,6 @@
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -36,10 +37,12 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
 {
     auto columns = NamesAndTypesList();
 
-    std::string query = fmt::format("pragma table_info({});", sqlite_table_name);
+    std::string query = fmt::format("pragma table_info({});", quoteString(sqlite_table_name));
 
     auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** col_names) -> int {
         NameAndTypePair name_and_type;
+
+        bool is_nullable = false;
 
         for (int i = 0; i < col_num; ++i)
         {
@@ -51,7 +54,14 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
             {
                 name_and_type.type = convertSQLiteDataType(data_by_col[i]);
             }
+            else if (strcmp(col_names[i], "notnull") == 0)
+            {
+                is_nullable = (data_by_col[i][0] == '0');
+            }
         }
+
+        if (is_nullable)
+            name_and_type.type = std::make_shared<DataTypeNullable>(name_and_type.type);
 
         static_cast<NamesAndTypesList *>(res)->push_back(name_and_type);
 
