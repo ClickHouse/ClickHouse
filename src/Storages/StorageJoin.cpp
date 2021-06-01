@@ -14,9 +14,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-
 #include <Poco/String.h>    /// toLower
-#include <Poco/File.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 

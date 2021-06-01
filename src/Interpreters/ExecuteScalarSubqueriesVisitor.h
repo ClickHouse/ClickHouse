@@ -33,7 +33,7 @@ class ExecuteScalarSubqueriesMatcher
 public:
     using Visitor = InDepthNodeVisitor<ExecuteScalarSubqueriesMatcher, true>;
 
-    struct Data : public WithContext
+    struct Data : public WithConstContext
     {
         size_t subquery_depth;
         Scalars & scalars;
