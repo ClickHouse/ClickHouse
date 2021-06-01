@@ -212,7 +212,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
             createDatabaseNodesInZooKeeper(current_zookeeper);
         }
 
-        replica_path = zookeeper_path + "/replicas/" + getFullReplicaName();
+        replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
 
         String replica_host_id;
         if (current_zookeeper->tryGet(replica_path, replica_host_id))
@@ -300,7 +300,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     current_zookeeper->multi(ops);
 }
 
-void DatabaseReplicated::loadStoredObjects(ContextPtr local_context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
 {
     tryConnectToZooKeeperAndInitDatabase(force_attach);
 

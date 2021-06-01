@@ -89,8 +89,8 @@ namespace ErrorCodes
 
 namespace fs = std::filesystem;
 
-InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-    : WithContext(context_), query_ptr(query_ptr_)
+InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+    : WithMutableContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -646,22 +646,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                 String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
                                  + type + "' because experimental geo types are not allowed. "
                                  + "Set setting allow_experimental_geo_types = 1 in order to allow it.";
-                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
-            }
-        }
-    }
-
-    if (!create.attach && !settings.allow_experimental_bigint_types)
-    {
-        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
-        {
-            WhichDataType which(*name_and_type_pair.type);
-            if (which.IsBigIntOrDeimal())
-            {
-                const auto & type_name = name_and_type_pair.type->getName();
-                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
-                                 + type_name + "' because experimental bigint types are not allowed. "
-                                 + "Set 'allow_experimental_bigint_types' setting to enable.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }

@@ -42,7 +42,7 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    void loadStoredObjects(ContextPtr, bool, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(
             ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
