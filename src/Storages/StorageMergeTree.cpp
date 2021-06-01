@@ -62,7 +62,7 @@ StorageMergeTree::StorageMergeTree(
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
     bool attach,
-    ContextPtr context_,
+    ContextMutablePtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
@@ -1509,8 +1509,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         auto disk = part->volume->getDisk();
         String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = part_path + "checksums.txt";
-        String tmp_checksums_path = part_path + "checksums.txt.tmp";
+        String checksums_path = fs::path(part_path) / "checksums.txt";
+        String tmp_checksums_path = fs::path(part_path) / "checksums.txt.tmp";
         if (part->isStoredOnDisk() && !disk->exists(checksums_path))
         {
             try
