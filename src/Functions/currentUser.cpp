@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,9 +16,9 @@ class FunctionCurrentUser : public IFunction
 
 public:
     static constexpr auto name = "currentUser";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextConstPtr context)
     {
-        return std::make_shared<FunctionCurrentUser>(context.getClientInfo().initial_user);
+        return std::make_shared<FunctionCurrentUser>(context->getClientInfo().initial_user);
     }
 
     explicit FunctionCurrentUser(const String & user_name_) : user_name{user_name_}

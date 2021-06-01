@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 
 
@@ -173,7 +173,7 @@ class FunctionRepeat : public IFunction
 
 public:
     static constexpr auto name = "repeat";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRepeat>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRepeat>(); }
 
     String getName() const override { return name; }
 

@@ -33,7 +33,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
-    , connection_context(server.context())
+    , connection_context(Context::createCopy(server.context()))
     , ssl_enabled(ssl_enabled_)
     , connection_id(connection_id_)
     , authentication_manager(auth_methods_)
@@ -52,9 +52,9 @@ void PostgreSQLHandler::run()
 {
     setThreadName("PostgresHandler");
     ThreadStatus thread_status;
-    connection_context.makeSessionContext();
-    connection_context.getClientInfo().interface = ClientInfo::Interface::POSTGRESQL;
-    connection_context.setDefaultFormat("PostgreSQLWire");
+    connection_context->makeSessionContext();
+    connection_context->getClientInfo().interface = ClientInfo::Interface::POSTGRESQL;
+    connection_context->setDefaultFormat("PostgreSQLWire");
 
     try
     {
@@ -132,8 +132,8 @@ bool PostgreSQLHandler::startup()
     try
     {
         if (!start_up_msg->database.empty())
-            connection_context.setCurrentDatabase(start_up_msg->database);
-        connection_context.setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
+            connection_context->setCurrentDatabase(start_up_msg->database);
+        connection_context->setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
     }
     catch (const Exception & exc)
     {
@@ -213,8 +213,8 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
 
 void PostgreSQLHandler::cancelRequest()
 {
-    connection_context.setCurrentQueryId("");
-    connection_context.setDefaultFormat("Null");
+    connection_context->setCurrentQueryId("");
+    connection_context->setDefaultFormat("Null");
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
@@ -268,7 +268,7 @@ void PostgreSQLHandler::processQuery()
             return;
         }
 
-        const auto & settings = connection_context.getSettingsRef();
+        const auto & settings = connection_context->getSettingsRef();
         std::vector<String> queries;
         auto parse_res = splitMultipartQuery(query->query, queries, settings.max_query_size, settings.max_parser_depth);
         if (!parse_res.second)

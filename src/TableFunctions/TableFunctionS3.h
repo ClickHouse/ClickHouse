@@ -27,14 +27,14 @@ public:
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
-        const Context & context,
+        ContextPtr context,
         const std::string & table_name,
         ColumnsDescription cached_columns) const override;
 
     const char * getStorageTypeName() const override { return "S3"; }
 
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
-    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String filename;
     String format;

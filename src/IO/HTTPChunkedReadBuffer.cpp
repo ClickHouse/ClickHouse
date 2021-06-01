@@ -14,7 +14,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int CORRUPTED_DATA;
-    extern const int TOO_MANY_BYTES;
 }
 
 size_t HTTPChunkedReadBuffer::readChunkHeader()
@@ -39,9 +38,6 @@ size_t HTTPChunkedReadBuffer::readChunkHeader()
 
     if (in->eof())
         throw Exception("Unexpected end of file while reading chunk header of HTTP chunked data", ErrorCodes::UNEXPECTED_END_OF_FILE);
-
-    if (res > max_size)
-        throw Exception("Chunk size is too large", ErrorCodes::TOO_MANY_BYTES);
 
     assertString("\n", *in);
     return res;

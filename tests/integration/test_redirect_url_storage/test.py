@@ -26,6 +26,32 @@ def test_url_without_redirect(started_cluster):
     assert node1.query("select * from WebHDFSStorage") == "1\tMark\t72.53\n"
 
 
+def test_url_with_globs(started_cluster):
+    started_cluster.hdfs_api.write_data("/simple_storage_1_1", "1\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_1_2", "2\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_1_3", "3\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_2_1", "4\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_2_2", "5\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_2_3", "6\n")
+
+    result = node1.query(
+        "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{1..2}_{1..3}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String') as data order by data")
+    assert result == "1\n2\n3\n4\n5\n6\n"
+
+
+def test_url_with_globs_and_failover(started_cluster):
+    started_cluster.hdfs_api.write_data("/simple_storage_1_1", "1\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_1_2", "2\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_1_3", "3\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_3_1", "4\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_3_2", "5\n")
+    started_cluster.hdfs_api.write_data("/simple_storage_3_3", "6\n")
+
+    result = node1.query(
+        "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{0|1|2|3}_{1..3}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String') as data order by data")
+    assert result == "1\n2\n3\n"
+
+
 def test_url_with_redirect_not_allowed(started_cluster):
     started_cluster.hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
     assert started_cluster.hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"

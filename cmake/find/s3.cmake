@@ -1,7 +1,7 @@
-if(NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_ARM)
+if(NOT OS_FREEBSD AND NOT APPLE)
     option(ENABLE_S3 "Enable S3" ${ENABLE_LIBRARIES})
 elseif(ENABLE_S3 OR USE_INTERNAL_AWS_S3_LIBRARY)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use S3 on ARM, Apple or FreeBSD")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use S3 on Apple or FreeBSD")
 endif()
 
 if(NOT ENABLE_S3)

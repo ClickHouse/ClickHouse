@@ -8,6 +8,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -111,6 +112,16 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
+    }
+
+    void mergeBatch(
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const AggregateDataPtr * rhs,
+        Arena * arena) const override
+    {
+        nested_func->mergeBatch(batch_size, places, place_offset, rhs, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override

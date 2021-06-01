@@ -80,9 +80,11 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::collectorThreadFunction()
+    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupStatusPtr & thread_group)
     {
         setThreadName("Collector");
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
 
         try
         {
@@ -135,9 +137,11 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number)
+    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, const ThreadGroupStatusPtr & thread_group)
     {
         setThreadName("Formatter");
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
 
         try
         {

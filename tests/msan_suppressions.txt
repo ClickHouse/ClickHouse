@@ -7,12 +7,6 @@ fun:tolower
 
 # Suppress some failures in contrib so that we can enable MSan in CI.
 # Ideally, we should report these upstream.
-src:*/contrib/zlib-ng/*
-src:*/contrib/simdjson/*
-src:*/contrib/lz4/*
 
 # Hyperscan
 fun:roseRunProgram
-
-# mariadbclient, NSS functions from libc
-fun:_nss_files_parse_servent

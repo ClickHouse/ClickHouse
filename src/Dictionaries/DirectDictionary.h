@@ -18,11 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
@@ -33,8 +28,7 @@ public:
     DirectDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
-        DictionarySourcePtr source_ptr_,
-        BlockPtr saved_block_ = nullptr);
+        DictionarySourcePtr source_ptr_);
 
     std::string getTypeName() const override
     {
@@ -48,6 +42,14 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
+
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return 0; }
@@ -56,7 +58,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<DirectDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), saved_block);
+        return std::make_shared<DirectDictionary>(getDictionaryID(), dict_struct, source_ptr->clone());
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -67,27 +69,17 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        auto it = attribute_index_by_name.find(attribute_name);
-
-        if (it == attribute_index_by_name.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "({}): no attribute with name ({}) in dictionary",
-                full_name,
-                attribute_name);
-
-        return dict_struct.attributes[it->second].injective;
+        return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    bool hasHierarchy() const override { return hierarchical_attribute; }
-
-    void toParent(const PaddedPODArray<UInt64> & ids, PaddedPODArray<UInt64> & out) const override;
-
-    void isInVectorVector(
-        const PaddedPODArray<UInt64> & child_ids, const PaddedPODArray<UInt64> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
-    void isInVectorConstant(const PaddedPODArray<UInt64> & child_ids, const UInt64 ancestor_id, PaddedPODArray<UInt8> & out) const override;
-    void isInConstantVector(const UInt64 child_id, const PaddedPODArray<UInt64> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
-
     DictionaryKeyType getKeyType() const override { return dictionary_key_type; }
+
+    Columns getColumns(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns) const override;
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -98,30 +90,26 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
+    bool hasHierarchy() const override { return dict_struct.hierarchical_attribute_index.has_value(); }
+
+    ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & key_type) const override;
+
+    ColumnUInt8::Ptr isInHierarchy(
+        ColumnPtr key_column,
+        ColumnPtr in_key_column,
+        const DataTypePtr & key_type) const override;
+
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    void setup();
-
     BlockInputStreamPtr getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
-
-    UInt64 getValueOrNullByKey(const UInt64 & to_find) const;
-
-    template <typename ChildType, typename AncestorType>
-    void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
 
-    std::unordered_map<std::string, size_t> attribute_index_by_name;
-    std::unordered_map<size_t, std::string> attribute_name_by_index;
-
-    const DictionaryAttribute * hierarchical_attribute = nullptr;
-
     mutable std::atomic<size_t> query_count{0};
-
-    BlockPtr saved_block;
+    mutable std::atomic<size_t> found_count{0};
 };
 
 extern template class DirectDictionary<DictionaryKeyType::simple>;

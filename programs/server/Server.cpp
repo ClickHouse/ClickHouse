@@ -13,7 +13,9 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Environment.h>
 #include <ext/scope_guard.h>
+#include <common/defines.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
 #include <common/ErrorHandlers.h>
@@ -47,6 +49,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -71,6 +74,7 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <filesystem>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -85,6 +89,8 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
+#    include <unistd.h>
+#    include <sys/syscall.h>
 #endif
 
 #if USE_SSL
@@ -97,7 +103,11 @@
 #endif
 
 #if USE_NURAFT
-#   include <Server/NuKeeperTCPHandlerFactory.h>
+#   include <Server/KeeperTCPHandlerFactory.h>
+#endif
+
+#if USE_JEMALLOC
+#    include <jemalloc/jemalloc.h>
 #endif
 
 namespace CurrentMetrics
@@ -108,10 +118,36 @@ namespace CurrentMetrics
     extern const Metric MaxDDLEntryID;
 }
 
+namespace fs = std::filesystem;
+
+#if USE_JEMALLOC
+static bool jemallocOptionEnabled(const char *name)
+{
+    bool value;
+    size_t size = sizeof(value);
+
+    if (mallctl(name, reinterpret_cast<void *>(&value), &size, /* newp= */ nullptr, /* newlen= */ 0))
+        throw Poco::SystemException("mallctl() failed");
+
+    return value;
+}
+#else
+static bool jemallocOptionEnabled(const char *) { return 0; }
+#endif
+
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
+
+    if (jemallocOptionEnabled("opt.background_thread"))
+    {
+        LOG_ERROR(&app.logger(),
+            "jemalloc.background_thread was requested, "
+            "however ClickHouse uses percpu_arena and background_thread most likely will not give any benefits, "
+            "and also background_thread is not compatible with ClickHouse watchdog "
+            "(that can be disabled with CLICKHOUSE_WATCHDOG_ENABLE=0)");
+    }
 
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
@@ -150,19 +186,19 @@ void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    Poco::File(path).createDirectories();
+    fs::create_directories(path);
 
     /// Clearing old temporary files.
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        if (it->isFile() && startsWith(it.name(), "tmp"))
+        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
         {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path());
-            it->remove();
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+            fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path());
+            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
     }
 }
 
@@ -172,18 +208,24 @@ int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t
     const int sleep_one_ms = 100;
     int sleep_current_ms = 0;
     int current_connections = 0;
-    while (sleep_current_ms < sleep_max_ms)
+    for (;;)
     {
         current_connections = 0;
+
         for (auto & server : servers)
         {
             server.stop();
             current_connections += server.currentConnections();
         }
+
         if (!current_connections)
             break;
+
         sleep_current_ms += sleep_one_ms;
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+        if (sleep_current_ms < sleep_max_ms)
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+        else
+            break;
     }
     return current_connections;
 }
@@ -347,6 +389,11 @@ void Server::initialize(Poco::Util::Application & self)
 {
     BaseDaemon::initialize(self);
     logger().information("starting up");
+
+    LOG_INFO(&logger(), "OS Name = {}, OS Version = {}, OS Architecture = {}",
+        Poco::Environment::osName(),
+        Poco::Environment::osVersion(),
+        Poco::Environment::osArchitecture());
 }
 
 std::string Server::getDefaultCorePath() const
@@ -391,6 +438,19 @@ void checkForUsersNotInMainConfig(
 }
 
 
+[[noreturn]] void forceShutdown()
+{
+#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
+    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
+    /// while connection handling threads are still run.
+    (void)syscall(SYS_exit_group, 0);
+    __builtin_unreachable();
+#else
+    _exit(0);
+#endif
+}
+
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
@@ -425,8 +485,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
     auto shared_context = Context::createShared();
-    auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
-    global_context_ptr = global_context.get();
+    global_context = Context::createGlobal(shared_context.get());
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
@@ -622,37 +681,38 @@ int Server::main(const std::vector<std::string> & /*args*/)
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        Poco::File(path + "flags/").createDirectories();
-        global_context->setFlagsPath(path + "flags/");
+        auto flags_path = fs::path(path) / "flags/";
+        fs::create_directories(flags_path);
+        global_context->setFlagsPath(flags_path);
     }
 
     /** Directory with user provided files that are usable by 'file' table function.
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", path + "user_files/");
+        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
         global_context->setUserFilesPath(user_files_path);
-        Poco::File(user_files_path).createDirectories();
+        fs::create_directories(user_files_path);
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
-        Poco::File(dictionaries_lib_path).createDirectories();
+        fs::create_directories(dictionaries_lib_path);
     }
 
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/") + "/";
-        TLDListsHolder::getInstance().parseConfig(top_level_domains_path, config());
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
+        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
     {
-        Poco::File(path + "data/").createDirectories();
-        Poco::File(path + "metadata/").createDirectories();
+        fs::create_directories(fs::path(path) / "data/");
+        fs::create_directories(fs::path(path) / "metadata/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        Poco::File(path + "metadata_dropped/").createDirectories();
+        fs::create_directories(fs::path(path) / "metadata_dropped/");
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -688,16 +748,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    if (config().has("interserver_http_credentials"))
-    {
-        String user = config().getString("interserver_http_credentials.user", "");
-        String password = config().getString("interserver_http_credentials.password", "");
-
-        if (user.empty())
-            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-        global_context->setInterserverCredentials(user, password);
-    }
+    LOG_DEBUG(log, "Initiailizing interserver credentials.");
+    global_context->updateInterserverCredentials(config());
 
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
@@ -758,6 +810,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
+            global_context->setExternalModelsConfig(config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -777,6 +830,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
 
             global_context->updateStorageConfiguration(*config);
+            global_context->updateInterserverCredentials(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -835,14 +889,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
-    auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path.path());
-    format_schema_path.createDirectories();
+    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
+    global_context->setFormatSchemaPath(format_schema_path);
+    fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);
@@ -867,15 +922,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    if (config().has("test_keeper_server"))
+    if (config().has("keeper_server"))
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeNuKeeperStorageDispatcher();
+        global_context->initializeKeeperStorageDispatcher();
         for (const auto & listen_host : listen_hosts)
         {
-            /// TCP NuKeeper
-            const char * port_name = "test_keeper_server.tcp_port";
+            /// TCP Keeper
+            const char * port_name = "keeper_server.tcp_port";
             createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
@@ -885,9 +940,29 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers_to_start_before_tables->emplace_back(
                     port_name,
                     std::make_unique<Poco::Net::TCPServer>(
-                        new NuKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                        new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for connections to NuKeeper (tcp): {}", address.toString());
+                LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+            });
+
+            const char * secure_port_name = "keeper_server.tcp_port_secure";
+            createServer(listen_host, secure_port_name, listen_try, [&](UInt16 port)
+            {
+#if USE_SSL
+                Poco::Net::SecureServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers_to_start_before_tables->emplace_back(
+                    secure_port_name,
+                    std::make_unique<Poco::Net::TCPServer>(
+                        new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
+                LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
+#else
+                UNUSED(port);
+                throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                    ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
             });
         }
 #else
@@ -934,13 +1009,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownNuKeeperStorageDispatcher();
+            global_context->shutdownKeeperStorageDispatcher();
         }
+
+        /// Wait server pool to avoid use-after-free of destroyed context in the handlers
+        server_pool.joinAll();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
-        global_context_ptr = nullptr;
         global_context.reset();
         shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
@@ -954,14 +1031,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     try
     {
-        loadMetadataSystem(*global_context);
+        loadMetadataSystem(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
+        /// We load temporary database first, because projections need it.
+        database_catalog.loadTemporaryDatabase();
         /// Then, load remaining databases
-        loadMetadata(*global_context, default_database);
+        loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -986,7 +1065,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
-#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER) && defined(__x86_64__)
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1023,6 +1102,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         " when two different stack unwinding methods will interfere with each other.");
 #endif
 
+#if !defined(__x86_64__)
+    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
+#endif
+
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
@@ -1037,7 +1120,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     else
     {
         /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(global_context, config().getInt("dns_cache_update_period", 15));
     }
 
 #if defined(OS_LINUX)
@@ -1069,7 +1152,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(
-            *global_context, config().getUInt("asynchronous_metrics_update_period_s", 60), servers_to_start_before_tables, servers);
+            global_context, config().getUInt("asynchronous_metrics_update_period_s", 60), servers_to_start_before_tables, servers);
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
@@ -1306,18 +1389,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         /// try to load dictionaries immediately, throw on error and die
-        ext::scope_guard dictionaries_xmls, models_xmls;
         try
         {
-            if (!config().getBool("dictionaries_lazy_load", true))
-            {
-                global_context->tryCreateEmbeddedDictionaries();
-                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
-            }
-            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
-            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
+            global_context->loadDictionaries(config());
         }
         catch (...)
         {
@@ -1332,7 +1406,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
+            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
         }
 
@@ -1383,7 +1457,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
-                _exit(Application::EXIT_OK);
+                forceShutdown();
             }
         });
 

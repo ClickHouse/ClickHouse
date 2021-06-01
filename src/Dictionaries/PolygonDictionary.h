@@ -24,7 +24,7 @@ namespace bg = boost::geometry;
   * An implementation should inherit from this base class and preprocess the data upon construction if needed.
   * It must override the find method of this class which retrieves the polygon containing a single point.
   */
-class IPolygonDictionary : public IDictionaryBase
+class IPolygonDictionary : public IDictionary
 {
 public:
     /** Controls the different types of polygons allowed as input.
@@ -62,6 +62,14 @@ public:
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
 
     double getHitRate() const override { return 1.0; }
 
@@ -141,6 +149,7 @@ private:
 
     size_t bytes_allocated = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 
     /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
      *  corresponding to the row in which any other attributes for this entry are located.
