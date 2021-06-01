@@ -27,7 +27,11 @@ namespace
     /// The performance test query ids can be surprisingly long like
     /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
     /// so make some allowance for them as well.
+#ifdef __linux__
     constexpr size_t QUERY_ID_MAX_LEN = 128;
+#else
+    constexpr size_t QUERY_ID_MAX_LEN = sizeof("00000000-0000-0000-0000-000000000000") - 1; // 36
+#endif
 }
 
 LazyPipeFDs pipe;
