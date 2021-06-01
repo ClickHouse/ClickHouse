@@ -79,7 +79,7 @@ private:
     mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
-    ContextPtr context;
+    ContextMutablePtr context;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
     Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");

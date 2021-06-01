@@ -113,7 +113,7 @@ namespace ErrorCodes
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public IStorage, public WithContext
+class MergeTreeData : public IStorage, public WithMutableContext
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -353,7 +353,7 @@ public:
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata_,
-                  ContextPtr context_,
+                  ContextMutablePtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
