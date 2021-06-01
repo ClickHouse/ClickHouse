@@ -13,7 +13,6 @@
 #include <arrow/api.h>
 #include <arrow/util/memory.h>
 #include <parquet/arrow/writer.h>
-#include <parquet/deprecated_io.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
 

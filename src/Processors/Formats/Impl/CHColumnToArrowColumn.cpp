@@ -30,6 +30,7 @@ namespace DB
     {
         extern const int UNKNOWN_EXCEPTION;
         extern const int UNKNOWN_TYPE;
+        extern const int LOGICAL_ERROR;
     }
 
     static const std::initializer_list<std::pair<String, std::shared_ptr<arrow::DataType>>> internal_type_to_arrow_type =
@@ -215,7 +216,7 @@ namespace DB
         /// Convert dictionary from LowCardinality to Arrow dictionary only once and then reuse it.
         if (!dict_values)
         {
-            const auto & value_type = assert_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
+            auto value_type = assert_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
             std::unique_ptr<arrow::ArrayBuilder> values_builder;
             arrow::MemoryPool* pool = arrow::default_memory_pool();
             arrow::Status status = MakeBuilder(pool, value_type, &values_builder);
@@ -550,8 +551,8 @@ namespace DB
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
             const auto * lc_column = assert_cast<const ColumnLowCardinality *>(column.get());
-            ColumnPtr nested_column = lc_column->getDictionaryPtr();
-            ColumnPtr indexes_column = lc_column->getIndexesPtr();
+            const auto & nested_column = lc_column->getDictionaryPtr();
+            const auto & indexes_column = lc_column->getIndexesPtr();
             return arrow::dictionary(
                 getArrowTypeForLowCardinalityIndexes(indexes_column),
                 getArrowType(nested_type, nested_column, column_name, format_name, is_column_nullable));

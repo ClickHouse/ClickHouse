@@ -36,7 +36,7 @@ namespace DB
         M(arrow::Type::FLOAT, DB::Float32) \
         M(arrow::Type::DOUBLE, DB::Float64)
 
-#    define FOR_ARROW_INXEXES_TYPES(M) \
+#    define FOR_ARROW_INDEXES_TYPES(M) \
         M(arrow::Type::UINT8, DB::UInt8) \
         M(arrow::Type::INT8, DB::UInt8) \
         M(arrow::Type::UINT16, DB::UInt16) \
@@ -44,7 +44,7 @@ namespace DB
         M(arrow::Type::UINT32, DB::UInt32) \
         M(arrow::Type::INT32, DB::UInt32) \
         M(arrow::Type::UINT64, DB::UInt64) \
-        M(arrow::Type::INT64, DB::UInt64) \
+        M(arrow::Type::INT64, DB::UInt64)
 
         /// Map {column name : dictionary column}.
         /// To avoid converting dictionary from Arrow Dictionary
