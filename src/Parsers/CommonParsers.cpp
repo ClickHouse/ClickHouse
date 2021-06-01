@@ -14,14 +14,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-constexpr ParserKeyword::ParserKeyword(std::string_view s_) : s(s_) { }
-
-constexpr const char * ParserKeyword::getName() const
-{
-    return s.data();
-}
-
-
 bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
 {
     if (pos->type != TokenType::BareWord)

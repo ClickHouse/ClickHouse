@@ -9,13 +9,12 @@ namespace DB
 class ASTDeleteQuery : public ASTQueryWithTableAndOutput
 {
 public:
-    String getID(char delim) const final { return "DeleteQuery" + (delim + database) + delim + table; }
-
+    String getID(char delim) const final;
     ASTPtr clone() const final;
 
     ASTPtr predicate;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 }

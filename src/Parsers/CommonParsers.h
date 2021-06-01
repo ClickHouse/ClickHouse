@@ -15,10 +15,10 @@ private:
     std::string_view s;
 
 public:
-    constexpr ParserKeyword(std::string_view s_); //NOLINT
+    constexpr ParserKeyword(std::string_view s_): s(s_) {} //NOLINT
 
 protected:
-    constexpr const char * getName() const final;
+    constexpr const char * getName() const final { return s.data(); }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) final;
 };

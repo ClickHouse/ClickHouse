@@ -14,6 +14,7 @@ query
     | createStmt    // DDL
     | describeStmt
     | dropStmt      // DDL
+    | deleteStmt    // DDL
     | existsStmt
     | explainStmt
     | killStmt      // DDL
@@ -174,6 +175,12 @@ describeStmt: (DESCRIBE | DESC) TABLE? tableExpr;
 dropStmt
     : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier clusterClause?                                  # DropDatabaseStmt
     | (DETACH | DROP) (DICTIONARY | TEMPORARY? TABLE | VIEW) (IF EXISTS)? tableIdentifier clusterClause? (NO DELAY)?  # DropTableStmt
+    ;
+
+// DELETE statement
+
+deleteStmt
+    : DELETE FROM tableIdentifier WHERE whereClause # DeleteFromTableStmt
     ;
 
 // EXISTS statement
