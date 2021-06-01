@@ -129,8 +129,6 @@ static IAggregateFunction * createWithBasicNumberOrDateOrDateTime(const IDataTyp
         return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime)
         return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::DateTime64)
-        return new AggregateFunctionTemplate<UInt64, Data<UInt64>>(std::forward<TArgs>(args)...);
 
     return nullptr;
 }
