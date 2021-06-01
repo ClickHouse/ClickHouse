@@ -3,8 +3,6 @@
 #include <optional>
 #include <unordered_set>
 
-#include <Poco/File.h>
-
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
@@ -144,11 +142,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const auto & settings = context->getSettingsRef();
     if (!query_info.projection)
     {
-        if (settings.allow_experimental_projection_optimization && settings.force_optimize_projection
-            && !metadata_snapshot->projections.empty())
-            throw Exception("No projection is used when allow_experimental_projection_optimization = 1", ErrorCodes::PROJECTION_NOT_USED);
-
-        return readFromParts(
+        auto plan = readFromParts(
             data.getDataPartsVector(),
             column_names_to_return,
             metadata_snapshot,
@@ -159,6 +153,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read,
             query_info.merge_tree_data_select_cache.get());
+
+        if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
+            && !metadata_snapshot->projections.empty())
+            throw Exception(
+                "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
+                ErrorCodes::PROJECTION_NOT_USED);
+
+        return plan;
     }
 
     LOG_DEBUG(
@@ -503,7 +505,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
             minmax_idx_condition.emplace(
                 query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
-            partition_pruner.emplace(metadata_snapshot_base->getPartitionKey(), query_info, context, false /* strict */);
+            partition_pruner.emplace(metadata_snapshot_base, query_info, context, false /* strict */);
 
             if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
             {
@@ -528,6 +530,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             selectPartsToReadWithUUIDFilter(
                 parts,
                 part_values,
+                data.getPinnedPartUUIDs(),
                 minmax_idx_condition,
                 minmax_columns_types,
                 partition_pruner,
@@ -577,6 +580,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeDataSelectSamplingData sampling = use_cache ? std::move(cache->sampling) : MergeTreeDataSelectSamplingData{};
     if (!use_cache)
     {
+        assert(key_condition.has_value());
+
         RelativeSize relative_sample_size = 0;
         RelativeSize relative_sample_offset = 0;
 
@@ -605,7 +610,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             /// read) into the relative `SAMPLE 0.1` (how much data to read).
             size_t approx_total_rows = 0;
             if (relative_sample_size > 1 || relative_sample_offset > 1)
-                approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, *key_condition, settings);
+                approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, *key_condition, settings); //-V1007
 
             if (relative_sample_size > 1)
             {
@@ -764,7 +769,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
                 if (has_lower_limit)
                 {
-                    if (!key_condition->addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true)))
+                    if (!key_condition->addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true))) //-V1007
                         throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                     ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -781,7 +786,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
                 if (has_upper_limit)
                 {
-                    if (!key_condition->addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false)))
+                    if (!key_condition->addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false))) //-V1007
                         throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                     ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -2244,6 +2249,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     MergeTreeData::DataPartsVector & parts,
     const std::unordered_set<String> & part_values,
+    MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
@@ -2251,6 +2257,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     ContextPtr query_context,
     PartFilterCounters & counters) const
 {
+    const Settings & settings = query_context->getSettings();
+
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
     auto select_parts = [&] (MergeTreeData::DataPartsVector & selected_parts) -> bool
@@ -2307,9 +2315,12 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             /// populate UUIDs and exclude ignored parts if enabled
             if (part->uuid != UUIDHelpers::Nil)
             {
-                auto result = temp_part_uuids.insert(part->uuid);
-                if (!result.second)
-                    throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
+                if (settings.experimental_query_deduplication_send_all_part_uuids || pinned_part_uuids->contains(part->uuid))
+                {
+                    auto result = temp_part_uuids.insert(part->uuid);
+                    if (!result.second)
+                        throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
+                }
             }
 
             selected_parts.push_back(part_or_projection);
@@ -2333,7 +2344,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     /// Process parts that have to be read for a query.
     auto needs_retry = !select_parts(parts);
 
-    /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass
+    /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass.
+    /// This may happen when `prefer_localhost_replica` is set and "distributed" stage runs in the same process with "remote" stage.
     if (needs_retry)
     {
         LOG_DEBUG(log, "Found duplicate uuids locally, will retry part selection without them");

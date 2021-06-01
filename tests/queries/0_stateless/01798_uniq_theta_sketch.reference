@@ -32,13 +32,13 @@ uniqTheta decimals
 (101,101,101)
 uniqTheta remove injective
 SELECT uniqTheta(x)
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(x + y)
-FROM 
+FROM
 (
     SELECT
         number % 2 AS x,
@@ -46,37 +46,37 @@ FROM
     FROM numbers(10)
 )
 SELECT uniqTheta(x)
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(x)
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(x)
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(x)
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(x)
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(x + y)
-FROM 
+FROM
 (
     SELECT
         number % 2 AS x,
@@ -84,25 +84,25 @@ FROM
     FROM numbers(10)
 )
 SELECT uniqTheta(-x)
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(bitNot(x))
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(bitNot(-x))
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(-bitNot(-x))
-FROM 
+FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
