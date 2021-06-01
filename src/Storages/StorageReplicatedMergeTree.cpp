@@ -1465,12 +1465,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    if (entry.type == LogEntry::PART_IS_LOST)
-    {
-        queue.executePartIsLost(getZooKeeper(), entry);
-        return true;
-    }
-
     const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
 
     if (is_get_or_attach || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
