@@ -39,7 +39,8 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts, P
         {
             if (!part_info.isDisjoint(it->first))
             {
-                LOG_ERROR(log, "Part {} intersects previous part {}. It is a bug.", name, it->first.getPartName());
+                if (log)
+                    LOG_ERROR(log, "Part {} intersects previous part {}. It is a bug.", name, it->first.getPartName());
                 assert(false);
             }
             ++it;
@@ -65,7 +66,8 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts, P
 
     if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
     {
-        LOG_ERROR(log, "Part {} intersects next part {}. It is a bug.", name, it->first.getPartName());
+        if (log)
+            LOG_ERROR(log, "Part {} intersects next part {}. It is a bug.", name, it->first.getPartName());
         assert(false);
     }
 
