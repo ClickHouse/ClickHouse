@@ -965,12 +965,9 @@ private:
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-
-            // Echo all queries if asked; makes for a more readable reference
-            // file.
-            if (test_hint.echoQueries())
-                echo_queries = true;
         }
+
+        bool echo_queries_ = echo_queries;
 
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
@@ -1104,9 +1101,21 @@ private:
                 continue;
             }
 
+            // Now we know for sure where the query ends.
+            // Look for the hint in the text of query + insert data + trailing
+            // comments,
+            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+            // Use the updated query boundaries we just calculated.
+            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
+
+            // Echo all queries if asked; makes for a more readable reference
+            // file.
+            if (test_hint.echoQueries())
+                echo_queries_ = true;
+
             try
             {
-                processParsedSingleQuery();
+                processParsedSingleQuery(echo_queries_);
             }
             catch (...)
             {
@@ -1127,13 +1136,6 @@ private:
                 this_query_end = insert_ast->end;
                 adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
             }
-
-            // Now we know for sure where the query ends.
-            // Look for the hint in the text of query + insert data + trailing
-            // comments,
-            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            // Use the updated query boundaries we just calculated.
-            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
 
             // Check whether the error (or its absence) matches the test hints
             // (or their absence).
@@ -1545,14 +1547,14 @@ private:
     // 'query_to_send' -- the query text that is sent to server,
     // 'full_query' -- for INSERT queries, contains the query and the data that
     // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-    void processParsedSingleQuery()
+    void processParsedSingleQuery(std::optional<bool> echo_queries_ = {})
     {
         resetOutput();
         client_exception.reset();
         server_exception.reset();
         have_error = false;
 
-        if (echo_queries)
+        if (echo_queries_.value_or(echo_queries))
         {
             writeString(full_query, std_out);
             writeChar('\n', std_out);
