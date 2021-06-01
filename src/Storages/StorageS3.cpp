@@ -4,18 +4,22 @@
 
 #include <Columns/ColumnString.h>
 
+#include <Functions/FunctionsConversion.h>
+
 #include <IO/S3Common.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/StorageS3.h>
-#include <Storages/StorageS3Settings.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
+
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageS3.h>
+#include <Storages/StorageS3Settings.h>
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
@@ -365,10 +369,12 @@ public:
         , max_single_part_upload_size(max_single_part_upload_size_)
 
     {
-        ASTPtr query = partition_by;
-        auto syntax_result = TreeRewriter(context).analyze(query, sample_block.getNamesAndTypesList());
-        partition_by_expr = ExpressionAnalyzer(query, syntax_result, context).getActions(false);
-        partition_by_column_name = partition_by->getColumnName();
+        std::vector<ASTPtr> arguments(1, partition_by);
+        ASTPtr partition_by_string = makeASTFunction(FunctionToString::name, std::move(arguments));
+
+        auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
+        partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
+        partition_by_column_name = partition_by_string->getColumnName();
     }
 
     String getName() const override { return "PartitionedStorageS3Sink"; }
