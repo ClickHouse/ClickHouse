@@ -238,7 +238,7 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
                                    Coordination::Stat * stat,
                                    Coordination::WatchCallback watch_callback)
 {
-    auto future_result = tryAsyncGetChildrenNoThrow(path, watch_callback);
+    auto future_result = asyncTryGetChildrenNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
@@ -299,7 +299,7 @@ Coordination::Error ZooKeeper::tryGetChildrenWatch(const std::string & path, Str
 
 Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
-    auto future_result = tryAsyncCreateNoThrow(path, data, mode);
+    auto future_result = asyncTryCreateNoThrow(path, data, mode);
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
@@ -368,7 +368,7 @@ void ZooKeeper::createAncestors(const std::string & path)
 
 Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
-    auto future_result = tryAsyncRemoveNoThrow(path, version);
+    auto future_result = asyncTryRemoveNoThrow(path, version);
 
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
@@ -401,7 +401,7 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
 
 Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
 {
-    auto future_result = tryAsyncExistsNoThrow(path, watch_callback);
+    auto future_result = asyncTryExistsNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
@@ -435,7 +435,7 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 
 Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
 {
-    auto future_result = tryAsyncGetNoThrow(path, watch_callback);
+    auto future_result = asyncTryGetNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
@@ -508,7 +508,7 @@ bool ZooKeeper::tryGetWatch(
 Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::string & data,
                            int32_t version, Coordination::Stat * stat)
 {
-    auto future_result = tryAsyncSetNoThrow(path, data, version);
+    auto future_result = asyncTrySetNoThrow(path, data, version);
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
@@ -560,7 +560,7 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
     if (requests.empty())
         return Coordination::Error::ZOK;
 
-    auto future_result = tryAsyncMultiNoThrow(requests);
+    auto future_result = asyncTryMultiNoThrow(requests);
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
@@ -758,12 +758,12 @@ std::future<Coordination::CreateResponse> ZooKeeper::asyncCreate(const std::stri
     return future;
 }
 
-std::future<Coordination::CreateResponse> ZooKeeper::tryAsyncCreateNoThrow(const std::string & path, const std::string & data, int32_t mode)
+std::future<Coordination::CreateResponse> ZooKeeper::asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode)
 {
     auto promise = std::make_shared<std::promise<Coordination::CreateResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::CreateResponse & response) mutable
+    auto callback = [promise](const Coordination::CreateResponse & response) mutable
     {
         promise->set_value(response);
     };
@@ -789,12 +789,12 @@ std::future<Coordination::GetResponse> ZooKeeper::asyncGet(const std::string & p
     return future;
 }
 
-std::future<Coordination::GetResponse> ZooKeeper::tryAsyncGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
+std::future<Coordination::GetResponse> ZooKeeper::asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
 {
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::GetResponse & response) mutable
+    auto callback = [promise](const Coordination::GetResponse & response) mutable
     {
         promise->set_value(response);
     };
@@ -838,12 +838,12 @@ std::future<Coordination::ExistsResponse> ZooKeeper::asyncExists(const std::stri
     return future;
 }
 
-std::future<Coordination::ExistsResponse> ZooKeeper::tryAsyncExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
+std::future<Coordination::ExistsResponse> ZooKeeper::asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
 {
     auto promise = std::make_shared<std::promise<Coordination::ExistsResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::ExistsResponse & response) mutable
+    auto callback = [promise](const Coordination::ExistsResponse & response) mutable
     {
         promise->set_value(response);
     };
@@ -870,12 +870,12 @@ std::future<Coordination::SetResponse> ZooKeeper::asyncSet(const std::string & p
 }
 
 
-std::future<Coordination::SetResponse> ZooKeeper::tryAsyncSetNoThrow(const std::string & path, const std::string & data, int32_t version)
+std::future<Coordination::SetResponse> ZooKeeper::asyncTrySetNoThrow(const std::string & path, const std::string & data, int32_t version)
 {
     auto promise = std::make_shared<std::promise<Coordination::SetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::SetResponse & response) mutable
+    auto callback = [promise](const Coordination::SetResponse & response) mutable
     {
         promise->set_value(response);
     };
@@ -901,12 +901,12 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncGetChildren(const std::s
     return future;
 }
 
-std::future<Coordination::ListResponse> ZooKeeper::tryAsyncGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
+std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
 {
     auto promise = std::make_shared<std::promise<Coordination::ListResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::ListResponse & response) mutable
+    auto callback = [promise](const Coordination::ListResponse & response) mutable
     {
         promise->set_value(response);
     };
@@ -954,12 +954,12 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemove(const std::s
     return future;
 }
 
-std::future<Coordination::RemoveResponse> ZooKeeper::tryAsyncRemoveNoThrow(const std::string & path, int32_t version)
+std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemoveNoThrow(const std::string & path, int32_t version)
 {
     auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::RemoveResponse & response) mutable
+    auto callback = [promise](const Coordination::RemoveResponse & response) mutable
     {
         promise->set_value(response);
     };
@@ -968,7 +968,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::tryAsyncRemoveNoThrow(const
     return future;
 }
 
-std::future<Coordination::MultiResponse> ZooKeeper::tryAsyncMultiNoThrow(const Coordination::Requests & ops)
+std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(const Coordination::Requests & ops)
 {
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
