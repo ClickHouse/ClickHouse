@@ -51,14 +51,19 @@ def _create_env_file(path, variables):
             f.write("=".join([var, value]) + "\n")
     return path
 
-def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180):
+def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180, nothrow=False, detach=False):
+    if detach:
+        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, shell=shell, timeout=timeout)
+        return
+
     res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout)
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
         logging.debug(f"Stderr:\n{res.stderr.decode('utf-8')}\n")
         logging.debug(f"Stdout:\n{res.stdout.decode('utf-8')}\n")
         logging.debug(f"Env:\n{env}\n")
-        raise Exception(f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}")
+        if not nothrow:
+            raise Exception(f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}")
 
 # Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
 def get_free_port():
@@ -89,10 +94,10 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
         return
     raise StopIteration('Function did not finished successfully')
 
-def subprocess_check_call(args):
+def subprocess_check_call(args, detach=False, nothrow=False):
     # Uncomment for debugging
-    logging.info('run:' + ' '.join(args))
-    run_and_check(args)
+    #logging.info('run:' + ' '.join(args))
+    run_and_check(args, detach=detach, nothrow=nothrow)
 
 
 def subprocess_call(args):
@@ -875,30 +880,34 @@ class ClickHouseCluster:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id).decode()
 
-    def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, **kwargs):
-        exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
-        output = self.docker_client.api.exec_start(exec_id, detach=detach)
+    def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, use_cli=True, **kwargs):
+        if use_cli:
+            result = subprocess_check_call(["docker", "exec", container_id] + cmd, detach=detach, nothrow=nothrow)
+            return result
+        else:
+            exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
+            output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
-        exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
-        if exit_code:
-            container_info = self.docker_client.api.inspect_container(container_id)
-            image_id = container_info.get('Image')
-            image_info = self.docker_client.api.inspect_image(image_id)
-            logging.debug(("Command failed in container {}: ".format(container_id)))
-            pprint.pprint(container_info)
-            logging.debug("")
-            logging.debug(("Container {} uses image {}: ".format(container_id, image_id)))
-            pprint.pprint(image_info)
-            logging.debug("")
-            message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id,
-                                                                                           exit_code, output)
-            if nothrow:
-                logging.debug(message)
-            else:
-                raise Exception(message)
-        if not detach:
-            return output.decode()
-        return output
+            exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
+            if exit_code:
+                container_info = self.docker_client.api.inspect_container(container_id)
+                image_id = container_info.get('Image')
+                image_info = self.docker_client.api.inspect_image(image_id)
+                logging.debug(("Command failed in container {}: ".format(container_id)))
+                pprint.pprint(container_info)
+                logging.debug("")
+                logging.debug(("Container {} uses image {}: ".format(container_id, image_id)))
+                pprint.pprint(image_info)
+                logging.debug("")
+                message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id,
+                                                                                            exit_code, output)
+                if nothrow:
+                    logging.debug(message)
+                else:
+                    raise Exception(message)
+            if not detach:
+                return output.decode()
+            return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "r") as fdata:
