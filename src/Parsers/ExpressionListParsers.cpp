@@ -9,7 +9,7 @@
 
 
 namespace DB
-{ 
+{
 
 const char * ParserMultiplicativeExpression::operators[] =
 {
@@ -447,8 +447,8 @@ bool ParserComparisonWithSubqueryExpression::parseImpl(Pos & pos, ASTPtr & node,
 
     if (!*it)
     {
-        pos = begin;
-        return next_parser.parse(pos, node, expected);
+        node = elem;
+        return true;
     }
 
     bool is_any = true;
