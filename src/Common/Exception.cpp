@@ -21,6 +21,8 @@
 #    include <Common/config_version.h>
 #endif
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
@@ -177,7 +179,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     tryLogCurrentExceptionImpl(logger, start_of_message);
 }
 
-static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
+static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 {
     path = std::filesystem::absolute(path);
     /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
@@ -264,22 +266,12 @@ static std::string getExtraExceptionInfo(const std::exception & e)
     String msg;
     try
     {
-        if (const auto * file_exception = dynamic_cast<const Poco::FileException *>(&e))
+        if (const auto * file_exception = dynamic_cast<const fs::filesystem_error *>(&e))
         {
-            if (file_exception->code() == ENOSPC)
-            {
-                /// See Poco::FileImpl::handleLastErrorImpl(...)
-                constexpr const char * expected_error_message = "no space left on device: ";
-                if (startsWith(file_exception->message(), expected_error_message))
-                {
-                    String path = file_exception->message().substr(strlen(expected_error_message));
-                    getNoSpaceLeftInfoMessage(path, msg);
-                }
-                else
-                {
-                    msg += "\nCannot print extra info for Poco::Exception";
-                }
-            }
+            if (file_exception->code() == std::errc::no_space_on_device)
+                getNoSpaceLeftInfoMessage(file_exception->path1(), msg);
+            else
+                msg += "\nCannot print extra info for Poco::Exception";
         }
         else if (const auto * errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
         {
