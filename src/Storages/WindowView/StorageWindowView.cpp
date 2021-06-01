@@ -377,7 +377,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context,
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
-            drop_context->setQueryContext(current_context);
+            drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
             drop_context->initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);

@@ -64,7 +64,7 @@ private:
     ASTPtr mergeable_query;
     ASTPtr final_query;
 
-    ContextPtr window_view_context;
+    ContextMutablePtr window_view_context;
     bool is_proctime{true};
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop
