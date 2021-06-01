@@ -1393,11 +1393,7 @@ void MergeTreeData::clearEmptyParts()
     for (const auto & part : parts)
     {
         if (part->rows_count == 0)
-        {
-            ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
-            /// If another replica has already started drop, it's ok, no need to throw.
-            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, getContext(), /* throw_if_noop = */ false);
-        }
+            dropPartNoWaitNoThrow(part->name);
     }
 }
 
@@ -2915,9 +2911,8 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
     getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
-void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
+void MergeTreeData::checkPartCanBeDropped(const String & part_name)
 {
-    String part_name = part_ast->as<ASTLiteral &>().value.safeGet<String>();
     auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
@@ -3052,12 +3047,20 @@ Pipe MergeTreeData::alterPartition(
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
+            {
                 if (command.part)
-                    checkPartCanBeDropped(command.partition);
+                {
+                    auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+                    checkPartCanBeDropped(part_name);
+                    dropPart(part_name, command.detach, query_context);
+                }
                 else
+                {
                     checkPartitionCanBeDropped(command.partition);
-                dropPartition(command.partition, command.detach, command.part, query_context);
-                break;
+                    dropPartition(command.partition, command.detach, query_context);
+                }
+            }
+            break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
                 dropDetached(command.partition, command.part, query_context);
