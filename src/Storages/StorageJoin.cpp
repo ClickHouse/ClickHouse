@@ -91,7 +91,9 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join)
 
     /// TODO: check key columns
 
-    /// Some HACK to remove wrong names qualifiers: table.column -> column.
+    /// Set names qualifiers: table.column -> column
+    /// It's required because storage join stores non-qualified names
+    /// Qualifies will be added by join implementation (HashJoin)
     analyzed_join->setRightKeys(key_names);
 
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
