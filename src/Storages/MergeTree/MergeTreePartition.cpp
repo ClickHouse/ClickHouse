@@ -129,7 +129,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.context).sample_block;
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.global_context).sample_block;
     auto partition_file_path = part_path + "partition.dat";
     auto file = openForReading(disk, partition_file_path);
     value.resize(partition_key_sample.columns());
@@ -140,7 +140,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.context).sample_block;
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.global_context).sample_block;
     store(partition_key_sample, disk, part_path, checksums);
 }
 
