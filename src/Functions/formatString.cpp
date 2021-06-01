@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
 
@@ -31,7 +31,7 @@ class FormatFunction : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FormatFunction>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FormatFunction>(); }
 
     String getName() const override { return name; }
 

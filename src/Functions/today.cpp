@@ -4,7 +4,7 @@
 
 #include <DataTypes/DataTypeDate.h>
 
-#include <Functions/IFunctionOld.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -71,7 +71,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }
+    static FunctionOverloadResolverPtr create(ContextConstPtr) { return std::make_unique<TodayOverloadResolver>(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 

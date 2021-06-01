@@ -20,6 +20,7 @@
 
 namespace DB
 {
+
 static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
@@ -62,7 +63,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block_,
-    ContextPtr context_)
+    ContextConstPtr context_)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , dict_struct{dict_struct_}
     , implicit_key{config.getBool(config_prefix + ".implicit_key", false)}
@@ -139,7 +140,7 @@ namespace
     {
     public:
         BlockInputStreamWithBackgroundThread(
-            ContextPtr context,
+            ContextConstPtr context,
             const std::string & format,
             const Block & sample_block,
             const std::string & command_str,
@@ -264,9 +265,9 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextConstPtr context,
                                  const std::string & /* default_database */,
-                                 bool check_config) -> DictionarySourcePtr
+                                 bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable` does not support attribute expressions");
@@ -274,7 +275,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (check_config)
+        if (created_from_ddl)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable dictionary source are not allowed to be created from DDL query");
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
