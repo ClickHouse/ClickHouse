@@ -47,9 +47,9 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
 std::unordered_set<std::string> DatabaseSQLite::fetchTablesList() const
 {
     std::unordered_set<String> tables;
-    std::string query = "SELECT name FROM sqlite_schema \n"
-                        "WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'\n"
-                        "ORDER BY 1;";
+    std::string query = "SELECT name FROM sqlite_master \n"
+                        "WHERE type = 'table' AND \n"
+                        "      name NOT LIKE 'sqlite_%'";
 
     auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** /* col_names */) -> int {
         for (int i = 0; i < col_num; ++i)
@@ -131,8 +131,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},
-        local_context,
-        "");
+        local_context);
 
     return storage;
 }
@@ -148,6 +147,5 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 void DatabaseSQLite::shutdown()
 {
 }
-
 
 }

@@ -20,8 +20,7 @@ public:
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        ContextPtr context_,
-        const String & remote_table_schema_);
+        ContextPtr context_);
 
     std::string getName() const override { return "SQLite"; }
 
@@ -38,7 +37,6 @@ public:
 
 private:
     String remote_table_name;
-    String remote_table_schema;
     ContextPtr global_context;
     std::shared_ptr<sqlite3> db_ptr;
 };

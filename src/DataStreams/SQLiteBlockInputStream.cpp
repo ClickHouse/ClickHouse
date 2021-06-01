@@ -77,8 +77,10 @@ Block SQLiteBlockInputStream::readImpl()
                 case SQLITE_NULL:
                 {
                     const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
-                    if (!data) {
-                        (*columns[idx]).insertFrom(*sample.column, 0); break;
+                    if (!data)
+                    {
+                        (*columns[idx]).insertFrom(*sample.column, 0);
+                        break;
                     }
                     int len = sqlite3_column_bytes(compiled_statement.get(), idx);
                     assert_cast<ColumnString &>(*columns[idx]).insertData(data, len);
