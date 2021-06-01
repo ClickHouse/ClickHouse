@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Poco/File.h>
 
 
 namespace DB

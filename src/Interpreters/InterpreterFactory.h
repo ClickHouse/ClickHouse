@@ -16,7 +16,7 @@ class InterpreterFactory
 public:
     static std::unique_ptr<IInterpreter> get(
         ASTPtr & query,
-        ContextPtr context,
+        ContextMutablePtr context,
         const SelectQueryOptions & options = {});
 };
 

@@ -184,7 +184,7 @@ namespace
 class FunctionToStartOfInterval : public IFunction
 {
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
 
     static constexpr auto name = function_name;
     String getName() const override { return name; }

@@ -18,7 +18,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
-
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
@@ -26,7 +25,9 @@
 #include <hdfs/hdfs.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -257,7 +258,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(full_path + "/", fs, suffix_with_globs.substr(next_slash));
+                Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash));
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }

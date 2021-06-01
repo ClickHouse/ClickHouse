@@ -415,7 +415,6 @@ class IColumn;
     M(Bool, materialize_ttl_after_modify, true, "Apply TTL for old data, after ALTER MODIFY TTL query", 0) \
     M(String, function_implementation, "", "Choose function implementation for specific target or variant (experimental). If empty enable all of them.", 0) \
     M(Bool, allow_experimental_geo_types, false, "Allow geo data types such as Point, Ring, Polygon, MultiPolygon", 0) \
-    M(Bool, allow_experimental_bigint_types, false, "Allow Int128, Int256, UInt256 and Decimal256 types", 0) \
     M(Bool, data_type_default_nullable, false, "Data types without NULL or NOT NULL will make Nullable", 0) \
     M(Bool, cast_keep_nullable, false, "CAST operator keep Nullable for result data type", 0) \
     M(Bool, alter_partition_verbose_result, false, "Output information about affected parts. Currently works only for FREEZE and ATTACH commands.", 0) \
@@ -458,13 +457,6 @@ class IColumn;
     M(UInt64, distributed_ddl_entry_format_version, 1, "Version of DDL entry to write into ZooKeeper", 0) \
     M(UInt64, external_storage_max_read_rows, 0, "Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializeMySQL. If equal to 0, this setting is disabled", 0) \
     M(UInt64, external_storage_max_read_bytes, 0, "Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializeMySQL. If equal to 0, this setting is disabled", 0)  \
-    \
-    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
-    \
-    M(UInt64, max_memory_usage_for_all_queries, 0, "Obsolete. Will be removed after 2020-10-20", 0) \
-    M(UInt64, multiple_joins_rewriter_version, 0, "Obsolete setting, does nothing. Will be removed after 2021-03-31", 0) \
-    M(Bool, enable_debug_queries, false, "Enabled debug queries, but now is obsolete", 0) \
-    M(Bool, allow_experimental_database_atomic, true, "Obsolete setting, does nothing. Will be removed after 2021-02-12", 0) \
     M(UnionMode, union_default_mode, UnionMode::Unspecified, "Set default Union Mode in SelectWithUnion query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without Union Mode will throw exception.", 0) \
     M(Bool, optimize_aggregators_of_group_by_keys, true, "Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section", 0) \
     M(Bool, optimize_group_by_function_keys, true, "Eliminates functions of other keys in GROUP BY section", 0) \
@@ -481,7 +473,18 @@ class IColumn;
     M(HandleKafkaErrorMode, handle_kafka_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Passible values: default, stream.", 0) \
     M(UInt64, limit, 0, "Limit on read rows from the most 'end' result for select query, default 0 means no limit length", 0) \
     M(UInt64, offset, 0, "Offset on read rows from the most 'end' result for select query", 0) \
-    M(Bool, allow_experimental_funnel_functions, true, "Enable experimental functions for funnel analysis.", 0) \
+    \
+    \
+    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    M(UInt64, max_memory_usage_for_all_queries, 0, "Obsolete setting, does nothing.", 0) \
+    M(UInt64, multiple_joins_rewriter_version, 0, "Obsolete setting, does nothing.", 0) \
+    M(Bool, enable_debug_queries, false, "Obsolete setting, does nothing.", 0) \
+    M(Bool, allow_experimental_database_atomic, true, "Obsolete setting, does nothing.", 0) \
+    M(Bool, allow_experimental_funnel_functions, true, "Obsolete setting, does nothing.", 0) \
+    M(Bool, allow_experimental_bigint_types, true, "Obsolete setting, does nothing.", 0) \
+    M(HandleKafkaErrorMode, handle_kafka_error_mode, HandleKafkaErrorMode::DEFAULT, "Obsolete setting, does nothing.", 0) \
+    M(Bool, database_replicated_ddl_output, true, "Obsolete setting, does nothing.", 0) \
+    /** The section above is for obsolete settings. Do not add anything there. */
 
 
 // End of COMMON_SETTINGS
