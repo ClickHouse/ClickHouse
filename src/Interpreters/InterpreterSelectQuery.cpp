@@ -1832,7 +1832,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (storage && storage->isRemote())
     {
         is_remote = true;
-        max_threads_execute_query = max_streams = settings.max_distributed_connections;
+        if (!settings.async_socket_for_remote)
+            max_threads_execute_query = max_streams = settings.max_distributed_connections;
     }
 
     UInt64 max_block_size = settings.max_block_size;
@@ -1897,7 +1898,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
-        if (max_streams > 1 && !is_remote)
+        if (max_streams > 1 && (!is_remote || settings.async_socket_for_remote))
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
         // TODO figure out how to make set for projections
