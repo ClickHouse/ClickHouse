@@ -136,7 +136,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, storage.context);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, storage.global_context);
 
     for (auto & current_block : part_blocks)
     {
