@@ -354,3 +354,39 @@ SELECT * FROM base.t1;
 │ 3 │
 └───┘
 ```
+
+## COMMENT Clause {#comment-table}
+
+You can add a comment to the table when you creating it.
+
+!!!note "Note"
+    The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+	
+
+**Syntax**
+
+``` sql
+CREATE TABLE db.table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+COMMENT 'Comment'
+```
+	
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+SELECT name, comment FROM system.tables WHERE name = 't1';
+```
+
+Result:
+
+```text
+┌─name─┬─comment─────────────┐
+│ t1   │ The temporary table │
+└──────┴─────────────────────┘
+```
