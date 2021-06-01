@@ -32,7 +32,7 @@ public:
         return BaseDaemon::logger();
     }
 
-    ContextPtr context() const override
+    ContextMutablePtr context() const override
     {
         return global_context;
     }
@@ -58,7 +58,7 @@ protected:
     std::string getDefaultConfigFileName() const override;
 
 private:
-    ContextPtr global_context;
+    ContextMutablePtr global_context;
 
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 
