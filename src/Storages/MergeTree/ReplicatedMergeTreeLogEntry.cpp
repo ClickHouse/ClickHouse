@@ -152,10 +152,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "sync_pinned_part_uuids\n";
             break;
 
-        case PART_IS_LOST:
-            out << "lost\n" << new_part_name;
-            break;
-
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", static_cast<int>(type));
     }
@@ -330,11 +326,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in >> new_part_name;
         in >> "\nsource_shard: " >> source_shard;
     }
-    else if (type_str == "lost")
-    {
-        type = PART_IS_LOST;
-        in >> new_part_name;
-    }
 
     if (!trailing_newline_found)
         in >> "\n";
@@ -398,6 +389,7 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
 
 bool ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info)
 {
+    assert(drop_range_info.getBlocksCount() != 0);
     return drop_range_info.getBlocksCount() == 1;
 }
 
@@ -421,24 +413,6 @@ ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String
     return res;
 }
 
-std::optional<String> ReplicatedMergeTreeLogEntryData::getDropRange(MergeTreeDataFormatVersion format_version) const
-{
-    if (type == DROP_RANGE)
-        return new_part_name;
-
-    if (type == REPLACE_RANGE)
-    {
-        auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
-        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
-        {
-            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
-            return replace_range_entry->drop_range_part_name;
-        }
-    }
-
-    return {};
-}
-
 Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormatVersion format_version) const
 {
     /// Doesn't produce any part
@@ -456,8 +430,12 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
     if (type == REPLACE_RANGE)
     {
         Strings res = replace_range_entry->new_part_names;
-        if (auto drop_range = getDropRange(format_version))
-            res.emplace_back(*drop_range);
+        auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
+        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
+        {
+            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
+            res.emplace_back(replace_range_entry->drop_range_part_name);
+        }
         return res;
     }
 
@@ -467,10 +445,6 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
 
     /// Doesn't produce any part by itself.
     if (type == CLONE_PART_FROM_SHARD)
-        return {};
-
-    /// Doesn't produce any part.
-    if (type == PART_IS_LOST)
         return {};
 
     return {new_part_name};
