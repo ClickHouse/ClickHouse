@@ -15,7 +15,6 @@
 #include <Parsers/formatAST.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
-#include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <filesystem>
 
