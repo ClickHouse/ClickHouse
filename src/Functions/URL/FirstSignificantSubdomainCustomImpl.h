@@ -36,7 +36,7 @@ class FunctionCutToFirstSignificantSubdomainCustomImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCutToFirstSignificantSubdomainCustomImpl>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionCutToFirstSignificantSubdomainCustomImpl>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
