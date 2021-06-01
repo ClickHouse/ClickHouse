@@ -21,6 +21,7 @@ ReadIndirectBufferFromRemoteFS<T>::ReadIndirectBufferFromRemoteFS(
 {
 }
 
+
 template<typename T>
 off_t ReadIndirectBufferFromRemoteFS<T>::seek(off_t offset_, int whence)
 {
