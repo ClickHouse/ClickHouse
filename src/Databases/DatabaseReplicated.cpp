@@ -324,7 +324,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                 return;
 
             /// It can be a constant expression. Try to evaluate it, ignore exception if we cannot.
-            bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[0]->as<ASTFunction>();
+            bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[1]->as<ASTFunction>();
             if (has_expression_argument)
             {
                 try
