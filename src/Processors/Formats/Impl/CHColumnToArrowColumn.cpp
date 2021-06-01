@@ -52,9 +52,8 @@ namespace DB
         //{"DateTime", arrow::date64()}, // BUG! saves as date32
         {"DateTime", arrow::uint32()},
 
-        // TODO: ClickHouse can actually store non-utf8 strings!
-        {"String", arrow::utf8()},
-        {"FixedString", arrow::utf8()},
+        {"String", arrow::binary()},
+        {"FixedString", arrow::binary()},
     };
 
 
@@ -287,7 +286,7 @@ namespace DB
         size_t end)
     {
         const auto & internal_column = assert_cast<const ColumnType &>(*write_column);
-        arrow::StringBuilder & builder = assert_cast<arrow::StringBuilder &>(*array_builder);
+        arrow::BinaryBuilder & builder = assert_cast<arrow::BinaryBuilder &>(*array_builder);
         arrow::Status status;
 
         for (size_t string_i = start; string_i < end; ++string_i)

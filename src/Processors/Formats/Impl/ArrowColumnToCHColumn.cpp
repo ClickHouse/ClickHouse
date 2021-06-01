@@ -472,10 +472,12 @@ namespace DB
             int internal_fields_num = tuple_nested_types.size();
             /// If internal column has less elements then arrow struct, we will select only first internal_fields_num columns.
             if (internal_fields_num > struct_type->num_fields())
-                throw Exception{
-                    "Cannot convert arrow STRUCT with " + std::to_string(struct_type->num_fields()) + " fields to a ClickHouse Tuple with "
+                throw Exception
+                    {
+                        "Cannot convert arrow STRUCT with " + std::to_string(struct_type->num_fields()) + " fields to a ClickHouse Tuple with "
                         + std::to_string(internal_fields_num) + " elements " + column_type->getName(),
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
+                        ErrorCodes::CANNOT_CONVERT_TYPE
+                    };
 
             DataTypes nested_types;
             for (int i = 0; i < internal_fields_num; ++i)
