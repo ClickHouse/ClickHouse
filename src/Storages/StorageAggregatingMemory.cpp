@@ -199,7 +199,7 @@ public:
         StoragePtr block_storage
             = StorageValues::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), block, source_storage->getVirtuals());
 
-        ContextPtr local_context = Context::createCopy(context);
+        auto local_context = Context::createCopy(context);
         local_context->addViewSource(block_storage);
 
         InterpreterSelectQuery select(query.inner_query, local_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
@@ -438,7 +438,7 @@ Pipe StorageAggregatingMemory::read(
 
     StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source);
 
-    ContextPtr local_context = Context::createCopy(context);
+    auto local_context = Context::createCopy(context);
     local_context->addViewSource(mergable_storage);
 
     InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, local_context, SelectQueryOptions());
