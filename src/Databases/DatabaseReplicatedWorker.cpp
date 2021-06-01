@@ -2,6 +2,9 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DDLTask.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -195,7 +198,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(database->replica_path + "/log_ptr"));
+    UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(fs::path(database->replica_path) / "log_ptr"));
     UInt32 entry_num = DatabaseReplicatedTask::getLogEntryNumber(entry_name);
 
     if (entry_num <= our_log_ptr)
@@ -204,13 +207,13 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
-    String entry_path = queue_dir + "/" + entry_name;
+    String entry_path = fs::path(queue_dir) / entry_name;
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
 
     String initiator_name;
     zkutil::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
-    String try_node_path = entry_path + "/try";
+    String try_node_path = fs::path(entry_path) / "try";
     if (zookeeper->tryGet(try_node_path, initiator_name, nullptr, wait_committed_or_failed))
     {
         task->is_initial_query = initiator_name == task->host_id_str;
@@ -242,7 +245,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
                     throw Coordination::Exception(code, try_node_path);
 
-                if (!zookeeper->exists(entry_path + "/committed"))
+                if (!zookeeper->exists(fs::path(entry_path) / "committed"))
                 {
                     out_reason = fmt::format("Entry {} was forcefully cancelled due to timeout", entry_name);
                     return {};
@@ -251,7 +254,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    if (!zookeeper->exists(entry_path + "/committed"))
+    if (!zookeeper->exists(fs::path(entry_path) / "committed"))
     {
         out_reason = fmt::format("Entry {} hasn't been committed", entry_name);
         return {};
@@ -259,8 +262,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->is_initial_query)
     {
-        assert(!zookeeper->exists(entry_path + "/try"));
-        assert(zookeeper->exists(entry_path + "/committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
+        assert(!zookeeper->exists(fs::path(entry_path) / "try"));
+        assert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }
@@ -296,7 +299,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
 {
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(database->zookeeper_path + "/max_log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
     return entry_number + logs_to_keep < max_log_ptr;
 }
 
