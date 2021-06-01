@@ -1,34 +1,8 @@
 #pragma once
 
-#include <IO/VarInt.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-
-#include <array>
-#include <type_traits>
-#include <city.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnTuple.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
-#include <Common/assert_cast.h>
-#include <Common/PODArray_fwd.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <common/types.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeArray.h>
-#include <ext/bit_cast.h>
-#include <Interpreters/AggregationCommon.h>
 #include "Core/DecimalFunctions.h"
 
 
@@ -45,7 +19,7 @@ namespace DB
         Map1 count_of_value1;
         Map2 count_of_value2;
         Map12 count_of_pairs;
-        Float64 NO_SANITIZE_UNDEFINED getResult() const
+        Float64 getResult() const
         {
             UInt64 q = std::min(count_of_value1.size(), count_of_value2.size());
             if (q == 1) {
@@ -80,7 +54,7 @@ namespace DB
 
         String getName() const override
         {
-            return "CramersV";
+            return "cramersV";
         }
 
         bool allocatesMemoryInArena() const override { return false; } // ????
