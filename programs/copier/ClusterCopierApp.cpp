@@ -5,7 +5,9 @@
 #include <Formats/registerFormats.h>
 #include <ext/scope_guard_safe.h>
 #include <unistd.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -26,7 +28,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
     if (config().has("move-fault-probability"))
         move_fault_probability = std::max(std::min(config().getDouble("move-fault-probability"), 1.0), 0.0);
-    base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
+    base_dir = (config().has("base-dir")) ? config().getString("base-dir") : fs::current_path().string();
 
 
     if (config().has("experimental-use-sample-offset"))
@@ -38,18 +40,18 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
     process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
     host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
-    process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
-    Poco::File(process_path).createDirectories();
+    process_path = fs::weakly_canonical(fs::path(base_dir) / ("clickhouse-copier_" + process_id));
+    fs::create_directories(process_path);
 
     /// Override variables for BaseDaemon
     if (config().has("log-level"))
         config().setString("logger.level", config().getString("log-level"));
 
     if (config().has("base-dir") || !config().has("logger.log"))
-        config().setString("logger.log", process_path + "/log.log");
+        config().setString("logger.log", fs::path(process_path) / "log.log");
 
     if (config().has("base-dir") || !config().has("logger.errorlog"))
-        config().setString("logger.errorlog", process_path + "/log.err.log");
+        config().setString("logger.errorlog", fs::path(process_path) / "log.err.log");
 
     Base::initialize(self);
 }

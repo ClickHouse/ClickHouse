@@ -54,7 +54,7 @@ StorageMaterializedView::StorageMaterializedView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage(table_id_), WithContext(local_context->getGlobalContext())
+    : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -234,7 +234,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context,
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
-            drop_context->setQueryContext(current_context);
+            drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
             drop_context->initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
@@ -437,7 +437,12 @@ Strings StorageMaterializedView::getDataPaths() const
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
-    return has_inner_table ? getTargetTable()->getActionLock(type) : ActionLock{};
+    if (has_inner_table)
+    {
+        if (auto target_table = tryGetTargetTable())
+            return target_table->getActionLock(type);
+    }
+    return ActionLock{};
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

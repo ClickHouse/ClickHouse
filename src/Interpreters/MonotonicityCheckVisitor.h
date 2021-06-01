@@ -26,7 +26,7 @@ public:
     struct Data
     {
         const TablesWithColumns & tables;
-        ContextPtr context;
+        ContextConstPtr context;
         const std::unordered_set<String> & group_by_function_hashes;
         Monotonicity monotonicity{true, true, true};
         ASTIdentifier * identifier = nullptr;
