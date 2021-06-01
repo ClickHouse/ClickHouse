@@ -281,7 +281,6 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/thread_pool.cc"
         "${LIBRARY_DIR}/util/time.cc"
         "${LIBRARY_DIR}/util/trie.cc"
-        "${LIBRARY_DIR}/util/uri.cc"
         "${LIBRARY_DIR}/util/utf8.cc"
         "${LIBRARY_DIR}/util/value_parsing.cc"
 
