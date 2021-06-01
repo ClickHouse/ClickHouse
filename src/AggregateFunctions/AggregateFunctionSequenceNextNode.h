@@ -27,6 +27,7 @@
 
 namespace DB
 {
+struct Settings;
 
 enum class SequenceDirection
 {
