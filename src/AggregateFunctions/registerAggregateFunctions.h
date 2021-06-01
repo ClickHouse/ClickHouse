@@ -2,6 +2,7 @@
 
 namespace DB
 {
+struct Settings;
 
 void registerAggregateFunctions();
 

@@ -42,7 +42,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         Block & sample_block_,
-        ContextPtr context_);
+        ContextConstPtr context_);
 
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
@@ -78,7 +78,7 @@ private:
     const Configuration configuration;
 
     Block sample_block;
-    ContextPtr context;
+    ContextConstPtr context;
     std::shared_ptr<ProcessPool> process_pool;
 };
 

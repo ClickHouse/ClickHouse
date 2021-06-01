@@ -4,7 +4,7 @@ toc_title: External Dictionaries
 ---
 
 !!! attention "Attention"
-    `dict_name` parameter must be fully qualified for dictionaries created with DDL queries. Eg. `<database>.<dict_name>`.
+    For dictionaries, created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
 
 # Functions for Working with External Dictionaries {#ext_dict_functions}
 
@@ -25,7 +25,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `attr_names` — Name of the column of the dictionary, [String literal](../../sql-reference/syntax.md#syntax-string-literal), or tuple of column names, [Tuple](../../sql-reference/data-types/tuple.md)([String literal](../../sql-reference/syntax.md#syntax-string-literal)).
 -   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
--   `default_value_expr` — Values returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+-   `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
 
 **Returned value**
 
@@ -37,7 +37,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
         - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
         - `dictGetOrNull` returns `NULL` in case key was not found in dictionary.
 
-ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
 
 **Example for simple key dictionary**
 
@@ -288,6 +288,119 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 Type: `UInt8`.
 
+## dictGetChildren {#dictgetchildren}
+
+Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
+
+**Syntax** 
+
+``` sql
+dictGetChildren(dict_name, key)
+```
+
+**Arguments** 
+
+-   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value. 
+
+**Returned values**
+
+-   First-level descendants for the key.
+
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Consider the hierarchic dictionary:
+
+``` text
+┌─id─┬─parent_id─┐
+│  1 │         0 │
+│  2 │         1 │
+│  3 │         1 │
+│  4 │         2 │
+└────┴───────────┘
+```
+
+First-level children:
+
+``` sql
+SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetChildren('hierarchy_flat_dictionary', number)─┐
+│ [1]                                                  │
+│ [2,3]                                                │
+│ [4]                                                  │
+│ []                                                   │
+└──────────────────────────────────────────────────────┘
+```
+
+## dictGetDescendant {#dictgetdescendant}
+
+Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.  
+
+**Syntax**
+
+``` sql
+dictGetDescendants(dict_name, key, level)
+```
+
+**Arguments** 
+
+-   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
+-   `level` — Hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned values**
+
+-   Descendants for the key.
+
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Consider the hierarchic dictionary:
+
+``` text
+┌─id─┬─parent_id─┐
+│  1 │         0 │
+│  2 │         1 │
+│  3 │         1 │
+│  4 │         2 │
+└────┴───────────┘
+```
+All descendants:
+
+``` sql
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetDescendants('hierarchy_flat_dictionary', number)─┐
+│ [1,2,3,4]                                               │
+│ [2,3,4]                                                 │
+│ [4]                                                     │
+│ []                                                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+First-level descendants:
+
+``` sql
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetDescendants('hierarchy_flat_dictionary', number, 1)─┐
+│ [1]                                                        │
+│ [2,3]                                                      │
+│ [4]                                                        │
+│ []                                                         │
+└────────────────────────────────────────────────────────────┘
+```
+
 ## Other Functions {#ext_dict_functions-other}
 
 ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
@@ -316,7 +429,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
--   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
+-   `default_value_expr` — Value returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
 
 **Returned value**
 
@@ -327,4 +440,4 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
         - `dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
         - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
 
-ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
