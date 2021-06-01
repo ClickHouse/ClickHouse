@@ -1,0 +1,14 @@
+DROP TABLE IF EXISTS cramers_table;
+CREATE TABLE cramers_table (zero UInt32, one UInt32, cons UInt32, b0s1 UInt32, s0b1 UInt32, H String, bHsW String, sHbW String) ENGINE = Memory;
+INSERT INTO cramers_table VALUES (0, 1, 0, 0, 0, 'Hello', 'Hello', 'Hello'), (0, 1, 1, 0, 0, 'Hello', 'Hello', 'Hello'), (0, 1, 2, 0, 1, 'Hello', 'Hello', 'World'), (0, 1, 3, 1, 1, 'Hello', 'World', 'World'), (0, 1, 4, 1, 1, 'Hello', 'World', 'World');
+SELECT round(cramersV(cons, cons), 10) FROM cramers_table;
+SELECT round(cramersV(zero, one), 10) FROM cramers_table;
+SELECT round(cramersV(one, cons), 10) FROM cramers_table;
+SELECT round(cramersV(one, bHsW), 10) FROM cramers_table;
+SELECT round(cramersV(b0s1, b0s1), 10) FROM cramers_table;
+SELECT round(cramersV(sHbW, sHbW), 10) FROM cramers_table;
+SELECT round(cramersV(b0s1, s0b1), 10) FROM cramers_table;
+SELECT round(cramersV(s0b1, b0s1), 10) FROM cramers_table;
+SELECT round(cramersV(sHbW, bHsW), 10) FROM cramers_table;
+SELECT round(cramersV(b0s1, sHbW), 10) FROM cramers_table;
+DROP TABLE cramers_table;
