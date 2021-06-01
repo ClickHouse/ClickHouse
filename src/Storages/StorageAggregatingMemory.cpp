@@ -440,7 +440,7 @@ Pipe StorageAggregatingMemory::read(
 
     ContextPtr local_context = Context::createCopy(context);
     local_context->addViewSource(mergable_storage);
-    
+
     InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, local_context, SelectQueryOptions());
     BlockIO select_result = select.execute();
 
