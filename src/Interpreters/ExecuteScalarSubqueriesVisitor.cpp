@@ -29,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
-    extern const int TOO_MANY_ROWS;
 }
 
 
@@ -120,36 +119,26 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         {
             auto io = interpreter.execute();
 
-            try
+            PullingAsyncPipelineExecutor executor(io.pipeline);
+            while (block.rows() == 0 && executor.pull(block));
+
+            if (block.rows() == 0)
             {
-                PullingAsyncPipelineExecutor executor(io.pipeline);
-                while (block.rows() == 0 && executor.pull(block));
-
-                if (block.rows() == 0)
-                {
-                    /// Interpret subquery with empty result as Null literal
-                    auto ast_new = std::make_unique<ASTLiteral>(Null());
-                    ast_new->setAlias(ast->tryGetAlias());
-                    ast = std::move(ast_new);
-                    return;
-                }
-
-                if (block.rows() != 1)
-                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-
-                Block tmp_block;
-                while (tmp_block.rows() == 0 && executor.pull(tmp_block));
-
-                if (tmp_block.rows() != 0)
-                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+                /// Interpret subquery with empty result as Null literal
+                auto ast_new = std::make_unique<ASTLiteral>(Null());
+                ast_new->setAlias(ast->tryGetAlias());
+                ast = std::move(ast_new);
+                return;
             }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::TOO_MANY_ROWS)
-                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-                else
-                    throw;
-            }
+
+            if (block.rows() != 1)
+                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+
+            Block tmp_block;
+            while (tmp_block.rows() == 0 && executor.pull(tmp_block));
+
+            if (tmp_block.rows() != 0)
+                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
         }
 
         block = materializeBlock(block);
