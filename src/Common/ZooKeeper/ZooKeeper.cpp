@@ -4,6 +4,7 @@
 #include "TestKeeper.h"
 
 #include <functional>
+#include <filesystem>
 #include <pcg-random/pcg_random.hpp>
 
 #include <common/logger_useful.h>
@@ -17,6 +18,7 @@
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -612,7 +614,7 @@ void ZooKeeper::removeChildren(const std::string & path)
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+            ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
             children.pop_back();
         }
         multi(ops);
@@ -628,9 +630,9 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            removeChildrenRecursive(path + "/" + children.back());
+            removeChildrenRecursive(fs::path(path) / children.back());
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-                ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+                ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
             children.pop_back();
         }
         multi(ops);
@@ -648,7 +650,7 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         Strings batch;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            String child_path = path + "/" + children.back();
+            String child_path = fs::path(path) / children.back();
             tryRemoveChildrenRecursive(child_path);
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
             {
