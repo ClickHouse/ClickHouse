@@ -289,11 +289,11 @@ StorageAggregatingMemory::StorageAggregatingMemory(
 
     // TODO check validity of aggregation query inside this func
     select_query = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
-    constructor_context = context_;
+    constructor_context = Context::createCopy(context_);
     constructor_constraints = constraints_;
 }
 
-void StorageAggregatingMemory::lazy_initialize()
+void StorageAggregatingMemory::lazyInit()
 {
     if (is_initialized)
         return;
@@ -388,24 +388,30 @@ void StorageAggregatingMemory::lazy_initialize()
                               true);
 
     aggregator_transform = std::make_shared<AggregatingTransformParams>(params, false);
+    
+    initState(constructor_context);
+
+    is_initialized = true;
+}
+
+void StorageAggregatingMemory::initState(ContextPtr context)
+{
     many_data = std::make_shared<ManyAggregatedData>(1);
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
-    if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+    if (aggregator_transform->params.keys_size == 0 && !aggregator_transform->params.empty_result_for_aggregation_by_empty_set)
     {
-        AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), constructor_context);
+        AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), context);
         os.write(src_block_header);
     }
-
-    is_initialized = true;
 }
 
 void StorageAggregatingMemory::startup()
 {
     try
     {
-        lazy_initialize();
+        lazyInit();
     }
     catch (Exception & e)
     {
@@ -423,7 +429,7 @@ Pipe StorageAggregatingMemory::read(
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    lazy_initialize();
+    lazyInit();
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
     // TODO implement O(1) read by aggregation key
 
@@ -448,19 +454,27 @@ Pipe StorageAggregatingMemory::read(
 
 BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    lazy_initialize();
+    lazyInit();
+
     auto out = std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot, context);
     return out;
 }
 
 void StorageAggregatingMemory::drop()
 {
-    // TODO drop aggregator state
+    if (!is_initialized)
+        return;
+
+    /// Drop aggregation state.
+    many_data = nullptr;
 }
 
-void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
 {
-    // TODO clear aggregator state
+    lazyInit();
+    
+    /// Assign fresh state.
+    initState(context);
 }
 
 void registerStorageAggregatingMemory(StorageFactory & factory)

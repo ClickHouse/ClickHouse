@@ -29,8 +29,6 @@ friend struct ext::shared_ptr_helper<StorageAggregatingMemory>;
 public:
     String getName() const override { return "AggregatingMemory"; }
 
-    void lazy_initialize();
-
     void startup() override;
 
     Pipe read(
@@ -56,6 +54,16 @@ public:
     // TODO implement totalRows and totalBytes using data from Aggregator (if possible)
     // std::optional<UInt64> totalRows(const Settings &) const override;
     // std::optional<UInt64> totalBytes(const Settings &) const override;
+
+protected:
+    /* Initialize engine before executing any queries. This initialization is proceeding
+     * in a lazy manner, exactly once. This function will do nothing if engine is already
+     * initialized.
+     */
+    void lazyInit();
+
+    /// Create ManyData, and assign zero state if needed.
+    void initState(ContextPtr context);
 
 private:
     Poco::Logger * log;
