@@ -45,7 +45,6 @@ struct ReplicatedMergeTreeLogEntryData
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
         SYNC_PINNED_PART_UUIDS, /// Synchronization point for ensuring that all replicas have up to date in-memory state.
         CLONE_PART_FROM_SHARD,  /// Clone part from another shard.
-        PART_IS_LOST,   /// Cancels previous operations with lost data part. Kinda "anti-merge".
     };
 
     static String typeToString(Type type)
@@ -63,7 +62,6 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
             case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
             case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
-            case ReplicatedMergeTreeLogEntryData::PART_IS_LOST:     return "PART_IS_LOST";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -141,18 +139,6 @@ struct ReplicatedMergeTreeLogEntryData
     /// Returns a set of parts that will appear after executing the entry + parts to block
     /// selection of merges. These parts are added to queue.virtual_parts.
     Strings getVirtualPartNames(MergeTreeDataFormatVersion format_version) const;
-
-    /// Returns name of part that will never appear and should be removed from virtual parts set.
-    /// It's required to correctly cancel merge which cannot be executed, because some source part is lost forever.
-    /// Do not use it for other purposes, it can be dangerous.
-    std::optional<String> getAntiVirtualPartName() const
-    {
-        if (type == PART_IS_LOST)
-            return new_part_name;
-        return {};
-    }
-
-    std::optional<String> getDropRange(MergeTreeDataFormatVersion format_version) const;
 
     /// Returns set of parts that denote the block number ranges that should be blocked during the entry execution.
     /// These parts are added to future_parts.
