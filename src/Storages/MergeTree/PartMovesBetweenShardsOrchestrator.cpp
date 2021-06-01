@@ -138,14 +138,17 @@ bool PartMovesBetweenShardsOrchestrator::step()
     {
         /// Use the same ZooKeeper connection. If we'd lost the lock then connection
         /// will become expired and all consequent operations will fail.
-        stepEntry(entry_to_process.value(), zk);
+        Entry new_entry = stepEntry(entry_to_process.value(), zk);
+        new_entry.last_exception_msg = "";
+        new_entry.num_tries = 0;
+        new_entry.update_time = std::time(nullptr);
+        zk->set(new_entry.znode_path, new_entry.toString(), new_entry.version);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         Entry entry_copy = entry_to_process.value();
-        // TODO(nv): Clear these up on successful transitions.
         entry_copy.last_exception_msg = getCurrentExceptionMessage(false);
         entry_copy.num_tries += 1;
         entry_copy.update_time = std::time(nullptr);
@@ -157,7 +160,7 @@ bool PartMovesBetweenShardsOrchestrator::step()
     return true;
 }
 
-void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk)
+PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk)
 {
     switch (entry.state.value)
     {
@@ -172,16 +175,13 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
             {
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
-                return;
+                return entry_copy;
             }
 
             /// State transition.
             Entry entry_copy = entry;
             entry_copy.state = EntryState::SYNC_SOURCE;
-            entry_copy.update_time = std::time(nullptr);
-            zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            return entry_copy;
         }
         break;
 
@@ -191,9 +191,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
             {
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
-                return;
+                return entry_copy;
             }
 
             {
@@ -226,8 +224,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 /// State transition.
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::SYNC_DESTINATION;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return entry_copy;
             }
         }
         break;
@@ -238,9 +235,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
             {
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
-                return;
+                return entry_copy;
             }
 
             {
@@ -272,8 +267,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 /// State transition.
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::DESTINATION_FETCH;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return entry_copy;
             }
         }
         break;
@@ -284,9 +278,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
             {
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
-                return;
+                return entry_copy;
             }
 
             /// Make sure table structure doesn't change when there are part movements in progress.
@@ -319,8 +311,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 /// State transition.
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::DESTINATION_ATTACH;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return entry_copy;
             }
         }
         break;
@@ -334,9 +325,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 //   Maybe leave it there and make sure a background cleanup will take
                 //   care of it sometime later.
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
-                return;
+                return entry_copy;
             }
 
             /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
@@ -380,8 +369,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 /// State transition.
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::SOURCE_DROP_PRE_DELAY;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return entry_copy;
             }
         }
         break;
@@ -401,8 +389,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 // TODO(nv): We abuse REMOVE_UUID_PIN state, it makes sense on one hand
                 //   but on the other the "flow" isn't linear at all.
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return entry_copy;
             }
         }
         break;
@@ -420,8 +407,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 entry_copy.state = EntryState::SOURCE_DROP;
             }
 
-            entry_copy.update_time = std::time(nullptr);
-            zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            return entry_copy;
         }
         break;
 
@@ -437,8 +423,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 /// State transition.
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::SOURCE_DROP_POST_DELAY;
-                entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+                return entry_copy;
             }
         }
         break;
@@ -450,8 +435,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
             /// State transition.
             Entry entry_copy = entry;
             entry_copy.state = EntryState::REMOVE_UUID_PIN;
-            entry_copy.update_time = std::time(nullptr);
-            zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            return entry_copy;
         }
         break;
 
@@ -486,8 +470,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
 
             // TOOD(nv): Very confusing.
             entry_copy.state = entry.rollback ? EntryState::CANCELLED : EntryState::DONE;
-            entry_copy.update_time = std::time(nullptr);
-            zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
+            return entry_copy;
         }
         break;
     }

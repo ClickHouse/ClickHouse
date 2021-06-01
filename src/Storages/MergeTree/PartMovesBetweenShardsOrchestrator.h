@@ -152,7 +152,7 @@ public:
 
 private:
     void run();
-    void stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk);
+    Entry stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk);
 
 private:
     StorageReplicatedMergeTree & storage;
