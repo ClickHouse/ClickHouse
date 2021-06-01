@@ -1318,7 +1318,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
             {
                 for (size_t i = 0; i < params.aggregates_size; ++i)
                     aggregate_columns[i]->push_back(data + offsets_of_aggregate_states[i]);
-                
+
                 if (!params.keep_state_after_read)
                     data = nullptr;
             }
