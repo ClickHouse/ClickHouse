@@ -344,7 +344,7 @@ def add_flamegraphs():
     all_files = []
     for file in os.listdir("."):
         if file.endswith(".svg"):
-            all_files.append(os.path.join(".", file))
+            all_files.append(file)
 
     all_files.sort()
 
@@ -363,8 +363,9 @@ def add_flamegraphs():
             columns[i] += """<div class="flamegraph-column">"""
 
         for i in range(COLUMNS_COUNT):
-            link = "output/images/svg/{}"
-            columns[i] += pattern.format(name=link.format(group[i]))
+            link = "images/images/svg/"
+            path = os.path.join(link, group[i])
+            columns[i] += pattern.format(name=path)
 
         for i in range(COLUMNS_COUNT):
             columns[i] += """</div>"""
