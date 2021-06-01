@@ -110,4 +110,4 @@ kill_clickhouse
 
 cp /report.ccr "${OUTPUT_DIR}"/report.ccr
 
-python3 ccr_converter.py /report.ccr "${OUTPUT_DIR}" "${SOURCE_DIR}" pr pr_index commit commit_hash
+python3 ccr_converter.py /report.ccr "${OUTPUT_DIR}" "${SOURCE_DIR}"

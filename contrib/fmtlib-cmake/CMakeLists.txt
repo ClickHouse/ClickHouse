@@ -18,5 +18,3 @@ set (SRCS
 
 add_library(fmt ${SRCS})
 target_include_directories(fmt SYSTEM PUBLIC ../fmtlib/include)
-
-build_target_without_coverage(fmt)

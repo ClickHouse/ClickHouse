@@ -129,7 +129,7 @@ void Writer::initializeRuntime(const uintptr_t *pc_array, const uintptr_t *pc_ar
         addrs_count += !is_function_entry;
 
         /**
-         * If we use non-function-entry addr as is, the SymbolIndex won't be able to find the line for our address.
+         * If we use addr as is, SymbolIndex won't be able to find the line for our address.
          * General assembly looks like this:
          *
          * 0x12dbca75 <+117>: callq  0x12dd2680                ; DB::AggregateFunctionFactory::registerFunction at AggregateFunctionFactory.cpp:39

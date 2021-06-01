@@ -40,8 +40,6 @@ else()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif()
 
-build_target_without_coverage(common)
-
 if (USE_INTERNAL_CCTZ)
     set_source_files_properties(DateLUTImpl.cpp PROPERTIES COMPILE_DEFINITIONS USE_INTERNAL_CCTZ)
 endif()

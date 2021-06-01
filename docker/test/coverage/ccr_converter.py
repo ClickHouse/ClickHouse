@@ -6,6 +6,7 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import CppLexer
 from jinja2 import Environment, FileSystemLoader
 from tqdm import tqdm
+from copy import deepcopy
 
 import sys
 import argparse
@@ -28,12 +29,14 @@ tests_names = []
 
 args = None
 
+env = None
+
 class FileEntry:
     def __init__(self, path, lines_with_hits, funcs_with_hits, tests_with_hits):
         self.full_path = path
 
         self.name = path.split("/")[-1]
-        self.url = self.name + ".html"
+        self.url = os.path.join(args.out_dir, path) + ".html"
 
         a, b, c, d = get_hit(lines_with_hits, funcs_with_hits)
 
@@ -49,7 +52,7 @@ class FileEntry:
 class DirEntry:
     def __init__(self, path):
         self.name = path
-        self.url = path + "index.html"
+        self.url = path + "/index.html"
 
         self.files = []
 
@@ -59,7 +62,7 @@ class DirEntry:
 
         self.tests_with_hits = set()
 
-    def add_file(self, f):
+    def add(self, f):
         self.files.append(f)
 
         line_hit, line_total = self.lines[0] + f.lines[0], self.lines[1] + f.lines[1]
@@ -134,11 +137,7 @@ def get_entries():
     prefix = ""
 
     for i, (path, funcs_instrumented, lines_instrumented) in enumerate(files):
-        # TODO Exclude contribs and base/ while reading the report
-        if "contrib/" in path or "base/" in path:
-            continue
-
-        path = path[path.find("src") + 4:]
+        path = os.path.normpath(path)
 
         dirs, file_name = os.path.split(path)
 
@@ -154,57 +153,65 @@ def get_entries():
 
         for d in out:
             if d.name == dirs:
-                d.add_file(test_file)
+                d.add(test_file)
                 found = True
                 break
 
         if not found:
             out.append(DirEntry(dirs))
-            out[-1].add_file(test_file)
+            out[-1].add(test_file)
 
     return sorted(out, key=lambda x: x.name)
+
+def generate_html():
+    entries = get_entries()
+
+    root_entry = DirEntry("")
+    files_entry = DirEntry("")
+
+    for dir_entry in tqdm(entries):
+        root_entry.add(dir_entry)
+
+        generate_dir_page(dir_entry)
+
+        for sf_entry in tqdm(dir_entry.files):
+            generate_file_page(sf_entry)
+            files_entry.add(sf_entry)
+
+    generate_dir_page(root_entry)
+
+    for e in files_entry.files:
+        e.name = e.full_path
+
+    generate_dir_page(files_entry, page_name="files.html")
 
 def render(tpl, **kwargs):
     kwargs.update({
         "bounds": bounds,
         "colors": colors,
         "tests_total": len(tests),
-        "pr_url": args.pr_url,
-        "pr_index": args.pr_index,
-        "commit_url": args.commit_url,
-        "commit_hash": args.commit_hash
+        "root_url": os.path.join(args.out_dir, "index.html"),
+        "index_url": os.path.join(args.out_dir, "files.html")
     })
 
-    return tpl.render(kwargs)
+    return env.get_template(tpl).render(kwargs)
 
-def generate_dir_page(entry: DirEntry, env, upper_level=False):
-    special_entries = []
+def generate_dir_page(entry: DirEntry, page_name="index.html"):
+    path = os.path.join(args.out_dir, entry.name)
+    os.makedirs(path, exist_ok=True)
 
-    if not upper_level:
-        special_entries.append(DirEntry("../")) # upper dir
-
-    special_entries.append(entry)
-    special_entries[-1].url="" # current dir
-
-    template = env.get_template('directory.html')
+    dir_page = os.path.join(path, page_name)
 
     entries = sorted(entry.files, key=lambda x: x.name)
 
-    if upper_level:
-        for e in entries:
-            e.url = e.name + "/index.html"
+    special_entry = deepcopy(entry)
+    special_entry.url = "./index.html"
 
-    path = os.path.join(args.html_dir, entry.name)
+    with open(dir_page, "w") as f:
+        f.write(render("directory.html", entries=entries, special_entry=special_entry))
 
-    os.makedirs(path, exist_ok=True)
-
-    with open(os.path.join(path, "index.html"), "w") as f:
-        f.write(render(template, entries=entries, special_entries=special_entries))
-
-def generate_file_page(entry: FileEntry, env):
-    template = env.get_template('file.html')
-
-    src_file_path = os.path.join(args.sources_dir, "src", entry.full_path)
+def generate_file_page(entry: FileEntry):
+    src_file_path = os.path.join(args.sources_dir, entry.full_path)
 
     if not os.path.exists(src_file_path):
         print("No file", src_file_path)
@@ -212,47 +219,29 @@ def generate_file_page(entry: FileEntry, env):
 
     parent_dir = entry.full_path.split("/")[-2]
 
-    covered_lines = sorted([e[0] for e in entry.lines_with_hits if e[1]])
-    not_covered_lines = sorted([e[0] for e in entry.lines_with_hits if not e[1]])
-    covered_funcs = sorted(set([e[0] for e in entry.funcs_with_hits if e[1]]))
-    not_covered_funcs = sorted(set([e[0] for e in entry.funcs_with_hits if not e[1]]))
+    covered_lines, not_covered_lines, covered_funcs, not_covered_funcs = [], [], [], []
 
-    formatter = CodeFormatter(covered_lines, not_covered_lines, covered_funcs, not_covered_funcs)
+    for i, covered in entry.lines_with_hits:
+        (covered_lines if covered else not_covered_lines).append(i)
+
+    for i, covered in entry.funcs_with_hits:
+        (covered_funcs if covered else not_covered_funcs).append(i)
+
+    formatter = CodeFormatter(
+        sorted(covered_lines), sorted(not_covered_lines),
+        sorted(set(covered_funcs)), sorted(set(not_covered_funcs)))
 
     with open(src_file_path, "r") as src_file:
         lines = highlight(src_file.read(), CppLexer(), formatter)
 
-        output = render(template,
+        output = render("file.html",
             lines=lines,
             entry=entry,
-            parent_dir=parent_dir,
             not_covered_lines=not_covered_lines,
             not_covered_funcs=not_covered_funcs)
 
-        with open(os.path.join(args.html_dir, entry.full_path) + ".html", "w") as f:
+        with open(os.path.join(args.out_dir, entry.full_path) + ".html", "w") as f:
             f.write(output)
-
-def generate_html():
-    file_loader = FileSystemLoader(os.path.abspath(os.path.dirname(__file__)) + '/templates', encoding='utf8')
-
-    env = Environment(loader=file_loader)
-    env.trim_blocks = True
-    env.lstrip_blocks = True
-    env.rstrip_blocks = True
-
-    entries = get_entries()
-
-    root_entry = DirEntry("")
-
-    for dir_entry in tqdm(entries):
-        root_entry.add_file(dir_entry)
-
-        generate_dir_page(dir_entry, env)
-
-        for sf_entry in tqdm(dir_entry.files):
-            generate_file_page(sf_entry, env)
-
-    generate_dir_page(root_entry, env, upper_level=True)
 
 def read_report(f: TextIO):
     global files
@@ -260,6 +249,12 @@ def read_report(f: TextIO):
     global tests_names
 
     elapsed = time()
+
+    # We need to skip some source files as they are useless for report (instrumented contribs/).
+    # We maintain a original index => real index map.
+    # Skipped source files have real index -1
+    source_files_map = []
+    sf_index = 0
 
     for i in range(int(f.readline().split()[1])): # files
         rel_path, funcs_count, lines_count = f.readline().split()
@@ -272,7 +267,13 @@ def read_report(f: TextIO):
 
         lines = [int(f.readline()) for j in range(int(lines_count))]
 
-        files.append((rel_path, funcs, lines))
+        if "contrib/" in rel_path:
+            source_files_map.append(-1)
+            print("Skipping", rel_path)
+        else:
+            files.append((rel_path, funcs, lines))
+            source_files_map.append(sf_index)
+            sf_index += 1
 
     tests_sources = {}
 
@@ -293,31 +294,41 @@ def read_report(f: TextIO):
         funcs = list(map(int, next(f).split()))
         lines = list(map(int, next(f).split()))
 
-        tests_sources[source_id] = funcs, lines
+        real_index = source_files_map[source_id]
+
+        if real_index == -1:
+            continue
+
+        tests_sources[real_index] = funcs, lines
 
     tests_names = f.readlines()
 
-    # assert len(tests_names) == len(tests), f"{len(tests_names)} != {len(tests)}"
+    assert len(tests_names) == len(tests), f"{len(tests_names)} != {len(tests)}"
 
     print("Read the report, took {}s. {} tests, {} source files".format(
         int(time() - elapsed), len(tests), len(files)))
 
 def main():
+    file_loader = FileSystemLoader(os.path.abspath(os.path.dirname(__file__)) + '/templates', encoding='utf8')
+
+    global env
+
+    env = Environment(loader=file_loader)
+    env.trim_blocks = True
+    env.lstrip_blocks = True
+    env.rstrip_blocks = True
+
     parser = argparse.ArgumentParser(prog='CCR converter')
 
     parser.add_argument('ccr_report_file')
-    parser.add_argument('html_dir')
-    parser.add_argument('sources_dir')
-    parser.add_argument('pr_url')
-    parser.add_argument('pr_index')
-    parser.add_argument('commit_url')
-    parser.add_argument('commit_hash')
+    parser.add_argument('out_dir', help="Absolute path")
+    parser.add_argument('sources_dir', help="Absolute path")
 
     global args
 
     args = parser.parse_args()
 
-    print("Will use {} as output directory".format(args.html_dir))
+    print("Will use {} as output directory".format(args.out_dir))
     print("Will use {} as root CH directory (with src/ inside)".format(args.sources_dir))
 
     with open(args.ccr_report_file, "r") as f:

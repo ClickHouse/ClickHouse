@@ -8,15 +8,20 @@
     {% else %}
             table-danger
     {% endif %}">
-    {{ entry.lines[2] }}%
-</td>
-<td>
     {% if entry.lines[1] > 0 %}
-        {{ entry.lines[0] }} / {{ entry.lines[1] }}
+        {{ entry.lines[2] }}%
     {% else %}
         -
     {% endif %}
 </td>
+
+{% if entry.lines[1] > 0 %}
+    <td> {{ entry.lines[0] }} </td>
+    <td> {{ entry.lines[1] }} </td>
+{% else %}
+    <td>-</td> <td>-</td>
+{% endif %}
+
 <td class="
     {% if entry.funcs[1] == 0 %}
     {% elif entry.funcs[2] >= bounds["funcs"][0] %}
@@ -26,15 +31,20 @@
     {% else %}
             table-danger
     {% endif %}">
-    {{ entry.funcs[2] }}%
-</td>
-<td>
     {% if entry.funcs[1] > 0 %}
-        {{ entry.funcs[0] }} / {{ entry.funcs[1] }}
+        {{ entry.funcs[2] }}%
     {% else %}
         -
     {% endif %}
 </td>
+
+{% if entry.funcs[1] > 0 %}
+    <td> {{ entry.funcs[0] }} </td>
+    <td> {{ entry.funcs[1] }} </td>
+{% else %}
+    <td>-</td> <td>-</td>
+{% endif %}
+
 <td class="
     {% if entry.tests[1] >= bounds["tests"][0] %}
             table-success
@@ -46,6 +56,6 @@
     {{ entry.tests[1] }}%
 </td>
 <td>
-    {{ entry.tests[0] }} / {{ tests_total }}
+    {{ entry.tests[0] }}
 </td>
 </td>

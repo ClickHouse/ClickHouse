@@ -292,9 +292,7 @@ if (WITH_COVERAGE)
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp
 
-        # Single file Settings.cpp produces ~15k functions out of 65k functions total.
-        # Its function coverage view is useless (as one won't search through all instantiations).
-        Core/Settings.cpp
+        Functions/URL/tldLookup.generated.cpp
 
         PROPERTIES COMPILE_FLAGS "${WITHOUT_COVERAGE}")
 endif()

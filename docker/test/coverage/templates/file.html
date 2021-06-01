@@ -5,19 +5,10 @@
     <div class="col-12">
         <table class="table table-bordered table-sm">
             <thead>
-                <tr>
-                    <th scope="col">Parent dir</th>
-                    <th scope="col">File</th>
-                    <th scope="col" colspan="2">Lines coverage</th>
-                    <th scope="col" colspan="2">Functions coverage</th>
-                    <th scope="col" colspan="2">Tests coverage</th>
-                </tr>
+                {% include "table_header.html" %}
             </thead>
             <tbody>
-                <tr>
-                    <td><a href="./index.html" class="link-primary">{{ parent_dir }}</a></td>
-                    {% include "entry.html" %}
-                </tr>
+                <tr> {% include "entry.html" %} </tr>
             </tbody>
         </table>
     </div>

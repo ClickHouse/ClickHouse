@@ -2,16 +2,9 @@
 {% block content %}
 
 <table class="table table-bordered table-sm">
-    <thead>
-        <tr>
-            <th scope="col">Directory</th>
-            <th scope="col" colspan="2">Lines coverage</th>
-            <th scope="col" colspan="2">Functions coverage</th>
-            <th scope="col" colspan="2">Tests coverage</th>
-        </tr>
-    </thead>
+    <thead> {% include "table_header.html" %} </thead>
     <tbody>
-        {% for entry in special_entries %}
+        {% for entry in [special_entry] %}
             <tr class="table-active"> {% include "entry.html" %} <tr>
         {% endfor %}
         {% for entry in entries %}
