@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionSequenceNextNode.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -22,7 +23,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int FUNCTION_NOT_ALLOWED;
+    extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
 
 namespace
@@ -37,9 +38,14 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
 }
 
 AggregateFunctionPtr
-createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_events, const DataTypes & argument_types, const Array & parameters)
+createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    assert(max_events <= max_events_size);
+    if (settings == nullptr || !settings->allow_experimental_funnel_functions)
+    {
+        throw Exception(
+            "Aggregate function " + name + " is experimental. Set `allow_experimental_funnel_functions` setting to enable it",
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+    }
 
     if (parameters.size() < 2)
         throw Exception("Aggregate function '" + name + "' requires 2 parameters (direction, head)",
@@ -83,10 +89,10 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_events,
             "Aggregate function " + name + " requires at least " + toString(min_required_args + 1) + " arguments when base is first_match or last_match.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (argument_types.size() > max_events + min_required_args)
+    if (argument_types.size() > max_events_size + min_required_args)
         throw Exception(fmt::format(
             "Aggregate function '{}' requires at most {} (timestamp, value_column, ...{} events) arguments.",
-                name, max_events + min_required_args, max_events), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                name, max_events_size + min_required_args, max_events_size), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (const auto * cond_arg = argument_types[2].get(); cond_arg && !isUInt8(cond_arg))
         throw Exception("Illegal type " + cond_arg->getName() + " of third argument of aggregate function "
@@ -127,29 +133,12 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_events,
         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 }
 
-auto createAggregateFunctionSequenceNodeMaxArgs(UInt64 max_events)
-{
-    return [max_events](const std::string & name, const DataTypes & argument_types, const Array & parameters)
-    {
-        if (CurrentThread::isInitialized())
-        {
-            const Context * query_context = CurrentThread::get().getQueryContext();
-            if (query_context && !query_context->getSettingsRef().allow_experimental_funnel_functions)
-                throw Exception{"Cannot call 'sequenceNextNode' aggregate function because experimental_funnel_functions is not allowed. "
-                    "Set 'allow_experimental_funnel_functions = 1' setting to enable", ErrorCodes::FUNCTION_NOT_ALLOWED};
-        }
-
-        return createAggregateFunctionSequenceNode(name, max_events, argument_types, parameters);
-    };
-}
-
 }
 
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNodeMaxArgs(max_events_size), properties });
-    factory.registerFunction("sequenceFirstNode", { createAggregateFunctionSequenceNodeMaxArgs(0), properties });
+    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, properties });
 }
 
 }
