@@ -1234,7 +1234,7 @@ class ClickHouseCluster:
                 instance.create_dir(destroy_dir=destroy_dirs)
 
             _create_env_file(os.path.join(self.env_file), self.env_variables)
-            self.docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=180)
+            self.docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=600)
 
             common_opts = ['up', '-d']
 
