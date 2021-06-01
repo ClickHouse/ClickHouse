@@ -134,8 +134,6 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
     // Get rid of orderBy. It's used for projection definition only
-    if (orderBy())
-        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, orderBy()->clone());
     return node;
 }
 
