@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -292,6 +293,9 @@ BlockIO InterpreterKillQueryQuery::execute()
     }
     case ASTKillQueryQuery::Type::PartMoveToShard:
     {
+        if (query.sync)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYNC modifier is not supported for this statement.");
+
         Block moves_block = getSelectResult(
             "database, table, task_name, task_uuid, part_name, to_shard, state",
             "system.part_moves_between_shards");
@@ -319,6 +323,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             auto task_uuid = get<UUID>(task_uuid_col[i]);
 
             CancellationCode code = CancellationCode::Unknown;
+
             if (!query.test)
             {
                 auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());

@@ -418,6 +418,58 @@ void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil:
     zk->multi(ops);
 }
 
+CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const UUID & task_uuid)
+{
+    std::optional<Entry> maybe_entry;
+
+    {
+        /// Need latest state in case user tries to kill a move observed on a different replica.
+        fetchStateFromZK();
+
+        std::lock_guard lock(state_mutex);
+        for (auto const & entry : entries | boost::adaptors::map_values)
+        {
+            if (entry.task_uuid == task_uuid)
+            {
+                maybe_entry.emplace(entry);
+                break;
+            }
+        }
+
+        /// Opt for CancelCannotBeSent because the main use-case for this method
+        /// is for it to be called from a KILL query. KILL interpreter calls this
+        /// method only with tasks that exist but we don't want to crash when task
+        /// is suddenly removed.
+        if (!maybe_entry.has_value())
+            return CancellationCode::CancelCannotBeSent;
+    }
+
+    Entry entry = maybe_entry.value();
+
+    // If the task is in this state or any that follows it is too late to rollback
+    // since we can't be sure if the source data still exists.
+    auto not_possible_to_rollback_after_state = EntryState(EntryState::SOURCE_DROP);
+    if (entry.state.value >= not_possible_to_rollback_after_state.value)
+    {
+        LOG_DEBUG(log, "Can't kill move part between shards entry {} ({}) after state {}. Current state: {}.",
+                  toString(entry.task_uuid), entry.znode_name, not_possible_to_rollback_after_state.toString(), entry.state.toString());
+        return CancellationCode::CancelCannotBeSent;
+    }
+
+    LOG_TRACE(log, "Will try to mark move part between shards entry {} ({}) for rollback.",
+              toString(entry.task_uuid), entry.znode_name);
+
+    auto zk = storage.getZooKeeper();
+
+    // State transition with CAS.
+    entry.rollback = true;
+    entry.update_time = std::time(nullptr);
+    zk->set(entry.znode_path, entry.toString(), entry.version);
+
+    // Orchestrator will process it in background.
+    return CancellationCode::CancelSent;
+}
+
 std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries() const
 {
     std::lock_guard lock(state_mutex);

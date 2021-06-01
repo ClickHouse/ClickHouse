@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/CancellationCode.h>
 
 namespace DB
 {
@@ -106,14 +107,13 @@ public:
         EntryState state;
         bool rollback = false;
 
-        /// Reset on succesful transitions.
+        /// Reset on successful transitions.
         String last_exception_msg;
         UInt64 num_tries;
 
         String znode_name;
 
-    // TODO(nv): Encapsulate the code that uses this state and make it private again.
-    // private:
+    private:
         /// Transient value for CAS.
         uint32_t version = 0;
 
@@ -150,6 +150,7 @@ public:
     bool step();
 
     std::vector<Entry> getEntries() const;
+    CancellationCode killPartMoveToShard(const UUID & task_uuid);
 
 private:
     void run();
