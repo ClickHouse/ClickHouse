@@ -126,7 +126,6 @@ public:
         : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
-        , metadata(std::move(metadata_))
         , max_single_read_retries(max_single_read_retries_)
         , buf_size(buf_size_)
     {
@@ -134,13 +133,12 @@ public:
 
     std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, s3_max_single_read_retries, buf_size);
+        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, max_single_read_retries, buf_size);
     }
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
-    DiskS3::Metadata metadata;
     UInt64 max_single_read_retries;
     size_t buf_size;
 };
