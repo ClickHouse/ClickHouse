@@ -863,7 +863,12 @@ class ClickHouseCluster:
         run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
+
+        logging.info("Restart node with ip change")
+        # In builds with sanitizer the server can take a long time to start
         node.wait_for_start(start_timeout=180.0, connection_timeout=600.0)  # seconds
+        logging.info("Restarted")
+
         return node
 
     def restart_service(self, service_name):
