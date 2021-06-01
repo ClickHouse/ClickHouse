@@ -59,13 +59,13 @@ public:
 
     int serverError() const { return server_error; }
     int clientError() const { return client_error; }
-    bool echoQueries() const { return echo; }
+    std::optional<bool> echoQueries() const { return echo; }
 
 private:
     const String & query;
     int server_error = 0;
     int client_error = 0;
-    bool echo = false;
+    std::optional<bool> echo;
 
     void parse(const String & hint, bool is_leading_hint)
     {
@@ -88,7 +88,11 @@ private:
             }
 
             if (item == "echo")
-                echo = true;
+                echo.emplace(true);
+            if (item == "echoOn")
+                echo.emplace(true);
+            if (item == "echoOff")
+                echo.emplace(false);
         }
     }
 

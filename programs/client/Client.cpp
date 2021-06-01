@@ -1110,8 +1110,7 @@ private:
 
             // Echo all queries if asked; makes for a more readable reference
             // file.
-            if (test_hint.echoQueries())
-                echo_queries_ = true;
+            echo_queries_ = test_hint.echoQueries().value_or(echo_queries_);
 
             try
             {
