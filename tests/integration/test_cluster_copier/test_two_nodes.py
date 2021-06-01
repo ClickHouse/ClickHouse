@@ -24,11 +24,11 @@ def started_cluster():
         for name in ["first", "second"]:
             instance = cluster.add_instance(name,
                 main_configs=[
-                    "configs_two_nodes/conf.d/clusters.xml", 
+                    "configs_two_nodes/conf.d/clusters.xml",
                     "configs_two_nodes/conf.d/ddl.xml",
                     "configs_two_nodes/conf.d/storage_configuration.xml"],
                 user_configs=["configs_two_nodes/users.xml"],
-                with_zookeeper=True, external_data_path=os.path.join(CURRENT_TEST_DIR, "./data"))
+                with_zookeeper=True)
 
         cluster.start()
 
@@ -107,7 +107,7 @@ class TaskWithDifferentSchema:
         ) ENGINE = MergeTree()
         PARTITION BY toYYYYMMDD(Column3)
         ORDER BY (Column9, Column1, Column2, Column3, Column4);""")
-        
+
         print("Preparation completed")
 
     def check(self):
@@ -177,7 +177,7 @@ class TaskTTL:
         ) ENGINE = MergeTree()
         PARTITION BY toYYYYMMDD(Column3)
         ORDER BY (Column3, Column2, Column1);""")
-        
+
         print("Preparation completed")
 
     def check(self):
@@ -242,7 +242,7 @@ class TaskSkipIndex:
         ) ENGINE = MergeTree()
         PARTITION BY toYYYYMMDD(Column3)
         ORDER BY (Column3, Column2, Column1);""")
-        
+
         print("Preparation completed")
 
     def check(self):
@@ -286,7 +286,7 @@ class TaskTTLMoveToVolume:
         PARTITION BY (toYYYYMMDD(Column3), Column3)
         PRIMARY KEY (Column1, Column2, Column3)
         ORDER BY (Column1, Column2, Column3)
-        TTL Column3 + INTERVAL 1 MONTH TO VOLUME 'external' 
+        TTL Column3 + INTERVAL 1 MONTH TO VOLUME 'external'
         SETTINGS storage_policy = 'external_with_jbods';""")
 
         first.query("""INSERT INTO db_move_to_volume.source SELECT * FROM generateRandom(
@@ -304,9 +304,9 @@ class TaskTTLMoveToVolume:
         ) ENGINE = MergeTree()
         PARTITION BY toYYYYMMDD(Column3)
         ORDER BY (Column3, Column2, Column1)
-        TTL Column3 + INTERVAL 1 MONTH TO VOLUME 'external' 
+        TTL Column3 + INTERVAL 1 MONTH TO VOLUME 'external'
         SETTINGS storage_policy = 'external_with_jbods';""")
-        
+
         print("Preparation completed")
 
     def check(self):
@@ -369,7 +369,7 @@ class TaskDropTargetPartition:
 
         # Insert data in target too. It has to be dropped.
         first.query("""INSERT INTO db_drop_target_partition.destination SELECT * FROM db_drop_target_partition.source;""")
-        
+
         print("Preparation completed")
 
     def check(self):

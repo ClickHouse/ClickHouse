@@ -23,7 +23,7 @@ def started_cluster():
         for name in ["first", "second", "third"]:
             cluster.add_instance(name,
                 main_configs=["configs_three_nodes/conf.d/clusters.xml", "configs_three_nodes/conf.d/ddl.xml"], user_configs=["configs_three_nodes/users.xml"],
-                with_zookeeper=True, external_data_path=os.path.join(CURRENT_TEST_DIR, "./data"))
+                with_zookeeper=True)
 
         cluster.start()
         yield cluster
@@ -41,7 +41,7 @@ class Task:
             instance = cluster.instances[instance_name]
             instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_taxi_data.xml'), self.container_task_file)
             print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
-        
+
 
     def start(self):
         instance = cluster.instances['first']
@@ -53,7 +53,7 @@ class Task:
             id UUID DEFAULT generateUUIDv4(),
             vendor_id String,
             tpep_pickup_datetime DateTime('UTC'),
-            tpep_dropoff_datetime DateTime('UTC'),  
+            tpep_dropoff_datetime DateTime('UTC'),
             passenger_count Nullable(Float64),
             trip_distance String,
             pickup_longitude Float64,
@@ -90,7 +90,7 @@ class Task:
                 'id UUID DEFAULT generateUUIDv4(),
                 vendor_id String,
                 tpep_pickup_datetime DateTime(\\'UTC\\'),
-                tpep_dropoff_datetime DateTime(\\'UTC\\'),  
+                tpep_dropoff_datetime DateTime(\\'UTC\\'),
                 passenger_count Nullable(Float64),
                 trip_distance String,
                 pickup_longitude Float64,
@@ -143,7 +143,7 @@ class Task:
             congestion_surcharge String,
             junk1 String,
             junk2 String
-        ) 
+        )
         Engine = ReplacingMergeTree()
         PRIMARY KEY (tpep_pickup_datetime, id)
         ORDER BY (tpep_pickup_datetime, id)
@@ -151,9 +151,9 @@ class Task:
 
         instance.query("""CREATE TABLE monthlyhistory.yellow_tripdata
             ON CLUSTER events
-            AS monthlyhistory.yellow_tripdata_staging 
+            AS monthlyhistory.yellow_tripdata_staging
             ENGINE = Distributed('events', 'monthlyhistory', yellow_tripdata_staging, sipHash64(id) % 3);""")
-    
+
 
     def check(self):
         instance = cluster.instances["first"]
@@ -226,4 +226,3 @@ def execute_task(task, cmd_options):
 @pytest.mark.timeout(600)
 def test(started_cluster):
     execute_task(Task(started_cluster), [])
-
