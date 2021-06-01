@@ -170,13 +170,15 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
         case EntryState::TODO:
         {
+            if (entry.rollback)
+            {
+                removePins(entry, zk);
+                entry.state = EntryState::CANCELLED;
+                return entry;
+            }
             /// The forward transition happens implicitly in `movePartitionToShard`.
-            if (!entry.rollback)
+            else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected entry state ({}) in stepEntry. This is a bug.", entry.state.toString());
-
-            removePins(entry, zk);
-            entry.state = EntryState::CANCELLED;
-            return entry;
         }
 
         case EntryState::SYNC_SOURCE:
@@ -222,7 +224,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             if (entry.rollback)
             {
                 Entry entry_copy = entry;
-                entry_copy.state = EntryState::REMOVE_UUID_PIN;
+                entry_copy.state = EntryState::SYNC_SOURCE;
                 return entry_copy;
             }
             else
@@ -259,9 +261,12 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
         {
             if (entry.rollback)
             {
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                return entry_copy;
+                // TODO(nv): Do we want to cleanup fetched data on the destination?
+                //   Maybe leave it there and make sure a background cleanup will take
+                //   care of it sometime later.
+
+                entry.state = EntryState::SYNC_DESTINATION;
+                return entry;
             }
             else
             {
@@ -299,12 +304,12 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
         {
             if (entry.rollback)
             {
-                Entry entry_copy = entry;
-                // TODO(nv): Do we want to cleanup fetched data on the destination?
-                //   Maybe leave it there and make sure a background cleanup will take
-                //   care of it sometime later.
-                entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                return entry_copy;
+                // ReplicatedMergeTreeLogEntry log_entry;
+                // if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
+                //     storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+
+                entry.state = EntryState::DESTINATION_FETCH;
+                return entry;
             }
             else
             {
@@ -368,34 +373,40 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
         {
             if (entry.rollback)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
+            else
+            {
+                ReplicatedMergeTreeLogEntry log_entry;
+                if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
+                    storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
 
-            ReplicatedMergeTreeLogEntry log_entry;
-            if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
-                storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
-
-            entry.state = EntryState::SOURCE_DROP_POST_DELAY;
-            return entry;
+                entry.state = EntryState::SOURCE_DROP_POST_DELAY;
+                return entry;
+            }
         }
 
         case EntryState::SOURCE_DROP_POST_DELAY:
         {
             if (entry.rollback)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
-
-            std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
-            entry.state = EntryState::REMOVE_UUID_PIN;
-            return entry;
+            else
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
+                entry.state = EntryState::REMOVE_UUID_PIN;
+                return entry;
+            }
         }
 
         case EntryState::REMOVE_UUID_PIN:
         {
             if (entry.rollback)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
+            else
+            {
+                removePins(entry, zk);
 
-            removePins(entry, zk);
-
-            entry.state = EntryState::DONE;
-            return entry;
+                entry.state = EntryState::DONE;
+                return entry;
+            }
         }
     }
 

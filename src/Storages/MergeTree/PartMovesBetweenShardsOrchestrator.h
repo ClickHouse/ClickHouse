@@ -21,15 +21,22 @@ class StorageReplicatedMergeTree;
 
 /**
  * Cross shard part movement workflow orchestration.
- *
- *
  */
 class PartMovesBetweenShardsOrchestrator
 {
 public:
     struct EntryState
     {
-        // This fragile. If you change the states please add entry to
+        // State transitions are linear. When a kill query is issued a rollback
+        // flag is set and transitions order is reversed.
+        //
+        // SOURCE_DROP is a critical state after which rollback is not possible
+        // and we must ensure that the task can always succeed after that.
+        //
+        // Similar for rollback. It should be always possible to rollback before
+        // SOURCE_DROP state and it should terminate.
+        //
+        // Note: This fragile. If you change the states please add entry to
         // changelog about forward/backward compatibility. Better not to have
         // any active move tasks while doing upgrade/downgrade operations.
         enum Value
