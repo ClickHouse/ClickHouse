@@ -222,37 +222,37 @@ public:
     using FutureCreate = std::future<Coordination::CreateResponse>;
     FutureCreate asyncCreate(const std::string & path, const std::string & data, int32_t mode);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureCreate tryAsyncCreateNoThrow(const std::string & path, const std::string & data, int32_t mode);
+    FutureCreate asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode);
 
     using FutureGet = std::future<Coordination::GetResponse>;
     FutureGet asyncGet(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureGet tryAsyncGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureExists = std::future<Coordination::ExistsResponse>;
     FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureExists tryAsyncExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
     FutureGetChildren asyncGetChildren(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureGetChildren tryAsyncGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureGetChildren asyncTryGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureSet tryAsyncSetNoThrow(const std::string & path, const std::string & data, int32_t version = -1);
+    FutureSet asyncTrySetNoThrow(const std::string & path, const std::string & data, int32_t version = -1);
 
     using FutureRemove = std::future<Coordination::RemoveResponse>;
     FutureRemove asyncRemove(const std::string & path, int32_t version = -1);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureRemove tryAsyncRemoveNoThrow(const std::string & path, int32_t version = -1);
+    FutureRemove asyncTryRemoveNoThrow(const std::string & path, int32_t version = -1);
 
     using FutureMulti = std::future<Coordination::MultiResponse>;
     FutureMulti asyncMulti(const Coordination::Requests & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureMulti tryAsyncMultiNoThrow(const Coordination::Requests & ops);
+    FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
 
     /// Very specific methods introduced without following general style. Implements
     /// some custom throw/no throw logic on future.get().
