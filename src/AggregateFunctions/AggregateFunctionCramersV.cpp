@@ -1,5 +1,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionCramersV.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Helpers.h>
+#include "registerAggregateFunctions.h"
+#include <memory>
 
 
 namespace ErrorCodes
@@ -12,7 +16,7 @@ namespace DB
     namespace
     {
 
-        AggregateFunctionPtr createAggregateFunctionCramersV(const std::string &, const DataTypes & argument_types, const Array &)
+        AggregateFunctionPtr createAggregateFunctionCramersV(const std::string &, const DataTypes & argument_types, const Array &, const Settings *)
         {
             return std::make_shared<AggregateFunctionCramersV>(argument_types);
         }
