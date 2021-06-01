@@ -30,7 +30,7 @@ class FunctionGlobalVariable : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionGlobalVariable>();
     }

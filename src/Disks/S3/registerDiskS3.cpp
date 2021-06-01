@@ -174,7 +174,7 @@ void registerDiskS3(DiskFactory & factory)
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
-        Poco::File (metadata_path).createDirectories();
+        fs::create_directories(metadata_path);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,

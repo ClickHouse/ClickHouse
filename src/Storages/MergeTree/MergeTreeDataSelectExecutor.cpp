@@ -3,13 +3,8 @@
 #include <optional>
 #include <unordered_set>
 
-#include <Poco/File.h>
-
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -28,7 +23,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
 #include <Core/UUID.h>
@@ -42,8 +36,6 @@
 
 #include <Interpreters/InterpreterSelectQuery.h>
 
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -144,11 +136,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto parts = data.getDataPartsVector();
     if (!query_info.projection)
     {
-        if (settings.allow_experimental_projection_optimization && settings.force_optimize_projection
-            && !metadata_snapshot->projections.empty())
-            throw Exception("No projection is used when allow_experimental_projection_optimization = 1", ErrorCodes::PROJECTION_NOT_USED);
-
-        return readFromParts(
+        auto plan = readFromParts(
             parts,
             column_names_to_return,
             metadata_snapshot,
@@ -158,6 +146,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_size,
             num_streams,
             max_block_numbers_to_read);
+
+        if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
+            && !metadata_snapshot->projections.empty())
+            throw Exception(
+                "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
+                ErrorCodes::PROJECTION_NOT_USED);
+
+        return plan;
     }
 
     LOG_DEBUG(
