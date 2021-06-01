@@ -369,7 +369,7 @@ class ParserComparisonWithSubqueryExpression : public IParserBase
 private:
     static const char * operators[];
     ParserComparisonExpression next_parser;
-    ParserConcatExpression elem_parser;
+    ParserBetweenExpression elem_parser;
     static bool addFunctionIn(String operator_name, ASTPtr & node, bool is_any);
     static bool modifySubquery(String operator_name, ASTPtr subquery_node, bool is_any);
 protected:
