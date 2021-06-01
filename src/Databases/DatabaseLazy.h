@@ -27,7 +27,7 @@ public:
     bool canContainDistributedTables() const override { return false; }
 
     void loadStoredObjects(
-        ContextPtr context,
+        ContextMutablePtr context,
         bool has_force_restore_data_flag, bool force_attach) override;
 
     void createTable(
