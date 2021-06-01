@@ -22,6 +22,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/formatAST.h>
 #include <Common/Macros.h>
 
@@ -317,9 +318,24 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             if (!replicated_table || !create->storage->engine->arguments)
                 return;
 
-            ASTs & args = create->storage->engine->arguments->children;
+            ASTs & args_ref = create->storage->engine->arguments->children;
+            ASTs args = args_ref;
             if (args.size() < 2)
                 return;
+
+            /// It can be a constant expression. Try to evaluate it, ignore exception if we cannot.
+            bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[0]->as<ASTFunction>();
+            if (has_expression_argument)
+            {
+                try
+                {
+                    args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
+                    args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
+                }
+                catch (...)
+                {
+                }
+            }
 
             ASTLiteral * arg1 = args[0]->as<ASTLiteral>();
             ASTLiteral * arg2 = args[1]->as<ASTLiteral>();
@@ -348,12 +364,12 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             if (maybe_shard_macros && maybe_replica_macros)
                 return;
 
-            if (enable_functional_tests_helper)
+            if (enable_functional_tests_helper && !has_expression_argument)
             {
                 if (maybe_path.empty() || maybe_path.back() != '/')
                     maybe_path += '/';
-                arg1->value = maybe_path + "auto_{shard}";
-                arg2->value = maybe_replica + "auto_{replica}";
+                args_ref[0]->as<ASTLiteral>()->value = maybe_path + "auto_{shard}";
+                args_ref[1]->as<ASTLiteral>()->value = maybe_replica + "auto_{replica}";
                 return;
             }
 
