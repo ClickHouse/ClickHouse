@@ -3,8 +3,6 @@
 #include <optional>
 #include <unordered_set>
 
-#include <Poco/File.h>
-
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
