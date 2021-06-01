@@ -60,7 +60,7 @@ CREATE TABLE example (
     materialized_value UInt32 MATERIALIZED 12345,
     aliased_value UInt32 ALIAS 2,
     PRIMARY KEY primary_key
-) ENGINE=MergeTree　
+) ENGINE=MergeTree
 PARTITION BY partition_key
 ORDER BY (primary_key, secondary_key);
 ```
