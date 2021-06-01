@@ -12,15 +12,15 @@
 namespace DB
 {
 
-class ClusterCopier : WithContext
+class ClusterCopier : WithMutableContext
 {
 public:
     ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
-                  ContextPtr context_,
+                  ContextMutablePtr context_,
                   Poco::Logger * log_)
-            : WithContext(context_),
+            : WithMutableContext(context_),
             task_zookeeper_path(task_path_),
             host_id(host_id_),
             working_database_name(proxy_database_name_),

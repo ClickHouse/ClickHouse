@@ -76,6 +76,8 @@
 #include <cassert>
 
 
+namespace fs = std::filesystem;
+
 namespace
 {
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
@@ -864,7 +866,7 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
-    Poco::File{path}.createDirectories();
+    fs::create_directories(path);
 
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;
