@@ -1,9 +1,4 @@
 #include "FileDictionarySource.h"
-
-#include <filesystem>
-
-#include <Poco/File.h>
-
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -14,6 +9,7 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
+
 
 namespace DB
 {
@@ -28,7 +24,7 @@ namespace ErrorCodes
 
 FileDictionarySource::FileDictionarySource(
     const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, ContextPtr context_, bool created_from_ddl)
+    Block & sample_block_, ContextConstPtr context_, bool created_from_ddl)
     : filepath{filepath_}
     , format{format_}
     , sample_block{sample_block_}
@@ -68,8 +64,9 @@ std::string FileDictionarySource::toString() const
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
-    return Poco::File{filepath}.getLastModified();
+    return FS::getModificationTimestamp(filepath);
 }
+
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
@@ -77,7 +74,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextConstPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {

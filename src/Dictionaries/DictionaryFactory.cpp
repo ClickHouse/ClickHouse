@@ -31,7 +31,7 @@ DictionaryPtr DictionaryFactory::create(
     const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    ContextPtr context,
+    ContextConstPtr context,
     bool created_from_ddl) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -68,7 +68,7 @@ DictionaryPtr DictionaryFactory::create(
         layout_type);
 }
 
-DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, ContextPtr context) const
+DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, ContextConstPtr context) const
 {
     auto configuration = getDictionaryConfigurationFromAST(ast, context);
     return DictionaryFactory::create(name, *configuration, "dictionary", context, true);

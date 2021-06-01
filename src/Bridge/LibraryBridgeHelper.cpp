@@ -8,7 +8,6 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
-#include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
@@ -21,7 +20,7 @@ namespace DB
 {
 
 LibraryBridgeHelper::LibraryBridgeHelper(
-        ContextPtr context_,
+        ContextConstPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_)
     : IBridgeHelper(context_->getGlobalContext())
