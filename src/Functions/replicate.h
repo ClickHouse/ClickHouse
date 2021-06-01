@@ -13,7 +13,7 @@ class FunctionReplicate : public IFunction
 public:
     static constexpr auto name = "replicate";
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionReplicate>();
     }

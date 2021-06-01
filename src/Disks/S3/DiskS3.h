@@ -55,7 +55,7 @@ public:
     using Futures = std::vector<std::future<void>>;
 
     using SettingsPtr = std::unique_ptr<DiskS3Settings>;
-    using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextConstPtr)>;
+    using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextPtr)>;
 
     struct RestoreInformation;
 
@@ -107,7 +107,7 @@ public:
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
 
 private:
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);

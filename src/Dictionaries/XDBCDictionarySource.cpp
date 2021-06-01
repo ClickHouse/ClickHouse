@@ -37,7 +37,7 @@ namespace
             const Poco::URI & uri,
             std::function<void(std::ostream &)> callback,
             const Block & sample_block,
-            ContextConstPtr context,
+            ContextPtr context,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
             const String name_)
@@ -102,7 +102,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     const Poco::Util::AbstractConfiguration & config_,
     const std::string & config_prefix_,
     const Block & sample_block_,
-    ContextConstPtr context_,
+    ContextPtr context_,
     const BridgeHelperPtr bridge_)
     : WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
@@ -278,7 +278,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
-                                   ContextConstPtr context,
+                                   ContextPtr context,
                                    const std::string & /* default_database */,
                                    bool /* check_config */) -> DictionarySourcePtr {
 #if USE_ODBC
@@ -305,7 +305,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & /* config */,
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,
-                                 ContextConstPtr /* context */,
+                                 ContextPtr /* context */,
                                  const std::string & /* default_database */,
                                  bool /* created_from_ddl */) -> DictionarySourcePtr {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
