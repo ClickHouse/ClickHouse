@@ -2,3 +2,7 @@
 -- { echo }
 select 1;
 1
+2
+-- { echoOn }
+select 2;
+2
