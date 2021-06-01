@@ -19,13 +19,13 @@ namespace
 {
 
 /// Get the value of a setting.
-class FunctionGetSetting : public IFunction, WithContext
+class FunctionGetSetting : public IFunction, WithConstContext
 {
 public:
     static constexpr auto name = "getSetting";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
-    explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
+    explicit FunctionGetSetting(ContextConstPtr context_) : WithConstContext(context_) {}
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
