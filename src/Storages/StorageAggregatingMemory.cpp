@@ -25,7 +25,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Transforms/AggregatingTransform.cpp>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
