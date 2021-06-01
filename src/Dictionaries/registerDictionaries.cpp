@@ -59,7 +59,7 @@ void registerDictionaries()
         registerDictionaryRangeHashed(factory);
         registerDictionaryTrie(factory);
         registerDictionaryFlat(factory);
-        // registerDictionaryHashed(factory);
+        registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
         registerDictionaryPolygon(factory);
         registerDictionaryDirect(factory);
