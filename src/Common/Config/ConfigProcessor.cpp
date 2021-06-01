@@ -1,4 +1,8 @@
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
 #include "ConfigProcessor.h"
+#include "YAMLParser.h"
 
 #include <sys/utsname.h>
 #include <cerrno>
@@ -20,9 +24,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-
 #define PREPROCESSED_SUFFIX "-preprocessed"
-
 
 namespace fs = std::filesystem;
 
@@ -60,7 +62,7 @@ static std::string numberFromHost(const std::string & s)
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
-    return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
+    return endsWith(fs::path(path).stem(), PREPROCESSED_SUFFIX);
 }
 
 
@@ -414,32 +416,32 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 {
     Files files;
 
-    Poco::Path merge_dir_path(config_path);
+    fs::path merge_dir_path(config_path);
     std::set<std::string> merge_dirs;
 
     /// Add path_to_config/config_name.d dir
-    merge_dir_path.setExtension("d");
-    merge_dirs.insert(merge_dir_path.toString());
+    merge_dir_path.replace_extension("d");
+    merge_dirs.insert(merge_dir_path);
     /// Add path_to_config/conf.d dir
-    merge_dir_path.setBaseName("conf");
-    merge_dirs.insert(merge_dir_path.toString());
+    merge_dir_path.replace_filename("conf.d");
+    merge_dirs.insert(merge_dir_path);
 
     for (const std::string & merge_dir_name : merge_dirs)
     {
-        Poco::File merge_dir(merge_dir_name);
-        if (!merge_dir.exists() || !merge_dir.isDirectory())
+        if (!fs::exists(merge_dir_name) || !fs::is_directory(merge_dir_name))
             continue;
 
-        for (Poco::DirectoryIterator it(merge_dir_name); it != Poco::DirectoryIterator(); ++it)
+        for (fs::directory_iterator it(merge_dir_name); it != fs::directory_iterator(); ++it)
         {
-            Poco::File & file = *it;
-            Poco::Path path(file.path());
-            std::string extension = path.getExtension();
-            std::string base_name = path.getBaseName();
+            fs::path path(it->path());
+            std::string extension = path.extension();
+            std::string base_name = path.stem();
 
             // Skip non-config and temporary files
-            if (file.isFile() && (extension == "xml" || extension == "conf") && !startsWith(base_name, "."))
-                files.push_back(file.path());
+            if (fs::is_regular_file(path)
+                    && (extension == ".xml" || extension == ".conf" || extension == ".yaml" || extension == ".yml")
+                    && !startsWith(base_name, "."))
+                files.push_back(it->path());
         }
     }
 
@@ -453,12 +455,21 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    XMLDocumentPtr config;
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
+
+    XMLDocumentPtr config;
 
     if (fs::exists(path))
     {
-        config = dom_parser.parse(path);
+        fs::path p(path);
+        if (p.extension() == ".xml")
+        {
+            config = dom_parser.parse(path);
+        }
+        else if (p.extension() == ".yaml" || p.extension() == ".yml")
+        {
+            config = YAMLParser::parse(path);
+        }
     }
     else
     {
@@ -493,8 +504,20 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
-            XMLDocumentPtr with = dom_parser.parse(merge_file);
+            XMLDocumentPtr with;
+
+            fs::path p(merge_file);
+            if (p.extension() == ".yaml" || p.extension() == ".yml")
+            {
+                with = YAMLParser::parse(merge_file);
+            }
+            else
+            {
+                with = dom_parser.parse(merge_file);
+            }
+
             merge(config, with);
+
             contributing_files.push_back(merge_file);
         }
         catch (Exception & e)
@@ -523,7 +546,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         else
         {
             std::string default_path = "/etc/metrika.xml";
-            if (Poco::File(default_path).exists())
+            if (fs::exists(default_path))
                 include_from_path = default_path;
         }
         if (!include_from_path.empty())
@@ -635,11 +658,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 if (!loaded_config.configuration->has("path"))
                 {
                     // Will use current directory
-                    auto parent_path = Poco::Path(loaded_config.config_path).makeParent();
-                    preprocessed_dir = parent_path.toString();
-                    Poco::Path poco_new_path(new_path);
-                    poco_new_path.setBaseName(poco_new_path.getBaseName() + PREPROCESSED_SUFFIX);
-                    new_path = poco_new_path.toString();
+                    fs::path parent_path = fs::path(loaded_config.config_path).parent_path();
+                    preprocessed_dir = parent_path.string();
+                    fs::path fs_new_path(new_path);
+                    fs_new_path.replace_filename(fs_new_path.stem().string() + PREPROCESSED_SUFFIX + fs_new_path.extension().string());
+                    new_path = fs_new_path.string();
                 }
                 else
                 {
@@ -654,9 +677,9 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             }
 
             preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
-            auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
-            if (!preprocessed_path_parent.toString().empty())
-                Poco::File(preprocessed_path_parent).createDirectories();
+            auto preprocessed_path_parent = fs::path(preprocessed_path).parent_path();
+            if (!preprocessed_path_parent.empty())
+                fs::create_directories(preprocessed_path_parent);
         }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
         LOG_DEBUG(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);

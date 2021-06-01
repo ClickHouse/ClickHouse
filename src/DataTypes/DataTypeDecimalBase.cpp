@@ -19,11 +19,11 @@ namespace ErrorCodes
 {
 }
 
-bool decimalCheckComparisonOverflow(ContextPtr context)
+bool decimalCheckComparisonOverflow(ContextConstPtr context)
 {
     return context->getSettingsRef().decimal_check_overflow;
 }
-bool decimalCheckArithmeticOverflow(ContextPtr context)
+bool decimalCheckArithmeticOverflow(ContextConstPtr context)
 {
     return context->getSettingsRef().decimal_check_overflow;
 }

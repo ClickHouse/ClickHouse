@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Poco/Path.h>
+
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -17,8 +19,7 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromF
     {
         for (DiskDirectoryIteratorPtr it = disk->iterateDirectory(path_to_part); it->isValid(); it->next())
         {
-            Poco::Path path(it->path());
-            const auto & ext = "." + path.getExtension();
+            const auto & ext = fs::path(it->path()).extension();
             if (ext == getNonAdaptiveMrkExtension()
                 || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE)
                 || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))
