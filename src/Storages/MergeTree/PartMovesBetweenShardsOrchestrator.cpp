@@ -160,40 +160,33 @@ bool PartMovesBetweenShardsOrchestrator::step()
     return true;
 }
 
-PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk)
+PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(Entry entry, zkutil::ZooKeeperPtr zk)
 {
     switch (entry.state.value)
     {
         case EntryState::DONE: [[fallthrough]];
         case EntryState::CANCELLED:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stepEntry after terminal state, bug in code.");
-            break;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stepEntry after terminal state, this is a bug.");
 
         case EntryState::TODO:
         {
-            if (entry.rollback)
-            {
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                return entry_copy;
-            }
+            /// The forward transition happens implicitly in `movePartitionToShard`.
+            if (!entry.rollback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected entry state ({}) in stepEntry, this is a bug.", entry.state.toString());
 
-            /// State transition.
-            Entry entry_copy = entry;
-            entry_copy.state = EntryState::SYNC_SOURCE;
-            return entry_copy;
+            removePins(entry, zk);
+            entry.state = EntryState::CANCELLED;
+            return entry;
         }
-        break;
 
         case EntryState::SYNC_SOURCE:
         {
             if (entry.rollback)
             {
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                return entry_copy;
+                entry.state = EntryState::TODO;
+                return entry;
             }
-
+            else
             {
                 /// Log entry.
                 Coordination::Requests ops;
@@ -218,16 +211,11 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 /// better to have some notification which will call `step`
                 /// function when all replicated will finish. TODO.
                 storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
-            }
 
-            {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::SYNC_DESTINATION;
-                return entry_copy;
+                entry.state = EntryState::SYNC_DESTINATION;
+                return entry;
             }
         }
-        break;
 
         case EntryState::SYNC_DESTINATION:
         {
@@ -237,7 +225,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
                 return entry_copy;
             }
-
+            else
             {
                 /// Log entry.
                 Coordination::Requests ops;
@@ -261,16 +249,11 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
                 storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
-            }
 
-            {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::DESTINATION_FETCH;
-                return entry_copy;
+                entry.state = EntryState::DESTINATION_FETCH;
+                return entry;
             }
         }
-        break;
 
         case EntryState::DESTINATION_FETCH:
         {
@@ -280,9 +263,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
                 return entry_copy;
             }
-
-            /// Make sure table structure doesn't change when there are part movements in progress.
+            else
             {
+                /// Note: Table structure shouldn't be changed while there are part movements in progress.
+
                 Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
@@ -305,16 +289,11 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
                 storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
-            }
 
-            {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::DESTINATION_ATTACH;
-                return entry_copy;
+                entry.state = EntryState::DESTINATION_ATTACH;
+                return entry;
             }
         }
-        break;
 
         case EntryState::DESTINATION_ATTACH:
         {
@@ -327,9 +306,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 entry_copy.state = EntryState::REMOVE_UUID_PIN;
                 return entry_copy;
             }
-
-            /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
+            else
             {
+                /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
+
                 Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
@@ -363,117 +343,79 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
                 storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
-            }
 
-            {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::SOURCE_DROP_PRE_DELAY;
-                return entry_copy;
+                entry.state = EntryState::SOURCE_DROP_PRE_DELAY;
+                return entry;
             }
         }
-        break;
-
-        case EntryState::DESTINATION_DROP:
-        {
-            // TODO(nv): Move validation outside of the transitions. This is needed for all of them.
-            if (!entry.rollback)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected entry state DESTINATION_DROP and no rollback set.");
-
-            // TODO(nv): Implement DROP.
-
-            {
-                /// State transition.
-                Entry entry_copy = entry;
-
-                // TODO(nv): We abuse REMOVE_UUID_PIN state, it makes sense on one hand
-                //   but on the other the "flow" isn't linear at all.
-                entry_copy.state = EntryState::REMOVE_UUID_PIN;
-                return entry_copy;
-            }
-        }
-        break;
 
         case EntryState::SOURCE_DROP_PRE_DELAY:
         {
-            Entry entry_copy = entry;
-
             if (entry.rollback)
             {
-                entry_copy.state = EntryState::DESTINATION_DROP;
-            } else
+                entry.state = EntryState::DESTINATION_ATTACH;
+                return entry;
+            }
+            else
             {
                 std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
-                entry_copy.state = EntryState::SOURCE_DROP;
+                entry.state = EntryState::SOURCE_DROP;
+                return entry;
             }
-
-            return entry_copy;
         }
-        break;
 
         case EntryState::SOURCE_DROP:
         {
-            {
-                ReplicatedMergeTreeLogEntry log_entry;
-                if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
-                    storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
-            }
+            ReplicatedMergeTreeLogEntry log_entry;
+            if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
+                storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
 
-            {
-                /// State transition.
-                Entry entry_copy = entry;
-                entry_copy.state = EntryState::SOURCE_DROP_POST_DELAY;
-                return entry_copy;
-            }
+            entry.state = EntryState::SOURCE_DROP_POST_DELAY;
+            return entry;
         }
-        break;
 
         case EntryState::SOURCE_DROP_POST_DELAY:
         {
             std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
-
-            /// State transition.
-            Entry entry_copy = entry;
-            entry_copy.state = EntryState::REMOVE_UUID_PIN;
-            return entry_copy;
+            entry.state = EntryState::REMOVE_UUID_PIN;
+            return entry;
         }
-        break;
 
         case EntryState::REMOVE_UUID_PIN:
         {
-            {
-                PinnedPartUUIDs src_pins;
-                PinnedPartUUIDs dst_pins;
+            removePins(entry, zk);
 
-                {
-                    String s = zk->get(zookeeper_path + "/pinned_part_uuids", &src_pins.stat);
-                    src_pins.fromString(s);
-                }
-
-                {
-                    String s = zk->get(entry.to_shard + "/pinned_part_uuids", &dst_pins.stat);
-                    dst_pins.fromString(s);
-                }
-
-                src_pins.part_uuids.erase(entry.part_uuid);
-                dst_pins.part_uuids.erase(entry.part_uuid);
-
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
-                ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
-
-                zk->multi(ops);
-            }
-
-            /// State transition.
-            Entry entry_copy = entry;
-
-            // TOOD(nv): Very confusing.
-            entry_copy.state = entry.rollback ? EntryState::CANCELLED : EntryState::DONE;
-            return entry_copy;
+            entry.state = EntryState::DONE;
+            return entry;
         }
-        break;
     }
+
+    __builtin_unreachable();
+}
+
+void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil::ZooKeeperPtr zk)
+{
+    PinnedPartUUIDs src_pins;
+    PinnedPartUUIDs dst_pins;
+
+    {
+        String s = zk->get(zookeeper_path + "/pinned_part_uuids", &src_pins.stat);
+        src_pins.fromString(s);
+    }
+
+    {
+        String s = zk->get(entry.to_shard + "/pinned_part_uuids", &dst_pins.stat);
+        dst_pins.fromString(s);
+    }
+
+    dst_pins.part_uuids.erase(entry.part_uuid);
+    src_pins.part_uuids.erase(entry.part_uuid);
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
+    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
+
+    zk->multi(ops);
 }
 
 std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries() const

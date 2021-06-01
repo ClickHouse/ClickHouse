@@ -18,7 +18,11 @@ namespace ErrorCodes
 
 class StorageReplicatedMergeTree;
 
-/// Cross shard part movement workflow orchestration.
+/**
+ * Cross shard part movement workflow orchestration.
+ *
+ *
+ */
 class PartMovesBetweenShardsOrchestrator
 {
 public:
@@ -29,18 +33,17 @@ public:
         // any active move tasks while doing upgrade/downgrade operations.
         enum Value
         {
+            CANCELLED,
             TODO,
             SYNC_SOURCE,
             SYNC_DESTINATION,
             DESTINATION_FETCH,
             DESTINATION_ATTACH,
-            DESTINATION_DROP, // For rollback.
             SOURCE_DROP_PRE_DELAY,
             SOURCE_DROP,
             SOURCE_DROP_POST_DELAY,
             REMOVE_UUID_PIN,
             DONE,
-            CANCELLED,
         };
 
         EntryState(): value(TODO) {}
@@ -57,7 +60,6 @@ public:
                 case SYNC_DESTINATION: return "SYNC_DESTINATION";
                 case DESTINATION_FETCH: return "DESTINATION_FETCH";
                 case DESTINATION_ATTACH: return "DESTINATION_ATTACH";
-                case DESTINATION_DROP: return "DESTINATION_DROP";
                 case SOURCE_DROP_PRE_DELAY: return "SOURCE_DROP_PRE_DELAY";
                 case SOURCE_DROP: return "SOURCE_DROP";
                 case SOURCE_DROP_POST_DELAY: return "SOURCE_DROP_POST_DELAY";
@@ -76,7 +78,6 @@ public:
             else if (in == "SYNC_DESTINATION") return SYNC_DESTINATION;
             else if (in == "DESTINATION_FETCH") return DESTINATION_FETCH;
             else if (in == "DESTINATION_ATTACH") return DESTINATION_ATTACH;
-            else if (in == "DESTINATION_DROP") return DESTINATION_DROP;
             else if (in == "SOURCE_DROP_PRE_DELAY") return SOURCE_DROP_PRE_DELAY;
             else if (in == "SOURCE_DROP") return SOURCE_DROP;
             else if (in == "SOURCE_DROP_POST_DELAY") return SOURCE_DROP_POST_DELAY;
@@ -136,7 +137,7 @@ private:
     static constexpr auto JSON_KEY_NUM_TRIES = "num_tries";
 
 public:
-    PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_);
+    explicit PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_);
 
     void start() { task->activateAndSchedule(); }
     void wakeup() { task->schedule(); }
@@ -152,7 +153,9 @@ public:
 
 private:
     void run();
-    Entry stepEntry(const Entry & entry, zkutil::ZooKeeperPtr zk);
+    Entry stepEntry(Entry entry, zkutil::ZooKeeperPtr zk);
+
+    void removePins(const Entry & entry, zkutil::ZooKeeperPtr zk);
 
 private:
     StorageReplicatedMergeTree & storage;

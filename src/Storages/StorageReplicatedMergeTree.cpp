@@ -6783,6 +6783,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     dst_pins.part_uuids.insert(part->uuid);
 
     PartMovesBetweenShardsOrchestrator::Entry part_move_entry;
+    part_move_entry.state = PartMovesBetweenShardsOrchestrator::EntryState::SYNC_SOURCE;
     part_move_entry.create_time = std::time(nullptr);
     part_move_entry.update_time = part_move_entry.create_time;
     part_move_entry.task_uuid = UUIDHelpers::generateV4();

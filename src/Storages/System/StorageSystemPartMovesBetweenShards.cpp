@@ -34,7 +34,7 @@ NamesAndTypesList StorageSystemPartMovesBetweenShards::getNamesAndTypes()
         /// Processing status of item.
         { "update_time",             std::make_shared<DataTypeDateTime>() },
         { "state",                   std::make_shared<DataTypeString>() },
-        { "rollback",                   std::make_shared<DataTypeUInt8>() },
+        { "rollback",                std::make_shared<DataTypeUInt8>() },
         { "num_tries",               std::make_shared<DataTypeUInt32>() },
         { "last_exception",          std::make_shared<DataTypeString>() },
     };
