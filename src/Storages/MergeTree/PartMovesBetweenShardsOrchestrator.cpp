@@ -166,13 +166,13 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
     {
         case EntryState::DONE: [[fallthrough]];
         case EntryState::CANCELLED:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stepEntry after terminal state, this is a bug.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stepEntry after terminal state. This is a bug.");
 
         case EntryState::TODO:
         {
             /// The forward transition happens implicitly in `movePartitionToShard`.
             if (!entry.rollback)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected entry state ({}) in stepEntry, this is a bug.", entry.state.toString());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected entry state ({}) in stepEntry. This is a bug.", entry.state.toString());
 
             removePins(entry, zk);
             entry.state = EntryState::CANCELLED;
@@ -366,6 +366,9 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
         case EntryState::SOURCE_DROP:
         {
+            if (entry.rollback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
+
             ReplicatedMergeTreeLogEntry log_entry;
             if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
                 storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
@@ -376,6 +379,9 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
         case EntryState::SOURCE_DROP_POST_DELAY:
         {
+            if (entry.rollback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
+
             std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
             entry.state = EntryState::REMOVE_UUID_PIN;
             return entry;
@@ -383,6 +389,9 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
         case EntryState::REMOVE_UUID_PIN:
         {
+            if (entry.rollback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
+
             removePins(entry, zk);
 
             entry.state = EntryState::DONE;
