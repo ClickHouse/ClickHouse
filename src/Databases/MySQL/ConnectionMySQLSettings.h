@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Core/Defines.h>
 #include <Core/BaseSettings.h>
+#include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
-class Context;
 class ASTStorage;
 
 #define LIST_OF_CONNECTION_MYSQL_SETTINGS(M) \
@@ -27,7 +27,7 @@ struct ConnectionMySQLSettings : public BaseSettings<ConnectionMySQLSettingsTrai
 {
     void loadFromQuery(ASTStorage & storage_def);
 
-    void loadFromQueryContext(const Context & context);
+    void loadFromQueryContext(ContextPtr context);
 };
 
 }

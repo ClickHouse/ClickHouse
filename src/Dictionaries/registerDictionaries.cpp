@@ -57,7 +57,6 @@ void registerDictionaries()
     {
         auto & factory = DictionaryFactory::instance();
         registerDictionaryRangeHashed(factory);
-        registerDictionaryComplexKeyHashed(factory);
         registerDictionaryTrie(factory);
         registerDictionaryFlat(factory);
         registerDictionaryHashed(factory);

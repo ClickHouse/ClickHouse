@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
     if (command_ast->type == ASTAlterCommand::DROP_PARTITION)
@@ -59,8 +64,11 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
                 res.to_database = command_ast->to_database;
                 res.to_table = command_ast->to_table;
                 break;
-            default:
+            case DataDestinationType::SHARD:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::SHARD;
                 break;
+            case DataDestinationType::DELETE:
+                throw Exception("ALTER with this destination type is not handled. This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         if (res.move_destination_type != PartitionCommand::MoveDestinationType::TABLE)
             res.move_destination_name = command_ast->move_destination_name;
@@ -82,6 +90,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.type = FETCH_PARTITION;
         res.partition = command_ast->partition;
         res.from_zookeeper_path = command_ast->from;
+        res.part = command_ast->part;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FREEZE_PARTITION)
@@ -140,7 +149,10 @@ std::string PartitionCommand::typeToString() const
         else
             return "DROP DETACHED PARTITION";
     case PartitionCommand::Type::FETCH_PARTITION:
-        return "FETCH PARTITION";
+        if (part)
+            return "FETCH PART";
+        else
+            return "FETCH PARTITION";
     case PartitionCommand::Type::FREEZE_ALL_PARTITIONS:
         return "FREEZE ALL";
     case PartitionCommand::Type::FREEZE_PARTITION:
@@ -151,8 +163,9 @@ std::string PartitionCommand::typeToString() const
         return "UNFREEZE ALL";
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
+    default:
+        throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
     }
-    __builtin_unreachable();
 }
 
 Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)

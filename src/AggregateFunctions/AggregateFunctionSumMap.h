@@ -21,6 +21,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -139,6 +140,8 @@ public:
 
         return std::make_shared<DataTypeTuple>(types);
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     static const auto & getArgumentColumns(const IColumn**& columns)
     {

@@ -1,7 +1,8 @@
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -34,12 +35,12 @@ def test_mutate_and_upgrade(start_cluster):
     node1.query("ALTER TABLE mt DELETE WHERE id = 2", settings={"mutations_sync": "2"})
     node2.query("SYSTEM SYNC REPLICA mt", timeout=5)
 
-    node1.restart_with_latest_version()
-    node2.restart_with_latest_version()
+    node1.restart_with_latest_version(signal=9)
+    node2.restart_with_latest_version(signal=9)
 
-    node2.query("INSERT INTO mt VALUES ('2020-02-13', 3);")
-
-    node1.query("SYSTEM SYNC REPLICA mt", timeout=5)
+    # After hard restart table can be in readonly mode
+    exec_query_with_retry(node2, "INSERT INTO mt VALUES ('2020-02-13', 3)")
+    exec_query_with_retry(node1, "SYSTEM SYNC REPLICA mt")
 
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"
@@ -73,12 +74,12 @@ def test_upgrade_while_mutation(start_cluster):
 
     node3.query("INSERT INTO mt1 select '2020-02-13', number from numbers(100000)")
 
-    node3.query("SYSTEM STOP MERGES")
+    node3.query("SYSTEM STOP MERGES mt1")
     node3.query("ALTER TABLE mt1 DELETE WHERE id % 2 == 0")
 
-    node3.restart_with_latest_version()
+    node3.restart_with_latest_version(signal=9)
 
+    exec_query_with_retry(node3, "ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
     # will delete nothing, but previous async mutation will finish with this query
-    node3.query("ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
 
     assert_eq_with_retry(node3, "SELECT COUNT() from mt1", "50000\n")

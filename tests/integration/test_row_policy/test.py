@@ -409,32 +409,31 @@ def test_tags_with_db_and_table_names():
 
 
 def test_miscellaneous_engines():
-    copy_policy_xml('normal_filters.xml')
+    node.query("CREATE ROW POLICY OR REPLACE pC ON mydb.other_table FOR SELECT USING a = 1 TO default")
+    assert node.query("SHOW ROW POLICIES ON mydb.other_table") == "pC\n"
 
     # ReplicatedMergeTree
-    node.query("DROP TABLE mydb.filtered_table1")
-    node.query(
-        "CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE ReplicatedMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1') ORDER BY a")
-    node.query("INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1)")
-    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 0], [1, 1]])
+    node.query("DROP TABLE IF EXISTS mydb.other_table")
+    node.query("CREATE TABLE mydb.other_table (a UInt8, b UInt8) ENGINE ReplicatedMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1') ORDER BY a")
+    node.query("INSERT INTO mydb.other_table values (0, 0), (0, 1), (1, 0), (1, 1)")
+    assert node.query("SELECT * FROM mydb.other_table") == TSV([[1, 0], [1, 1]])
 
     # CollapsingMergeTree
-    node.query("DROP TABLE mydb.filtered_table1")
-    node.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE CollapsingMergeTree(b) ORDER BY a")
-    node.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
-    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 1], [1, 1]])
+    node.query("DROP TABLE mydb.other_table")
+    node.query("CREATE TABLE mydb.other_table (a UInt8, b Int8) ENGINE CollapsingMergeTree(b) ORDER BY a")
+    node.query("INSERT INTO mydb.other_table values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert node.query("SELECT * FROM mydb.other_table") == TSV([[1, 1], [1, 1]])
 
     # ReplicatedCollapsingMergeTree
-    node.query("DROP TABLE mydb.filtered_table1")
-    node.query(
-        "CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-01/filtered_table1', 'replica1', b) ORDER BY a")
-    node.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
-    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 1], [1, 1]])
+    node.query("DROP TABLE mydb.other_table")
+    node.query("CREATE TABLE mydb.other_table (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-01/filtered_table1', 'replica1', b) ORDER BY a")
+    node.query("INSERT INTO mydb.other_table values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert node.query("SELECT * FROM mydb.other_table") == TSV([[1, 1], [1, 1]])
+
+    node.query("DROP ROW POLICY pC ON mydb.other_table")
 
     # DistributedMergeTree
-    node.query("DROP TABLE IF EXISTS mydb.not_filtered_table")
-    node.query(
-        "CREATE TABLE mydb.not_filtered_table (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
-    assert node.query("SELECT * FROM mydb.not_filtered_table", user="another") == TSV([[1, 0], [1, 1], [1, 0], [1, 1]])
-    assert node.query("SELECT sum(a), b FROM mydb.not_filtered_table GROUP BY b ORDER BY b", user="another") == TSV(
-        [[2, 0], [2, 1]])
+    node.query("DROP TABLE IF EXISTS mydb.other_table")
+    node.query("CREATE TABLE mydb.other_table (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
+    assert node.query("SELECT * FROM mydb.other_table", user="another") == TSV([[1, 0], [1, 1], [1, 0], [1, 1]])
+    assert node.query("SELECT sum(a), b FROM mydb.other_table GROUP BY b ORDER BY b", user="another") == TSV([[2, 0], [2, 1]])

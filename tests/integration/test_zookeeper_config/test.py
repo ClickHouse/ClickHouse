@@ -126,6 +126,7 @@ def test_identity():
         cluster_2.shutdown()
 
 
+# NOTE this test have to be ported to Keeper
 def test_secure_connection():
     # We need absolute path in zookeeper volumes. Generate it dynamically.
     TEMPLATE = '''
@@ -162,12 +163,12 @@ def test_secure_connection():
                                                         "configs_secure/conf.d/remote_servers.xml",
                                                         "configs_secure/conf.d/ssl_conf.xml"],
                                  with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name,
-                                 zookeeper_use_tmpfs=False)
+                                 zookeeper_use_tmpfs=False, use_keeper=False)
     node2 = cluster.add_instance('node2', main_configs=["configs_secure/client.crt", "configs_secure/client.key",
                                                         "configs_secure/conf.d/remote_servers.xml",
                                                         "configs_secure/conf.d/ssl_conf.xml"],
                                  with_zookeeper=True, zookeeper_docker_compose_path=docker_compose.name,
-                                 zookeeper_use_tmpfs=False)
+                                 zookeeper_use_tmpfs=False, use_keeper=False)
 
     try:
         cluster.start()

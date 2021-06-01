@@ -210,7 +210,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
-    connectionID.cpp
+    connectionId.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
@@ -229,6 +229,8 @@ SRCS(
     defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
+    divide/divide.cpp
+    divide/divideImpl.cpp
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
@@ -301,6 +303,7 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    indexHint.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -309,6 +312,7 @@ SRCS(
     isConstant.cpp
     isDecimalOverflow.cpp
     isFinite.cpp
+    isIPAddressContainedIn.cpp
     isInfinite.cpp
     isNaN.cpp
     isNotNull.cpp
@@ -373,6 +377,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    partitionId.cpp
     pi.cpp
     plus.cpp
     pointInEllipses.cpp
@@ -528,6 +533,7 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
+    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp

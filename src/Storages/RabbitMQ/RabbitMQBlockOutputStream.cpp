@@ -11,7 +11,7 @@ namespace DB
 RabbitMQBlockOutputStream::RabbitMQBlockOutputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const Context & context_)
+    ContextPtr context_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)

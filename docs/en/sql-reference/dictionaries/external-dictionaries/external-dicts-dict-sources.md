@@ -53,7 +53,7 @@ optional settings are available:
 or
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
@@ -69,6 +69,8 @@ Types of sources (`source_type`):
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
+    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
 
@@ -86,7 +88,7 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:

@@ -82,7 +82,7 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
-    ColumnAggregateFunction() {}
+    ColumnAggregateFunction() = default;
 
     /// Create a new column that has another column as a source.
     MutablePtr createView() const;
@@ -119,7 +119,7 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const;
+    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, ContextConstPtr context) const;
 
     size_t size() const override
     {

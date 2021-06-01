@@ -41,7 +41,7 @@ void NativeBlockOutputStream::flush()
 }
 
 
-void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
+static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
@@ -51,7 +51,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
-    settings.low_cardinality_max_dictionary_size = 0;
+    settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
     auto serialization = type.getDefaultSerialization();
 

@@ -13,20 +13,12 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-struct ComparePair final
-{
-    template <typename T1, typename T2>
-    bool operator()(const std::pair<T1, T2> & lhs, const std::pair<T1, T2> & rhs) const
-    {
-        return lhs.first == rhs.first ? lhs.second < rhs.second : lhs.first < rhs.first;
-    }
-};
 
 static constexpr auto max_events = 32;
 
@@ -35,7 +27,6 @@ struct AggregateFunctionWindowFunnelData
 {
     using TimestampEvent = std::pair<T, UInt8>;
     using TimestampEvents = PODArrayWithStackMemory<TimestampEvent, 64>;
-    using Comparator = ComparePair;
 
     bool sorted = true;
     TimestampEvents events_list;
@@ -69,7 +60,7 @@ struct AggregateFunctionWindowFunnelData
 
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
-            std::stable_sort(std::begin(events_list), std::end(events_list), Comparator{});
+            std::stable_sort(std::begin(events_list), std::end(events_list));
         else
         {
             const auto begin = std::begin(events_list);
@@ -77,12 +68,12 @@ struct AggregateFunctionWindowFunnelData
             const auto end = std::end(events_list);
 
             if (!sorted)
-                std::stable_sort(begin, middle, Comparator{});
+                std::stable_sort(begin, middle);
 
             if (!other.sorted)
-                std::stable_sort(middle, end, Comparator{});
+                std::stable_sort(middle, end);
 
-            std::inplace_merge(begin, middle, end, Comparator{});
+            std::inplace_merge(begin, middle, end);
         }
 
         sorted = true;
@@ -92,7 +83,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list), Comparator{});
+            std::stable_sort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -256,6 +247,8 @@ public:
     {
         return std::make_shared<DataTypeUInt8>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
