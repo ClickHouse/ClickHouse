@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 /**
  * Calculate total length of intervals without intersections. Each interval is the pair of numbers [begin, end];
- * Return UInt64 for integral types (UInt/Int*, DateTime) and return Float64 for Float*.
+ * Return UInt64 for integral types (UInt/Int*, Date/DateTime) and return Float64 for Float*.
  *
  * Implementation simply stores intervals sorted by beginning and sums lengths at final.
  */

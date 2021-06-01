@@ -33,15 +33,15 @@ namespace
         if (WhichDataType{args.begin()[0]}.idx != WhichDataType{args.begin()[1]}.idx)
             throw Exception(
                 "Illegal types " + args.begin()[0]->getName() + " and " + args.begin()[1]->getName() + " of arguments of aggregate function "
-                    + name + ", there two arguments should have same data types",
+                    + name + ", both arguments should have same data type",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         for (const auto & arg : args)
         {
-            if (!isNativeNumber(arg) && !isDate(arg) && !isDateTime(arg) && !isDateTime64(arg))
+            if (!isNativeNumber(arg) && !isDate(arg) && !isDateTime(arg))
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument of aggregate function " + name
-                        + ", must be native integral type, Date/DateTime/DateTime64 or Float",
+                        + ", must be native integral type, Date/DateTime or Float",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
@@ -52,7 +52,7 @@ namespace
 
         throw Exception(
             "Illegal type " + arguments.front().get()->getName() + " of argument of aggregate function " + name
-            + ", must be native integral type, Date/DateTime/DateTime64 or Float",
+            + ", must be native integral type, Date/DateTime or Float",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
