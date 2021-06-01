@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
+#include <sstream>
 
 namespace DB
 {

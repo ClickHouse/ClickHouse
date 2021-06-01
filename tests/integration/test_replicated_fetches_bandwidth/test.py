@@ -48,9 +48,9 @@ def test_limited_fetch_single_table(start_cluster):
             n2_fetch_speed.append(n2_in)
             time.sleep(0.5)
 
-        mean_speed = statistics.mean(n2_fetch_speed)
+        median_speed = statistics.median(n2_fetch_speed)
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-        assert mean_speed <= 15, "We exceeded max fetch speed for more than 10MB/s. Must be around 10 (+- 5), got " + str(mean_speed)
+        assert median_speed <= 15, "We exceeded max fetch speed for more than 10MB/s. Must be around 10 (+- 5), got " + str(median_speed)
 
     finally:
         for node in [node1, node2]:
@@ -61,7 +61,7 @@ def test_limited_send_single_table(start_cluster):
         for i, node in enumerate([node1, node2]):
             node.query(f"CREATE TABLE limited_send_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetch_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_sends_network_bandwidth=5242880")
 
-        node1.query("SYSTEM STOP REPLICATED SENDS limited_send_table")
+        node2.query("SYSTEM STOP FETCHES limited_send_table")
 
         for i in range(5):
             node1.query("INSERT INTO limited_send_table SELECT {}, '{}' FROM numbers(150)".format(i, get_random_string(104857)))
@@ -69,7 +69,7 @@ def test_limited_send_single_table(start_cluster):
         n1_net = NetThroughput(node1)
         n2_net = NetThroughput(node2)
 
-        node1.query("SYSTEM START REPLICATED SENDS limited_send_table")
+        node2.query("SYSTEM START FETCHES limited_send_table")
         n1_sends_speed = []
         for i in range(10):
             n1_in, n1_out = n1_net.measure_speed('megabytes')
@@ -79,9 +79,9 @@ def test_limited_send_single_table(start_cluster):
             n1_sends_speed.append(n1_out)
             time.sleep(0.5)
 
-        mean_speed = statistics.mean(n1_sends_speed)
+        median_speed = statistics.median(n1_sends_speed)
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-        assert mean_speed <= 10, "We exceeded max send speed for more than 5MB/s. Must be around 5 (+- 5), got " + str(mean_speed)
+        assert median_speed <= 10, "We exceeded max send speed for more than 5MB/s. Must be around 5 (+- 5), got " + str(median_speed)
 
     finally:
         for node in [node1, node2]:
@@ -106,7 +106,7 @@ def test_limited_fetches_for_server(start_cluster):
             node3.query(f"SYSTEM START FETCHES limited_fetches{j}")
 
         n3_fetches_speed = []
-        for i in range(10):
+        for i in range(5):
             n1_in, n1_out = n1_net.measure_speed('megabytes')
             n3_in, n3_out = n3_net.measure_speed('megabytes')
             print("[N1] input:", n1_in, 'MB/s', "output:", n1_out, "MB/s")
@@ -114,9 +114,9 @@ def test_limited_fetches_for_server(start_cluster):
             n3_fetches_speed.append(n3_in)
             time.sleep(0.5)
 
-        mean_speed = statistics.mean(n3_fetches_speed)
+        median_speed = statistics.median(n3_fetches_speed)
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-        assert mean_speed <= 15, "We exceeded max fetch speed for more than 15MB/s. Must be around 5 (+- 10), got " + str(mean_speed)
+        assert median_speed <= 15, "We exceeded max fetch speed for more than 15MB/s. Must be around 5 (+- 10), got " + str(median_speed)
 
     finally:
         for node in [node1, node3]:
@@ -131,7 +131,7 @@ def test_limited_sends_for_server(start_cluster):
                 node.query(f"CREATE TABLE limited_sends{j}(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_sends{j}', '{i}') ORDER BY tuple() PARTITION BY key")
 
         for j in range(5):
-            node3.query(f"SYSTEM STOP REPLICATED SENDS limited_sends{j}")
+            node1.query(f"SYSTEM STOP FETCHES limited_sends{j}")
             for i in range(5):
                 node3.query("INSERT INTO limited_sends{} SELECT {}, '{}' FROM numbers(50)".format(j, i, get_random_string(104857)))
 
@@ -139,10 +139,10 @@ def test_limited_sends_for_server(start_cluster):
         n3_net = NetThroughput(node3)
 
         for j in range(5):
-            node3.query(f"SYSTEM START REPLICATED SENDS limited_sends{j}")
+            node1.query(f"SYSTEM START FETCHES limited_sends{j}")
 
         n3_sends_speed = []
-        for i in range(10):
+        for i in range(5):
             n1_in, n1_out = n1_net.measure_speed('megabytes')
             n3_in, n3_out = n3_net.measure_speed('megabytes')
             print("[N1] input:", n1_in, 'MB/s', "output:", n1_out, "MB/s")
@@ -150,9 +150,9 @@ def test_limited_sends_for_server(start_cluster):
             n3_sends_speed.append(n3_out)
             time.sleep(0.5)
 
-        mean_speed = statistics.mean(n3_sends_speed)
+        median_speed = statistics.median(n3_sends_speed)
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-        assert mean_speed <= 20, "We exceeded max send speed for more than 20MB/s. Must be around 5 (+- 10), got " + str(mean_speed)
+        assert median_speed <= 20, "We exceeded max send speed for more than 20MB/s. Must be around 5 (+- 10), got " + str(median_speed)
 
     finally:
         for node in [node1, node3]:
