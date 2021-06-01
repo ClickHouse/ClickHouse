@@ -53,7 +53,7 @@ StorageMaterializedView::StorageMaterializedView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage(table_id_), WithContext(local_context->getGlobalContext())
+    : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -400,7 +400,12 @@ Strings StorageMaterializedView::getDataPaths() const
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
-    return has_inner_table ? getTargetTable()->getActionLock(type) : ActionLock{};
+    if (has_inner_table)
+    {
+        if (auto target_table = tryGetTargetTable())
+            return target_table->getActionLock(type);
+    }
+    return ActionLock{};
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

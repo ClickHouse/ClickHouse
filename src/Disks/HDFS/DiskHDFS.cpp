@@ -172,8 +172,8 @@ void registerDiskHDFS(DiskFactory & factory)
                       const String & config_prefix,
                       ContextConstPtr context_) -> DiskPtr
     {
-        Poco::File disk{context_->getPath() + "disks/" + name};
-        disk.createDirectories();
+        fs::path disk = fs::path(context_->getPath()) / "disks" / name;
+        fs::create_directories(disk);
 
         String uri{config.getString(config_prefix + ".endpoint")};
 

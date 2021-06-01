@@ -158,7 +158,7 @@ private:
     /// Nested table context is a copy of global context, but contains query context with defined
     /// ReplacingMergeTree storage in factoriesLog. This is needed to let database engine know
     /// whether to access nested table or a wrapper over nested (materialized table).
-    ContextPtr nested_context;
+    ContextMutablePtr nested_context;
 
     /// Save nested storageID to be able to fetch it. It is set once nested is created and will be
     /// updated only when nested is reloaded or renamed.

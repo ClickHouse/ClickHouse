@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage, WithContext
+class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage, WithMutableContext
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
