@@ -97,6 +97,7 @@ function fuzz
         NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
 
+    export CLICKHOUSE_WATCHDOG_ENABLE=0 # interferes with gdb
     clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
     server_pid=$!
     kill -0 $server_pid
@@ -110,11 +111,11 @@ thread apply all backtrace
 continue
 " > script.gdb
 
-    gdb -batch -command script.gdb -p "$(pidof clickhouse-server)" &
+    gdb -batch -command script.gdb -p $server_pid &
 
     # Check connectivity after we attach gdb, because it might cause the server
     # to freeze and the fuzzer will fail.
-    for _ in {1..10}
+    for _ in {1..60}
     do
         sleep 1
         if clickhouse-client --query "select 1"
