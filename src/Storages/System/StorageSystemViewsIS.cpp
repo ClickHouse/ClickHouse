@@ -3,9 +3,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Storages/System/StorageSystemISTables.h>
+#include <Storages/System/StorageSystemViewsIS.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageView.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/LiveView/StorageLiveView.h>
 #include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
@@ -26,36 +29,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int TABLE_IS_DROPPED;
+    extern const int VIEW_IS_DROPPED;
 }
-
-
-StorageSystemISTables::StorageSystemISTables(const StorageID & table_id_)
-    : IStorage(table_id_)
-{
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription(
-        {
-            {"table_catalog", std::make_shared<DataTypeString>()},
-            //{"table_schema", std::make_shared<DataTypeString>()},
-            {"table_name", std::make_shared<DataTypeString>()},
-            {"table_type", std::make_shared<DataTypeString>()},
-            //{"self_referencing_column_name", std::make_shared<DataTypeString>()},
-            //{"reference_generation", std::make_shared<DataTypeString>()},
-            //{"user_defined_type_catalog", std::make_shared<DataTypeString>()},
-            //{"user_defined_type_schema", std::make_shared<DataTypeString>()},
-            //{"user_defined_type_name", std::make_shared<DataTypeString>()},
-            {"is_insertable_into", std::make_shared<DataTypeUInt8>()},
-            {"is_typed", std::make_shared<DataTypeUInt8>()},
-            {"commit_action", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())}
-        }));
-    setInMemoryMetadata(storage_metadata);
-}
-
 
 static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, const Context & context)
 {
-    assert(false);
     MutableColumnPtr column = ColumnString::create();
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
@@ -67,7 +45,7 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, const 
         column->insert(database_name);
     }
 
-    Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "table_catalog") };
+    Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
     return block.getByPosition(0).column;
 }
@@ -76,11 +54,10 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, const 
 /// Otherwise it will require table initialization for Lazy database.
 static bool needLockStructure(const DatabasePtr & database, const Block & header)
 {
-    assert(false);
     if (database->getEngineName() != "Lazy")
         return true;
 
-    static const std::set<std::string> columns_without_lock = { "table_catalog", "table_name" };
+    static const std::set<std::string> columns_without_lock = { "database", "name", "uuid", "metadata_modification_time" };
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
         if (columns_without_lock.find(column.name) == columns_without_lock.end())
@@ -89,10 +66,35 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockSource : public SourceWithProgress
+StorageSystemViewsIS::StorageSystemViewsIS(const StorageID & table_id_)
+    : IStorage(table_id_)
+{
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(ColumnsDescription(
+    {
+        {"table_catalog",                   std::make_shared<DataTypeString>()},
+        {"table_name",                      std::make_shared<DataTypeString>()},
+        {"view_definition",                 std::make_shared<DataTypeString>()},
+        {"check_option",                    std::make_shared<DataTypeString>()},
+        {"is_updatable",                    std::make_shared<DataTypeUInt8>()},
+        {"is_insertable",                   std::make_shared<DataTypeUInt8>()},
+        {"is_temporary",                    std::make_shared<DataTypeUInt8>()},
+        {"is_trigger_updatable",            std::make_shared<DataTypeUInt8>()},
+        {"is_trigger_deletable",            std::make_shared<DataTypeUInt8>()},
+        {"is_trigger_insertable_into",      std::make_shared<DataTypeUInt8>()},
+    }));
+    setInMemoryMetadata(storage_metadata);
+}
+
+namespace
+{
+    using Storages = std::map<std::pair<std::string, std::string>, StoragePtr>;
+}
+
+class ViewsBlockSourceIS : public SourceWithProgress
 {
 public:
-    TablesBlockSource(
+    ViewsBlockSourceIS(
         std::vector<UInt8> columns_mask_,
         Block header,
         UInt64 max_block_size_,
@@ -104,12 +106,11 @@ public:
         , databases(std::move(databases_))
         , context(context_) {}
 
-    String getName() const override { return "ISTables"; }
+    String getName() const override { return "ViewsIS"; }
 
 protected:
     Chunk generate() override
     {
-        assert(false);
         if (done)
             return {};
 
@@ -148,6 +149,10 @@ protected:
 
                     for (auto & table : external_tables)
                     {
+                        if (!table.second->isView()) { // ???
+                            continue;
+                        }
+                        
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -157,29 +162,41 @@ protected:
 
                         // table_name
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(table.second->getName());
+                            res_columns[res_index++]->insertDefault();
 
-                        // table_type
+                        // view_definition
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert("LOCAL TEMPORARY");
+                            res_columns[res_index++]->insertDefault();
 
-                        // is_insertable_into
+                        // check_option
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // is_updatable
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // is_insertable
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // is_temporary
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(1u);
 
-                        // is_typed
+                        // is_trigger_updatable
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(0u);
+                            res_columns[res_index++]->insertDefault();
 
-                        // commit_action
+                        // is_trigger_deletable
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert("PRESERVE");
+                            res_columns[res_index++]->insertDefault();
+
+                        // is_trigger_insertable_into
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
                     }
                 }
-
-                UInt64 num_rows = res_columns.at(0)->size();
-                done = true;
-                return Chunk(std::move(res_columns), num_rows);
             }
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
@@ -212,45 +229,95 @@ protected:
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                        if (e.code() == ErrorCodes::VIEW_IS_DROPPED)
                             continue;
                         throw;
                     }
                 }
 
-                ++rows_count;
+                auto metadata_snapshot = table->getInMemoryMetadataPtr();
+                std::string view_definition = metadata_snapshot->getSelectQuery().select_query->dumpTree();
+                bool is_updatable;
+                bool is_insertable;
+                bool is_trigger_updatable;
+                bool is_trigger_deletable;
+                bool is_trigger_insertable_into;
+
+                if (std::dynamic_pointer_cast<StorageView>(table)) {
+                    is_updatable = false;
+                    is_insertable = false;
+                    is_trigger_updatable = false;
+                    is_trigger_deletable = false;
+                    is_trigger_insertable_into = false;
+                }
+                else if (std::dynamic_pointer_cast<StorageMaterializedView>(table)) 
+                {
+                    is_updatable = true;
+                    is_insertable = true;
+                    is_trigger_updatable = false;
+                    is_trigger_deletable = false;
+                    is_trigger_insertable_into = true;
+                }
+                else if (std::dynamic_pointer_cast<StorageLiveView>(table)) 
+                {
+                    is_updatable = true;
+                    is_insertable = true;
+                    is_trigger_updatable = true;
+                    is_trigger_deletable = true;
+                    is_trigger_insertable_into = true;
+                }
+                
 
                 size_t src_index = 0;
                 size_t res_index = 0;
 
+                // table_catalog
                 if (columns_mask[src_index++])
-                    //res_columns[res_index++]->insert(database_name);
-                    res_columns[res_index++]->insert("system");
+                    res_columns[res_index++]->insert(database_name);
 
+                // table_name
                 if (columns_mask[src_index++])
-                    //res_columns[res_index++]->insert(table_name);
-                    res_columns[res_index++]->insert("Hi!");
+                    res_columns[res_index++]->insert(table_name);
 
+                // view_definition
                 if (columns_mask[src_index++])
-                    //res_columns[res_index++]->insert("BASE TABLE");
-                    res_columns[res_index++]->insert("Hi!");
+                    res_columns[res_index++]->insert(view_definition);
 
+                // check_option
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(1u);
+                    res_columns[res_index++]->insert(false);
 
+                // is_updatable
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(is_updatable);
+
+                // is_insertable
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(is_insertable);
+
+                // is_temporary
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(0u);
 
+                // is_trigger_updatable
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insertDefault();
+                    res_columns[res_index++]->insert(is_trigger_updatable);
 
+                // is_trigger_deletable
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(is_trigger_deletable);
 
+                // is_trigger_insertable_into
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(is_trigger_insertable_into);
             }
+
         }
 
         UInt64 num_rows = res_columns.at(0)->size();
         return Chunk(std::move(res_columns), num_rows);
     }
+
 private:
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
@@ -263,8 +330,7 @@ private:
     std::string database_name;
 };
 
-
-Pipe StorageSystemISTables::read(
+Pipe StorageSystemViewsIS::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
@@ -273,7 +339,6 @@ Pipe StorageSystemISTables::read(
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    assert(false);
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     /// Create a mask of what columns are needed in the result.
@@ -295,7 +360,7 @@ Pipe StorageSystemISTables::read(
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
 
-    return Pipe(std::make_shared<TablesBlockSource>(
+    return Pipe(std::make_shared<ViewsBlockSourceIS>(
         std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
 }
 
