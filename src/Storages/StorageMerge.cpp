@@ -332,7 +332,7 @@ Pipe StorageMerge::createSources(
     const Block & header,
     const StorageWithLockAndName & storage_with_lock,
     Names & real_column_names,
-    ContextPtr modified_context,
+    ContextMutablePtr modified_context,
     size_t streams_num,
     bool has_table_virtual_column,
     bool concat_streams)
@@ -415,7 +415,7 @@ Pipe StorageMerge::createSources(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
                 std::move(adding_column_dag),
-                ExpressionActionsSettings::fromContext(modified_context));
+                ExpressionActionsSettings::fromContext(modified_context, CompileExpressions::yes));
 
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
@@ -559,7 +559,7 @@ void StorageMerge::convertingSourceStream(
             pipe.getHeader().getColumnsWithTypeAndName(),
             header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
-    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context));
+    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
     pipe.addSimpleTransform([&](const Block & stream_header)
     {
