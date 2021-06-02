@@ -3,12 +3,14 @@
 #if USE_ORC
 
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
 namespace arrow::adapters::orc { class ORCFileReader; }
 
 namespace DB
 {
+
+class ArrowColumnToCHColumn;
+
 class ORCBlockInputFormat : public IInputFormat
 {
 public:
@@ -27,7 +29,7 @@ private:
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
 
-    ArrowColumnToCHColumn arrow_column_to_ch_column;
+    std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
 
     int stripe_total = 0;
 

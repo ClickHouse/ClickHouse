@@ -18,7 +18,11 @@ namespace ErrorCodes
 }
 
 ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), stream{stream_}, format_settings{format_settings_}, arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
+    : IOutputFormat(header_, out_)
+    , stream{stream_}
+    , format_settings{format_settings_}
+    , arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
+    , ch_column_to_arrow_column(std::make_unique<CHColumnToArrowColumn>())
 {
 }
 
@@ -28,7 +32,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    ch_column_to_arrow_column.chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
 
     if (!writer)
         prepareWriter(arrow_table->schema());
