@@ -10,7 +10,7 @@ namespace DB
 class ReadBufferFromFileDecorator : public ReadBufferFromFileBase
 {
 public:
-    explicit ReadBufferFromFileDecorator(std::unique_ptr<ReadBufferFromFileBase> impl_);
+    explicit ReadBufferFromFileDecorator(std::unique_ptr<SeekableReadBuffer> impl_);
 
     std::string getFileName() const override;
 
@@ -21,7 +21,7 @@ public:
     bool nextImpl() override;
 
 protected:
-    std::unique_ptr<ReadBufferFromFileBase> impl;
+    std::unique_ptr<SeekableReadBuffer> impl;
 };
 
 }
