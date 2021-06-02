@@ -63,7 +63,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ParserKeyword("IF NOT EXISTS").ignore(pos, expected))
         if_not_exists = true;
 
-    if (!ParserCompoundIdentifier(false).parse(pos, table, expected))
+    if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
         return false;
 
     if (ParserKeyword("LIKE").ignore(pos, expected))
