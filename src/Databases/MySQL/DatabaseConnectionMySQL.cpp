@@ -24,10 +24,10 @@
 #    include <Common/escapeForFileName.h>
 #    include <Common/parseAddress.h>
 #    include <Common/setThreadName.h>
+#    include <filesystem>
+#    include <Common/filesystemHelpers.h>
 
-#    include <Poco/DirectoryIterator.h>
-#    include <Poco/File.h>
-
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -326,7 +326,7 @@ void DatabaseConnectionMySQL::shutdown()
 
 void DatabaseConnectionMySQL::drop(ContextPtr /*context*/)
 {
-    Poco::File(getMetadataPath()).remove(true);
+    fs::remove_all(getMetadataPath());
 }
 
 void DatabaseConnectionMySQL::cleanOutdatedTables()
@@ -372,10 +372,10 @@ void DatabaseConnectionMySQL::attachTable(const String & table_name, const Stora
     local_tables_cache[table_name].second = storage;
 
     remove_or_detach_tables.erase(table_name);
-    Poco::File remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
+    fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
-    if (remove_flag.exists())
-        remove_flag.remove();
+    if (fs::exists(remove_flag))
+        fs::remove(remove_flag);
 }
 
 StoragePtr DatabaseConnectionMySQL::detachTable(const String & table_name)
@@ -399,17 +399,17 @@ String DatabaseConnectionMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseConnectionMySQL::loadStoredObjects(ContextPtr, bool, bool /*force_attach*/)
+void DatabaseConnectionMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
 {
 
     std::lock_guard<std::mutex> lock{mutex};
-    Poco::DirectoryIterator iterator(getMetadataPath());
+    fs::directory_iterator iter(getMetadataPath());
 
-    for (Poco::DirectoryIterator end; iterator != end; ++iterator)
+    for (fs::directory_iterator end; iter != end; ++iter)
     {
-        if (iterator->isFile() && endsWith(iterator.name(), suffix))
+        if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
         {
-            const auto & filename = iterator.name();
+            const auto & filename = iter->path().filename().string();
             const auto & table_name = unescapeForFileName(filename.substr(0, filename.size() - strlen(suffix)));
             remove_or_detach_tables.emplace(table_name);
         }
@@ -420,27 +420,25 @@ void DatabaseConnectionMySQL::detachTablePermanently(ContextPtr, const String & 
 {
     std::lock_guard<std::mutex> lock{mutex};
 
-    Poco::File remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
+    fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
     if (remove_or_detach_tables.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",
-            ErrorCodes::TABLE_IS_DROPPED);
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
-    if (remove_flag.exists())
-        throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(database_name) +
-            "." + backQuoteIfNeed(table_name) + " does not exists remove tables, it is bug.", ErrorCodes::LOGICAL_ERROR);
+    if (fs::exists(remove_flag))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exists remove tables, it is bug.",
+                        backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     auto table_iter = local_tables_cache.find(table_name);
     if (table_iter == local_tables_cache.end())
-        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
-            ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     remove_or_detach_tables.emplace(table_name);
 
     try
     {
         table_iter->second.second->drop();
-        remove_flag.createFile();
+        FS::createFile(remove_flag);
     }
     catch (...)
     {

@@ -113,7 +113,7 @@ public:
     /// Do not allow to change the table while the processors of pipe are alive.
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
-    void addInterpreterContext(std::shared_ptr<Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
+    void addInterpreterContext(std::shared_ptr<const Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
     /// For queries with nested interpreters (i.e. StorageDistributed)
@@ -132,7 +132,7 @@ private:
         /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
         /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
         /// because QueryPipeline is alive until query is finished.
-        std::vector<std::shared_ptr<Context>> interpreter_context;
+        std::vector<std::shared_ptr<const Context>> interpreter_context;
         std::vector<StoragePtr> storage_holders;
         std::vector<TableLockHolder> table_locks;
         std::vector<std::unique_ptr<QueryPlan>> query_plans;
