@@ -123,6 +123,19 @@ The `Insert` command creates one or more blocks (parts). When inserting into Rep
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
+## non_replicated_deduplication_window {#non-replicated-deduplication-window}
+
+The number of the most recently inserted blocks for which non-replicated MergeTree table stores hash sums to check for duplicates.
+
+Possible values:
+
+-   Any positive integer.
+-   0 (disable deduplication).
+
+Default value: 0.
+
+A deduplication mechanism is used, similar to replicated tables (see [replicated_deduplication_window](#replicated-deduplication-window) setting). The hash sums of the created parts are written to a local file on a disk.
+
 ## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
 
 The number of seconds after which the hash sums of the inserted blocks are removed from Zookeeper.
@@ -134,15 +147,6 @@ Possible values:
 Default value: 604800 (1 week).
 
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
-
-## non_replicated_deduplication_window {#non-replicated-deduplication-window }
-
-The number of most recently inserted blocks for which should be stores hash sums to check for duplicates for non-replicated MergeTree tables.
-
-Possible values:
-
--   Any positive integer.
--   0 (disable deduplication).
 
 ## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
 
