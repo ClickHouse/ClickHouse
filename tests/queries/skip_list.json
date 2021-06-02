@@ -109,6 +109,7 @@
         "01153_attach_mv_uuid"
     ],
     "database-replicated": [
+        /// Unclassified
         "memory_tracking",
         "memory_usage",
         "live_view",
@@ -167,8 +168,9 @@
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
         "00140_rename",
-        "01783_http_chunk_size",
-        "01710_projection_fetch"
+        /// Requires investigation
+        "00953_zookeeper_suetin_deduplication_bug",
+        "01783_http_chunk_size"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
