@@ -21,6 +21,8 @@
 #    include <Common/config_version.h>
 #endif
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
@@ -36,7 +38,7 @@ namespace ErrorCodes
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-void handle_error_code([[maybe_unused]] const std::string & msg, const std::string & stacktrace, int code, bool remote)
+void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -47,20 +49,21 @@ void handle_error_code([[maybe_unused]] const std::string & msg, const std::stri
         abort();
     }
 #endif
-    ErrorCodes::increment(code, remote, msg, stacktrace);
+
+    ErrorCodes::increment(code, remote, msg, trace);
 }
 
 Exception::Exception(const std::string & msg, int code, bool remote_)
     : Poco::Exception(msg, code)
     , remote(remote_)
 {
-    handle_error_code(msg, getStackTraceString(), code, remote);
+    handle_error_code(msg, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(const std::string & msg, const Exception & nested, int code)
     : Poco::Exception(msg, nested, code)
 {
-    handle_error_code(msg, getStackTraceString(), code, remote);
+    handle_error_code(msg, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -101,6 +104,31 @@ std::string Exception::getStackTraceString() const
 #endif
 }
 
+Exception::FramePointers Exception::getStackFramePointers() const
+{
+    FramePointers frame_pointers;
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    {
+        frame_pointers.resize(get_stack_trace_size());
+        for (size_t i = 0; i < frame_pointers.size(); ++i)
+        {
+            frame_pointers[i] = get_stack_trace_frames()[i];
+        }
+    }
+#else
+    {
+        size_t stack_trace_size = trace.getSize();
+        size_t stack_trace_offset = trace.getOffset();
+        frame_pointers.reserve(stack_trace_size - stack_trace_offset);
+        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
+        {
+            frame_pointers.push_back(trace.getFramePointers()[i]);
+        }
+    }
+#endif
+    return frame_pointers;
+}
+
 
 void throwFromErrno(const std::string & s, int code, int the_errno)
 {
@@ -112,20 +140,8 @@ void throwFromErrnoWithPath(const std::string & s, const std::string & path, int
     throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
 }
 
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
+static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
 {
-    tryLogCurrentException(&Poco::Logger::get(log_name), start_of_message);
-}
-
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
-{
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
-    ///
-    /// And in this case the exception will not be logged, so let's block the
-    /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker;
-
     try
     {
         if (start_of_message.empty())
@@ -138,7 +154,32 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     }
 }
 
-static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
+{
+    /// Under high memory pressure, any new allocation will definitelly lead
+    /// to MEMORY_LIMIT_EXCEEDED exception.
+    ///
+    /// And in this case the exception will not be logged, so let's block the
+    /// MemoryTracker until the exception will be logged.
+    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+    /// Poco::Logger::get can allocate memory too
+    tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
+}
+
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
+{
+    /// Under high memory pressure, any new allocation will definitelly lead
+    /// to MEMORY_LIMIT_EXCEEDED exception.
+    ///
+    /// And in this case the exception will not be logged, so let's block the
+    /// MemoryTracker until the exception will be logged.
+    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+    tryLogCurrentExceptionImpl(logger, start_of_message);
+}
+
+static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 {
     path = std::filesystem::absolute(path);
     /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
@@ -225,22 +266,12 @@ static std::string getExtraExceptionInfo(const std::exception & e)
     String msg;
     try
     {
-        if (const auto * file_exception = dynamic_cast<const Poco::FileException *>(&e))
+        if (const auto * file_exception = dynamic_cast<const fs::filesystem_error *>(&e))
         {
-            if (file_exception->code() == ENOSPC)
-            {
-                /// See Poco::FileImpl::handleLastErrorImpl(...)
-                constexpr const char * expected_error_message = "no space left on device: ";
-                if (startsWith(file_exception->message(), expected_error_message))
-                {
-                    String path = file_exception->message().substr(strlen(expected_error_message));
-                    getNoSpaceLeftInfoMessage(path, msg);
-                }
-                else
-                {
-                    msg += "\nCannot print extra info for Poco::Exception";
-                }
-            }
+            if (file_exception->code() == std::errc::no_space_on_device)
+                getNoSpaceLeftInfoMessage(file_exception->path1(), msg);
+            else
+                msg += "\nCannot print extra info for Poco::Exception";
         }
         else if (const auto * errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
         {

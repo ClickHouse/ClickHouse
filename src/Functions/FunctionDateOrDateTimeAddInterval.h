@@ -7,7 +7,7 @@
 
 #include <Columns/ColumnsNumber.h>
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -40,7 +40,8 @@ struct AddSecondsImpl
 {
     static constexpr auto name = "addSeconds";
 
-    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64> execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
     {
         return {t.whole + delta, t.fractional};
     }
@@ -60,7 +61,8 @@ struct AddMinutesImpl
 {
     static constexpr auto name = "addMinutes";
 
-    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64> execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
     {
         return {t.whole + delta * 60, t.fractional};
     }
@@ -80,7 +82,8 @@ struct AddHoursImpl
 {
     static constexpr auto name = "addHours";
 
-    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64> execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl &)
     {
         return {t.whole + delta * 3600, t.fractional};
     }
@@ -99,7 +102,8 @@ struct AddDaysImpl
 {
     static constexpr auto name = "addDays";
 
-    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64> execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return {time_zone.addDays(t.whole, delta), t.fractional};
     }
@@ -119,7 +123,8 @@ struct AddWeeksImpl
 {
     static constexpr auto name = "addWeeks";
 
-    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64> execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return {time_zone.addWeeks(t.whole, delta), t.fractional};
     }
@@ -139,7 +144,8 @@ struct AddMonthsImpl
 {
     static constexpr auto name = "addMonths";
 
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return {time_zone.addMonths(t.whole, delta), t.fractional};
     }
@@ -159,7 +165,8 @@ struct AddQuartersImpl
 {
     static constexpr auto name = "addQuarters";
 
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return {time_zone.addQuarters(t.whole, delta), t.fractional};
     }
@@ -179,7 +186,8 @@ struct AddYearsImpl
 {
     static constexpr auto name = "addYears";
 
-    static inline DecimalUtils::DecimalComponents<DateTime64> execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline DecimalUtils::DecimalComponents<DateTime64>
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return {time_zone.addYears(t.whole, delta), t.fractional};
     }
@@ -265,14 +273,16 @@ struct Adder
 
 private:
     template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
-    NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(
+        const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(vec_from[i], delta.getData()[i], time_zone);
     }
 
     template <typename FromType, typename ToVectorType, typename DeltaColumnType>
-    NO_INLINE NO_SANITIZE_UNDEFINED void constantVector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    NO_INLINE NO_SANITIZE_UNDEFINED void constantVector(
+        const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(from, delta.getData()[i], time_zone);
@@ -342,7 +352,7 @@ class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); }
 
     String getName() const override
     {

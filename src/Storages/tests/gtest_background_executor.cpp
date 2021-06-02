@@ -17,9 +17,9 @@ static std::atomic<Int64> counter{0};
 class TestJobExecutor : public IBackgroundJobExecutor
 {
 public:
-    explicit TestJobExecutor(Context & context)
+    explicit TestJobExecutor(ContextPtr local_context)
         :IBackgroundJobExecutor(
-            context,
+            local_context,
             BackgroundTaskSchedulingSettings{},
             {PoolConfig{PoolType::MERGE_MUTATE, 4, CurrentMetrics::BackgroundPoolTask}})
         {}
@@ -43,7 +43,7 @@ TEST(BackgroundExecutor, TestMetric)
     const auto & context_holder = getContext();
     std::vector<TestExecutorPtr> executors;
     for (size_t i = 0; i < 100; ++i)
-        executors.emplace_back(std::make_unique<TestJobExecutor>(const_cast<Context &>(context_holder.context)));
+        executors.emplace_back(std::make_unique<TestJobExecutor>(context_holder.context));
 
     for (size_t i = 0; i < 100; ++i)
         executors[i]->start();

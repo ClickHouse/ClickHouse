@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(if(rand() % 2, toDateTime('2019-02-04 01:24:31'), toDate('2019-02-04')))</query>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(multiIf(rand() % 2, toDateTime('2019-02-04 01:24:31'), toDate('2019-02-04')))</query>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(if(rand() % 2, [toDateTime('2019-02-04 01:24:31')], [toDate('2019-02-04')]))</query>

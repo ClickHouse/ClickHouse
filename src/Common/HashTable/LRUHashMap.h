@@ -220,6 +220,12 @@ public:
         return find(key) != nullptr;
     }
 
+    Value & ALWAYS_INLINE operator[](const Key & key)
+    {
+        auto [it, _] = emplace(key);
+        return it->getMapped();
+    }
+
     bool ALWAYS_INLINE erase(const Key & key)
     {
         auto key_hash = Base::hash(key);
@@ -271,13 +277,13 @@ private:
 };
 
 template <typename Key, typename Mapped>
-struct DefaultCellDisposer
+struct DefaultLRUHashMapCellDisposer
 {
     void operator()(const Key &, const Mapped &) const {}
 };
 
-template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
+template <typename Key, typename Value, typename Disposer = DefaultLRUHashMapCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
 using LRUHashMap = LRUHashMapImpl<Key, Value, Disposer, Hash, false>;
 
-template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
+template <typename Key, typename Value, typename Disposer = DefaultLRUHashMapCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
 using LRUHashMapWithSavedHash = LRUHashMapImpl<Key, Value, Disposer, Hash, true>;

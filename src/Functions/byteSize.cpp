@@ -2,7 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 
 
 namespace DB
@@ -17,7 +17,7 @@ class FunctionByteSize : public IFunction
 {
 public:
     static constexpr auto name = "byteSize";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionByteSize>();
     }

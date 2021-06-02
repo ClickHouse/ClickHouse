@@ -7,7 +7,7 @@ toc_title: "Функции поиска в строках"
 
 Во всех функциях, поиск регистрозависимый по умолчанию. Существуют варианты функций для регистронезависимого поиска.
 
-## position(haystack, needle) {#position}
+## position(haystack, needle), locate(haystack, needle) {#position}
 
 Поиск подстроки `needle` в строке `haystack`.
 
@@ -21,7 +21,14 @@ toc_title: "Функции поиска в строках"
 position(haystack, needle[, start_pos])
 ```
 
+``` sql
+position(needle IN haystack)
+``` 
+
 Алиас: `locate(haystack, needle[, start_pos])`.
+
+!!! note "Примечание"
+    Синтаксис `position(needle IN haystack)` обеспечивает совместимость с SQL, функция работает так же, как `position(haystack, needle)`.
 
 **Аргументы**
 
@@ -68,6 +75,36 @@ SELECT position('Привет, мир!', '!');
 ┌─position('Привет, мир!', '!')─┐
 │                            21 │
 └───────────────────────────────┘
+```
+
+**Примеры работы функции с синтаксисом POSITION(needle IN haystack)**
+
+Запрос:
+
+```sql
+SELECT 1 = position('абв' IN 'абв');
+```
+
+Результат:
+
+```text
+┌─equals(1, position('абв', 'абв'))─┐
+│                                 1 │
+└───────────────────────────────────┘
+```
+
+Запрос: 
+
+```sql
+SELECT 0 = position('абв' IN '');
+```
+
+Результат:
+
+```text
+┌─equals(0, position('', 'абв'))─┐
+│                              1 │
+└────────────────────────────────┘
 ```
 
 ## positionCaseInsensitive {#positioncaseinsensitive}
@@ -758,4 +795,3 @@ SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
 │                                                          3 │
 └────────────────────────────────────────────────────────────┘
 ```
-

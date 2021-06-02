@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const Context & context)
+void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
@@ -58,26 +58,28 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const C
 
     structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     if (structure.empty())
-        throw Exception("Table structure is empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table structure is empty for table function '{}'",
+            ast_function->formatForErrorMessage());
 
     if (args.size() == 4)
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name, compression_method);
+    StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method);
     storage->startup();
     return storage;
 }
 
-ColumnsDescription ITableFunctionFileLike::getActualTableStructure(const Context & context) const
+ColumnsDescription ITableFunctionFileLike::getActualTableStructure(ContextPtr context) const
 {
     if (structure.empty())
     {
         assert(getName() == "file" && format == "Distributed");
-        Strings paths = StorageFile::getPathsList(filename, context.getUserFilesPath(), context);
+        Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context);
         if (paths.empty())
             throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
         auto read_stream = StorageDistributedDirectoryMonitor::createStreamFromFile(paths[0]);

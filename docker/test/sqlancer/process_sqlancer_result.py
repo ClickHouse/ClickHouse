@@ -26,6 +26,7 @@ def process_result(result_folder):
             with open(err_path, 'r') as f:
                 if 'AssertionError' in f.read():
                     summary.append((test, "FAIL"))
+                    status = 'failure'
                 else:
                     summary.append((test, "OK"))
 

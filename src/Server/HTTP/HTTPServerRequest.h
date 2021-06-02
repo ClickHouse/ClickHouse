@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPRequest.h>
 
@@ -8,14 +9,13 @@
 namespace DB
 {
 
-class Context;
 class HTTPServerResponse;
 class ReadBufferFromPocoSocket;
 
 class HTTPServerRequest : public HTTPRequest
 {
 public:
-    HTTPServerRequest(const Context & context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session);
+    HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session);
 
     /// FIXME: it's a little bit inconvenient interface. The rationale is that all other ReadBuffer's wrap each other
     ///        via unique_ptr - but we can't inherit HTTPServerRequest from ReadBuffer and pass it around,
@@ -43,10 +43,11 @@ private:
         MAX_NAME_LENGTH = 256,
         MAX_VALUE_LENGTH = 8192,
         MAX_METHOD_LENGTH = 32,
-        MAX_URI_LENGTH = 16384,
         MAX_VERSION_LENGTH = 8,
         MAX_FIELDS_NUMBER = 100,
     };
+
+    const size_t max_uri_size;
 
     std::unique_ptr<ReadBuffer> stream;
     Poco::Net::SocketImpl * socket;

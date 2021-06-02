@@ -1,6 +1,7 @@
 import pytest
 import time
 import psycopg2
+from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -9,7 +10,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=[
     'configs/config.xml',
     'configs/dictionaries/postgres_dict.xml',
-    'configs/log_conf.xml'], with_postgres=True)
+    'configs/log_conf.xml'], with_postgres=True, with_postgres_cluster=True)
 
 postgres_dict_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
@@ -62,7 +63,7 @@ def started_cluster():
         print("postgres1 connected")
         create_postgres_db(postgres_conn, 'clickhouse')
 
-        postgres_conn = get_postgres_conn(port=5441)
+        postgres_conn = get_postgres_conn(port=5421)
         print("postgres2 connected")
         create_postgres_db(postgres_conn, 'clickhouse')
 
@@ -80,7 +81,7 @@ def test_load_dictionaries(started_cluster):
     create_dict(table_name)
     dict_name = 'dict0'
 
-    node1.query("SYSTEM RELOAD DICTIONARIES")
+    node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
     assert node1.query("SELECT count() FROM `test`.`dict_table_{}`".format(table_name)).rstrip() == '10000'
     assert node1.query("SELECT dictGetUInt32('{}', 'id', toUInt64(0))".format(dict_name)) == '0\n'
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(9999))".format(dict_name)) == '9999\n'
@@ -131,7 +132,7 @@ def test_invalidate_query(started_cluster):
 def test_dictionary_with_replicas(started_cluster):
     conn1 = get_postgres_conn(port=5432, database=True)
     cursor1 = conn1.cursor()
-    conn2 = get_postgres_conn(port=5441, database=True)
+    conn2 = get_postgres_conn(port=5421, database=True)
     cursor2 = conn2.cursor()
 
     create_postgres_table(cursor1, 'test1')
@@ -144,7 +145,7 @@ def test_dictionary_with_replicas(started_cluster):
     result = node1.query("SELECT * FROM `test`.`dict_table_test1` ORDER BY id")
 
     # priority 0 - non running port
-    assert node1.contains_in_log('Unable to setup connection to postgres2:5433*')
+    assert node1.contains_in_log('PostgreSQLConnectionPool: Connection error*')
 
     # priority 1 - postgres2, table contains rows with values 100-200
     # priority 2 - postgres1, table contains rows with values 0-100
@@ -156,6 +157,35 @@ def test_dictionary_with_replicas(started_cluster):
 
     node1.query("DROP TABLE IF EXISTS test1")
     node1.query("DROP DICTIONARY IF EXISTS dict1")
+
+
+def test_postgres_scema(started_cluster):
+    conn = get_postgres_conn(port=5432, database=True)
+    cursor = conn.cursor()
+
+    cursor.execute('CREATE SCHEMA test_schema')
+    cursor.execute('CREATE TABLE test_schema.test_table (id integer, value integer)')
+    cursor.execute('INSERT INTO test_schema.test_table SELECT i, i FROM generate_series(0, 99) as t(i)')
+
+    node1.query('''
+    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
+    PRIMARY KEY id
+    SOURCE(POSTGRESQL(
+        port 5432
+        host 'postgres1'
+        user  'postgres'
+        password 'mysecretpassword'
+        db 'clickhouse'
+        table 'test_schema.test_table'))
+        LIFETIME(MIN 1 MAX 2)
+        LAYOUT(HASHED());
+    ''')
+
+    result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(1))")
+    assert(int(result.strip()) == 1)
+    result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
+    assert(int(result.strip()) == 99)
+    node1.query("DROP DICTIONARY IF EXISTS postgres_dict")
 
 
 if __name__ == '__main__':

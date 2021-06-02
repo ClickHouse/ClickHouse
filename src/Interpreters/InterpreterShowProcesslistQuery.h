@@ -7,16 +7,13 @@
 namespace DB
 {
 
-class Context;
-
-
 /** Return list of currently executing queries.
   */
-class InterpreterShowProcesslistQuery : public IInterpreter
+class InterpreterShowProcesslistQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterShowProcesslistQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_), context(context_) {}
+    InterpreterShowProcesslistQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+        : WithMutableContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
@@ -27,8 +24,6 @@ public:
 
 private:
     ASTPtr query_ptr;
-    Context & context;
 };
-
 
 }

@@ -1,11 +1,11 @@
 ---
-toc_priority: 8
+toc_priority: 11
 toc_title: PostgreSQL
 ---
 
-# PosgtreSQL {#postgresql}
+# PostgreSQL {#postgresql}
 
-The PostgreSQL engine allows you to perform `SELECT` queries on data that is stored on a remote PostgreSQL server.
+The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data that is stored on a remote PostgreSQL server.
 
 ## Creating a Table {#creating-a-table}
 
@@ -15,7 +15,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password');
+) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
 
 See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
@@ -29,25 +29,51 @@ The table structure can differ from the original PostgreSQL table structure:
 **Engine Parameters**
 
 -   `host:port` — PostgreSQL server address.
-
 -   `database` — Remote database name.
-
 -   `table` — Remote table name.
-
 -   `user` — PostgreSQL user.
-
 -   `password` — User password.
+-   `schema` — Non-default table schema. Optional.
 
-SELECT Queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
+## Implementation Details {#implementation-details}
 
-Simple `WHERE` clauses such as `=, !=, >, >=, <, <=, IN` are executed on the PostgreSQL server.
+`SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
+
+Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
 
-INSERT Queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
+`INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 
-PostgreSQL Array types converts into ClickHouse arrays.
-Be careful in PostgreSQL an array data created like a type_name[] may contain multi-dimensional arrays of different dimensions in different table rows in same column, but in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
+PostgreSQL `Array` types are converted into ClickHouse arrays.
+
+!!! info "Note"
+    Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
+
+Replicas priority for PostgreSQL dictionary source is supported. The bigger the number in map, the less the priority. The highest priority is `0`. 
+
+In the example below replica `example01-1` has the highest priority:
+
+```xml
+<postgresql>
+    <port>5432</port>
+    <user>clickhouse</user>
+    <password>qwerty</password>
+    <replica>
+        <host>example01-1</host>
+        <priority>1</priority>
+    </replica>
+    <replica>
+        <host>example01-2</host>
+        <priority>2</priority>
+    </replica>
+    <db>db_name</db>
+    <table>table_name</table>
+    <where>id=10</where>
+    <invalidate_query>SQL_QUERY</invalidate_query>
+</postgresql>
+</source>
+```
 
 ## Usage Example {#usage-example}
 
@@ -64,14 +90,14 @@ PRIMARY KEY (int_id));
 
 CREATE TABLE
 
-postgres=# insert into test (int_id, str, "float") VALUES (1,'test',2);
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
-postgresql> select * from test;
- int_id | int_nullable | float | str  | float_nullable
---------+--------------+-------+------+----------------
-      1 |              |     2 | test |
-(1 row)
+postgresql> SELECT * FROM test;
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
 ```
 
 Table in ClickHouse, retrieving data from the PostgreSQL table created above:
@@ -87,20 +113,33 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgre
 ```
 
 ``` sql
-SELECT * FROM postgresql_table WHERE str IN ('test') 
+SELECT * FROM postgresql_table WHERE str IN ('test');
 ```
 
 ``` text
 ┌─float_nullable─┬─str──┬─int_id─┐
 │           ᴺᵁᴸᴸ │ test │      1 │
 └────────────────┴──────┴────────┘
-1 rows in set. Elapsed: 0.019 sec.
 ```
 
+Using Non-default Schema:
 
-## See Also {#see-also}
+```text
+postgres=# CREATE SCHEMA "nice.schema";
 
--   [The ‘postgresql’ table function](../../../sql-reference/table-functions/postgresql.md)
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+**See Also**
+
+-   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
 -   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
 [Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->

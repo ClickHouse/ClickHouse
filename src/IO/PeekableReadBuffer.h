@@ -43,10 +43,7 @@ public:
     /// Forget checkpoint and all data between checkpoint and position
     ALWAYS_INLINE inline void dropCheckpoint()
     {
-#ifndef NDEBUG
-        if (!checkpoint)
-            throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
-#endif
+        assert(checkpoint);
         if (!currentlyReadFromOwnMemory())
         {
             /// Don't need to store unread data anymore

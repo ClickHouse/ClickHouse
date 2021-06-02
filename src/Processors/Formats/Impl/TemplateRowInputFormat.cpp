@@ -4,7 +4,7 @@
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -173,7 +173,7 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
         if (row_format.format_idx_to_column_idx[i])
         {
             size_t col_idx = *row_format.format_idx_to_column_idx[i];
-            extra.read_columns[col_idx] = deserializeField(data_types[col_idx], *columns[col_idx], i);
+            extra.read_columns[col_idx] = deserializeField(data_types[col_idx], serializations[col_idx], *columns[col_idx], i);
         }
         else
             skipField(row_format.formats[i]);
@@ -189,7 +189,8 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     return true;
 }
 
-bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
+bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
+    const SerializationPtr & serialization, IColumn & column, size_t file_column)
 {
     ColumnFormat col_format = row_format.formats[file_column];
     bool read = true;
@@ -200,30 +201,30 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn 
         {
             case ColumnFormat::Escaped:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextEscaped(column, buf, settings, type);
+                    read = SerializationNullable::deserializeTextEscapedImpl(column, buf, settings, serialization);
                 else
-                    type->deserializeAsTextEscaped(column, buf, settings);
+                    serialization->deserializeTextEscaped(column, buf, settings);
                 break;
             case ColumnFormat::Quoted:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextQuoted(column, buf, settings, type);
+                    read = SerializationNullable::deserializeTextQuotedImpl(column, buf, settings, serialization);
                 else
-                    type->deserializeAsTextQuoted(column, buf, settings);
+                    serialization->deserializeTextQuoted(column, buf, settings);
                 break;
             case ColumnFormat::Csv:
                 /// Will read unquoted string until settings.csv.delimiter
                 settings.csv.delimiter = row_format.delimiters[file_column + 1].empty() ? default_csv_delimiter :
                                                                                           row_format.delimiters[file_column + 1].front();
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextCSV(column, buf, settings, type);
+                    read = SerializationNullable::deserializeTextCSVImpl(column, buf, settings, serialization);
                 else
-                    type->deserializeAsTextCSV(column, buf, settings);
+                    serialization->deserializeTextCSV(column, buf, settings);
                 break;
             case ColumnFormat::Json:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextJSON(column, buf, settings, type);
+                    read = SerializationNullable::deserializeTextJSONImpl(column, buf, settings, serialization);
                 else
-                    type->deserializeAsTextJSON(column, buf, settings);
+                    serialization->deserializeTextJSON(column, buf, settings);
                 break;
             default:
                 __builtin_unreachable();
@@ -412,8 +413,9 @@ void TemplateRowInputFormat::writeErrorStringForWrongDelimiter(WriteBuffer & out
 
 void TemplateRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
-    if (row_format.format_idx_to_column_idx[file_column])
-        deserializeField(type, column, file_column);
+    const auto & index = row_format.format_idx_to_column_idx[file_column];
+    if (index)
+        deserializeField(type, serializations[*index], column, file_column);
     else
         skipField(row_format.formats[file_column]);
 }

@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeCustomGeo.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <memory>
 #include <string>
@@ -33,7 +34,7 @@ public:
 
     explicit FunctionPolygonArea() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionPolygonArea>();
     }

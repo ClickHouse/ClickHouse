@@ -13,8 +13,11 @@
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 
+
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -29,6 +32,8 @@ namespace ErrorCodes
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
@@ -162,6 +167,11 @@ public:
         sorted = false;
     }
 
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
+
     void write(DB::WriteBuffer & buf) const
     {
         size_t size = samples.size();
@@ -169,8 +179,25 @@ public:
         DB::writeIntBinary<size_t>(total_values, buf);
 
         for (size_t i = 0; i < size; ++i)
-            DB::writePODBinary(samples[i], buf);
+        {
+            /// There was a mistake in this function.
+            /// Instead of correctly serializing the elements,
+            ///  it was writing them with uninitialized padding.
+            /// Here we ensure that padding is zero without changing the protocol.
+            /// TODO: After implementation of "versioning aggregate function state",
+            /// change the serialization format.
+
+            Element elem;
+            memset(&elem, 0, sizeof(elem));
+            elem = samples[i];
+
+            DB::writePODBinary(elem, buf);
+        }
     }
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.

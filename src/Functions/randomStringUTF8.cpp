@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <pcg_random.hpp>
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
@@ -30,7 +30,7 @@ class FunctionRandomStringUTF8 : public IFunction
 public:
     static constexpr auto name = "randomStringUTF8";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomStringUTF8>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRandomStringUTF8>(); }
 
     String getName() const override { return name; }
 

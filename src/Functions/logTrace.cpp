@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 
 #include <common/logger_useful.h>
 
@@ -21,7 +21,7 @@ namespace
     {
     public:
         static constexpr auto name = "logTrace";
-        static FunctionPtr create(const Context &) { return std::make_shared<FunctionLogTrace>(); }
+        static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionLogTrace>(); }
 
         String getName() const override { return name; }
 

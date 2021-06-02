@@ -3,7 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
-#include <DataTypes/DataTypeCustom_fwd.h>
+#include <DataTypes/DataTypeCustom.h>
 
 
 #include <functional>
@@ -86,6 +86,5 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
-void registerDataTypeOneElementTuple(DataTypeFactory & factory);
 
 }

@@ -243,7 +243,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 **Синтаксис**
 
 ``` sql
-windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
+windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 ```
 
 **Аргументы**
@@ -253,8 +253,11 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 **Параметры**
 
--   `window` — ширина скользящего окна по времени. Единица измерения зависит от `timestamp` и может варьироваться. Должно соблюдаться условие `timestamp события cond2 <= timestamp события cond1 + window`.
--   `mode` — необязательный параметр. Если установлено значение `'strict'`, то функция `windowFunnel()` применяет условия только для уникальных значений.
+-   `window` — ширина скользящего окна по времени. Это время между первым и последним условием. Единица измерения зависит от `timestamp` и может варьироваться. Должно соблюдаться условие `timestamp события cond1 <= timestamp события cond2 <= ... <= timestamp события condN <= timestamp события cond1 + window`. 
+-   `mode` — необязательный параметр. Может быть установленно несколько значений одновременно.
+    -   `'strict'` — не учитывать подряд идущие повторяющиеся события.
+    -   `'strict_order'` — запрещает посторонние события в искомой последовательности. Например, при поиске цепочки `A->B->C` в `A->B->D->C` поиск будет остановлен на `D` и функция вернет 2.
+    -   `'strict_increase'` — условия прменяются только для событий со строго возрастающими временными метками.
 
 **Возвращаемое значение**
 
@@ -308,7 +311,7 @@ FROM
     GROUP BY user_id
 )
 GROUP BY level
-ORDER BY level ASC
+ORDER BY level ASC;
 ```
 
 ## retention {#retention}

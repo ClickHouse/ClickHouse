@@ -547,6 +547,13 @@
     M(577, INVALID_SHARD_ID) \
     M(578, INVALID_FORMAT_INSERT_QUERY_WITH_DATA) \
     M(579, INCORRECT_PART_TYPE) \
+    M(580, CANNOT_SET_ROUNDING_MODE) \
+    M(581, TOO_LARGE_DISTRIBUTED_DEPTH) \
+    M(582, NO_SUCH_PROJECTION_IN_TABLE) \
+    M(583, ILLEGAL_PROJECTION) \
+    M(584, PROJECTION_NOT_USED) \
+    M(585, CANNOT_PARSE_YAML) \
+    M(586, CANNOT_CREATE_FILE) \
     \
     M(998, POSTGRESQL_CONNECTION_FAILURE) \
     M(999, KEEPER_EXCEPTION) \
@@ -560,7 +567,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-#define M(VALUE, NAME) extern const Value NAME = VALUE;
+#define M(VALUE, NAME) extern const ErrorCode NAME = VALUE;
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
@@ -587,19 +594,19 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
-    void increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & stacktrace)
+    void increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
     {
-        if (error_code >= end())
+        if (error_code < 0 || error_code >= end())
         {
             /// For everything outside the range, use END.
             /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
             error_code = end() - 1;
         }
 
-        values[error_code].increment(remote, message, stacktrace);
+        values[error_code].increment(remote, message, trace);
     }
 
-    void ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & stacktrace)
+    void ErrorPairHolder::increment(bool remote, const std::string & message, const FramePointers & trace)
     {
         const auto now = std::chrono::system_clock::now();
 
@@ -609,7 +616,7 @@ namespace ErrorCodes
 
         ++error.count;
         error.message = message;
-        error.stacktrace = stacktrace;
+        error.trace = trace;
         error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
     }
     ErrorPair ErrorPairHolder::get()

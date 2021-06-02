@@ -1,7 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/TSKVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 
 namespace DB
@@ -142,10 +142,11 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
+                    const auto & serialization = serializations[index];
                     if (format_settings.null_as_default && !type->isNullable())
-                        read_columns[index] = DataTypeNullable::deserializeTextEscaped(*columns[index], in, format_settings, type);
+                        read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], in, format_settings, serialization);
                     else
-                        header.getByPosition(index).type->deserializeAsTextEscaped(*columns[index], in, format_settings);
+                        serialization->deserializeTextEscaped(*columns[index], in, format_settings);
                 }
             }
             else

@@ -33,7 +33,7 @@ public:
 
     explicit FunctionPolygonConvexHull() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionPolygonConvexHull>();
     }
@@ -55,7 +55,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return DataTypeCustomPolygonSerialization::nestedDataType();
+        return DataTypeFactory::instance().get("Polygon");
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override

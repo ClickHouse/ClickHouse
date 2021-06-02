@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/Serializations/SerializationDecimal.h>
 
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -47,55 +48,6 @@ DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 }
 
 template <typename T>
-void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, this->scale, ostr);
-}
-
-template <typename T>
-bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
-{
-    UInt32 unread_scale = scale;
-    if (!tryReadDecimalText(istr, x, precision, unread_scale))
-        return false;
-
-    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
-        return false;
-
-    return true;
-}
-
-template <typename T>
-void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
-{
-    UInt32 unread_scale = scale;
-    if (csv)
-        readCSVDecimalText(istr, x, precision, unread_scale);
-    else
-        readDecimalText(istr, x, precision, unread_scale);
-
-    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
-        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    readText(x, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    readText(x, istr, true);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
     ReadBufferFromMemory buf(str.data(), str.size());
@@ -107,6 +59,12 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;
+}
+
+template <typename T>
+SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
+{
+    return std::make_shared<SerializationDecimal<T>>(this->precision, this->scale);
 }
 
 

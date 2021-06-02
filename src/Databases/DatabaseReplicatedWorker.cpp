@@ -1,6 +1,9 @@
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DDLTask.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -13,7 +16,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
-DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, const Context & context_)
+DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(/* pool_size */ 1, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
@@ -91,7 +94,7 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, const Context & query_context)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context)
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
@@ -115,7 +118,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->is_initial_query = true;
 
     LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
-    UInt64 timeout = query_context.getSettingsRef().database_replicated_initial_query_timeout_sec;
+    UInt64 timeout = query_context->getSettingsRef().database_replicated_initial_query_timeout_sec;
     {
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
@@ -125,7 +128,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         });
 
         if (!processed)
-            throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica,"
+            throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
                             "most likely because replica is busy with previous queue entries");
     }
 
@@ -156,7 +159,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(database->replica_path + "/log_ptr"));
+    UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(fs::path(database->replica_path) / "log_ptr"));
     UInt32 entry_num = DatabaseReplicatedTask::getLogEntryNumber(entry_name);
 
     if (entry_num <= our_log_ptr)
@@ -165,13 +168,13 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
-    String entry_path = queue_dir + "/" + entry_name;
+    String entry_path = fs::path(queue_dir) / entry_name;
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
 
     String initiator_name;
     zkutil::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
-    String try_node_path = entry_path + "/try";
+    String try_node_path = fs::path(entry_path) / "try";
     if (zookeeper->tryGet(try_node_path, initiator_name, nullptr, wait_committed_or_failed))
     {
         task->is_initial_query = initiator_name == task->host_id_str;
@@ -203,7 +206,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
                     throw Coordination::Exception(code, try_node_path);
 
-                if (!zookeeper->exists(entry_path + "/committed"))
+                if (!zookeeper->exists(fs::path(entry_path) / "committed"))
                 {
                     out_reason = fmt::format("Entry {} was forcefully cancelled due to timeout", entry_name);
                     return {};
@@ -212,7 +215,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    if (!zookeeper->exists(entry_path + "/committed"))
+    if (!zookeeper->exists(fs::path(entry_path) / "committed"))
     {
         out_reason = fmt::format("Entry {} hasn't been committed", entry_name);
         return {};
@@ -220,8 +223,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->is_initial_query)
     {
-        assert(!zookeeper->exists(entry_path + "/try"));
-        assert(zookeeper->exists(entry_path + "/committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
+        assert(!zookeeper->exists(fs::path(entry_path) / "try"));
+        assert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }
@@ -237,6 +240,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->entry.query.empty())
     {
+        /// Some replica is added or removed, let's update cached cluster
+        database->setCluster(database->getClusterImpl());
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }
@@ -255,7 +260,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
 {
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(database->zookeeper_path + "/max_log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
     return entry_number + logs_to_keep < max_log_ptr;
 }
 

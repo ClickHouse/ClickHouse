@@ -34,10 +34,20 @@ public:
     void replaceFile(const String & from_path, const String & to_path) override;
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
     void listFiles(const String & path, std::vector<String> & file_names) override;
-    std::unique_ptr<ReadBufferFromFileBase>
-    readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const override;
-    std::unique_ptr<WriteBufferFromFileBase>
-    writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode) override;
+
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
@@ -55,12 +65,33 @@ public:
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DiskType::Type getType() const override { return delegate->getType(); }
-    Executor & getExecutor() override;
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
+    void shutdown() override;
+    void startup() override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context) override;
 
 protected:
+    Executor & getExecutor() override;
+
     DiskPtr delegate;
 };
+
+/// TODO: Current reservation mechanism leaks IDisk abstraction details.
+/// This hack is needed to return proper disk pointer (wrapper instead of implementation) from reservation object.
+class ReservationDelegate : public IReservation
+{
+public:
+    ReservationDelegate(ReservationPtr delegate_, DiskPtr wrapper_) : delegate(std::move(delegate_)), wrapper(wrapper_) { }
+    UInt64 getSize() const override { return delegate->getSize(); }
+    DiskPtr getDisk(size_t) const override { return wrapper; }
+    Disks getDisks() const override { return {wrapper}; }
+    void update(UInt64 new_size) override { delegate->update(new_size); }
+
+private:
+    ReservationPtr delegate;
+    DiskPtr wrapper;
+};
+
 
 }

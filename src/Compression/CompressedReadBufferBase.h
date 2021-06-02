@@ -3,6 +3,7 @@
 #include <Common/PODArray.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <Compression/ICompressionCodec.h>
+#include <IO/BufferBase.h>
 
 
 namespace DB
@@ -37,7 +38,12 @@ protected:
     /// Returns number of compressed bytes read.
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy);
 
-    void decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum);
+    /// Decompress into memory pointed by `to`
+    void decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum);
+
+    /// This method can change location of `to` to avoid unnecessary copy if data is uncompressed.
+    /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
+    void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.

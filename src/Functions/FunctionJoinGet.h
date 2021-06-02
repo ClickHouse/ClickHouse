@@ -1,5 +1,7 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+
+#include <Functions/IFunction.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Core/Block.h>
@@ -7,13 +9,12 @@
 namespace DB
 {
 
-class Context;
 class HashJoin;
 class StorageJoin;
 using StorageJoinPtr = std::shared_ptr<StorageJoin>;
 
 template <bool or_null>
-class ExecutableFunctionJoinGet final : public IExecutableFunctionImpl
+class ExecutableFunctionJoinGet final : public IExecutableFunction
 {
 public:
     ExecutableFunctionJoinGet(TableLockHolder table_lock_,
@@ -30,7 +31,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
     String getName() const override { return name; }
 
@@ -41,7 +42,7 @@ private:
 };
 
 template <bool or_null>
-class FunctionJoinGet final : public IFunctionBaseImpl
+class FunctionJoinGet final : public IFunctionBase
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
@@ -62,7 +63,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override;
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override;
 
 private:
     TableLockHolder table_lock;
@@ -73,18 +74,18 @@ private:
 };
 
 template <bool or_null>
-class JoinGetOverloadResolver final : public IFunctionOverloadResolverImpl
+class JoinGetOverloadResolver final : public IFunctionOverloadResolver, WithConstContext
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<JoinGetOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextConstPtr context_) { return std::make_unique<JoinGetOverloadResolver>(context_); }
 
-    explicit JoinGetOverloadResolver(const Context & context_) : context(context_) {}
+    explicit JoinGetOverloadResolver(ContextConstPtr context_) : WithConstContext(context_) {}
 
     String getName() const override { return name; }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -92,9 +93,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
-
-private:
-    const Context & context;
 };
 
 }

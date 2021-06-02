@@ -1,19 +1,18 @@
 #pragma once
 
-#include <common/types.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <common/types.h>
 
-#include <string>
 #include <memory>
+#include <string>
 
 
 namespace DB
 {
 
 class ASTSelectQuery;
-class Context;
-
 
 /** Scheme of operation:
   *
@@ -32,7 +31,7 @@ class Context;
   * Do not recursively preprocess subqueries, as it will be done by calling code.
   */
 
-class InJoinSubqueriesPreprocessor
+class InJoinSubqueriesPreprocessor : WithContext
 {
 public:
     using SubqueryTables = std::vector<std::pair<ASTPtr, std::vector<ASTPtr>>>;  /// {subquery, renamed_tables}
@@ -47,17 +46,17 @@ public:
         virtual ~CheckShardsAndTables() {}
     };
 
-    InJoinSubqueriesPreprocessor(const Context & context_, SubqueryTables & renamed_tables_,
-                                 CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
-        : context(context_)
-        , renamed_tables(renamed_tables_)
-        , checker(std::move(_checker))
-    {}
+    InJoinSubqueriesPreprocessor(
+        ContextPtr context_,
+        SubqueryTables & renamed_tables_,
+        CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
+        : WithContext(context_), renamed_tables(renamed_tables_), checker(std::move(_checker))
+    {
+    }
 
     void visit(ASTPtr & ast) const;
 
 private:
-    const Context & context;
     SubqueryTables & renamed_tables;
     CheckShardsAndTables::Ptr checker;
 };

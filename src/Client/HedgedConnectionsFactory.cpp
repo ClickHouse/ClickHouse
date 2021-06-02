@@ -38,6 +38,16 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
 {
+    /// Stop anything that maybe in progress,
+    /// to avoid interfer with the subsequent connections.
+    ///
+    /// I.e. some replcas may be in the establishing state,
+    /// this means that hedged connection is waiting for TablesStatusResponse,
+    /// and if the connection will not be canceled,
+    /// then next user of the connection will get TablesStatusResponse,
+    /// while this is not the expected package.
+    stopChoosingReplicas();
+
     pool->updateSharedError(shuffled_pools);
 }
 
@@ -45,7 +55,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 {
     size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
 
-    size_t max_entries;
+    size_t max_entries = 1;
     switch (pool_mode)
     {
         case PoolMode::GET_ALL:

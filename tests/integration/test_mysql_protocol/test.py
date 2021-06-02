@@ -149,8 +149,8 @@ def test_mysql_client_exception(mysql_client, server_address):
         -e "CREATE TABLE default.t1_remote_mysql AS mysql('127.0.0.1:10086','default','t1_local','default','');"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    assert stderr[0:266].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
-                            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 2002, e.displayText() = mysqlxx::ConnectionFailed: Can't connect to MySQL server on '127.0.0.1' (115) ((nullptr):0)"
+    assert stderr[0:258].decode() == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 0, e.displayText() = Exception: Connections to all replicas failed: default@127.0.0.1:10086 as user default"
 
 
 def test_mysql_affected_rows(mysql_client, server_address):

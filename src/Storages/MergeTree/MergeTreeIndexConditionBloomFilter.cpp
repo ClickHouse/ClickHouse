@@ -87,11 +87,11 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const SelectQueryInfo & info_, const Context & context_, const Block & header_, size_t hash_functions_)
-    : header(header_), context(context_), query_info(info_), hash_functions(hash_functions_)
+    const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_)
+    : WithContext(context_), header(header_), query_info(info_), hash_functions(hash_functions_)
 {
-    auto atom_from_ast = [this](auto & node, auto &, auto & constants, auto & out) { return traverseAtomAST(node, constants, out); };
-    rpn = std::move(RPNBuilder<RPNElement>(info_, context, atom_from_ast).extractRPN());
+    auto atom_from_ast = [this](auto & node, auto, auto & constants, auto & out) { return traverseAtomAST(node, constants, out); };
+    rpn = std::move(RPNBuilder<RPNElement>(info_, getContext(), atom_from_ast).extractRPN());
 }
 
 bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const

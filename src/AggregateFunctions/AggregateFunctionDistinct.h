@@ -10,10 +10,10 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
 
-#include <Common/FieldVisitors.h>
 
 namespace DB
 {
+struct Settings;
 
 
 template <typename T>

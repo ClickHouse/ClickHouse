@@ -137,14 +137,17 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part.use_count() - 1));
 
+        auto min_max_date = part->getMinMaxDate();
+        auto min_max_time = part->getMinMaxTime();
+
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getMinDate());
+            columns[res_index++]->insert(min_max_date.first);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getMaxDate());
+            columns[res_index++]->insert(min_max_date.second);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(static_cast<UInt32>(part->getMinTime()));
+            columns[res_index++]->insert(static_cast<UInt32>(min_max_time.first));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(static_cast<UInt32>(part->getMaxTime()));
+            columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->info.partition_id);
         if (columns_mask[src_index++])

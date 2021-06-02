@@ -12,6 +12,8 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
+
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
@@ -40,7 +42,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -50,16 +52,16 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     /** Perform the next step in combining the parts.
       */
@@ -70,9 +72,9 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        const Context & context) override;
+        ContextPtr context) override;
 
-    void mutate(const MutationCommands & commands, const Context & context) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
@@ -80,9 +82,9 @@ public:
     CancellationCode killMutation(const String & mutation_id) override;
 
     void drop() override;
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    void alter(const AlterCommands & commands, const Context & context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr context, TableLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 
@@ -90,9 +92,11 @@ public:
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    CheckResults checkData(const ASTPtr & query, const Context & context) override;
+    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
     std::optional<JobAndPool> getDataProcessingJob() override;
+
+    MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -104,6 +108,8 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
     BackgroundJobsExecutor background_executor;
     BackgroundMovesExecutor background_moves_executor;
+
+    std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
     /// For block numbers.
     SimpleIncrement increment;
@@ -127,6 +133,10 @@ private:
     std::atomic<bool> shutdown_called {false};
 
     void loadMutations();
+
+    /// Load and initialize deduplication logs. Even if deduplication setting
+    /// equals zero creates object with deduplication window equals zero.
+    void loadDeduplicationLog();
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
@@ -201,11 +211,14 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop) override;
-    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & context) override;
+    void dropPartNoWaitNoThrow(const String & part_name) override;
+    void dropPart(const String & part_name, bool detach, ContextPtr context) override;
+    void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
-    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context) override;
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
+    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) override;
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
@@ -222,6 +235,7 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
+    friend class MergeTreeProjectionBlockOutputStream;
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
 
@@ -239,7 +253,7 @@ protected:
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         bool attach,
-        Context & context_,
+        ContextMutablePtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,

@@ -1,8 +1,0 @@
-<?xml version="1.0"?>
-<yandex>
-    <profiles>
-        <default>
-            <sleep_in_send_tables_status>5</sleep_in_send_tables_status>
-        </default>
-    </profiles>
-</yandex>

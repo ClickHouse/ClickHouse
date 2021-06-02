@@ -25,6 +25,7 @@ class IRowOutputFormat : public IOutputFormat
 {
 protected:
     DataTypes types;
+    Serializations serializations;
     bool first_row = true;
 
     void consume(Chunk chunk) override;
@@ -35,10 +36,7 @@ protected:
 public:
     using Params = RowOutputFormatParams;
 
-    IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
-        : IOutputFormat(header, out_), types(header.getDataTypes()), params(params_)
-    {
-    }
+    IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_);
 
     /** Write a row.
       * Default implementation calls methods to write single values and delimiters
@@ -50,7 +48,7 @@ public:
     virtual void writeTotals(const Columns & columns, size_t row_num);
 
     /** Write single value. */
-    virtual void writeField(const IColumn & column, const IDataType & type, size_t row_num) = 0;
+    virtual void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) = 0;
 
     /** Write delimiter. */
     virtual void writeFieldDelimiter() {}       /// delimiter between values

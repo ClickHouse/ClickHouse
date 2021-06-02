@@ -228,7 +228,7 @@ bitCount(x)
 
 -   Number of bits set to one in the input number.
 
-The function doesn’t convert input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)). So, for example, `bitCount(toUInt8(-1)) = 8`.
+The function does not convert input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)). So, for example, `bitCount(toUInt8(-1)) = 8`.
 
 Type: `UInt8`.
 
@@ -250,3 +250,53 @@ Result:
 └───────────────┘
 ```
 
+## bitHammingDistance {#bithammingdistance}
+
+Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two integer values. Can be used with [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash) functions for detection of semi-duplicate strings. The smaller is the distance, the more likely those strings are the same.
+
+**Syntax**
+
+``` sql
+bitHammingDistance(int1, int2)
+```
+
+**Arguments**
+
+-   `int1` — First integer value. [Int64](../../sql-reference/data-types/int-uint.md).
+-   `int2` — Second integer value. [Int64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   The Hamming distance. 
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT bitHammingDistance(111, 121);
+```
+
+Result:
+
+``` text
+┌─bitHammingDistance(111, 121)─┐
+│                            3 │
+└──────────────────────────────┘
+```
+
+With [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash):
+
+``` sql
+SELECT bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat'));
+```
+
+Result:
+
+``` text
+┌─bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat'))─┐
+│                                                                            5 │
+└──────────────────────────────────────────────────────────────────────────────┘
+```

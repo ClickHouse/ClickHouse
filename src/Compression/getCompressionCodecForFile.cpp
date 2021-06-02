@@ -6,8 +6,6 @@
 #include <Common/PODArray.h>
 #include <common/logger_useful.h>
 
-#include <Common/UInt128.h>
-
 namespace DB
 {
 

@@ -42,7 +42,7 @@ public:
     String getName() const override { return "ProtobufRowOutputFormat"; }
 
     void write(const Columns & columns, size_t row_num) override;
-    void writeField(const IColumn &, const IDataType &, size_t) override {}
+    void writeField(const IColumn &, const ISerialization &, size_t) override {}
     std::string getContentType() const override { return "application/octet-stream"; }
 
 private:

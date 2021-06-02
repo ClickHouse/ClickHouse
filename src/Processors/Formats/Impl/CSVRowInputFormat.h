@@ -52,7 +52,7 @@ private:
         return *pos != '\n' && *pos != '\r' && *pos != format_settings.csv.delimiter && *pos != ' ' && *pos != '\t';
     }
 
-    bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column);
 };
 
 }
