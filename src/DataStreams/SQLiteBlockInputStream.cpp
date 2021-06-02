@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <ext/range.h>
 
 #include <common/logger_useful.h>
@@ -58,34 +59,15 @@ Block SQLiteBlockInputStream::readImpl()
 
         for (const auto idx : ext::range(0, column_count))
         {
-            const auto & sample = description.sample_block.getByPosition(idx);
-
-            int column_type = sqlite3_column_type(compiled_statement.get(), idx);
-
-            switch (column_type)
+            if (description.types[idx].second)
             {
-                case SQLITE_INTEGER:
-                    assert_cast<ColumnInt64 &>(*columns[idx]).insertValue(sqlite3_column_int64(compiled_statement.get(), idx));
-                    break;
-                case SQLITE_FLOAT:
-                    assert_cast<ColumnFloat64 &>(*columns[idx]).insertValue(sqlite3_column_double(compiled_statement.get(), idx));
-                    break;
-                case SQLITE3_TEXT:
-                    [[fallthrough]];
-                case SQLITE_BLOB:
-                    [[fallthrough]];
-                case SQLITE_NULL:
-                {
-                    const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
-                    if (!data)
-                    {
-                        (*columns[idx]).insertFrom(*sample.column, 0);
-                        break;
-                    }
-                    int len = sqlite3_column_bytes(compiled_statement.get(), idx);
-                    assert_cast<ColumnString &>(*columns[idx]).insertData(data, len);
-                    break;
-                }
+                ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
+                insertValue(column_nullable.getNestedColumn(), description.types[idx].first, idx);
+                column_nullable.getNullMapData().emplace_back(0);
+            }
+            else
+            {
+                insertValue(*columns[idx], description.types[idx].first, idx);
             }
         }
 
@@ -98,8 +80,33 @@ Block SQLiteBlockInputStream::readImpl()
 void SQLiteBlockInputStream::readSuffix()
 {
     if (compiled_statement)
-    {
         compiled_statement.reset();
+}
+
+void SQLiteBlockInputStream::insertValue(
+    IColumn & column, const ExternalResultDescription::ValueType type, size_t idx)
+{
+    switch (type)
+    {
+        case ValueType::vtUInt8: [[fallthrough]];
+        case ValueType::vtUInt16: [[fallthrough]];
+        case ValueType::vtUInt32: [[fallthrough]];
+        case ValueType::vtUInt64: [[fallthrough]];
+        case ValueType::vtInt8: [[fallthrough]];
+        case ValueType::vtInt16: [[fallthrough]];
+        case ValueType::vtInt32: [[fallthrough]];
+        case ValueType::vtInt64:
+            assert_cast<ColumnUInt64 &>(column).insertValue(sqlite3_column_int64(compiled_statement.get(), idx));
+            break;
+        case ValueType::vtFloat32: [[fallthrough]];
+        case ValueType::vtFloat64:
+            assert_cast<ColumnFloat64 &>(column).insertValue(sqlite3_column_double(compiled_statement.get(), idx));
+            break;
+        default:
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            assert_cast<ColumnString &>(column).insertData(data, len);
+            break;
     }
 }
 

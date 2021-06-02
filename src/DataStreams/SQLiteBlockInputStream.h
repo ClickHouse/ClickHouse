@@ -29,6 +29,9 @@ private:
     Block readImpl() override;
     void readSuffix() override;
 
+    void insertValue(IColumn & column,
+                     const ExternalResultDescription::ValueType type, size_t idx);
+
     String query_str;
     const UInt64 max_block_size;
     ExternalResultDescription description;
