@@ -24,8 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
-
 }
 
 namespace
@@ -61,13 +59,7 @@ public:
         {
             const auto * col_index = arguments[0].column.get();
 
-            auto dst = ColumnVector<Float64>::create();
-
-            auto & dst_data = dst->getData();
-            dst_data.resize(input_rows_count);
             ColumnPtr res_column;
-
-
             auto latitude = ColumnFloat64::create(input_rows_count);
             auto longitude = ColumnFloat64::create(input_rows_count);
 
@@ -76,13 +68,13 @@ public:
 
             for (const auto row : ext::range(0, input_rows_count))
             {
-                const UInt64 h3Index = col_index->getUInt(row);
+                const UInt64 h3index = col_index->getUInt(row);
                 GeoCoord coord;
-                h3ToGeo(h3Index,&coord);
+                h3ToGeo(h3index,&coord);
                 lon_data[row] = radsToDegs(coord.lon);
                 lat_data[row] = radsToDegs(coord.lat);
-
             }
+
             MutableColumns result;
             result.emplace_back(std::move(longitude));
             result.emplace_back(std::move(latitude));

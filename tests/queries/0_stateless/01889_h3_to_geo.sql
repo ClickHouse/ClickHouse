@@ -7,6 +7,6 @@ INSERT INTO h3_indexes VALUES(644325524701193975);
 INSERT INTO h3_indexes VALUES(644325524701193976);
 INSERT INTO h3_indexes VALUES(644325524701193977);
 
-select h3ToGeo(h3_index) from h3_indexes;
+select h3ToGeo(h3_index) from h3_indexes order by h3_index;
 
 DROP TABLE h3_indexes;
