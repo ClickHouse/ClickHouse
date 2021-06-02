@@ -30,7 +30,6 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitors.h>
 
 #include "RedisBlockInputStream.h"
 

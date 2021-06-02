@@ -64,6 +64,8 @@ ColumnPtr IPolygonDictionary::getColumn(
     Field row_value_to_insert;
     size_t polygon_index = 0;
 
+    size_t keys_found = 0;
+
     if (unlikely(complex_attribute))
     {
         for (size_t requested_key_index = 0; requested_key_index < requested_key_points.size(); ++requested_key_index)
@@ -74,6 +76,7 @@ ColumnPtr IPolygonDictionary::getColumn(
             {
                 size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
                 attribute_values_column->get(attribute_values_index, row_value_to_insert);
+                ++keys_found;
             }
             else
                 row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
@@ -110,6 +113,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                         size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
                         auto data_to_insert = attribute_values_column->getDataAt(attribute_values_index);
                         result_column_typed.insertData(data_to_insert.data, data_to_insert.size);
+                        ++keys_found;
                     }
                     else
                         result_column_typed.insert(default_value_provider.getDefaultValue(requested_key_index));
@@ -129,6 +133,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                         size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
                         auto & item = attribute_data[attribute_values_index];
                         result_data.emplace_back(item);
+                        ++keys_found;
                     }
                     else
                     {
@@ -143,6 +148,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     }
 
     query_count.fetch_add(requested_key_points.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -285,16 +291,20 @@ ColumnUInt8::Ptr IPolygonDictionary::hasKeys(const Columns & key_columns, const 
     std::vector<IPolygonDictionary::Point> points = extractPoints(key_columns);
 
     auto result = ColumnUInt8::create(points.size());
-    auto& out = result->getData();
+    auto & out = result->getData();
+
+    size_t keys_found = 0;
 
     for (size_t i = 0; i < points.size(); ++i)
     {
         size_t unused_find_result = 0;
         auto & point = points[i];
         out[i] = find(point, unused_find_result);
+        keys_found += out[i];
     }
 
     query_count.fetch_add(points.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }

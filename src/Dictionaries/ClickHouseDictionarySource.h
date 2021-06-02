@@ -43,6 +43,8 @@ public:
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
+    BlockInputStreamPtr loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
+
     BlockInputStreamPtr loadAll() override;
 
     BlockInputStreamPtr loadUpdatedAll() override;
@@ -67,7 +69,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    BlockInputStreamPtr createStreamForQuery(const String & query);
+    BlockInputStreamPtr createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
 
     std::string doInvalidateQuery(const std::string & request) const;
 

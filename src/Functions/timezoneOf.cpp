@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -23,7 +23,7 @@ namespace
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
   * Example: Europe/Moscow.
   */
-class ExecutableFunctionTimezoneOf : public IExecutableFunctionImpl
+class ExecutableFunctionTimezoneOf : public IExecutableFunction
 {
 public:
     static constexpr auto name = "timezoneOf";
@@ -33,7 +33,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Execute the function on the columns.
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
 
@@ -43,7 +43,7 @@ public:
 };
 
 
-class BaseFunctionTimezoneOf : public IFunctionBaseImpl
+class BaseFunctionTimezoneOf : public IFunctionBase
 {
 public:
     BaseFunctionTimezoneOf(DataTypes argument_types_, DataTypePtr return_type_)
@@ -58,7 +58,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionTimezoneOf>();
     }
@@ -77,16 +77,16 @@ private:
 };
 
 
-class FunctionTimezoneOfBuilder : public IFunctionOverloadResolverImpl
+class FunctionTimezoneOfBuilder : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "timezoneOf";
     String getName() const override { return name; }
-    static FunctionOverloadResolverImplPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOfBuilder>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOfBuilder>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnType(const DataTypes & types) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         DataTypePtr type_no_nullable = removeNullable(types[0]);
 
@@ -96,7 +96,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad argument for function {}, should be DateTime or DateTime64", name);
     }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         return std::make_unique<BaseFunctionTimezoneOf>(DataTypes{arguments[0].type}, return_type);
     }
