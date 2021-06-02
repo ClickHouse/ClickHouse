@@ -31,52 +31,6 @@ intervalLengthSum(start, end)
 
 ``` text
 ┌─id─┬─start─┬─end─┐
-│ a  │     1 │   3 │
-│ a  │     5 │   9 │
-└────┴───────┴─────┘
-```
-
-In this example, the non-intersecting intervals are summed up:
-
-``` sql
-SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM interval GROUP BY id ORDER BY id;
-```
-
-Result:
-
-``` text
-┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                             6 │ UInt64                                    │
-└────┴───────────────────────────────┴───────────────────────────────────────────┘
-```
-
-2. Input table:
-
-``` text
-┌─id─┬─start─┬─end─┐
-│ a  │     1 │   3 │
-│ a  │     2 │   4 │
-└────┴───────┴─────┘
-```
-
-In this example, the intersecting intervals are summed up. In this case, calculates the sum of the length of ranges without counting intersection twice:
-
-``` sql
-SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM interval GROUP BY id ORDER BY id;
-```
-
-Result:
-
-``` text
-┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                             3 │ UInt64                                    │
-└────┴───────────────────────────────┴───────────────────────────────────────────┘
-```
-
-3. Input table:
-
-``` text
-┌─id─┬─start─┬─end─┐
 │ a  │   1.1 │ 3.2 │
 │ a  │     4 │   5 │
 └────┴───────┴─────┘
@@ -96,7 +50,7 @@ Result:
 └────┴──────────────────────────────┴──────────────────────────────────────────┘
 ```
 
-4. Input table:
+2. Input table:
 
 ``` text
 ┌─id─┬───────────────start─┬─────────────────end─┐
@@ -119,7 +73,7 @@ Result:
 └────┴───────────────────────────────┴───────────────────────────────────────────┘
 ```
 
-5. Input table:
+3. Input table:
 
 ``` text
 ┌─id─┬──────start─┬────────end─┐
