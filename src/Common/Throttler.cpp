@@ -46,21 +46,13 @@ void Throttler::add(size_t amount)
             /// The speed in bytes per second is equal to amount / time_spent in seconds
             auto new_speed = amount / (time_spent / NS);
 
-            /// If we didn't measured any speed before than we just assign
-            if (smoothed_speed == 0)
-            {
-                smoothed_speed = new_speed;
-            }
-            else
-            {
-                /// We want to make old values of speed less important for our smoothed value
-                /// so we decay it's value with coef.
-                auto decay_coeff = std::pow(0.5, time_spent / window_ns);
+            /// We want to make old values of speed less important for our smoothed value
+            /// so we decay it's value with coef.
+            auto decay_coeff = std::pow(0.5, time_spent / window_ns);
 
-                /// Weighted average between previous and new speed
-                smoothed_speed = smoothed_speed * decay_coeff + (1 - decay_coeff) * new_speed;
-                current_speed = smoothed_speed;
-            }
+            /// Weighted average between previous and new speed
+            smoothed_speed = smoothed_speed * decay_coeff + (1 - decay_coeff) * new_speed;
+            current_speed = smoothed_speed;
         }
 
         count += amount;

@@ -3,6 +3,7 @@
 #include <mutex>
 #include <memory>
 #include <common/sleep.h>
+#include <atomic>
 
 namespace DB
 {
