@@ -152,6 +152,8 @@ Similar to [replicated_deduplication_window](#replicated-deduplication-window), 
 
 HTTP connection timeout (in seconds) for part fetch requests. Inherited from default profile [http_connection_timeout](./settings.md#http_connection_timeout) if not set explicitly.
 
+Possible values:
+
 -   Any positive integer.
 -   0 - Use value of `http_connection_timeout`.
 
