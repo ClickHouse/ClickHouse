@@ -69,7 +69,7 @@ def put_s3_file_content(started_cluster, bucket, filename, data):
 
 # Returns content of given S3 file as string.
 def get_s3_file_content(started_cluster, bucket, filename, decode=True):
-    # type: (ClickHouseCluster, str) -> str
+    # type: (ClickHouseCluster, str, str, bool) -> str
 
     data = started_cluster.minio_client.get_object(bucket, filename)
     data_str = b""
@@ -191,7 +191,7 @@ def test_get_path_with_special(started_cluster, special):
     pytest.param("'minio','minio123',", id="minio")
 ])
 def test_empty_put(started_cluster, auth):
-    # type: (ClickHouseCluster) -> None
+    # type: (ClickHouseCluster, str) -> None
 
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
@@ -227,7 +227,7 @@ def test_empty_put(started_cluster, auth):
     pytest.param("'wrongid','wrongkey',", False, id="negative"),
 ])
 def test_put_csv(started_cluster, maybe_auth, positive):
-    # type: (ClickHouseCluster) -> None
+    # type: (ClickHouseCluster, bool, str) -> None
 
     bucket = started_cluster.minio_bucket if not maybe_auth else started_cluster.minio_restricted_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
