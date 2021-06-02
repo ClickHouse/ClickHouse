@@ -21,6 +21,11 @@ class StorageReplicatedMergeTree;
 
 /**
  * Cross shard part movement workflow orchestration.
+ *
+ * TODO(nv) Issues:
+ *  Usage of `waitForAllReplicasToProcessLogEntry` for waiting on foreign shards is problematic:
+ *      1. We wait in background schedule pool which is not meant for long running tasks.
+ *      2. It is blocking. There is no opportunity to execute rollback if task is blocked.
  */
 class PartMovesBetweenShardsOrchestrator
 {

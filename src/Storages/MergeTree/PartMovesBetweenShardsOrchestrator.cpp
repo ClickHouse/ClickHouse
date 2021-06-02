@@ -304,14 +304,65 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
         case EntryState::DESTINATION_ATTACH:
         {
+            auto block_id_path = entry.to_shard + "/blocks/" + "move_part_between_shards_" + toString(entry.part_uuid);
+
             if (entry.rollback)
             {
                 // ReplicatedMergeTreeLogEntry log_entry;
                 // if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
                 //     storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
 
-                entry.state = EntryState::DESTINATION_FETCH;
-                return entry;
+                Coordination::Stat attach_log_entry_stat;
+                String attach_log_entry_str;
+                if (!zk->tryGet(block_id_path, attach_log_entry_str, &attach_log_entry_stat))
+                {
+                    // ATTACH_PART wasn't issued, nothing to revert.
+                    entry.state = EntryState::DESTINATION_FETCH;
+                    return entry;
+                }
+                else
+                {
+                    // Need to remove ATTACH_PART from the queue or drop data.
+                    // Similar to `StorageReplicatedMergeTree::dropPart` w/o extra
+                    // checks as we know drop shall be possible.
+                    const auto attach_log_entry = ReplicatedMergeTreeLogEntry::parse(attach_log_entry_str, attach_log_entry_stat);
+
+                    Coordination::Requests ops;
+                    ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
+                    // TODO(nv): foreign format_version
+                    //      we are acting on behalf of the remote shard.
+                    auto drop_part_info = MergeTreePartInfo::fromPartName(attach_log_entry->new_part_name, storage.format_version);
+
+                    storage.getClearBlocksInPartitionOps(ops, *zk, drop_part_info.partition_id, drop_part_info.min_block, drop_part_info.max_block);
+                    size_t clear_block_ops_size = ops.size();
+
+                    /// Set fake level to treat this part as virtual in queue.
+                    drop_part_info.level = MergeTreePartInfo::MAX_LEVEL;
+
+                    ReplicatedMergeTreeLogEntryData log_entry;
+                    log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
+                    log_entry.source_replica = storage.replica_name;
+
+                    // TODO(nv): foreign format_version
+                    // log_entry.new_part_name = storage.getPartNamePossiblyFake(storage.format_version, drop_part_info);
+                    log_entry.new_part_name = drop_part_info.getPartName();
+                    log_entry.create_time = time(nullptr);
+
+                    ops.emplace_back(zkutil::makeCreateRequest(entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                    Coordination::Responses responses;
+                    Coordination::Error rc = zk->tryMulti(ops, responses);
+                    zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size]).path_created;
+                    log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                    storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+
+                    entry.state = EntryState::DESTINATION_FETCH;
+                    return entry;
+                }
             }
             else
             {
@@ -324,7 +375,6 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                 /// Allocating block number in other replicas zookeeper path
                 /// TODO Maybe we can do better.
-                auto block_id_path = entry.to_shard + "/blocks/" + "move_part_between_shards_" + toString(entry.part_uuid);
                 auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, block_id_path, entry.to_shard);
 
                 ReplicatedMergeTreeLogEntryData log_entry;
@@ -503,6 +553,8 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
     // State transition with CAS.
     entry.rollback = true;
     entry.update_time = std::time(nullptr);
+
+    // TODO(nv): This can fail with `Bad version`. Need retries.
     zk->set(entry.znode_path, entry.toString(), entry.version);
 
     // Orchestrator will process it in background.
