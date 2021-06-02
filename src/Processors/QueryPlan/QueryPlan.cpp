@@ -195,7 +195,7 @@ Pipe QueryPlan::convertToPipe(
     return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
 }
 
-void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
+void QueryPlan::addInterpreterContext(ContextPtr context)
 {
     interpreter_context.emplace_back(std::move(context));
 }
