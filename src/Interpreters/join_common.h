@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/ActionsDAG.h>
@@ -12,6 +13,7 @@ struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
 using ColumnRawPtrs = std::vector<const IColumn *>;
+using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 
 namespace JoinCommon
 {
@@ -41,6 +43,10 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
+UInt8ColumnDataPtr getColumnAsMask(const Block & block, const String & column_name);
+
+/// Split key and other columns by keys name list
+void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others);
 
 }
 
@@ -49,7 +55,7 @@ class NotJoined
 {
 public:
     NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
-              const Block & result_sample_block_);
+              const Block & result_sample_block_, const Names & key_names_left_ = {}, const Names & key_names_right_ = {});
 
     void correctLowcardAndNullability(MutableColumns & columns_right);
     void addLeftColumns(Block & block, size_t rows_added) const;
@@ -59,6 +65,9 @@ public:
 protected:
     Block saved_block_sample;
     Block result_sample_block;
+
+    Names key_names_left;
+    Names key_names_right;
 
     ~NotJoined() = default;
 

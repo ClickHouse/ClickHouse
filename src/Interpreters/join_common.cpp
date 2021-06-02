@@ -349,28 +349,58 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
+UInt8ColumnDataPtr getColumnAsMask(const Block & block, const String & column_name)
+{
+    if (column_name.empty())
+        return nullptr;
+
+    const auto & join_condition_col = JoinCommon::materializeColumn(block, column_name);
+    return &assert_cast<const ColumnUInt8 &>(*join_condition_col).getData();
+}
+
+
+void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others)
+{
+    block_others = materializeBlock(sample_block);
+
+    for (const String & column_name : key_names)
+    {
+        /// Extract right keys with correct keys order. There could be the same key names.
+        if (!block_keys.has(column_name))
+        {
+            auto & col = block_others.getByName(column_name);
+            block_keys.insert(col);
+            block_others.erase(column_name);
+        }
+    }
+}
+
 }
 
 
 NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
-                     const Block & result_sample_block_)
+                     const Block & result_sample_block_, const Names & key_names_left_, const Names & key_names_right_)
     : saved_block_sample(saved_block_sample_)
     , result_sample_block(materializeBlock(result_sample_block_))
+    , key_names_left(key_names_left_.empty() ? table_join.keyNamesLeft() : key_names_left_)
+    , key_names_right(key_names_right_.empty() ? table_join.keyNamesRight() : key_names_right_)
 {
     std::vector<String> tmp;
     Block right_table_keys;
     Block sample_block_with_columns_to_add;
-    table_join.splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
+
+    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys,
+                                       sample_block_with_columns_to_add);
     Block required_right_keys = table_join.getRequiredRightKeys(right_table_keys, tmp);
 
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     if (table_join.hasUsing())
     {
-        for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
+        for (size_t i = 0; i < key_names_left.size(); ++i)
         {
-            const String & left_key_name = table_join.keyNamesLeft()[i];
-            const String & right_key_name = table_join.keyNamesRight()[i];
+            const String & left_key_name = key_names_left[i];
+            const String & right_key_name = key_names_right[i];
 
             size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
             size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);

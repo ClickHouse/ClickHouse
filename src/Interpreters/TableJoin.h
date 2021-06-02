@@ -161,6 +161,7 @@ public:
 
     void addJoinCondition(const ASTPtr & ast, bool is_left);
     ASTPtr joinConditionColumn(JoinTableSide side) const;
+    std::pair<String, String> joinConditionColumnNames() const;
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
@@ -213,8 +214,6 @@ public:
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
 
-    /// Split key and other columns by keys name list
-    void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;

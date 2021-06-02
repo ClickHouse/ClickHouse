@@ -1,19 +1,21 @@
 #include <limits>
 
+#include <Columns/ColumnNullable.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SortCursor.h>
-#include <Columns/ColumnNullable.h>
+#include <DataStreams/BlocksListBlockInputStream.h>
+#include <DataStreams/TemporaryFileStream.h>
+#include <DataStreams/materializeBlock.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/sortBlock.h>
 #include <Interpreters/join_common.h>
-#include <DataStreams/materializeBlock.h>
-#include <DataStreams/TemporaryFileStream.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Transforms/MergeSortingTransform.h>
+#include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <DataStreams/BlocksListBlockInputStream.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/MergeSortingTransform.h>
 
 
 namespace DB
@@ -23,11 +25,46 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
+
+String deriveTempName(const String & name)
+{
+    return "--" + name;
+}
+
+/*
+ * Convert column with conditions for left or right table to join to joining key.
+ * Input column type is UInt8 output is Nullable(UInt8).
+ * 0 converted to NULL and such rows won't be joined,
+ * 1 converted to 0 (any constant non-NULL value to join)
+ */
+ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const String & src_column_name)
+{
+    size_t res_size = block.rows();
+    auto data_col = ColumnUInt8::create(res_size, 0);
+    auto null_map = ColumnUInt8::create(res_size, 0);
+
+    if (!src_column_name.empty())
+    {
+        const auto * mask_col = JoinCommon::getColumnAsMask(block, src_column_name);
+        for (size_t i = 0; i < res_size; ++i)
+            null_map->getData()[i] = !(*mask_col)[i];
+    }
+
+    ColumnPtr res_col = ColumnNullable::create(std::move(data_col), std::move(null_map));
+    DataTypePtr res_col_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+    String res_name = deriveTempName(src_column_name);
+
+    if (block.has(res_name))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Conflicting column name '{}'", res_name);
+
+    return {res_col, res_col_type, res_name};
+}
 
 template <bool has_left_nulls, bool has_right_nulls>
 int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
@@ -180,7 +217,7 @@ class MergeJoinCursor
 {
 public:
     MergeJoinCursor(const Block & block, const SortDescription & desc_)
-        : impl(SortCursorImpl(block, desc_))
+        : impl(block, desc_)
     {
         /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
         if (impl.permutation)
@@ -320,14 +357,17 @@ MutableColumns makeMutableColumns(const Block & block, size_t rows_to_reserve = 
 void makeSortAndMerge(const Names & keys, SortDescription & sort, SortDescription & merge)
 {
     NameSet unique_keys;
+    for (const auto & sd: merge)
+        unique_keys.insert(sd.column_name);
+
     for (const auto & key_name : keys)
     {
-        merge.emplace_back(SortColumnDescription(key_name, 1, 1));
+        merge.emplace_back(key_name);
 
-        if (!unique_keys.count(key_name))
+        if (!unique_keys.contains(key_name))
         {
             unique_keys.insert(key_name);
-            sort.emplace_back(SortColumnDescription(key_name, 1, 1));
+            sort.emplace_back(key_name);
         }
     }
 }
@@ -464,9 +504,24 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
-    table_join->splitAdditionalColumns(right_sample_block, right_table_keys, right_columns_to_add);
+    std::tie(mask_column_name_left, mask_column_name_right) = table_join->joinConditionColumnNames();
+
+    /// Add auxiliary joining keys to join only rows where conditions from JOIN ON sections holds
+    /// Input boolean column converted to nullable and only rows with non NULLS value will be joined
+    if (!mask_column_name_left.empty() || !mask_column_name_right.empty())
+    {
+        key_names_left.push_back(deriveTempName(mask_column_name_left));
+        key_names_right.push_back(deriveTempName(mask_column_name_right));
+    }
+
+    key_names_left.insert(key_names_left.end(), table_join->keyNamesLeft().begin(), table_join->keyNamesLeft().end());
+    key_names_right.insert(key_names_right.end(), table_join->keyNamesRight().begin(), table_join->keyNamesRight().end());
+
+    addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
+    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
+
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
-    JoinCommon::removeLowCardinalityInplace(right_sample_block, table_join->keyNamesRight());
+    JoinCommon::removeLowCardinalityInplace(right_sample_block, key_names_right);
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
@@ -478,8 +533,8 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     if (nullable_right_side)
         JoinCommon::convertColumnsToNullable(right_columns_to_add);
 
-    makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
-    makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
+    makeSortAndMerge(key_names_left, left_sort_description, left_merge_description);
+    makeSortAndMerge(key_names_right, right_sort_description, right_merge_description);
 
     /// Temporary disable 'partial_merge_join_left_table_buffer_bytes' without 'partial_merge_join_optimizations'
     if (table_join->enablePartialMergeJoinOptimizations())
@@ -525,7 +580,8 @@ void MergeJoin::mergeInMemoryRightBlocks()
     pipeline.init(std::move(source));
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
-    pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
+    pipeline.addTransform(std::make_shared<MergeSortingTransform>(
+        pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
 
     auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
 
@@ -601,6 +657,7 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 {
     Block block = modifyRightBlock(src_block);
 
+    addConditionJoinColumn(block, JoinTableSide::Right);
     sortBlock(block, right_sort_description);
     return saveRightBlock(std::move(block));
 }
@@ -609,9 +666,12 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     if (block)
     {
-        JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+        /// Add auxiliary column, will be removed after joining
+        addConditionJoinColumn(block, JoinTableSide::Left);
+
+        JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
         materializeBlockInplace(block);
-        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
+        JoinCommon::removeLowCardinalityInplace(block, key_names_left, false);
 
         sortBlock(block, left_sort_description);
 
@@ -646,14 +706,15 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     if (!not_processed && left_blocks_buffer)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
 
+    if (needConditionJoinColumn())
+        block.erase(deriveTempName(mask_column_name_left));
+
     JoinCommon::restoreLowCardinalityInplace(block);
 }
 
 template <bool in_memory, bool is_all>
 void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    //std::shared_lock lock(rwlock);
-
     size_t rows_to_reserve = is_left ? block.rows() : 0;
     MutableColumns left_columns = makeMutableColumns(block, (is_all ? rows_to_reserve : 0));
     MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows_to_reserve);
@@ -682,7 +743,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(min_max_right_blocks[i], table_join->keyNamesRight());
+                int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
@@ -702,7 +763,6 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
         left_cursor.nextN(left_key_tail);
         joinInequalsLeft<is_all>(block, left_columns, right_columns_to_add, right_columns, left_cursor.position(), left_cursor.end());
-        //left_cursor.nextN(left_cursor.end() - left_cursor.position());
 
         changeLeftColumns(block, std::move(left_columns));
         addRightColumns(block, std::move(right_columns));
@@ -716,7 +776,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(min_max_right_blocks[i], table_join->keyNamesRight());
+                int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
@@ -817,7 +877,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 }
 
 bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                          MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
+                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -956,11 +1016,15 @@ void MergeJoin::initRightTableWriter()
 class NonMergeJoinedBlockInputStream : private NotJoined, public IBlockInputStream
 {
 public:
-    NonMergeJoinedBlockInputStream(const MergeJoin & parent_, const Block & result_sample_block_, UInt64 max_block_size_)
+    NonMergeJoinedBlockInputStream(const MergeJoin & parent_,
+                                   const Block & result_sample_block_,
+                                   const Names & key_names_right_,
+                                   UInt64 max_block_size_)
         : NotJoined(*parent_.table_join,
                     parent_.modifyRightBlock(parent_.right_sample_block),
                     parent_.right_sample_block,
-                    result_sample_block_)
+                    result_sample_block_,
+                    {}, key_names_right_)
         , parent(parent_)
         , max_block_size(max_block_size_)
     {}
@@ -1045,8 +1109,24 @@ private:
 BlockInputStreamPtr MergeJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
-        return std::make_shared<NonMergeJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
+        return std::make_shared<NonMergeJoinedBlockInputStream>(*this, result_sample_block, key_names_right, max_block_size);
     return {};
+}
+
+bool MergeJoin::needConditionJoinColumn() const
+{
+    return !mask_column_name_left.empty() || !mask_column_name_right.empty();
+}
+
+void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) const
+{
+    if (needConditionJoinColumn())
+    {
+        if (block_side == JoinTableSide::Left)
+            block.insert(condtitionColumnToJoinable(block, mask_column_name_left));
+        else
+            block.insert(condtitionColumnToJoinable(block, mask_column_name_right));
+    }
 }
 
 

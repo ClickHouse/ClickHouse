@@ -1,19 +1,17 @@
 #include <Interpreters/TableJoin.h>
 
-#include <common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
 
+#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
+
+#include <DataTypes/DataTypeNullable.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
-#include <Core/Settings.h>
-#include <Core/Block.h>
-#include <Core/ColumnsWithTypeAndName.h>
-
-#include <Common/StringUtils/StringUtils.h>
-
-#include <DataTypes/DataTypeNullable.h>
-#include <DataStreams/materializeBlock.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -181,22 +179,6 @@ NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names
             required_columns.insert(column);
 
     return getNamesWithAliases(required_columns);
-}
-
-void TableJoin::splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const
-{
-    block_others = materializeBlock(sample_block);
-
-    for (const String & column_name : key_names_right)
-    {
-        /// Extract right keys with correct keys order. There could be the same key names.
-        if (!block_keys.has(column_name))
-        {
-            auto & col = block_others.getByName(column_name);
-            block_keys.insert(col);
-            block_others.erase(column_name);
-        }
-    }
 }
 
 Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const
@@ -484,12 +466,6 @@ String TableJoin::renamedRightColumnName(const String & name) const
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
     LOG_TRACE(&Poco::Logger::get("TableJoin"), "Add join condition for {} table: {}", (is_left ? "left" : "right"), queryToString(ast));
-    if (!forceHashJoin())
-    {
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
-                            "Expression {} in JOIN ON can be handled only with 'hash' join algorithm",
-                            queryToString(ast));
-    }
 
     if (is_left)
         on_filter_condition_asts_left.push_back(ast);
@@ -522,6 +498,17 @@ ASTPtr TableJoin::joinConditionColumn(JoinTableSide side) const
     if (side == JoinTableSide::Left)
         return buildJoinConditionColumn(on_filter_condition_asts_left);
     return buildJoinConditionColumn(on_filter_condition_asts_right);
+}
+
+/// Conditions for left/right table from JOIN ON section, only rows where conditions hold can be joined.
+std::pair<String, String> TableJoin::joinConditionColumnNames() const
+{
+    std::pair<String, String> res;
+    if (auto cond_ast = joinConditionColumn(JoinTableSide::Left))
+        res.first = cond_ast->getColumnName();
+    if (auto cond_ast = joinConditionColumn(JoinTableSide::Right))
+        res.second = cond_ast->getColumnName();
+    return res;
 }
 
 }
