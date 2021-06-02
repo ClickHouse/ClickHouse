@@ -200,7 +200,7 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
 ```
 
-Removes "freezed" partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
+Удаляет с диска "замороженные" партиции с указанным именем. Если секция `PARTITION` опущена, запрос удаляет резервную копию всех партиций сразу.
 
 ## FETCH PARTITION {#alter_fetch-partition}
 
