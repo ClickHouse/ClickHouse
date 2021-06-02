@@ -59,7 +59,9 @@ Result:
 └────┴─────────────────────┴─────────────────────┘
 ```
 
-In this example, the arguments of the `DateTime` type are used. In this case, the function returns a value in seconds:
+In this example, the arguments of the DateTime type are used. The function returns a value in seconds.
+
+Query:
 
 ``` sql
 SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM dt_interval GROUP BY id ORDER BY id;
