@@ -36,7 +36,9 @@ intervalLengthSum(start, end)
 └────┴───────┴─────┘
 ```
 
-In this example, the arguments of the `Float32` type are used. In this case, the function returns a value of the `Float64` type:
+In this example, the arguments of the Float32 type are used. The function returns a value of the Float64 type.
+
+Query:
 
 ``` sql
 SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM fl_interval GROUP BY id ORDER BY id;
