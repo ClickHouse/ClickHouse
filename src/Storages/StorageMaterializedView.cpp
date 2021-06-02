@@ -166,6 +166,16 @@ void StorageMaterializedView::read(
     {
         auto mv_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
         auto target_header = query_plan.getCurrentDataStream().header;
+
+        /// No need to convert columns that does not exists in MV
+        std::set<size_t> target_only_positions;
+        for (const auto & column : target_header)
+        {
+            if (!mv_header.has(column.name))
+                target_only_positions.insert(target_header.getPositionByName(column.name));
+        }
+        target_header.erase(target_only_positions);
+
         if (!blocksHaveEqualStructure(mv_header, target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
