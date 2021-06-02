@@ -16,6 +16,7 @@ toc_title: PARTITION
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — удалить все значения в столбце для заданной партиции;
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — очистить построенные вторичные индексы для заданной партиции;
 -   [FREEZE PARTITION](#alter_freeze-partition) — создать резервную копию партиции;
+-   [UNFREEZE PARTITION](#alter_unfreeze-partition) — удалить резервную копию партиции;
 -   [FETCH PARTITION](#alter_fetch-partition) — скачать партицию с другого сервера;
 -   [MOVE PARTITION\|PART](#alter_move-partition) — переместить партицию/кускок на другой диск или том.
 
@@ -192,6 +193,14 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 Восстановление данных из резервной копии не требует остановки сервера.
 
 Подробнее о резервном копировании и восстановлении данных читайте в разделе [Резервное копирование данных](../../../operations/backup.md).
+
+## UNFREEZE PARTITION {#alter_unfreeze-partition}
+
+``` sql
+ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
+```
+
+Removes "freezed" partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
 
 ## FETCH PARTITION {#alter_fetch-partition}
 
