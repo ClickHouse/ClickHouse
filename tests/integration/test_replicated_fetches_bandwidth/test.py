@@ -26,6 +26,7 @@ def get_random_string(length):
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
 
 def test_limited_fetch_single_table(start_cluster):
+    print("Limited fetches single table")
     try:
         for i, node in enumerate([node1, node2]):
             node.query(f"CREATE TABLE limited_fetch_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetch_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_fetches_network_bandwidth=10485760")
@@ -57,6 +58,7 @@ def test_limited_fetch_single_table(start_cluster):
             node.query("DROP TABLE IF EXISTS limited_fetch_table SYNC")
 
 def test_limited_send_single_table(start_cluster):
+    print("Limited sends single table")
     try:
         for i, node in enumerate([node1, node2]):
             node.query(f"CREATE TABLE limited_send_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetch_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_sends_network_bandwidth=5242880")
@@ -89,6 +91,7 @@ def test_limited_send_single_table(start_cluster):
 
 
 def test_limited_fetches_for_server(start_cluster):
+    print("Limited fetches for server")
     try:
         for i, node in enumerate([node1, node3]):
             for j in range(5):
@@ -125,6 +128,7 @@ def test_limited_fetches_for_server(start_cluster):
 
 
 def test_limited_sends_for_server(start_cluster):
+    print("Limited sends for server")
     try:
         for i, node in enumerate([node1, node3]):
             for j in range(5):
@@ -161,6 +165,7 @@ def test_limited_sends_for_server(start_cluster):
 
 
 def test_should_execute_fetch(start_cluster):
+    print("Should execute fetch")
     try:
         for i, node in enumerate([node1, node2]):
             node.query(f"CREATE TABLE should_execute_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/should_execute_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_fetches_network_bandwidth=3505253")
