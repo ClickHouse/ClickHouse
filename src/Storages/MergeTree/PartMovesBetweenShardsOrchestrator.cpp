@@ -64,6 +64,8 @@ void PartMovesBetweenShardsOrchestrator::fetchStateFromZK()
 {
     std::lock_guard lock(state_mutex);
 
+    // TODO(nv): Make this exception safe. Don't clear local state if parsing
+    //      from ZK fails.
     entries.clear();
 
     auto zk = storage.getZooKeeper();
@@ -319,33 +321,49 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
                 auto part = storage.getActiveContainingPart(entry.part_name);
+
                 /// Allocating block number in other replicas zookeeper path
                 /// TODO Maybe we can do better.
-                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, "", entry.to_shard);
-                auto block_number = block_number_lock->getNumber();
+                auto block_id_path = entry.to_shard + "/blocks/" + "move_part_between_shards_" + toString(entry.part_uuid);
+                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, block_id_path, entry.to_shard);
 
-                auto part_info = part->info;
-                part_info.min_block = block_number;
-                part_info.max_block = block_number;
-                part_info.level = 0;
-                part_info.mutation = 0;
-
-                /// Attach log entry (all replicas already fetched part)
                 ReplicatedMergeTreeLogEntryData log_entry;
-                log_entry.type = ReplicatedMergeTreeLogEntryData::ATTACH_PART;
-                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
-                log_entry.create_time = std::time(nullptr);
-                log_entry.new_part_name = part_info.getPartName();
-                ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
-                ops.emplace_back(zkutil::makeCreateRequest(
-                    entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
 
-                Coordination::Responses responses;
-                Coordination::Error rc = zk->tryMulti(ops, responses);
-                zkutil::KeeperMultiException::check(rc, ops, responses);
+                if (block_number_lock)
+                {
+                    auto block_number = block_number_lock->getNumber();
 
-                String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
-                log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+                    auto part_info = part->info;
+                    part_info.min_block = block_number;
+                    part_info.max_block = block_number;
+                    part_info.level = 0;
+                    part_info.mutation = 0;
+
+                    /// Attach log entry (all replicas already fetched part)
+                    log_entry.type = ReplicatedMergeTreeLogEntryData::ATTACH_PART;
+                    log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+                    log_entry.create_time = std::time(nullptr);
+                    log_entry.new_part_name = part_info.getPartName();
+
+                    ops.emplace_back(zkutil::makeCreateRequest(block_id_path, log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                    ops.emplace_back(zkutil::makeCreateRequest(
+                        entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+                    Coordination::Responses responses;
+                    Coordination::Error rc = zk->tryMulti(ops, responses);
+                    zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+                    log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+                }
+                else
+                {
+                    Coordination::Stat stat;
+                    String log_entry_str = zk->get(block_id_path, &stat);
+                    log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat);
+                    log_entry.znode_name = "queue--fake-name";
+                }
 
                 storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
 
@@ -490,8 +508,11 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
     return CancellationCode::CancelSent;
 }
 
-std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries() const
+std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries()
 {
+    // Force sync. Also catches parsing errors.
+    fetchStateFromZK();
+
     std::lock_guard lock(state_mutex);
 
     std::vector<Entry> res;
@@ -537,6 +558,8 @@ void PartMovesBetweenShardsOrchestrator::Entry::fromString(const String & buf)
     to_shard = json->getValue<std::string>(JSON_KEY_TO_SHARD);
     state.value = EntryState::fromString(json->getValue<std::string>(JSON_KEY_STATE));
     rollback = json->getValue<bool>(JSON_KEY_ROLLBACK);
+    // TODO(nv): This struggles parsing some exceptions,
+    //      example: https://gist.github.com/nvartolomei/75373514a94835be4218e0f6b44bff79
     last_exception_msg = json->getValue<std::string>(JSON_KEY_LAST_EX_MSG);
     num_tries = json->getValue<UInt64>(JSON_KEY_NUM_TRIES);
 }

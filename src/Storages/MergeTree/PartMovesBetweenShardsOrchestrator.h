@@ -156,7 +156,7 @@ public:
     /// Or we could have a single thread trying to run one step at a time.
     bool step();
 
-    std::vector<Entry> getEntries() const;
+    std::vector<Entry> getEntries();
     CancellationCode killPartMoveToShard(const UUID & task_uuid);
 
 private:
