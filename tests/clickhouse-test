@@ -38,6 +38,7 @@ MESSAGES_TO_RETRY = [
     "Coordination::Exception: Operation timeout",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
+    "DB::Exception: New table appeared in database being dropped or detached. Try again"
 ]
 
 class Terminated(KeyboardInterrupt):
@@ -185,9 +186,10 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         'stderr': stderr_file,
     }
 
-    # >> append to stdout and stderr, because there are also output of per test database creation
+    # >> append to stderr (but not stdout since it is not used there),
+    # because there are also output of per test database creation
     if not args.database:
-        pattern = '{test} >> {stdout} 2>> {stderr}'
+        pattern = '{test} > {stdout} 2>> {stderr}'
     else:
         pattern = '{test} > {stdout} 2> {stderr}'
 

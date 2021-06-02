@@ -117,13 +117,13 @@ using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHo
 class BackgroundSchedulePoolTaskHolder;
 
 /// For some reason Context is required to get Storage from Database object
-class DatabaseCatalog : boost::noncopyable, WithContext
+class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 
-    static DatabaseCatalog & init(ContextPtr global_context_);
+    static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
     static void shutdown();
 
@@ -209,7 +209,7 @@ private:
     // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
-    explicit DatabaseCatalog(ContextPtr global_context_);
+    explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 

@@ -34,5 +34,5 @@ soupsieve==2.0.1
 termcolor==1.1.0
 tornado==6.1
 Unidecode==1.1.1
-urllib3==1.25.10
+urllib3>=1.26.5
 Pygments>=2.7.4
