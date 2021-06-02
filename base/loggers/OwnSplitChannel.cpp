@@ -11,6 +11,7 @@
 #include <Common/DNSResolver.h>
 #include <common/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/IO.h>
 
 namespace DB
 {
@@ -43,34 +44,31 @@ void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
     {
         logSplit(msg);
     }
+    /// It is better to catch the errors here in order to avoid
+    /// breaking some functionality because of unexpected "File not
+    /// found" (or similar) error.
+    ///
+    /// For example StorageDistributedDirectoryMonitor will mark batch
+    /// as broken, some MergeTree code can also be affected.
+    ///
+    /// Also note, that we cannot log the exception here, since this
+    /// will lead to recursion, using regular tryLogCurrentException().
+    /// but let's log it into the stderr at least.
     catch (...)
     {
         MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-        /// It is better to catch the errors here in order to avoid
-        /// breaking some functionality because of unexpected "File not
-        /// found" (or similar) error.
-        ///
-        /// For example StorageDistributedDirectoryMonitor will mark batch
-        /// as broken, some MergeTree code can also be affected.
-        ///
-        /// Also note, that we cannot log the exception here, since this
-        /// will lead to recursion, using regular tryLogCurrentException().
-        /// but let's log it into the stderr at least.
-        std::string message = "Cannot add message to the log:\n";
-        message += msg.getText();
-        message += "\n";
-        message += getCurrentExceptionMessage(true);
+        const std::string & exception_message = getCurrentExceptionMessage(true);
+        const std::string & message = msg.getText();
 
-        try
+        if (!writeRetry(STDERR_FILENO, "Cannot add message to the log: ") ||
+            !writeRetry(STDERR_FILENO, message.data(), message.size()) ||
+            !writeRetry(STDERR_FILENO, "\n") ||
+            !writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size()) ||
+            !writeRetry(STDERR_FILENO, "\n")
+        )
         {
-            WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
-            writeBinary(message, out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            /// Nothing can be done. Ignore the exception.
+            /// Nothing can be done. Ignore the error.
         }
     }
 }
