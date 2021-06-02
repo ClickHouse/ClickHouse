@@ -586,17 +586,15 @@ void makeWindowDescriptionFromAST(const Context & context,
 
     if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {
-        auto [value, _] = evaluateConstantExpression(
-            definition.frame_end_offset,
-            const_pointer_cast<Context>(context.shared_from_this()));
+        auto [value, _] = evaluateConstantExpression(definition.frame_end_offset,
+            context.shared_from_this());
         desc.frame.end_offset = value;
     }
 
     if (definition.frame_begin_type == WindowFrame::BoundaryType::Offset)
     {
-        auto [value, _] = evaluateConstantExpression(
-            definition.frame_begin_offset,
-            const_pointer_cast<Context>(context.shared_from_this()));
+        auto [value, _] = evaluateConstantExpression(definition.frame_begin_offset,
+            context.shared_from_this());
         desc.frame.begin_offset = value;
     }
 }
