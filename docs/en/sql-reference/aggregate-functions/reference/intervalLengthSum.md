@@ -82,7 +82,9 @@ Result:
 └────┴────────────┴────────────┘
 ```
 
-In this example, the arguments of the `Date` type are used. In this case, the function returns a value in days:
+In this example, the arguments of the Date type are used. The function returns a value in days.
+
+Query:
 
 ``` sql
 SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM date_interval GROUP BY id ORDER BY id;
