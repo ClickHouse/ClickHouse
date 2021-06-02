@@ -60,7 +60,6 @@ public:
         ColumnsDescription columns;
         const ConstraintsDescription & constraints;
         const String & comment;
-        const Context & context;
     };
 
     NamesAndTypesList getVirtuals() const override;

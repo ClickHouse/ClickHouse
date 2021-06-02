@@ -136,7 +136,7 @@ public:
         const String & name,
         ReadBuffer & buf,
         IInputFormatHeader & format_header,
-        const Context & context,
+        ContextConstPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -171,14 +171,14 @@ public:
         const String & name,
         ReadBuffer & buf,
         IInputFormatHeader & format_header,
-        const Context & context,
+        ContextConstPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     InputFormatHeaderPtr getInputFormatHeader(
         const String & name,
         ReadBuffer & buf,
-        const Context & context,
+        ContextConstPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
