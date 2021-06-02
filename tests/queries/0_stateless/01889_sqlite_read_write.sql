@@ -1,7 +1,7 @@
 DROP DATABASE IF EXISTS sqlite_database;
 
 CREATE DATABASE sqlite_database
-ENGINE = SQLite('tests/queries/0_stateless/test.sqlite3');
+ENGINE = SQLite('../../ClickHouse/tests/queries/0_stateless/test.sqlite3');
 
 SELECT * FROM sqlite_database.`Some table`;
 
