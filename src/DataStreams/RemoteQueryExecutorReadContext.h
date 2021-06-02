@@ -44,6 +44,7 @@ public:
     /// * pipe_fd is a pipe we use to cancel query and socket polling by executor.
     /// We put those descriptors into our own epoll which is used by external executor.
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
+    bool is_timer_alarmed = false;
     int connection_fd = -1;
     int pipe_fd[2] = { -1, -1 };
 
@@ -54,10 +55,10 @@ public:
     explicit RemoteQueryExecutorReadContext(IConnections & connections_);
     ~RemoteQueryExecutorReadContext();
 
-    bool checkTimeout(bool blocking = false) const;
-    bool checkTimeoutImpl(bool blocking) const;
+    bool checkTimeout(bool blocking = false);
+    bool checkTimeoutImpl(bool blocking);
 
-    void setConnectionFD(int fd, const Poco::Timespan & timeout = 0, const std::string & fd_description = "");
+    void setConnectionFD(int fd, Poco::Timespan timeout = 0, const std::string & fd_description = "");
     void setTimer() const;
 
     bool resumeRoutine();

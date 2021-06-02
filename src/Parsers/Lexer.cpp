@@ -278,7 +278,8 @@ Token Lexer::nextTokenImpl()
                         else
                             ++pos;
                     }
-                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, end);
+                    pos = end;
+                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
                 }
             }
             return Token(TokenType::Slash, token_begin, pos);
@@ -318,7 +319,12 @@ Token Lexer::nextTokenImpl()
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
         case ':':
-            return Token(TokenType::Colon, token_begin, ++pos);
+        {
+            ++pos;
+            if (pos < end && *pos == ':')
+                return Token(TokenType::DoubleColon, token_begin, ++pos);
+            return Token(TokenType::Colon, token_begin, pos);
+        }
         case '|':
         {
             ++pos;

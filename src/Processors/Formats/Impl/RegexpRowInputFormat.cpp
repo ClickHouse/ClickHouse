@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <common/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -65,37 +65,38 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     ReadBuffer field_buf(const_cast<char *>(matched_fields[index].data()), matched_fields[index].size(), 0);
     try
     {
+        const auto & serialization = serializations[index];
         switch (field_format)
         {
             case ColumnFormat::Escaped:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextEscaped(*columns[index], field_buf, format_settings, type);
+                    read = SerializationNullable::deserializeTextEscapedImpl(*columns[index], field_buf, format_settings, serialization);
                 else
-                    type->deserializeAsTextEscaped(*columns[index], field_buf, format_settings);
+                    serialization->deserializeTextEscaped(*columns[index], field_buf, format_settings);
                 break;
             case ColumnFormat::Quoted:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextQuoted(*columns[index], field_buf, format_settings, type);
+                    read = SerializationNullable::deserializeTextQuotedImpl(*columns[index], field_buf, format_settings, serialization);
                 else
-                    type->deserializeAsTextQuoted(*columns[index], field_buf, format_settings);
+                    serialization->deserializeTextQuoted(*columns[index], field_buf, format_settings);
                 break;
             case ColumnFormat::Csv:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextCSV(*columns[index], field_buf, format_settings, type);
+                    read = SerializationNullable::deserializeTextCSVImpl(*columns[index], field_buf, format_settings, serialization);
                 else
-                    type->deserializeAsTextCSV(*columns[index], field_buf, format_settings);
+                    serialization->deserializeTextCSV(*columns[index], field_buf, format_settings);
                 break;
             case ColumnFormat::Json:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextJSON(*columns[index], field_buf, format_settings, type);
+                    read = SerializationNullable::deserializeTextJSONImpl(*columns[index], field_buf, format_settings, serialization);
                 else
-                    type->deserializeAsTextJSON(*columns[index], field_buf, format_settings);
+                    serialization->deserializeTextJSON(*columns[index], field_buf, format_settings);
                 break;
             case ColumnFormat::Raw:
                 if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeWholeText(*columns[index], field_buf, format_settings, type);
+                    read = SerializationNullable::deserializeWholeTextImpl(*columns[index], field_buf, format_settings, serialization);
                 else
-                    type->deserializeAsWholeText(*columns[index], field_buf, format_settings);
+                    serialization->deserializeWholeText(*columns[index], field_buf, format_settings);
                 break;
             default:
                 break;

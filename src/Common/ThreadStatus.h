@@ -1,20 +1,20 @@
 #pragma once
 
-#include <common/StringRef.h>
-#include <Common/ProfileEvents.h>
+#include <Core/SettingsEnums.h>
+#include <Interpreters/Context_fwd.h>
+#include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ProfileEvents.h>
+#include <common/StringRef.h>
 
-#include <Core/SettingsEnums.h>
+#include <boost/noncopyable.hpp>
 
-#include <IO/Progress.h>
-
-#include <memory>
+#include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <functional>
-#include <boost/noncopyable.hpp>
 
 
 namespace Poco
@@ -26,7 +26,6 @@ namespace Poco
 namespace DB
 {
 
-class Context;
 class QueryStatus;
 class ThreadStatus;
 class QueryProfilerReal;
@@ -58,8 +57,8 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
-    Context * query_context = nullptr;
-    Context * global_context = nullptr;
+    ContextWeakPtr query_context;
+    ContextWeakPtr global_context;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
     std::function<void()> fatal_error_callback;
@@ -72,7 +71,7 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
-    UInt64 normalized_query_hash;
+    UInt64 normalized_query_hash = 0;
 };
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
@@ -122,9 +121,9 @@ protected:
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
 
     /// Is set once
-    Context * global_context = nullptr;
+    ContextWeakPtr global_context;
     /// Use it only from current thread
-    Context * query_context = nullptr;
+    ContextWeakPtr query_context;
 
     String query_id;
 
@@ -178,9 +177,9 @@ public:
         return query_id;
     }
 
-    const Context * getQueryContext() const
+    auto getQueryContext() const
     {
-        return query_context;
+        return query_context.lock();
     }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
@@ -203,7 +202,7 @@ public:
 
     /// Sets query context for current master thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
-    void attachQueryContext(Context & query_context);
+    void attachQueryContext(ContextPtr query_context);
 
     /// Update several ProfileEvents counters
     void updatePerformanceCounters();

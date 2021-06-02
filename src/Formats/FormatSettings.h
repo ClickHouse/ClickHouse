@@ -27,7 +27,7 @@ struct FormatSettings
     bool with_names_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
-    bool null_as_default = false;
+    bool null_as_default = true;
 
     enum class DateTimeInputFormat
     {

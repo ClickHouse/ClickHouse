@@ -34,7 +34,7 @@ public:
 
     explicit FunctionPolygonsUnion() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionPolygonsUnion>();
     }
@@ -56,7 +56,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return DataTypeCustomMultiPolygonSerialization::nestedDataType();
+        return DataTypeFactory::instance().get("MultiPolygon");
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override

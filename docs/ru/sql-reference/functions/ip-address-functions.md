@@ -395,3 +395,54 @@ SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0
 └──────────────────┴────────────────────┘
 ```
 
+## isIPAddressInRange {#isipaddressinrange}
+
+Проверяет, попадает ли IP адрес в интервал, заданный в нотации [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing).
+
+**Синтаксис**
+
+``` sql
+isIPAddressInRange(address, prefix)
+```
+Функция принимает IPv4 или IPv6 адрес виде строки. Возвращает `0`, если версия адреса и интервала не совпадают.
+
+**Аргументы**
+
+-   `address` — IPv4 или IPv6 адрес. [String](../../sql-reference/data-types/string.md).
+-   `prefix` — IPv4 или IPv6 подсеть, заданная в нотации CIDR. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   `1` или `0`.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8');
+```
+
+Результат:
+
+``` text
+┌─isIPAddressInRange('127.0.0.1', '127.0.0.0/8')─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
+```
+
+Результат:
+
+``` text
+┌─isIPAddressInRange('127.0.0.1', 'ffff::/16')─┐
+│                                            0 │
+└──────────────────────────────────────────────┘
+```

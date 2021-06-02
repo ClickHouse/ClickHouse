@@ -12,7 +12,9 @@ The search is case-sensitive by default in all these functions. There are separa
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
-Returns the position (in bytes) of the found substring in the string, starting from 1.
+Searches for the substring `needle` in the string `haystack`.
+
+Returns the position (in bytes) of the found substring in the string, starting from 1. 
 
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
@@ -20,15 +22,22 @@ For a case-insensitive search, use the function [positionCaseInsensitive](#posit
 
 ``` sql
 position(haystack, needle[, start_pos])
-```
+``` 
+
+``` sql
+position(needle IN haystack)
+``` 
 
 Alias: `locate(haystack, needle[, start_pos])`.
+
+!!! note "Note"
+    Syntax of `position(needle IN haystack)` provides SQL-compatibility, the function works the same way as to `position(haystack, needle)`.
 
 **Arguments**
 
 -   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
 
 **Returned values**
 
@@ -83,11 +92,41 @@ Result:
 └───────────────────────────────┘
 ```
 
+**Examples for POSITION(needle IN haystack) syntax**
+
+Query:
+
+```sql
+SELECT 3 = position('c' IN 'abc');
+```
+
+Result:
+
+```text
+┌─equals(3, position('abc', 'c'))─┐
+│                               1 │
+└─────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT 6 = position('/' IN s) FROM (SELECT 'Hello/World' AS s);
+```
+
+Result:
+
+```text
+┌─equals(6, position(s, '/'))─┐
+│                           1 │
+└─────────────────────────────┘
+```
+
 ## positionCaseInsensitive {#positioncaseinsensitive}
 
 The same as [position](#position) returns the position (in bytes) of the found substring in the string, starting from 1. Use the function for a case-insensitive search.
 
-Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can’t be represented using a single byte, the function doesn’t throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
+Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can’t be represented using a single byte, the function does not throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
 
 **Syntax**
 
@@ -128,7 +167,7 @@ Result:
 
 Returns the position (in Unicode points) of the found substring in the string, starting from 1.
 
-Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function doesn’t throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
+Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function does not throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
 
 For a case-insensitive search, use the function [positionCaseInsensitiveUTF8](#positioncaseinsensitiveutf8).
 
@@ -203,7 +242,7 @@ Result:
 
 The same as [positionUTF8](#positionutf8), but is case-insensitive. Returns the position (in Unicode points) of the found substring in the string, starting from 1.
 
-Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function doesn’t throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
+Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function does not throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
 
 **Syntax**
 
@@ -310,7 +349,7 @@ For a case-insensitive search or/and in UTF-8 format use functions `multiSearchA
 
 Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
 
-Returns 0 if it doesn’t match, or 1 if it matches.
+Returns 0 if it does not match, or 1 if it matches.
 
 Note that the backslash symbol (`\`) is used for escaping in the regular expression. The same symbol is used for escaping in string literals. So in order to escape the symbol in a regular expression, you must write two backslashes (\\) in a string literal.
 
@@ -352,11 +391,11 @@ The same as `multiFuzzyMatchAny`, but returns the array of all indices in any or
 
 ## extract(haystack, pattern) {#extracthaystack-pattern}
 
-Extracts a fragment of a string using a regular expression. If ‘haystack’ doesn’t match the ‘pattern’ regex, an empty string is returned. If the regex doesn’t contain subpatterns, it takes the fragment that matches the entire regex. Otherwise, it takes the fragment that matches the first subpattern.
+Extracts a fragment of a string using a regular expression. If ‘haystack’ does not match the ‘pattern’ regex, an empty string is returned. If the regex does not contain subpatterns, it takes the fragment that matches the entire regex. Otherwise, it takes the fragment that matches the first subpattern.
 
 ## extractAll(haystack, pattern) {#extractallhaystack-pattern}
 
-Extracts all the fragments of a string using a regular expression. If ‘haystack’ doesn’t match the ‘pattern’ regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the ‘extract’ function (it takes the first subpattern, or the entire expression if there isn’t a subpattern).
+Extracts all the fragments of a string using a regular expression. If ‘haystack’ does not match the ‘pattern’ regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the ‘extract’ function (it takes the first subpattern, or the entire expression if there isn’t a subpattern).
 
 ## extractAllGroupsHorizontal {#extractallgroups-horizontal}
 
@@ -380,7 +419,7 @@ extractAllGroupsHorizontal(haystack, pattern)
 
 -   Type: [Array](../../sql-reference/data-types/array.md).
 
-If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is returned. 
+If `haystack` does not match the `pattern` regex, an array of empty arrays is returned. 
 
 **Example**
 
@@ -421,7 +460,7 @@ extractAllGroupsVertical(haystack, pattern)
 
 -   Type: [Array](../../sql-reference/data-types/array.md).
 
-If `haystack` doesn’t match the `pattern` regex, an empty array is returned. 
+If `haystack` does not match the `pattern` regex, an empty array is returned. 
 
 **Example**
 
@@ -474,7 +513,7 @@ ilike(haystack, pattern)
 **Arguments**
 
 -   `haystack` — Input string. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — If `pattern` doesn't contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
+-   `pattern` — If `pattern` does not contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
 
 Some `pattern` examples:
 
@@ -488,7 +527,7 @@ Some `pattern` examples:
 **Returned values**
 
 -   True, if the string matches `pattern`.
--   False, if the string doesn't match `pattern`.
+-   False, if the string does not match `pattern`.
 
 **Example**
 
@@ -772,4 +811,3 @@ Result:
 │                             2 │
 └───────────────────────────────┘
 ```
-

@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-template <class DataType, class Geometry, class Serializer, class NameHolder>
+template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWkt : public IFunction
 {
 public:
@@ -43,7 +43,7 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        return DataType::nestedDataType();
+        return DataTypeFactory::instance().get(DataTypeName().getName());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -68,9 +68,9 @@ public:
         return true;
     }
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
-        return std::make_shared<FunctionReadWkt<DataType, Geometry, Serializer, NameHolder>>();
+        return std::make_shared<FunctionReadWkt<DataTypeName, Geometry, Serializer, NameHolder>>();
     }
 };
 
@@ -96,10 +96,10 @@ struct ReadWktMultiPolygonNameHolder
 
 void registerFunctionReadWkt(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionReadWkt<DataTypeCustomPointSerialization, CartesianPoint, PointSerializer<CartesianPoint>, ReadWktPointNameHolder>>();
-    factory.registerFunction<FunctionReadWkt<DataTypeCustomRingSerialization, CartesianRing, RingSerializer<CartesianPoint>, ReadWktRingNameHolder>>();
-    factory.registerFunction<FunctionReadWkt<DataTypeCustomPolygonSerialization, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWktPolygonNameHolder>>();
-    factory.registerFunction<FunctionReadWkt<DataTypeCustomMultiPolygonSerialization, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWktMultiPolygonNameHolder>>();
+    factory.registerFunction<FunctionReadWkt<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWktPointNameHolder>>();
+    factory.registerFunction<FunctionReadWkt<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWktRingNameHolder>>();
+    factory.registerFunction<FunctionReadWkt<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWktPolygonNameHolder>>();
+    factory.registerFunction<FunctionReadWkt<DataTypeMultiPolygonName, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWktMultiPolygonNameHolder>>();
 }
 
 }

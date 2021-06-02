@@ -1,9 +1,11 @@
 #pragma once
 
-#include <map>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+
 #include <Poco/Net/SocketAddress.h>
+
+#include <map>
 
 namespace Poco
 {
@@ -50,9 +52,11 @@ public:
     Cluster & operator=(const Cluster &) = delete;
 
     /// is used to set a limit on the size of the timeout
-    static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
+    static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
 public:
+    using SlotToShard = std::vector<UInt64>;
+
     struct Address
     {
         /** In configuration file,
@@ -97,6 +101,7 @@ public:
         Int64 priority = 1;
 
         Address() = default;
+
         Address(
             const Poco::Util::AbstractConfiguration & config,
             const String & config_prefix,
@@ -104,13 +109,16 @@ public:
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
             UInt32 replica_index_ = 0);
+
         Address(
             const String & host_port_,
             const String & user_,
             const String & password_,
             UInt16 clickhouse_port,
             bool secure_ = false,
-            Int64 priority_ = 1);
+            Int64 priority_ = 1,
+            UInt32 shard_index_ = 0,
+            UInt32 replica_index_ = 0);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -226,7 +234,6 @@ public:
     bool maybeCrossReplication() const;
 
 private:
-    using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
 
 public:

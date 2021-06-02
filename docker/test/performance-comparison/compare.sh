@@ -243,9 +243,12 @@ function run_tests
     profile_seconds_left=600
 
     # Run the tests.
+    total_tests=$(echo "$test_files" | wc -w)
+    current_test=0
     test_name="<none>"
     for test in $test_files
     do
+        echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
@@ -273,6 +276,7 @@ function run_tests
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
+        current_test=$((current_test + 1))
     done
 
     unset TIMEFORMAT
@@ -548,6 +552,63 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
     order by test, query_index, metric_name
     ;
 " 2> >(tee -a analyze/errors.log 1>&2)
+
+# Fetch historical query variability thresholds from the CI database
+clickhouse-local --query "
+    left join file('analyze/report-thresholds.tsv', TSV,
+            'test text, report_threshold float') thresholds
+        on query_metric_stats.test = thresholds.test
+"
+
+if [ -v CHPC_DATABASE_URL ]
+then
+    set +x # Don't show password in the log
+    client=(clickhouse-client
+        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+        # so I have to extract host and port with clickhouse-local. I tried to use
+        # Poco URI parser to support this in the client, but it's broken and can't
+        # parse host:port.
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        --secure
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
+        --config "right/config/client_config.xml"
+        --database perftest
+        --date_time_input_format=best_effort)
+
+
+# Precision is going to be 1.5 times worse for PRs. How do I know it? I ran this:
+# SELECT quantilesExact(0., 0.1, 0.5, 0.75, 0.95, 1.)(p / m)
+# FROM
+# (
+#     SELECT
+#         quantileIf(0.95)(stat_threshold, pr_number = 0) AS m,
+#         quantileIf(0.95)(stat_threshold, (pr_number != 0) AND (abs(diff) < stat_threshold)) AS p
+#     FROM query_metrics_v2
+#     WHERE (event_date > (today() - toIntervalMonth(1))) AND (metric = 'client_time')
+#     GROUP BY
+#         test,
+#         query_index,
+#         query_display_name
+#     HAVING count(*) > 100
+# )
+# The file can be empty if the server is inaccessible, so we can't use TSVWithNamesAndTypes.
+    "${client[@]}" --query "
+            select test, query_index,
+                quantileExact(0.99)(abs(diff)) max_diff,
+                quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 max_stat_threshold,
+                query_display_name
+            from query_metrics_v2
+            where event_date > now() - interval 1 month
+                and metric = 'client_time'
+                and pr_number = 0
+            group by test, query_index, query_display_name
+            having count(*) > 100
+            " > analyze/historical-thresholds.tsv
+else
+    touch analyze/historical-thresholds.tsv
+fi
+
 }
 
 # Analyze results
@@ -592,6 +653,26 @@ create view query_metric_stats as
             diff float, stat_threshold float')
     ;
 
+create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresholds.tsv')
+    as select
+        query_display_names.test test, query_display_names.query_index query_index,
+        ceil(greatest(0.1, historical_thresholds.max_diff,
+            test_thresholds.report_threshold), 2) changed_threshold,
+        ceil(greatest(0.2, historical_thresholds.max_stat_threshold,
+            test_thresholds.report_threshold + 0.1), 2) unstable_threshold,
+        query_display_names.query_display_name query_display_name
+    from query_display_names
+    left join file('analyze/historical-thresholds.tsv', TSV,
+        'test text, query_index int, max_diff float, max_stat_threshold float,
+            query_display_name text') historical_thresholds
+    on query_display_names.test = historical_thresholds.test
+        and query_display_names.query_index = historical_thresholds.query_index
+        and query_display_names.query_display_name = historical_thresholds.query_display_name
+    left join file('analyze/report-thresholds.tsv', TSV,
+        'test text, report_threshold float') test_thresholds
+    on query_display_names.test = test_thresholds.test
+    ;
+
 -- Main statistics for queries -- query time as reported in query log.
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
@@ -606,23 +687,23 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         -- uncaught regressions, because for the default 7 runs we do for PRs,
         -- the randomization distribution has only 16 values, so the max quantile
         -- is actually 0.9375.
-        abs(diff) > report_threshold        and abs(diff) >= stat_threshold as changed_fail,
-        abs(diff) > report_threshold - 0.05 and abs(diff) >= stat_threshold as changed_show,
+        abs(diff) > changed_threshold        and abs(diff) >= stat_threshold as changed_fail,
+        abs(diff) > changed_threshold - 0.05 and abs(diff) >= stat_threshold as changed_show,
 
-        not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
-        not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
+        not changed_fail and stat_threshold > unstable_threshold as unstable_fail,
+        not changed_show and stat_threshold > unstable_threshold - 0.05 as unstable_show,
 
         left, right, diff, stat_threshold,
-        if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
         query_metric_stats.test test, query_metric_stats.query_index query_index,
-        query_display_name
+        query_display_names.query_display_name query_display_name
     from query_metric_stats
-    left join file('analyze/report-thresholds.tsv', TSV,
-            'test text, report_threshold float') thresholds
-        on query_metric_stats.test = thresholds.test
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
             and query_metric_stats.query_index = query_display_names.query_index
+    left join report_thresholds
+        on query_display_names.test = report_thresholds.test
+            and query_display_names.query_index = report_thresholds.query_index
+            and query_display_names.query_display_name = report_thresholds.query_display_name
     -- 'server_time' is rounded down to ms, which might be bad for very short queries.
     -- Use 'client_time' instead.
     where metric_name = 'client_time'
@@ -760,7 +841,7 @@ create view test_times_view as
         total_client_time,
         queries,
         query_max,
-        real / queries avg_real_per_query,
+        real / if(queries > 0, queries, 1) avg_real_per_query,
         query_min,
         runs
     from test_time
@@ -781,7 +862,7 @@ create view test_times_view_total as
         sum(total_client_time),
         sum(queries),
         max(query_max),
-        sum(real) / sum(queries) avg_real_per_query,
+        sum(real) / if(sum(queries) > 0, sum(queries), 1) avg_real_per_query,
         min(query_min),
         -- Totaling the number of runs doesn't make sense, but use the max so
         -- that the reporting script doesn't complain about queries being too
@@ -884,7 +965,6 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
             and query_metric_stats.query_index = query_display_names.query_index
     order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
-
 
 # Prepare source data for metrics and flamegraphs for queries that were profiled
 # by perf.py.
@@ -1015,6 +1095,7 @@ done
 wait
 
 # Create per-query flamegraphs
+touch report/query-files.txt
 IFS=$'\n'
 for version in {right,left}
 do
@@ -1149,20 +1230,21 @@ function upload_results
         return 0
     fi 
 
-    # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-    # so I have to extract host and port with clickhouse-local. I tried to use
-    # Poco URI parser to support this in the client, but it's broken and can't
-    # parse host:port.
     set +x # Don't show password in the log
-    clickhouse-client \
-        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV") \
-        --secure \
-        --user "${CHPC_DATABASE_USER}" \
-        --password "${CHPC_DATABASE_PASSWORD}" \
-        --config "right/config/client_config.xml" \
-        --database perftest \
-        --date_time_input_format=best_effort \
-        --query "
+    client=(clickhouse-client
+        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+        # so I have to extract host and port with clickhouse-local. I tried to use
+        # Poco URI parser to support this in the client, but it's broken and can't
+        # parse host:port.
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        --secure
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
+        --config "right/config/client_config.xml"
+        --database perftest
+        --date_time_input_format=best_effort)
+
+    "${client[@]}" --query "
             insert into query_metrics_v2
             select
                 toDate(event_time) event_date,
@@ -1185,6 +1267,31 @@ function upload_results
             format TSV
             settings date_time_input_format='best_effort'
 " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
+
+    # Upload some run attributes. I use this weird form because it is the same
+    # form that can be used for historical data when you only have compare.log.
+    cat compare.log \
+        | sed -n '
+            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
+            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
+            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
+            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
+            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
+            s/.*left_sha=\(.*\)$/old-sha	\1/p;
+            s/.*right_sha=\(.*\)/new-sha	\1/p' \
+        | awk '
+            BEGIN { FS = "\t"; OFS = "\t" }
+            /^old-sha/ { old_sha=$2 }
+            /^new-sha/ { new_sha=$2 }
+            /^metric/ { print old_sha, new_sha, $2, $3 }' \
+        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
+
+    # Grepping numactl results from log is too crazy, I'll just call it again.
+    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+EOF
+
     set -x
 }
 
@@ -1267,3 +1374,4 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
+

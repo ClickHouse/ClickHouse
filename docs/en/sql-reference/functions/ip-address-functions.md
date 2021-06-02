@@ -48,7 +48,7 @@ LIMIT 10
 └────────────────┴───────┘
 ```
 
-Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you don’t rely on the exact format of this fragment.
+Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you do not rely on the exact format of this fragment.
 
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
@@ -394,3 +394,55 @@ Result:
 └──────────────────┴────────────────────┘
 ```
 
+## isIPAddressInRange {#isipaddressinrange}
+
+Determines if an IP address is contained in a network represented in the [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation. Returns `1` if true, or `0` otherwise.
+
+**Syntax**
+
+``` sql
+isIPAddressInRange(address, prefix)
+```
+
+This function accepts both IPv4 and IPv6 addresses (and networks) represented as strings. It returns `0` if the IP version of the address and the CIDR don't match.
+
+**Arguments**
+
+-   `address` — An IPv4 or IPv6 address. [String](../../sql-reference/data-types/string.md).
+-   `prefix` — An IPv4 or IPv6 network prefix in CIDR. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   `1` or `0`.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8');
+```
+
+Result:
+
+``` text
+┌─isIPAddressInRange('127.0.0.1', '127.0.0.0/8')─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
+```
+
+Result:
+
+``` text
+┌─isIPAddressInRange('127.0.0.1', 'ffff::/16')─┐
+│                                            0 │
+└──────────────────────────────────────────────┘
+```

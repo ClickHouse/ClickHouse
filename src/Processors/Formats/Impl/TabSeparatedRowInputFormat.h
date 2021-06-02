@@ -33,7 +33,8 @@ protected:
     bool with_types;
     const FormatSettings format_settings;
 
-    virtual bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
+    virtual bool readField(IColumn & column, const DataTypePtr & type,
+        const SerializationPtr & serialization, bool is_last_file_column);
 
 private:
     DataTypes data_types;

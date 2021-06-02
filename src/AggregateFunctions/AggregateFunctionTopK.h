@@ -10,7 +10,6 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/SpaceSaving.h>
-#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -18,6 +17,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 template <typename T>
@@ -49,6 +49,8 @@ public:
     {
         return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

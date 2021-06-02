@@ -16,6 +16,7 @@ $CLICKHOUSE_CLIENT -n -q "
 
 function thread1()
 {
+    # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
     while true; do $CLICKHOUSE_CLIENT --query "SELECT * FROM system.parts FORMAT Null"; done
 }
 
@@ -74,7 +75,7 @@ timeout $TIMEOUT bash -c thread5 2> /dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -n -q "
-    DROP TABLE alter_table;
-    DROP TABLE alter_table2
-"
+$CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table;" &
+$CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table2;" &
+
+wait

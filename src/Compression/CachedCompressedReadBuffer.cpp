@@ -33,33 +33,27 @@ bool CachedCompressedReadBuffer::nextImpl()
 
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
     UInt128 key = cache->hash(path, file_pos);
-    owned_cell = cache->get(key);
 
-    if (!owned_cell)
+    owned_cell = cache->getOrSet(key, [&]()
     {
-        /// If not, read it from the file.
         initInput();
         file_in->seek(file_pos, SEEK_SET);
 
-        owned_cell = std::make_shared<UncompressedCacheCell>();
+        auto cell = std::make_shared<UncompressedCacheCell>();
 
         size_t size_decompressed;
         size_t size_compressed_without_checksum;
-        owned_cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+        cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
 
-        if (owned_cell->compressed_size)
+        if (cell->compressed_size)
         {
-            owned_cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
-            owned_cell->data.resize(size_decompressed + owned_cell->additional_bytes);
-            decompress(owned_cell->data.data(), size_decompressed, size_compressed_without_checksum);
-
+            cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
+            cell->data.resize(size_decompressed + cell->additional_bytes);
+            decompressTo(cell->data.data(), size_decompressed, size_compressed_without_checksum);
         }
 
-        /// Put data into cache.
-        /// NOTE: Even if we don't read anything (compressed_size == 0)
-        /// because we can reuse this information and don't reopen file in future
-        cache->set(key, owned_cell);
-    }
+        return cell;
+    });
 
     if (owned_cell->data.size() == 0)
         return false;

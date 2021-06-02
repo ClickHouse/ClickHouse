@@ -27,7 +27,7 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
 private:
-    bool find(const Point & point, size_t & id) const override;
+    bool find(const Point & point, size_t & polygon_index) const override;
 };
 
 /** A polygon dictionary which generates a recursive grid in order to efficiently cut the number
@@ -55,7 +55,7 @@ public:
     static constexpr size_t kMaxDepthDefault = 5;
 
 private:
-    bool find(const Point & point, size_t & id) const override;
+    bool find(const Point & point, size_t & polygon_index) const override;
 
     std::vector<SlabsPolygonIndex> buckets;
     GridRoot<FinalCell> grid;
@@ -84,7 +84,7 @@ public:
     static constexpr size_t kMaxDepthDefault = 5;
 
 private:
-    bool find(const Point & point, size_t & id) const override;
+    bool find(const Point & point, size_t & polygon_index) const override;
 
     GridRoot<FinalCellWithSlabs> index;
 

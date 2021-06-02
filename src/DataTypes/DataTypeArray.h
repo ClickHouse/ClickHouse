@@ -1,13 +1,14 @@
 #pragma once
 
-#include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 
 
 namespace DB
 {
 
 
-class DataTypeArray final : public DataTypeWithSimpleSerialization
+class DataTypeArray final : public IDataType
 {
 private:
     /// The type of array elements.
@@ -35,56 +36,6 @@ public:
         return false;
     }
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    /** Streaming serialization of arrays is arranged in a special way:
-      * - elements placed in a row are written/read without array sizes;
-      * - the sizes are written/read in a separate stream,
-      * This is necessary, because when implementing nested structures, several arrays can have common sizes.
-      */
-
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
-
-    void serializeBinaryBulkStatePrefixImpl(
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void serializeBinaryBulkStateSuffixImpl(
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void deserializeBinaryBulkStatePrefixImpl(
-            DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
-
-    void serializeBinaryBulkWithMultipleStreamsImpl(
-            const IColumn & column,
-            size_t offset,
-            size_t limit,
-            SerializeBinaryBulkSettings & settings,
-            SerializeBinaryBulkStatePtr & state) const override;
-
-    void deserializeBinaryBulkWithMultipleStreamsImpl(
-            IColumn & column,
-            size_t limit,
-            DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state,
-            SubstreamsCache * cache) const override;
-
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
@@ -105,6 +56,10 @@ public:
 
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
+    SerializationPtr getSubcolumnSerialization(
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
+
+    SerializationPtr doGetDefaultSerialization() const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
@@ -114,6 +69,8 @@ public:
 private:
     ColumnPtr getSubcolumnImpl(const String & subcolumn_name, const IColumn & column, size_t level) const;
     DataTypePtr tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const;
+    SerializationPtr getSubcolumnSerializationImpl(
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter, size_t level) const;
 };
 
 }

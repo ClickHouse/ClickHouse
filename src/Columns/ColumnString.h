@@ -111,7 +111,7 @@ public:
     }
 
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -128,7 +128,7 @@ public:
         offsets.push_back(new_size);
     }
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 
@@ -278,7 +278,6 @@ public:
     {
         return typeid(rhs) == typeid(ColumnString);
     }
-
 
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }

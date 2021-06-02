@@ -5,7 +5,7 @@
 #include <Formats/JSONEachRowUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -140,6 +140,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     {
         seen_columns[index] = read_columns[index] = true;
         const auto & type = getPort().getHeader().getByPosition(index).type;
+        const auto & serialization = serializations[index];
 
         if (yield_strings)
         {
@@ -149,16 +150,16 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
             ReadBufferFromString buf(str);
 
             if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = DataTypeNullable::deserializeWholeText(*columns[index], buf, format_settings, type);
+                read_columns[index] = SerializationNullable::deserializeWholeTextImpl(*columns[index], buf, format_settings, serialization);
             else
-                type->deserializeAsWholeText(*columns[index], buf, format_settings);
+                serialization->deserializeWholeText(*columns[index], buf, format_settings);
         }
         else
         {
             if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+                read_columns[index] = SerializationNullable::deserializeTextJSONImpl(*columns[index], in, format_settings, serialization);
             else
-                type->deserializeAsTextJSON(*columns[index], in, format_settings);
+                serialization->deserializeTextJSON(*columns[index], in, format_settings);
         }
     }
     catch (Exception & e)

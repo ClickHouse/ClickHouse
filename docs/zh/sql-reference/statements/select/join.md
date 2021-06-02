@@ -43,15 +43,15 @@ ClickHouse中提供的其他联接类型:
 
     Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
 
-### ASOF加入使用 {#asof-join-usage}
+### ASOF JOIN使用 {#asof-join-usage}
 
 `ASOF JOIN` 当您需要连接没有完全匹配的记录时非常有用。
 
-算法需要表中的特殊列。 本专栏:
+该算法需要表中的特殊列。 该列需要满足:
 
 -   必须包含有序序列。
--   可以是以下类型之一: [Int*，UInt*](../../../sql-reference/data-types/int-uint.md), [浮动\*](../../../sql-reference/data-types/float.md), [日期](../../../sql-reference/data-types/date.md), [日期时间](../../../sql-reference/data-types/datetime.md), [十进制\*](../../../sql-reference/data-types/decimal.md).
--   不能是唯一的列 `JOIN` 
+-   可以是以下类型之一: [Int*，UInt*](../../../sql-reference/data-types/int-uint.md), [Float\*](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal\*](../../../sql-reference/data-types/decimal.md).
+-   不能是`JOIN`子句中唯一的列  
 
 语法 `ASOF JOIN ... ON`:
 
@@ -62,9 +62,9 @@ ASOF LEFT JOIN table_2
 ON equi_cond AND closest_match_cond
 ```
 
-您可以使用任意数量的相等条件和恰好一个最接近的匹配条件。 例如, `SELECT count() FROM table_1 ASOF LEFT JOIN table_2 ON table_1.a == table_2.b AND table_2.t <= table_1.t`.
+您可以使用任意数量的相等条件和一个且只有一个最接近的匹配条件。 例如, `SELECT count() FROM table_1 ASOF LEFT JOIN table_2 ON table_1.a == table_2.b AND table_2.t <= table_1.t`.
 
-支持最接近匹配的条件: `>`, `>=`, `<`, `<=`.
+支持最接近匹配的运算符: `>`, `>=`, `<`, `<=`.
 
 语法 `ASOF JOIN ... USING`:
 
@@ -75,9 +75,9 @@ ASOF JOIN table_2
 USING (equi_column1, ... equi_columnN, asof_column)
 ```
 
-`ASOF JOIN` 用途 `equi_columnX` 对于加入平等和 `asof_column` 用于加入与最接近的比赛 `table_1.asof_column >= table_2.asof_column` 条件。 该 `asof_column` 列总是在最后一个 `USING` 条款
+`table_1.asof_column >= table_2.asof_column` 中， `ASOF JOIN` 使用 `equi_columnX` 来进行条件匹配， `asof_column` 用于JOIN最接近匹配。  `asof_column` 列总是在最后一个 `USING` 条件中。
 
-例如，请考虑下表:
+例如，参考下表:
 
          table_1                           table_2
       event   | ev_time | user_id       event   | ev_time | user_id
@@ -88,10 +88,10 @@ USING (equi_column1, ... equi_columnN, asof_column)
     event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
                   ...                               ...
 
-`ASOF JOIN` 可以从用户事件的时间戳 `table_1` 并找到一个事件 `table_2` 其中时间戳最接近事件的时间戳 `table_1` 对应于最接近的匹配条件。 如果可用，则相等的时间戳值是最接近的值。 在这里，该 `user_id` 列可用于连接相等和 `ev_time` 列可用于在最接近的匹配加入。 在我们的例子中, `event_1_1` 可以加入 `event_2_1` 和 `event_1_2` 可以加入 `event_2_3`，但是 `event_2_2` 不能加入。
+`ASOF JOIN`会从 `table_2` 中的用户事件时间戳找出和 `table_1` 中用户事件时间戳中最近的一个时间戳，来满足最接近匹配的条件。如果有得话，则相等的时间戳值是最接近的值。在此例中，`user_id` 列可用于条件匹配，`ev_time` 列可用于最接近匹配。在此例中，`event_1_1` 可以 JOIN `event_2_1`，`event_1_2` 可以JOIN `event_2_3`，但是 `event_2_2` 不能被JOIN。
 
 !!! note "注"
-    `ASOF` 加入是 **不** 支持在 [加入我们](../../../engines/table-engines/special/join.md) 表引擎。
+    `ASOF JOIN`在 [JOIN](../../../engines/table-engines/special/join.md) 表引擎中 **不受** 支持。
 
 ## 分布式联接 {#global-join}
 

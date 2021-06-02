@@ -17,7 +17,7 @@
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/MemorySanitizer.h>
-#include <Common/HashTable/LRUHashMap.h>
+#include <Common/HashTable/HashMap.h>
 #include <IO/AIO.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
@@ -53,10 +53,8 @@ struct SSDCacheDictionaryStorageConfiguration
 {
     const size_t strict_max_lifetime_seconds;
     const DictionaryLifetime lifetime;
-
     const std::string file_path;
     const size_t max_partitions_count;
-    const size_t max_stored_keys;
     const size_t block_size;
     const size_t file_blocks_size;
     const size_t read_buffer_blocks_size;
@@ -127,7 +125,7 @@ public:
 
     /// Reset block with new block_data
     /// block_data must be filled with zeroes if it is new block
-    ALWAYS_INLINE inline void reset(char * new_block_data)
+    inline void reset(char * new_block_data)
     {
         block_data = new_block_data;
         current_block_offset = block_header_size;
@@ -135,13 +133,13 @@ public:
     }
 
     /// Check if it is enough place to write key in block
-    ALWAYS_INLINE inline bool enoughtPlaceToWriteKey(const SSDCacheSimpleKey & cache_key) const
+    inline bool enoughtPlaceToWriteKey(const SSDCacheSimpleKey & cache_key) const
     {
         return (current_block_offset + (sizeof(cache_key.key) + sizeof(cache_key.size) + cache_key.size)) <= block_size;
     }
 
     /// Check if it is enough place to write key in block
-    ALWAYS_INLINE inline bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
+    inline bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
     {
         const StringRef & key = cache_key.key;
         size_t complex_key_size = sizeof(key.size) + key.size;
@@ -152,7 +150,7 @@ public:
     /// Write key and returns offset in ssd cache block where data is written
     /// It is client responsibility to check if there is enough place in block to write key
     /// Returns true if key was written and false if there was not enough place to write key
-    ALWAYS_INLINE inline bool writeKey(const SSDCacheSimpleKey & cache_key, size_t & offset_in_block)
+    inline bool writeKey(const SSDCacheSimpleKey & cache_key, size_t & offset_in_block)
     {
         assert(cache_key.size > 0);
 
@@ -181,7 +179,7 @@ public:
         return true;
     }
 
-    ALWAYS_INLINE inline bool writeKey(const SSDCacheComplexKey & cache_key, size_t & offset_in_block)
+    inline bool writeKey(const SSDCacheComplexKey & cache_key, size_t & offset_in_block)
     {
         assert(cache_key.size > 0);
 
@@ -216,20 +214,20 @@ public:
         return true;
     }
 
-    ALWAYS_INLINE inline size_t getKeysSize() const { return keys_size; }
+    inline size_t getKeysSize() const { return keys_size; }
 
     /// Write keys size into block header
-    ALWAYS_INLINE inline void writeKeysSize()
+    inline void writeKeysSize()
     {
         char * keys_size_offset_data = block_data + block_header_check_sum_size;
         std::memcpy(keys_size_offset_data, &keys_size, sizeof(size_t));
     }
 
     /// Get check sum from block header
-    ALWAYS_INLINE inline size_t getCheckSum() const { return unalignedLoad<size_t>(block_data); }
+    inline size_t getCheckSum() const { return unalignedLoad<size_t>(block_data); }
 
     /// Calculate check sum in block
-    ALWAYS_INLINE inline size_t calculateCheckSum() const
+    inline size_t calculateCheckSum() const
     {
         size_t calculated_check_sum = static_cast<size_t>(CityHash_v1_0_2::CityHash64(block_data + block_header_check_sum_size, block_size - block_header_check_sum_size));
 
@@ -237,7 +235,7 @@ public:
     }
 
     /// Check if check sum from block header matched calculated check sum in block
-    ALWAYS_INLINE inline bool checkCheckSum() const
+    inline bool checkCheckSum() const
     {
         size_t calculated_check_sum = calculateCheckSum();
         size_t check_sum = getCheckSum();
@@ -246,16 +244,16 @@ public:
     }
 
     /// Write check sum in block header
-    ALWAYS_INLINE inline void writeCheckSum()
+    inline void writeCheckSum()
     {
         size_t check_sum = static_cast<size_t>(CityHash_v1_0_2::CityHash64(block_data + block_header_check_sum_size, block_size - block_header_check_sum_size));
         std::memcpy(block_data, &check_sum, sizeof(size_t));
     }
 
-    ALWAYS_INLINE inline size_t getBlockSize() const { return block_size; }
+    inline size_t getBlockSize() const { return block_size; }
 
     /// Returns block data
-    ALWAYS_INLINE inline char * getBlockData() const { return block_data; }
+    inline char * getBlockData() const { return block_data; }
 
     /// Read keys that were serialized in block
     /// It is client responsibility to ensure that simple or complex keys were written in block
@@ -337,9 +335,7 @@ inline bool operator==(const SSDCacheIndex & lhs, const SSDCacheIndex & rhs)
     return lhs.block_index == rhs.block_index && lhs.offset_in_block == rhs.offset_in_block;
 }
 
-/** SSDCacheMemoryBuffer initialized with block size and memory buffer blocks size.
-  * Allocate block_size * memory_buffer_blocks_size bytes with page alignment.
-  * Logically represents multiple memory_buffer_blocks_size blocks and current write block.
+/** Logically represents multiple memory_buffer_blocks_size SSDCacheBlocks and current write block.
   * If key cannot be written into current_write_block, current block keys size and check summ is written
   * and buffer increase index of current_write_block_index.
   * If current_write_block_index == memory_buffer_blocks_size write key will always returns true.
@@ -444,7 +440,7 @@ private:
     size_t current_block_index = 0;
 };
 
-/// TODO: Add documentation
+/// Logically represents multiple memory_buffer_blocks_size SSDCacheBlocks on file system
 template <typename SSDCacheKeyType>
 class SSDCacheFileBuffer : private boost::noncopyable
 {
@@ -468,7 +464,7 @@ public:
         /// If cache file is in directory that does not exists create it
         if (!std::filesystem::exists(parent_path_directory))
             if (!std::filesystem::create_directories(parent_path_directory))
-                throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
+                throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories.");
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -517,7 +513,7 @@ public:
         while (io_submit(aio_context.ctx, 1, &write_request_ptr) < 0)
         {
             if (errno != EINTR)
-                throw Exception("Cannot submit request for asynchronous IO on file " + file_path, ErrorCodes::CANNOT_IO_SUBMIT);
+                throw Exception(ErrorCodes::CANNOT_IO_SUBMIT, "Cannot submit request for asynchronous IO on file {}", file_path);
         }
 
         // CurrentMetrics::Increment metric_increment_write{CurrentMetrics::Write};
@@ -527,7 +523,7 @@ public:
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)
         {
             if (errno != EINTR)
-                throw Exception("Failed to wait for asynchronous IO completion on file " + file_path, ErrorCodes::CANNOT_IO_GETEVENTS);
+                throw Exception(ErrorCodes::CANNOT_IO_GETEVENTS, "Failed to wait for asynchronous IO completion on file {}", file_path);
         }
 
         // Unpoison the memory returned from an uninstrumented system function.
@@ -539,7 +535,10 @@ public:
         ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
-            throw Exception("Not all data was written for asynchronous IO on file " + file_path + ". returned: " + std::to_string(bytes_written), ErrorCodes::AIO_WRITE_ERROR);
+            throw Exception(ErrorCodes::AIO_WRITE_ERROR,
+                "Not all data was written for asynchronous IO on file {}. returned: {}",
+                file_path,
+                std::to_string(bytes_written));
 
         if (::fsync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
@@ -596,7 +595,10 @@ public:
 
         if (read_bytes != static_cast<ssize_t>(buffer_size_in_bytes))
             throw Exception(ErrorCodes::AIO_READ_ERROR,
-                "GC: AIO failed to read file ({}). Expected bytes ({}). Actual bytes ({})", file_path, buffer_size_in_bytes, read_bytes);
+                "GC: AIO failed to read file {}. Expected bytes {}. Actual bytes {}",
+                file_path,
+                buffer_size_in_bytes,
+                read_bytes);
 
         SSDCacheBlock block(block_size);
 
@@ -614,10 +616,12 @@ public:
     }
 
     template <typename FetchBlockFunc>
-    ALWAYS_INLINE void fetchBlocks(char * read_buffer, size_t read_from_file_buffer_blocks_size, const PaddedPODArray<size_t> & blocks_to_fetch, FetchBlockFunc && func) const
+    void fetchBlocks(size_t read_from_file_buffer_blocks_size, const PaddedPODArray<size_t> & blocks_to_fetch, FetchBlockFunc && func) const
     {
         if (blocks_to_fetch.empty())
             return;
+
+        Memory<Allocator<true>> read_buffer(read_from_file_buffer_blocks_size * block_size, 4096);
 
         size_t blocks_to_fetch_size = blocks_to_fetch.size();
 
@@ -631,7 +635,7 @@ public:
         {
             iocb request{};
 
-            char * buffer_place = read_buffer + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
+            char * buffer_place = read_buffer.data() + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
 
             #if defined(__FreeBSD__)
             request.aio.aio_lio_opcode = LIO_READ;
@@ -695,7 +699,10 @@ public:
                 {
                     std::string calculated_check_sum = std::to_string(block.calculateCheckSum());
                     std::string check_sum = std::to_string(block.getCheckSum());
-                    throw Exception("Cache data corrupted. Checksum validation failed. Calculated " +  calculated_check_sum + " in block " + check_sum, ErrorCodes::CORRUPTED_DATA);
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Cache data corrupted. Checksum validation failed. Calculated {} in block {}",
+                        calculated_check_sum,
+                        check_sum);
                 }
 
                 std::forward<FetchBlockFunc>(func)(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
@@ -736,6 +743,9 @@ private:
 
         FileDescriptor & operator=(FileDescriptor && rhs)
         {
+            if (this == &rhs)
+                return *this;
+
             close(fd);
 
             fd = rhs.fd;
@@ -751,7 +761,7 @@ private:
         int fd = -1;
     };
 
-    ALWAYS_INLINE inline static int preallocateDiskSpace(int fd, size_t offset, size_t len)
+    inline static int preallocateDiskSpace(int fd, size_t offset, size_t len)
     {
         #if defined(__FreeBSD__)
             return posix_fallocate(fd, offset, len);
@@ -760,7 +770,7 @@ private:
         #endif
     }
 
-    ALWAYS_INLINE inline static char * getRequestBuffer(const iocb & request)
+    inline static char * getRequestBuffer(const iocb & request)
     {
         char * result = nullptr;
 
@@ -773,7 +783,7 @@ private:
         return result;
     }
 
-    ALWAYS_INLINE inline static ssize_t eventResult(io_event & event)
+    inline static ssize_t eventResult(io_event & event)
     {
         ssize_t  bytes_written;
 
@@ -795,7 +805,13 @@ private:
     size_t current_blocks_size = 0;
 };
 
-/// TODO: Add documentation
+/** ICacheDictionaryStorage implementation that keeps column data serialized in memory index and in disk partitions.
+  * Data is first written in memory buffer.
+  * If memory buffer is full then buffer is flushed to disk partition.
+  * If memory buffer cannot be flushed to associated disk partition, then if partition
+  * can be allocated (current partition index < max_partitions_size) storage allocates new partition, if not old partitions are reused.
+  * Index maps key to partition block and offset.
+  */
 template <DictionaryKeyType dictionary_key_type>
 class SSDCacheDictionaryStorage final : public ICacheDictionaryStorage
 {
@@ -806,9 +822,7 @@ public:
     explicit SSDCacheDictionaryStorage(const SSDCacheDictionaryStorageConfiguration & configuration_)
         : configuration(configuration_)
         , file_buffer(configuration_.file_path, configuration.block_size, configuration.file_blocks_size)
-        , read_from_file_buffer(configuration_.block_size * configuration_.read_buffer_blocks_size, 4096)
         , rnd_engine(randomSeed())
-        , index(configuration.max_stored_keys, false, { complex_key_arena })
     {
         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
     }
@@ -832,7 +846,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         else
-            throw Exception("Method insertColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
     }
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
@@ -840,7 +854,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             insertColumnsForKeysImpl(keys, columns);
         else
-            throw Exception("Method insertColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
     }
 
     void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
@@ -848,7 +862,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception("Method insertDefaultKeysImpl is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
     }
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
@@ -856,7 +870,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return getCachedKeysImpl();
         else
-            throw Exception("Method getCachedSimpleKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
     bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
@@ -868,7 +882,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, fetch_request);
         else
-            throw Exception("Method fetchColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
     }
 
     void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
@@ -876,7 +890,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             insertColumnsForKeysImpl(keys, columns);
         else
-            throw Exception("Method insertColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
     }
 
     void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
@@ -884,7 +898,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception("Method insertDefaultKeysImpl is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
     }
 
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
@@ -892,19 +906,36 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return getCachedKeysImpl();
         else
-            throw Exception("Method getCachedSimpleKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for simple key storage");
     }
 
     size_t getSize() const override { return index.size(); }
 
-    size_t getMaxSize() const override {return index.getMaxSize(); }
+    double getLoadFactor() const override
+    {
+        size_t partitions_size = memory_buffer_partitions.size();
+
+        if (partitions_size == configuration.max_partitions_count)
+            return 1.0;
+
+        auto & current_memory_partition = memory_buffer_partitions[current_partition_index];
+
+        size_t full_partitions = partitions_size - 1;
+        size_t blocks_in_memory = (full_partitions * configuration.write_buffer_blocks_size) + current_memory_partition.getCurrentBlockIndex();
+        size_t blocks_on_disk = file_buffer.getCurrentBlockIndex();
+
+        size_t max_blocks_size = (configuration.file_blocks_size + configuration.write_buffer_blocks_size) * configuration.max_partitions_count;
+
+        double load_factor = static_cast<double>(blocks_in_memory + blocks_on_disk) / max_blocks_size;
+        return load_factor;
+    }
 
     size_t getBytesAllocated() const override
     {
         size_t memory_partitions_bytes_size = memory_buffer_partitions.size() * configuration.write_buffer_blocks_size * configuration.block_size;
         size_t file_partitions_bytes_size = memory_buffer_partitions.size() * configuration.file_blocks_size * configuration.block_size;
 
-        return index.getSizeInBytes() + memory_partitions_bytes_size + file_partitions_bytes_size;
+        return index.getBufferSizeInBytes() + memory_partitions_bytes_size + file_partitions_bytes_size;
     }
 
 private:
@@ -920,8 +951,7 @@ private:
             default_value
         };
 
-        TimePoint deadline;
-
+        time_t deadline;
         SSDCacheIndex index;
         size_t in_memory_partition_index;
         CellState state;
@@ -933,13 +963,12 @@ private:
 
     struct KeyToBlockOffset
     {
-        KeyToBlockOffset(size_t key_index_, size_t offset_in_block_, bool is_expired_)
-            : key_index(key_index_), offset_in_block(offset_in_block_), is_expired(is_expired_)
+        KeyToBlockOffset(size_t key_index_, size_t offset_in_block_)
+            : key_index(key_index_), offset_in_block(offset_in_block_)
         {}
 
         size_t key_index = 0;
         size_t offset_in_block = 0;
-        bool is_expired = false;
     };
 
     template <typename Result>
@@ -950,19 +979,23 @@ private:
         Result result;
 
         result.fetched_columns = fetch_request.makeAttributesResultColumns();
-        result.key_index_to_state.resize_fill(keys.size(), {KeyState::not_found});
+        result.key_index_to_state.resize_fill(keys.size());
 
-        const auto now = std::chrono::system_clock::now();
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         size_t fetched_columns_index = 0;
 
-        using BlockIndexToKeysMap = std::unordered_map<size_t, std::vector<KeyToBlockOffset>, DefaultHash<size_t>>;
+        using BlockIndexToKeysMap = absl::flat_hash_map<size_t, PaddedPODArray<KeyToBlockOffset>, DefaultHash<size_t>>;
         BlockIndexToKeysMap block_to_keys_map;
         absl::flat_hash_set<size_t, DefaultHash<size_t>> unique_blocks_to_request;
         PaddedPODArray<size_t> blocks_to_request;
 
-        std::chrono::seconds strict_max_lifetime_seconds(configuration.strict_max_lifetime_seconds);
+        time_t strict_max_lifetime_seconds = static_cast<time_t>(configuration.strict_max_lifetime_seconds);
         size_t keys_size = keys.size();
+
+        for (size_t attribute_size = 0; attribute_size < fetch_request.attributesSize(); ++attribute_size)
+            if (fetch_request.shouldFillResultColumnWithIndex(attribute_size))
+                result.fetched_columns[attribute_size]->reserve(keys_size);
 
         for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
@@ -978,9 +1011,7 @@ private:
 
             const auto & cell = it->getMapped();
 
-            bool has_deadline = cellHasDeadline(cell);
-
-            if (has_deadline && now > cell.deadline + strict_max_lifetime_seconds)
+            if (unlikely(now > cell.deadline + strict_max_lifetime_seconds))
             {
                 ++result.not_found_keys_size;
                 continue;
@@ -989,14 +1020,14 @@ private:
             bool cell_is_expired = false;
             KeyState::State key_state = KeyState::found;
 
-            if (has_deadline && now > cell.deadline)
+            if (now > cell.deadline)
             {
                 cell_is_expired = true;
                 key_state = KeyState::expired;
             }
 
-            result.expired_keys_size += cell_is_expired;
-            result.found_keys_size += !cell_is_expired;
+            result.expired_keys_size += static_cast<size_t>(cell_is_expired);
+            result.found_keys_size += static_cast<size_t>(!cell_is_expired);
 
             switch (cell.state)
             {
@@ -1012,13 +1043,20 @@ private:
                 }
                 case Cell::on_disk:
                 {
-                    block_to_keys_map[cell.index.block_index].emplace_back(key_index, cell.index.offset_in_block, cell_is_expired);
+                    PaddedPODArray<KeyToBlockOffset> & keys_block = block_to_keys_map[cell.index.block_index];
+                    keys_block.emplace_back(key_index, cell.index.offset_in_block);
 
-                    if (!unique_blocks_to_request.contains(cell.index.block_index))
-                    {
+                    KeyState::State state = cell_is_expired ? KeyState::expired : KeyState::found;
+
+                    /// Fetched column index will be set later during fetch blocks
+                    result.key_index_to_state[key_index] = {state, 0};
+
+                    auto insert_result = unique_blocks_to_request.insert(cell.index.block_index);
+                    bool was_inserted = insert_result.second;
+
+                    if (was_inserted)
                         blocks_to_request.emplace_back(cell.index.block_index);
-                        unique_blocks_to_request.insert(cell.index.block_index);
-                    }
+
                     break;
                 }
                 case Cell::default_value:
@@ -1037,7 +1075,7 @@ private:
         /// Sort blocks by offset before start async io requests
         std::sort(blocks_to_request.begin(), blocks_to_request.end());
 
-        file_buffer.fetchBlocks(read_from_file_buffer.m_data, configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
+        file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
         {
             auto & keys_in_block = block_to_keys_map[block_index];
 
@@ -1046,10 +1084,7 @@ private:
                 char * key_data = block_data + key_in_block.offset_in_block;
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, key_data);
 
-                if (key_in_block.is_expired)
-                    result.key_index_to_state[key_in_block.key_index] = {KeyState::expired, fetched_columns_index};
-                else
-                    result.key_index_to_state[key_in_block.key_index] = {KeyState::found, fetched_columns_index};
+                result.key_index_to_state[key_in_block.key_index].setFetchedColumnIndex(fetched_columns_index);
 
                 ++fetched_columns_index;
             }
@@ -1084,10 +1119,10 @@ private:
             SSDCacheKeyType ssd_cache_key { key, allocated_size_for_columns, block_start };
 
             if (!SSDCacheBlock::canBeWrittenInEmptyBlock(ssd_cache_key, configuration.block_size))
-                throw Exception("Serialized columns size is greater than allowed block size and metadata", ErrorCodes::UNSUPPORTED_METHOD);
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Serialized columns size is greater than allowed block size and metadata");
 
             /// We cannot reuse place that is already allocated in file or memory cache so we erase key from index
-            index.erase(key);
+            eraseKeyFromIndex(key);
 
             Cell cell;
             setCellDeadline(cell, now);
@@ -1114,8 +1149,7 @@ private:
 
         for (auto key : keys)
         {
-            /// We cannot reuse place that is already allocated in file or memory cache so we erase key from index
-            index.erase(key);
+            eraseKeyFromIndex(key);
 
             Cell cell;
 
@@ -1135,7 +1169,7 @@ private:
                 key = updated_key;
             }
 
-            index.insert(key, cell);
+            index[key] = cell;
         }
     }
 
@@ -1188,7 +1222,7 @@ private:
                 cell.index = cache_index;
                 cell.in_memory_partition_index = current_partition_index;
 
-                index.insert(ssd_cache_key.key, cell);
+                index[ssd_cache_key.key] = cell;
                 break;
             }
             else
@@ -1218,7 +1252,7 @@ private:
                             if (old_key_cell.isOnDisk() &&
                                 old_key_block >= block_index_in_file_before_write &&
                                 old_key_block < file_read_end_block_index)
-                                index.erase(old_key);
+                                eraseKeyFromIndex(old_key);
                         }
                     }
                 }
@@ -1271,7 +1305,7 @@ private:
                     cell.index = cache_index;
                     cell.in_memory_partition_index = current_partition_index;
 
-                    index.insert(ssd_cache_key.key, cell);
+                    index[ssd_cache_key.key] = cell;
                     break;
                 }
                 else
@@ -1296,16 +1330,12 @@ private:
         }
     }
 
-    inline static bool cellHasDeadline(const Cell & cell)
-    {
-        return cell.deadline != std::chrono::system_clock::from_time_t(0);
-    }
-
     inline void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
         {
-            cell.deadline = std::chrono::system_clock::from_time_t(0);
+            auto deadline = std::chrono::time_point<std::chrono::system_clock>::max() - 2 * std::chrono::seconds(configuration.strict_max_lifetime_seconds);
+            cell.deadline = std::chrono::system_clock::to_time_t(deadline);
             return;
         }
 
@@ -1313,47 +1343,45 @@ private:
         size_t max_sec_lifetime = configuration.lifetime.max_sec;
 
         std::uniform_int_distribution<UInt64> distribution{min_sec_lifetime, max_sec_lifetime};
-        cell.deadline = now + std::chrono::seconds{distribution(rnd_engine)};
+        auto deadline = now + std::chrono::seconds(distribution(rnd_engine));
+        cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    template <typename>
-    friend class ArenaCellKeyDisposer;
+    inline void eraseKeyFromIndex(KeyType key)
+    {
+        auto it = index.find(key);
+
+        if (it == nullptr)
+            return;
+
+        /// In case of complex key in arena key is serialized from hash table
+        KeyType key_copy = it->getKey();
+
+        index.erase(key);
+
+        if constexpr (std::is_same_v<KeyType, StringRef>)
+            complex_key_arena.free(const_cast<char *>(key_copy.data), key_copy.size);
+    }
 
     SSDCacheDictionaryStorageConfiguration configuration;
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
 
-    Memory<Allocator<true>> read_from_file_buffer;
-
     std::vector<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
 
     pcg64 rnd_engine;
 
-    class ArenaCellKeyDisposer
-    {
-    public:
-        ArenaWithFreeLists & arena;
+    using SimpleKeyHashMap = HashMap<UInt64, Cell>;
+    using ComplexKeyHashMap = HashMapWithSavedHash<StringRef, Cell>;
 
-        template <typename Key, typename Value>
-        void operator()(const Key & key, const Value &) const
-        {
-            /// In case of complex key we keep it in arena
-            if constexpr (std::is_same_v<Key, StringRef>)
-                arena.free(const_cast<char *>(key.data), key.size);
-        }
-    };
-
-    using SimpleKeyLRUHashMap = LRUHashMap<UInt64, Cell, ArenaCellKeyDisposer>;
-    using ComplexKeyLRUHashMap = LRUHashMapWithSavedHash<StringRef, Cell, ArenaCellKeyDisposer>;
-
-    using CacheLRUHashMap = std::conditional_t<
+    using CacheMap = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::simple,
-        SimpleKeyLRUHashMap,
-        ComplexKeyLRUHashMap>;
+        SimpleKeyHashMap,
+        ComplexKeyHashMap>;
 
     ArenaWithFreeLists complex_key_arena;
 
-    CacheLRUHashMap index;
+    CacheMap index;
 
     size_t current_partition_index = 0;
 

@@ -3,6 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
+from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
 import time
 
 cluster = ClickHouseCluster(__file__)
@@ -25,13 +26,6 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-def corrupt_data_part_on_disk(node, table, part_name):
-    part_path = node.query(
-        "SELECT path FROM system.parts WHERE table = '{}' and name = '{}'".format(table, part_name)).strip()
-    node.exec_in_container(['bash', '-c',
-                            'cd {p} && ls *.bin | head -n 1 | xargs -I{{}} sh -c \'echo "1" >> $1\' -- {{}}'.format(
-                                p=part_path)], privileged=True)
-
 
 def test_merge_and_part_corruption(started_cluster):
     node1.query("SYSTEM STOP REPLICATION QUEUES replicated_mt")
@@ -43,7 +37,7 @@ def test_merge_and_part_corruption(started_cluster):
     # Need to corrupt "border part" (left or right). If we will corrupt something in the middle
     # clickhouse will not consider merge as broken, because we have parts with the same min and max
     # block numbers.
-    corrupt_data_part_on_disk(node1, 'replicated_mt', 'all_3_3_0')
+    corrupt_part_data_on_disk(node1, 'replicated_mt', 'all_3_3_0')
 
     with Pool(1) as p:
         def optimize_with_delay(x):

@@ -22,10 +22,10 @@ SRCS(
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
     InterserverIOHTTPHandler.cpp
+    KeeperTCPHandler.cpp
     MySQLHandler.cpp
     MySQLHandlerFactory.cpp
     NotFoundHandler.cpp
-    NuKeeperTCPHandler.cpp
     PostgreSQLHandler.cpp
     PostgreSQLHandlerFactory.cpp
     PrometheusMetricsWriter.cpp

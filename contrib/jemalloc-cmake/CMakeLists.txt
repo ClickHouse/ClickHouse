@@ -1,10 +1,13 @@
-if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM) OR NOT (OS_LINUX OR OS_FREEBSD OR OS_DARWIN))
+if (SANITIZE OR NOT (
+    ((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE)) OR
+    (OS_DARWIN AND CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
-                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64 or aarch64 on linux or freebsd.")
-    endif()
+                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds.")
+    endif ()
     set (ENABLE_JEMALLOC OFF)
-else()
+else ()
     option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
 endif ()
 
@@ -34,9 +37,9 @@ if (OS_LINUX)
     # avoid spurious latencies and additional work associated with
     # MADV_DONTNEED. See
     # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:10000")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000")
 else()
-    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:10000")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000")
 endif()
 # CACHE variable is empty, to allow changing defaults without necessity
 # to purge cache
@@ -49,46 +52,46 @@ message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
 
 set (SRCS
-    ${LIBRARY_DIR}/src/arena.c
-    ${LIBRARY_DIR}/src/background_thread.c
-    ${LIBRARY_DIR}/src/base.c
-    ${LIBRARY_DIR}/src/bin.c
-    ${LIBRARY_DIR}/src/bitmap.c
-    ${LIBRARY_DIR}/src/ckh.c
-    ${LIBRARY_DIR}/src/ctl.c
-    ${LIBRARY_DIR}/src/div.c
-    ${LIBRARY_DIR}/src/extent.c
-    ${LIBRARY_DIR}/src/extent_dss.c
-    ${LIBRARY_DIR}/src/extent_mmap.c
-    ${LIBRARY_DIR}/src/hash.c
-    ${LIBRARY_DIR}/src/hook.c
-    ${LIBRARY_DIR}/src/jemalloc.c
-    ${LIBRARY_DIR}/src/large.c
-    ${LIBRARY_DIR}/src/log.c
-    ${LIBRARY_DIR}/src/malloc_io.c
-    ${LIBRARY_DIR}/src/mutex.c
-    ${LIBRARY_DIR}/src/mutex_pool.c
-    ${LIBRARY_DIR}/src/nstime.c
-    ${LIBRARY_DIR}/src/pages.c
-    ${LIBRARY_DIR}/src/prng.c
-    ${LIBRARY_DIR}/src/prof.c
-    ${LIBRARY_DIR}/src/rtree.c
-    ${LIBRARY_DIR}/src/sc.c
-    ${LIBRARY_DIR}/src/stats.c
-    ${LIBRARY_DIR}/src/sz.c
-    ${LIBRARY_DIR}/src/tcache.c
-    ${LIBRARY_DIR}/src/test_hooks.c
-    ${LIBRARY_DIR}/src/ticker.c
-    ${LIBRARY_DIR}/src/tsd.c
-    ${LIBRARY_DIR}/src/witness.c
-    ${LIBRARY_DIR}/src/safety_check.c
+    "${LIBRARY_DIR}/src/arena.c"
+    "${LIBRARY_DIR}/src/background_thread.c"
+    "${LIBRARY_DIR}/src/base.c"
+    "${LIBRARY_DIR}/src/bin.c"
+    "${LIBRARY_DIR}/src/bitmap.c"
+    "${LIBRARY_DIR}/src/ckh.c"
+    "${LIBRARY_DIR}/src/ctl.c"
+    "${LIBRARY_DIR}/src/div.c"
+    "${LIBRARY_DIR}/src/extent.c"
+    "${LIBRARY_DIR}/src/extent_dss.c"
+    "${LIBRARY_DIR}/src/extent_mmap.c"
+    "${LIBRARY_DIR}/src/hash.c"
+    "${LIBRARY_DIR}/src/hook.c"
+    "${LIBRARY_DIR}/src/jemalloc.c"
+    "${LIBRARY_DIR}/src/large.c"
+    "${LIBRARY_DIR}/src/log.c"
+    "${LIBRARY_DIR}/src/malloc_io.c"
+    "${LIBRARY_DIR}/src/mutex.c"
+    "${LIBRARY_DIR}/src/mutex_pool.c"
+    "${LIBRARY_DIR}/src/nstime.c"
+    "${LIBRARY_DIR}/src/pages.c"
+    "${LIBRARY_DIR}/src/prng.c"
+    "${LIBRARY_DIR}/src/prof.c"
+    "${LIBRARY_DIR}/src/rtree.c"
+    "${LIBRARY_DIR}/src/sc.c"
+    "${LIBRARY_DIR}/src/stats.c"
+    "${LIBRARY_DIR}/src/sz.c"
+    "${LIBRARY_DIR}/src/tcache.c"
+    "${LIBRARY_DIR}/src/test_hooks.c"
+    "${LIBRARY_DIR}/src/ticker.c"
+    "${LIBRARY_DIR}/src/tsd.c"
+    "${LIBRARY_DIR}/src/witness.c"
+    "${LIBRARY_DIR}/src/safety_check.c"
 )
 if (OS_DARWIN)
-    list(APPEND SRCS ${LIBRARY_DIR}/src/zone.c)
+    list(APPEND SRCS "${LIBRARY_DIR}/src/zone.c")
 endif ()
 
 add_library(jemalloc ${SRCS})
-target_include_directories(jemalloc PRIVATE ${LIBRARY_DIR}/include)
+target_include_directories(jemalloc PRIVATE "${LIBRARY_DIR}/include")
 target_include_directories(jemalloc SYSTEM PUBLIC include)
 
 set (JEMALLOC_INCLUDE_PREFIX)
@@ -107,6 +110,8 @@ if (ARCH_AMD64)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_x86_64")
 elseif (ARCH_ARM)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_aarch64")
+elseif (ARCH_PPC64LE)
+    set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_ppc64le")
 else ()
     message (FATAL_ERROR "internal jemalloc: This arch is not supported")
 endif ()
@@ -114,17 +119,19 @@ endif ()
 configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h.in
     ${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h)
 target_include_directories(jemalloc SYSTEM PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}/${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal)
+    "${CMAKE_CURRENT_BINARY_DIR}/${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal")
 
 target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1 -DJEMALLOC_PROF=1)
+    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1)
+endif ()
 
-    if (USE_UNWIND)
-        target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
-        target_link_libraries (jemalloc PRIVATE unwind)
-    endif ()
+target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_PROF=1)
+
+if (USE_UNWIND)
+    target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
+    target_link_libraries (jemalloc PRIVATE unwind)
 endif ()
 
 target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)

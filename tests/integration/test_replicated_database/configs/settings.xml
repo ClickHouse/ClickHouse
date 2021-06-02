@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <allow_experimental_database_replicated>1</allow_experimental_database_replicated>
+            <allow_experimental_alter_materialized_view_structure>1</allow_experimental_alter_materialized_view_structure>
         </default>
     </profiles>
     <users>
