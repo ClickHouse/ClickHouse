@@ -31,7 +31,7 @@ namespace ErrorCodes
     } while (false)
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
-    : IInputFormat(std::move(header_), in_)
+    : IInputFormat(std::move(header_), in_), arrow_column_to_ch_column(std::make_unique<ArrowColumnToCHColumn>())
 {
 }
 
@@ -54,7 +54,7 @@ Chunk ParquetBlockInputFormat::generate()
 
     ++row_group_current;
 
-    arrow_column_to_ch_column.arrowTableToCHChunk(res, table, header, "Parquet");
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, header, "Parquet");
     return res;
 }
 

@@ -1,4 +1,5 @@
 #include "ArrowBlockInputFormat.h"
+
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
@@ -22,7 +23,7 @@ namespace ErrorCodes
 }
 
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_)
-    : IInputFormat(header_, in_), stream{stream_}
+    : IInputFormat(header_, in_), stream{stream_}, arrow_column_to_ch_column(std::make_unique<ArrowColumnToCHColumn>())
 {
 }
 
@@ -63,7 +64,7 @@ Chunk ArrowBlockInputFormat::generate()
 
     ++record_batch_current;
 
-    arrow_column_to_ch_column.arrowTableToCHChunk(res, *table_result, header, "Arrow");
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result, header, "Arrow");
 
     return res;
 }

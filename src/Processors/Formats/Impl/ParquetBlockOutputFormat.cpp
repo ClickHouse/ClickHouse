@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}
+    : IOutputFormat(header_, out_), format_settings{format_settings_}, ch_column_to_arrow_column(std::make_unique<CHColumnToArrowColumn>())
 {
 }
 
@@ -35,7 +35,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    ch_column_to_arrow_column.chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Parquet");
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Parquet");
 
     if (!file_writer)
     {
