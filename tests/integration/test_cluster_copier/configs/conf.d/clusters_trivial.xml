@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<yandex>
+    <remote_servers>
+        <source_trivial_cluster>
+            <shard>
+                <replica>
+                    <host>s0_0_0</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </source_trivial_cluster>
+        <destination_trivial_cluster>
+            <shard>
+                <replica>
+                    <host>s1_0_0</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </destination_trivial_cluster>
+    </remote_servers>
+</yandex>

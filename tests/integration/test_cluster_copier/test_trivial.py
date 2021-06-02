@@ -35,7 +35,7 @@ def started_cluster():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
-                                         main_configs=[], user_configs=[],
+                                         main_configs=["configs/conf.d/clusters_trivial.xml"], user_configs=[],
                                          macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
                                          with_zookeeper=True)
 
@@ -63,7 +63,7 @@ class TaskTrivial:
             node.query("DROP DATABASE IF EXISTS default")
             node.query("CREATE DATABASE IF NOT EXISTS default")
 
-        source.query("CREATE TABLE trivial (d UInt64, d1 UInt64 MATERIALIZED d+1) "
+        source.query("CREATE TABLE trivial (d UInt64, d1 UInt64 MATERIALIZED d+1)"
                      "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "
                      "PARTITION BY d % 5 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
 
@@ -83,6 +83,42 @@ class TaskTrivial:
 
         for node in [source, destination]:
             node.query("DROP TABLE trivial")
+
+
+class TaskReplicatedWithoutArguments:
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path = "/clickhouse-copier/task_trivial_without_arguments"
+        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_trivial_without_arguments.xml'), 'r').read()
+
+    def start(self):
+        source = cluster.instances['s0_0_0']
+        destination = cluster.instances['s1_0_0']
+
+        for node in [source, destination]:
+            node.query("DROP DATABASE IF EXISTS default")
+            node.query("CREATE DATABASE IF NOT EXISTS default")
+
+        source.query("CREATE TABLE trivial_without_arguments ON CLUSTER source_trivial_cluster (d UInt64, d1 UInt64 MATERIALIZED d+1) "
+                     "ENGINE=ReplicatedMergeTree() "
+                     "PARTITION BY d % 5 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
+
+        source.query("INSERT INTO trivial_without_arguments SELECT * FROM system.numbers LIMIT 1002",
+                     settings={"insert_distributed_sync": 1})
+
+    def check(self):
+        zk = cluster.get_kazoo_client('zoo1')
+        status_data, _ = zk.get(self.zk_task_path + "/status")
+        assert status_data == b'{"hits":{"all_partitions_count":5,"processed_partitions_count":5}}'
+
+        source = cluster.instances['s0_0_0']
+        destination = cluster.instances['s1_0_0']
+
+        assert TSV(source.query("SELECT count() FROM trivial_without_arguments")) == TSV("1002\n")
+        assert TSV(destination.query("SELECT count() FROM trivial_without_arguments")) == TSV("1002\n")
+
+        for node in [source, destination]:
+            node.query("DROP TABLE trivial_without_arguments")
 
 
 def execute_task(task, cmd_options):
@@ -151,3 +187,6 @@ def test_trivial_copy(started_cluster, use_sample_offset):
     else:
         execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
 
+
+def test_trivial_without_arguments(started_cluster):
+    execute_task(TaskReplicatedWithoutArguments(started_cluster), [])
