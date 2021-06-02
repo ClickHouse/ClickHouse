@@ -176,6 +176,19 @@ void StorageMaterializedView::read(
         }
         target_header.erase(target_only_positions);
 
+        /// No need to convert columns that does not exists in the result header.
+        ///
+        /// Distributed storage may process query up to the specific stage, and
+        /// so the result header may not include all the columns from the
+        /// materialized view.
+        std::set<size_t> source_only_positions;
+        for (const auto & column : mv_header)
+        {
+            if (!target_header.has(column.name))
+                source_only_positions.insert(mv_header.getPositionByName(column.name));
+        }
+        mv_header.erase(source_only_positions);
+
         if (!blocksHaveEqualStructure(mv_header, target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
