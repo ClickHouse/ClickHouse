@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q "drop user if exists u_01889"
 ${CLICKHOUSE_CLIENT} -q "drop role if exists r_01889"
 ${CLICKHOUSE_CLIENT} -q "drop policy if exists t_01889_filter on t_01889"
-${CLICKHOUSE_CLIENT} -q "create user u_01889 identified by 'dfsdffdf5t123'"
+${CLICKHOUSE_CLIENT} -q "create user u_01889 identified with plaintext_password by 'dfsdffdf5t123'"
 ${CLICKHOUSE_CLIENT} -q "revoke all on *.* from u_01889"
 ${CLICKHOUSE_CLIENT} -q "create role r_01889"
 ${CLICKHOUSE_CLIENT} -q "create table t_01889(a Int64, user_id String) Engine=MergeTree order by a"
