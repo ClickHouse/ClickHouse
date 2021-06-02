@@ -14,10 +14,10 @@ namespace ErrorCodes
 
 BlockIO InterpreterTransactionControlQuery::execute()
 {
-    if (!getContext()->hasSessionContext())
+    if (!query_context->hasSessionContext())
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction Control Language queries are allowed only inside session");
 
-    ContextPtr session_context = getContext()->getSessionContext();
+    ContextMutablePtr session_context = query_context->getSessionContext();
     const auto & tcl = query_ptr->as<const ASTTransactionControl &>();
 
     switch (tcl.action)
@@ -33,18 +33,18 @@ BlockIO InterpreterTransactionControlQuery::execute()
     __builtin_unreachable();
 }
 
-BlockIO InterpreterTransactionControlQuery::executeBegin(ContextPtr session_context)
+BlockIO InterpreterTransactionControlQuery::executeBegin(ContextMutablePtr session_context)
 {
     if (session_context->getCurrentTransaction())
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Nested transactions are not supported");
 
     auto txn = TransactionLog::instance().beginTransaction();
     session_context->initCurrentTransaction(txn);
-    getContext()->setCurrentTransaction(txn);
+    query_context->setCurrentTransaction(txn);
     return {};
 }
 
-BlockIO InterpreterTransactionControlQuery::executeCommit(ContextPtr session_context)
+BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr session_context)
 {
     auto txn = session_context->getCurrentTransaction();
     if (!txn)
@@ -57,7 +57,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextPtr session_con
     return {};
 }
 
-BlockIO InterpreterTransactionControlQuery::executeRollback(ContextPtr session_context)
+BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr session_context)
 {
     auto txn = session_context->getCurrentTransaction();
     if (!txn)
