@@ -203,13 +203,17 @@ continue
         echo "success" > status.txt
         echo "OK" > description.txt
     else
-        # The server was alive, but the fuzzer returned some error. Probably this
-        # is a problem in the fuzzer itself. Don't grep the server log in this
-        # case, because we will find a message about normal server termination
-        # (Received signal 15), which is confusing.
+        # The server was alive, but the fuzzer returned some error. This might
+        # be some client-side error detected by fuzzing, or a problem in the
+        # fuzzer itself. Don't grep the server log in this case, because we will
+        # find a message about normal server termination (Received signal 15),
+        # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        echo "Fuzzer failed ($fuzzer_exit_code). See the logs." > description.txt
+        { grep -o "Found error:.*" fuzzer.log \
+            || grep -o "Exception.*" fuzzer.log \
+            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
+            | tail -1 > description.txt
     fi
 }
 
