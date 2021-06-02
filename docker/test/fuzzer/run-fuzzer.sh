@@ -98,13 +98,8 @@ function fuzz
     fi
 
     clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
-
     server_pid=$!
     kill -0 $server_pid
-    while ! clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
-    clickhouse-client --query "select 1"
-    kill -0 $server_pid
-    echo Server started
 
     echo "
 handle all noprint
@@ -116,6 +111,20 @@ continue
 " > script.gdb
 
     gdb -batch -command script.gdb -p "$(pidof clickhouse-server)" &
+
+    # Check connectivity after we attach gdb, because it might cause the server
+    # to freeze and the fuzzer will fail.
+    for _ in {1..10}
+    do
+        sleep 1
+        if clickhouse-client --query "select 1"
+        then
+            break
+        fi
+    done
+    clickhouse-client --query "select 1" # This checks that the server is responding
+    kill -0 $server_pid # This checks that it is our server that is started and not some other one
+    echo Server started and responded
 
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
