@@ -51,9 +51,9 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    // TODO implement totalRows and totalBytes using data from Aggregator (if possible)
-    // std::optional<UInt64> totalRows(const Settings &) const override;
-    // std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalRows(const Settings &) const override;
+
+    std::optional<UInt64> totalBytes(const Settings &) const override;
 
 protected:
     /* Initialize engine before executing any queries. This initialization is proceeding

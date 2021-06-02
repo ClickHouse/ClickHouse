@@ -477,6 +477,23 @@ void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr
     initState(context);
 }
 
+std::optional<UInt64> StorageAggregatingMemory::totalRows(const Settings &) const
+{
+    if (!is_initialized)
+        return 0;
+
+    return many_data->variants[0]->size();
+}
+
+std::optional<UInt64> StorageAggregatingMemory::totalBytes(const Settings &) const
+{
+    if (!is_initialized)
+        return 0;
+
+    // Not possible to determine.
+    return {};
+}
+
 void registerStorageAggregatingMemory(StorageFactory & factory)
 {
     factory.registerStorage("AggregatingMemory", [](const StorageFactory::Arguments & args)
