@@ -967,7 +967,7 @@ private:
                 processTextAsSingleQuery("SET send_logs_level = 'fatal'");
         }
 
-        bool echo_queries_ = echo_queries;
+        bool echo_query = echo_queries;
 
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
@@ -1110,11 +1110,11 @@ private:
 
             // Echo all queries if asked; makes for a more readable reference
             // file.
-            echo_queries_ = test_hint.echoQueries().value_or(echo_queries_);
+            echo_query = test_hint.echoQueries().value_or(echo_query);
 
             try
             {
-                processParsedSingleQuery(echo_queries_);
+                processParsedSingleQuery(echo_query);
             }
             catch (...)
             {
@@ -1546,14 +1546,14 @@ private:
     // 'query_to_send' -- the query text that is sent to server,
     // 'full_query' -- for INSERT queries, contains the query and the data that
     // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-    void processParsedSingleQuery(std::optional<bool> echo_queries_ = {})
+    void processParsedSingleQuery(std::optional<bool> echo_query = {})
     {
         resetOutput();
         client_exception.reset();
         server_exception.reset();
         have_error = false;
 
-        if (echo_queries_.value_or(echo_queries))
+        if (echo_query.value_or(echo_queries))
         {
             writeString(full_query, std_out);
             writeChar('\n', std_out);
