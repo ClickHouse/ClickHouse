@@ -18,8 +18,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/TransactionMetadata.h>
 
-#include <Poco/Path.h>
-
 #include <shared_mutex>
 
 namespace zkutil
