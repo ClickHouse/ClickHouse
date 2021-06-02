@@ -605,12 +605,9 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
 
         Settings settings_push = task_cluster->settings_push;
         ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_NODE;
-        UInt64 max_successful_executions_per_shard = 0;
+
         if (settings_push.replication_alter_partitions_sync == 1)
-        {
             execution_mode = ClusterExecutionMode::ON_EACH_SHARD;
-            max_successful_executions_per_shard = 1;
-        }
 
         query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
                                   ((partition_name == "'all'") ? " ATTACH PARTITION ID " : " ATTACH PARTITION ") + partition_name +
@@ -637,9 +634,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                     task_table.cluster_push->getShardCount());
 
                 if (num_nodes != task_table.cluster_push->getShardCount())
-                {
                     return TaskStatus::Error;
-                }
             }
             else
             {
