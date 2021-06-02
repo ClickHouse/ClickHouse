@@ -1834,6 +1834,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         is_remote = true;
         if (!settings.async_socket_for_remote)
             max_threads_execute_query = max_streams = settings.max_distributed_connections;
+        else
+            max_streams = std::min<size_t>(max_streams, settings.max_distributed_connections);
     }
 
     UInt64 max_block_size = settings.max_block_size;
