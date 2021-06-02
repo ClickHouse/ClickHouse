@@ -367,6 +367,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                 storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
 
+                entry.dst_part_name = log_entry.new_part_name;
                 entry.state = EntryState::SOURCE_DROP_PRE_DELAY;
                 return entry;
             }
@@ -533,6 +534,7 @@ String PartMovesBetweenShardsOrchestrator::Entry::toString() const
     json.set(JSON_KEY_PART_NAME, part_name);
     json.set(JSON_KEY_PART_UUID, DB::toString(part_uuid));
     json.set(JSON_KEY_TO_SHARD, to_shard);
+    json.set(JSON_KEY_DST_PART_NAME, dst_part_name);
     json.set(JSON_KEY_STATE, state.toString());
     json.set(JSON_KEY_ROLLBACK, DB::toString(rollback));
     json.set(JSON_KEY_LAST_EX_MSG, last_exception_msg);
@@ -556,6 +558,7 @@ void PartMovesBetweenShardsOrchestrator::Entry::fromString(const String & buf)
     part_name = json->getValue<std::string>(JSON_KEY_PART_NAME);
     part_uuid = parseFromString<UUID>(json->getValue<std::string>(JSON_KEY_PART_UUID));
     to_shard = json->getValue<std::string>(JSON_KEY_TO_SHARD);
+    dst_part_name = json->getValue<std::string>(JSON_KEY_DST_PART_NAME);
     state.value = EntryState::fromString(json->getValue<std::string>(JSON_KEY_STATE));
     rollback = json->getValue<bool>(JSON_KEY_ROLLBACK);
     // TODO(nv): This struggles parsing some exceptions,

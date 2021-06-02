@@ -110,6 +110,7 @@ public:
         String part_name;
         UUID part_uuid;
         String to_shard;
+        String dst_part_name;
 
         EntryState state;
         bool rollback = false;
@@ -138,6 +139,7 @@ private:
     static constexpr auto JSON_KEY_PART_NAME = "part_name";
     static constexpr auto JSON_KEY_PART_UUID = "part_uuid";
     static constexpr auto JSON_KEY_TO_SHARD = "to_shard";
+    static constexpr auto JSON_KEY_DST_PART_NAME = "dst_part_name";
     static constexpr auto JSON_KEY_STATE = "state";
     static constexpr auto JSON_KEY_ROLLBACK = "rollback";
     static constexpr auto JSON_KEY_LAST_EX_MSG = "last_exception";
