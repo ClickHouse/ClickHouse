@@ -92,15 +92,38 @@ PtrTo<AlterTableClause> AlterTableClause::createAddIndex(bool if_not_exists, Ptr
 }
 
 // static
+PtrTo<AlterTableClause> AlterTableClause::createAddProjection(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after)
+{
+    assert(element->getType() == TableElementExpr::ExprType::PROJECTION);
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::ADD_PROJECTION, {element, after}));
+    query->if_not_exists = if_not_exists;
+    return query;
+}
+
+// static
 PtrTo<AlterTableClause> AlterTableClause::createAttach(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from)
 {
     return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::ATTACH, {clause, from}));
 }
 
 // static
-PtrTo<AlterTableClause> AlterTableClause::createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in)
+PtrTo<AlterTableClause> AlterTableClause::createClearColumn(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in)
 {
-    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR, {identifier, in}));
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR_COLUMN, {identifier, in}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+PtrTo<AlterTableClause> AlterTableClause::createClearIndex(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR_INDEX, {identifier, in}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+PtrTo<AlterTableClause> AlterTableClause::createClearProjection(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR_PROJECTION, {identifier, in}));
     query->if_exists = if_exists;
     return query;
 }
@@ -150,6 +173,14 @@ PtrTo<AlterTableClause> AlterTableClause::createDropIndex(bool if_exists, PtrTo<
 }
 
 // static
+PtrTo<AlterTableClause> AlterTableClause::createDropProjection(bool if_exists, PtrTo<Identifier> identifier)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::DROP_PROJECTION, {identifier}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+// static
 PtrTo<AlterTableClause> AlterTableClause::createDropPartition(PtrTo<PartitionClause> clause)
 {
     return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::DROP_PARTITION, {clause}));
@@ -159,6 +190,22 @@ PtrTo<AlterTableClause> AlterTableClause::createDropPartition(PtrTo<PartitionCla
 PtrTo<AlterTableClause> AlterTableClause::createFreezePartition(PtrTo<PartitionClause> clause)
 {
     return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::FREEZE_PARTITION, {clause}));
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createMaterializeIndex(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::MATERIALIZE_INDEX, {identifier, in}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createMaterializeProjection(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::MATERIALIZE_PROJECTION, {identifier, in}));
+    query->if_exists = if_exists;
+    return query;
 }
 
 // static
@@ -256,6 +303,13 @@ ASTPtr AlterTableClause::convertToOld() const
             if (has(AFTER)) command->index = get(AFTER)->convertToOld();
             break;
 
+        case ClauseType::ADD_PROJECTION:
+            command->type = ASTAlterCommand::ADD_PROJECTION;
+            command->if_not_exists = if_not_exists;
+            command->projection_decl = get(ELEMENT)->convertToOld();
+            if (has(AFTER)) command->projection = get(AFTER)->convertToOld();
+            break;
+
         case ClauseType::ATTACH:
             command->type = ASTAlterCommand::ATTACH_PARTITION;
             command->partition = get(PARTITION)->convertToOld();
@@ -270,12 +324,30 @@ ASTPtr AlterTableClause::convertToOld() const
             }
             break;
 
-        case ClauseType::CLEAR:
+        case ClauseType::CLEAR_COLUMN:
             command->type = ASTAlterCommand::DROP_COLUMN;
             command->if_exists = if_exists;
             command->clear_column = true;
             command->detach = false;
-            command->column = get(COLUMN)->convertToOld();
+            command->column = get(ELEMENT)->convertToOld();
+            if (has(IN)) command->partition = get(IN)->convertToOld();
+            break;
+
+        case ClauseType::CLEAR_INDEX:
+            command->type = ASTAlterCommand::DROP_INDEX;
+            command->if_exists = if_exists;
+            command->clear_index = true;
+            command->detach = false;
+            command->index = get(ELEMENT)->convertToOld();
+            if (has(IN)) command->partition = get(IN)->convertToOld();
+            break;
+
+        case ClauseType::CLEAR_PROJECTION:
+            command->type = ASTAlterCommand::DROP_PROJECTION;
+            command->if_exists = if_exists;
+            command->clear_projection = true;
+            command->detach = false;
+            command->projection = get(ELEMENT)->convertToOld();
             if (has(IN)) command->partition = get(IN)->convertToOld();
             break;
 
@@ -314,14 +386,21 @@ ASTPtr AlterTableClause::convertToOld() const
             command->type = ASTAlterCommand::DROP_COLUMN;
             command->if_exists = if_exists;
             command->detach = false;
-            command->column = get(COLUMN)->convertToOld();
+            command->column = get(ELEMENT)->convertToOld();
             break;
 
         case ClauseType::DROP_INDEX:
             command->type = ASTAlterCommand::DROP_INDEX;
             command->if_exists = if_exists;
             command->detach = false;
-            command->index = get(COLUMN)->convertToOld();
+            command->index = get(ELEMENT)->convertToOld();
+            break;
+
+        case ClauseType::DROP_PROJECTION:
+            command->type = ASTAlterCommand::DROP_PROJECTION;
+            command->if_exists = if_exists;
+            command->detach = false;
+            command->projection = get(ELEMENT)->convertToOld();
             break;
 
         case ClauseType::DROP_PARTITION:
@@ -337,6 +416,20 @@ ASTPtr AlterTableClause::convertToOld() const
             }
             else
                 command->type = ASTAlterCommand::FREEZE_ALL;
+            break;
+
+        case ClauseType::MATERIALIZE_INDEX:
+            command->type = ASTAlterCommand::MATERIALIZE_INDEX;
+            command->if_exists = if_exists;
+            command->index = get(ELEMENT)->convertToOld();
+            if (has(IN)) command->partition = get(IN)->convertToOld();
+            break;
+
+        case ClauseType::MATERIALIZE_PROJECTION:
+            command->type = ASTAlterCommand::MATERIALIZE_PROJECTION;
+            command->if_exists = if_exists;
+            command->projection = get(ELEMENT)->convertToOld();
+            if (has(IN)) command->partition = get(IN)->convertToOld();
             break;
 
         case ClauseType::MODIFY:
@@ -510,16 +603,34 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseAddIndex(ClickHouseParser::
     return AlterTableClause::createAddIndex(!!ctx->IF(), visit(ctx->tableIndexDfnt()), after);
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseAddProjection(ClickHouseParser::AlterTableClauseAddProjectionContext * ctx)
+{
+    auto after = ctx->AFTER() ? visit(ctx->nestedIdentifier()).as<PtrTo<Identifier>>() : nullptr;
+    return AlterTableClause::createAddProjection(!!ctx->IF(), visit(ctx->tableProjectionDfnt()), after);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseAttach(ClickHouseParser::AlterTableClauseAttachContext *ctx)
 {
     auto from = ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr;
     return AlterTableClause::createAttach(visit(ctx->partitionClause()), from);
 }
 
-antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseClear(ClickHouseParser::AlterTableClauseClearContext * ctx)
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseClearColumn(ClickHouseParser::AlterTableClauseClearColumnContext * ctx)
 {
     auto partition = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
-    return AlterTableClause::createClear(!!ctx->IF(), visit(ctx->nestedIdentifier()), partition);
+    return AlterTableClause::createClearColumn(!!ctx->IF(), visit(ctx->nestedIdentifier()), partition);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseClearIndex(ClickHouseParser::AlterTableClauseClearIndexContext * ctx)
+{
+    auto partition = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
+    return AlterTableClause::createClearIndex(!!ctx->IF(), visit(ctx->nestedIdentifier()), partition);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseClearProjection(ClickHouseParser::AlterTableClauseClearProjectionContext * ctx)
+{
+    auto partition = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
+    return AlterTableClause::createClearProjection(!!ctx->IF(), visit(ctx->nestedIdentifier()), partition);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseComment(ClickHouseParser::AlterTableClauseCommentContext * ctx)
@@ -547,6 +658,11 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseDropIndex(ClickHouseParser:
     return AlterTableClause::createDropIndex(!!ctx->IF(), visit(ctx->nestedIdentifier()));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseDropProjection(ClickHouseParser::AlterTableClauseDropProjectionContext * ctx)
+{
+    return AlterTableClause::createDropProjection(!!ctx->IF(), visit(ctx->nestedIdentifier()));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseDropPartition(ClickHouseParser::AlterTableClauseDropPartitionContext *ctx)
 {
     return AlterTableClause::createDropPartition(visit(ctx->partitionClause()));
@@ -556,6 +672,18 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseFreezePartition(ClickHouseP
 {
     auto clause = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
     return AlterTableClause::createFreezePartition(clause);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseMaterializeIndex(ClickHouseParser::AlterTableClauseMaterializeIndexContext * ctx)
+{
+    auto partition = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
+    return AlterTableClause::createMaterializeIndex(!!ctx->IF(), visit(ctx->nestedIdentifier()), partition);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseMaterializeProjection(ClickHouseParser::AlterTableClauseMaterializeProjectionContext * ctx)
+{
+    auto partition = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionClause>>() : nullptr;
+    return AlterTableClause::createMaterializeProjection(!!ctx->IF(), visit(ctx->nestedIdentifier()), partition);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableClauseModify(ClickHouseParser::AlterTableClauseModifyContext * ctx)
