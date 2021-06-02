@@ -497,8 +497,8 @@ DataTypes Block::getDataTypes() const
 
 static String getNameOfBaseColumn(const IColumn & column)
 {
-    if (const auto * column_sparse = checkAndGetColumn<ColumnSparse>(&column))
-        return column_sparse->getValuesColumn().getName();
+    // if (const auto * column_sparse = checkAndGetColumn<ColumnSparse>(&column))
+    //     return column_sparse->getValuesColumn().getName();
 
     return column.getName();
 }
