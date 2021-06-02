@@ -291,6 +291,21 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
                  </replica>
              </shard>
          </test_cluster_with_incorrect_pw>
+
+         <test_cluster_two_replicas_different_databases>
+             <shard>
+                 <replica>
+                     <default_database>shard_0</default_database>
+                     <host>localhost</host>
+                     <port>{tcp_port}</port>
+                 </replica>
+                 <replica>
+                     <default_database>shard_1</default_database>
+                     <host>localhost</host>
+                     <port>{tcp_port}</port>
+                 </replica>
+             </shard>
+         </test_cluster_two_replicas_different_databases>
     </remote_servers>
 
     <storage_configuration>
