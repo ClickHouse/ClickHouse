@@ -68,8 +68,8 @@ def test_s3_zero_copy_replication(cluster, policy):
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
     assert node2.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
 
-    # Based on version 20.x - should be only one file with size 100+ (checksums.txt), used by both nodes
-    assert get_large_objects_count(cluster) == 1
+    # Based on version 21.x - should be only 2 files with size 100+ (checksums.txt, serialization.txt), used by both nodes
+    assert get_large_objects_count(cluster) == 2
 
     node2.query("INSERT INTO s3_test VALUES (2,'data'),(3,'data')")
     node1.query("SYSTEM SYNC REPLICA s3_test")

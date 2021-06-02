@@ -89,7 +89,7 @@ public:
     /// Chooses serialization according to settings.
     SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
 
-    /// Chooses beetween subcolumn serialization and regular serialization according to @column.
+    /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
     static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
 

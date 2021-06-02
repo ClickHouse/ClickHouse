@@ -179,7 +179,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
             }
 
             /// 'end' <= 'src_offsets[offsets_end]', but end is excluded, so index is 'offsets_end' - 1.
-            /// Since 'end' is excluded need, to substract one more row from result.
+            /// Since 'end' is excluded need, to subtract one more row from result.
             insertManyDefaults(end - src_offsets[offset_end - 1] - 1);
             values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
         }

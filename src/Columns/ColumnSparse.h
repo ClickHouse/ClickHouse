@@ -16,7 +16,7 @@ namespace DB
  *  It stores column with non-default values and column
  *  with their sorted positions in original column. Column with
  *  values contains also one default value at 0 position to make
- *  implementation of execution of functions and sorting more convinient.
+ *  implementation of execution of functions and sorting more convenient.
  */
 class ColumnSparse final : public COWHelper<IColumn, ColumnSparse>
 {

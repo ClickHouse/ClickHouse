@@ -15,7 +15,7 @@ namespace DB
  *    Offsets have position independent format: as i-th offset there
  *    is written number of default values, that precedes the i-th non-default value.
  *    Offsets are written in VarInt encoding.
- *    Additionaly at the end of every call of 'serializeBinaryBulkWithMultipleStreams'
+ *    Additionally at the end of every call of 'serializeBinaryBulkWithMultipleStreams'
  *    there is written number of default values in the suffix of part of column,
  *    that we currently writing. This value also marked with a flag, that means the end of portion of data.
  *    This value is used, e.g. to allow independent reading of granules in MergeTree.
