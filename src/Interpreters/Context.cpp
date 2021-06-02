@@ -75,7 +75,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -141,7 +144,7 @@ public:
     /// Find existing session or create a new.
     std::shared_ptr<NamedSession> acquireSession(
         const String & session_id,
-        ContextPtr context,
+        ContextMutablePtr context,
         std::chrono::steady_clock::duration timeout,
         bool throw_if_not_found)
     {
@@ -518,7 +521,7 @@ SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shar
 
 void SharedContextHolder::reset() { shared.reset(); }
 
-ContextPtr Context::createGlobal(ContextSharedPart * shared)
+ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
 {
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared;
@@ -535,19 +538,19 @@ SharedContextHolder Context::createShared()
     return SharedContextHolder(std::make_unique<ContextSharedPart>());
 }
 
-ContextPtr Context::createCopy(const ContextConstPtr & other)
+ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     return std::shared_ptr<Context>(new Context(*other));
 }
 
-ContextPtr Context::createCopy(const ContextWeakConstPtr & other)
+ContextMutablePtr Context::createCopy(const ContextWeakConstPtr & other)
 {
     auto ptr = other.lock();
     if (!ptr) throw Exception("Can't copy an expired context", ErrorCodes::LOGICAL_ERROR);
     return createCopy(ptr);
 }
 
-ContextPtr Context::createCopy(const ContextPtr & other)
+ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
 }
@@ -1084,7 +1087,7 @@ void Context::addViewSource(const StoragePtr & storage)
 }
 
 
-StoragePtr Context::getViewSource()
+StoragePtr Context::getViewSource() const
 {
     return view_source;
 }
@@ -1318,7 +1321,7 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
     shared->macros.set(std::move(macros));
 }
 
-ContextPtr Context::getQueryContext() const
+ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
     if (!ptr) throw Exception("There is no query or query context has expired", ErrorCodes::THERE_IS_NO_QUERY);
@@ -1331,21 +1334,21 @@ bool Context::isInternalSubquery() const
     return ptr && ptr.get() != this;
 }
 
-ContextPtr Context::getSessionContext() const
+ContextMutablePtr Context::getSessionContext() const
 {
     auto ptr = session_context.lock();
     if (!ptr) throw Exception("There is no session or session context has expired", ErrorCodes::THERE_IS_NO_SESSION);
     return ptr;
 }
 
-ContextPtr Context::getGlobalContext() const
+ContextMutablePtr Context::getGlobalContext() const
 {
     auto ptr = global_context.lock();
     if (!ptr) throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
     return ptr;
 }
 
-ContextPtr Context::getBufferContext() const
+ContextMutablePtr Context::getBufferContext() const
 {
     if (!buffer_context) throw Exception("There is no buffer context", ErrorCodes::LOGICAL_ERROR);
     return buffer_context;
@@ -1896,7 +1899,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 }
 
 
-void Context::reloadClusterConfig()
+void Context::reloadClusterConfig() const
 {
     while (true)
     {
@@ -1983,7 +1986,7 @@ bool Context::hasTraceCollector() const
 }
 
 
-std::shared_ptr<QueryLog> Context::getQueryLog()
+std::shared_ptr<QueryLog> Context::getQueryLog() const
 {
     auto lock = getLock();
 
@@ -1994,7 +1997,7 @@ std::shared_ptr<QueryLog> Context::getQueryLog()
 }
 
 
-std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
+std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 {
     auto lock = getLock();
 
@@ -2005,7 +2008,7 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
 }
 
 
-std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
+std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 {
     auto lock = getLock();
 
@@ -2023,7 +2026,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
 }
 
 
-std::shared_ptr<TraceLog> Context::getTraceLog()
+std::shared_ptr<TraceLog> Context::getTraceLog() const
 {
     auto lock = getLock();
 
@@ -2034,7 +2037,7 @@ std::shared_ptr<TraceLog> Context::getTraceLog()
 }
 
 
-std::shared_ptr<TextLog> Context::getTextLog()
+std::shared_ptr<TextLog> Context::getTextLog() const
 {
     auto lock = getLock();
 
@@ -2045,7 +2048,7 @@ std::shared_ptr<TextLog> Context::getTextLog()
 }
 
 
-std::shared_ptr<MetricLog> Context::getMetricLog()
+std::shared_ptr<MetricLog> Context::getMetricLog() const
 {
     auto lock = getLock();
 
@@ -2067,7 +2070,7 @@ std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
 }
 
 
-std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog()
+std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog() const
 {
     auto lock = getLock();
 
@@ -2237,14 +2240,14 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
-    Poco::File force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = force_file.exists();
+    fs::path force_file(getFlagsPath() + "force_drop_table");
+    bool force_file_exists = fs::exists(force_file);
 
     if (force_file_exists)
     {
         try
         {
-            force_file.remove();
+            fs::remove(force_file);
             return;
         }
         catch (...)
@@ -2266,9 +2269,9 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
                     "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
                     backQuoteIfNeed(database), backQuoteIfNeed(table),
                     size_str, max_size_to_drop_str,
-                    force_file.path(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
-                    force_file.path(),
-                    force_file.path(), force_file.path());
+                    force_file.string(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
+                    force_file.string(),
+                    force_file.string(), force_file.string());
 }
 
 
@@ -2665,11 +2668,14 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
     return metadata_transaction;
 }
 
-PartUUIDsPtr Context::getPartUUIDs()
+PartUUIDsPtr Context::getPartUUIDs() const
 {
     auto lock = getLock();
     if (!part_uuids)
-        part_uuids = std::make_shared<PartUUIDs>();
+        /// For context itself, only this initialization is not const.
+        /// We could have done in constructor.
+        /// TODO: probably, remove this from Context.
+        const_cast<PartUUIDsPtr &>(part_uuids) = std::make_shared<PartUUIDs>();
 
     return part_uuids;
 }
@@ -2688,11 +2694,11 @@ void Context::setReadTaskCallback(ReadTaskCallback && callback)
     next_task_callback = callback;
 }
 
-PartUUIDsPtr Context::getIgnoredPartUUIDs()
+PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 {
     auto lock = getLock();
     if (!ignored_part_uuids)
-        ignored_part_uuids = std::make_shared<PartUUIDs>();
+        const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
 }
