@@ -387,6 +387,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     const String & partition_id,
     bool final,
     const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeTransactionPtr & txn,
     String * out_disable_reason,
     bool optimize_skip_merged_partitions)
 {
@@ -417,7 +418,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     while (it != parts.end())
     {
         /// For the case of one part, we check that it can be merged "with itself".
-        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it, nullptr, out_disable_reason))
+        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it, txn.get(), out_disable_reason))
         {
             return SelectPartsDecision::CANNOT_SELECT;
         }

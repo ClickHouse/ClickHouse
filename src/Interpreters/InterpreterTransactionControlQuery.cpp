@@ -29,6 +29,8 @@ BlockIO InterpreterTransactionControlQuery::execute()
         case ASTTransactionControl::ROLLBACK:
             return executeRollback(session_context);
     }
+    assert(false);
+    __builtin_unreachable();
 }
 
 BlockIO InterpreterTransactionControlQuery::executeBegin(ContextPtr session_context)

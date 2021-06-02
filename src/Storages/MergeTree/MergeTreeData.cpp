@@ -1061,14 +1061,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         part->renameToDetached("");
 
 
-    for (auto it = data_parts_by_state_and_info.begin(); it != data_parts_by_state_and_info.end(); ++it)
+    for (const auto & part : data_parts_by_state_and_info)
     {
         /// We do not have version metadata and transactions history for old parts,
         /// so let's consider that such parts were created by some ancient transaction
         /// and were committed with some prehistoric CSN.
         /// TODO Transactions: distinguish "prehistoric" parts from uncommitted parts in case of hard restart
-        (*it)->versions.setMinTID(Tx::PrehistoricTID);
-        (*it)->versions.mincsn.store(Tx::PrehistoricCSN, std::memory_order_relaxed);
+        part->versions.setMinTID(Tx::PrehistoricTID);
+        part->versions.mincsn.store(Tx::PrehistoricCSN, std::memory_order_relaxed);
     }
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that

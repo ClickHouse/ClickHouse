@@ -78,6 +78,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
         {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
 
+        {"visible",                                     std::make_shared<DataTypeUInt8>()},
         {"mintid",                                      TransactionID::getDataType()},
         {"maxtid",                                      TransactionID::getDataType()},
         {"mincsn",                                      std::make_shared<DataTypeUInt64>()},
@@ -88,7 +89,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 }
 
 void StorageSystemParts::processNextStorage(
-    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -258,6 +259,15 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
+
+        if (columns_mask[src_index++])
+        {
+            auto txn = context->getCurrentTransaction();
+            if (txn)
+                columns[res_index++]->insert(part->versions.isVisible(*txn));
+            else
+                columns[res_index++]->insert(part_state == State::Committed);
+        }
 
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
         {
