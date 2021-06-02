@@ -91,7 +91,8 @@ void VersionMetadata::unlockMaxTID(const TransactionID & tid)
 void VersionMetadata::setMinTID(const TransactionID & tid)
 {
     /// TODO Transactions: initialize it in constructor on part creation and remove this method
-    assert(!mintid);
+    /// FIXME ReplicatedMergeTreeBlockOutputStream may add one part multiple times
+    assert(!mintid || mintid == tid);
     const_cast<TransactionID &>(mintid) = tid;
 }
 

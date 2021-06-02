@@ -54,7 +54,7 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const DataPartPtr & new_pa
                                        new_part->storage.getStorageID().getNameForLogs(),
                                        new_part->name);
     error_context += ", part_name: {}";
-    for (auto covered : covered_parts)
+    for (const auto & covered : covered_parts)
     {
         covered->versions.lockMaxTID(tid, fmt::format(error_context, covered->name));
         if (txn)
@@ -79,7 +79,7 @@ bool MergeTreeTransaction::isReadOnly() const
     return creating_parts.empty() && removing_parts.empty();
 }
 
-void MergeTreeTransaction::beforeCommit()
+void MergeTreeTransaction::beforeCommit() const
 {
     assert(csn == Tx::UnknownCSN);
 }

@@ -42,7 +42,7 @@ public:
     String dumpDescription() const;
 
 private:
-    void beforeCommit();
+    void beforeCommit() const;
     void afterCommit(CSN assigned_csn) noexcept;
     void rollback() noexcept;
 

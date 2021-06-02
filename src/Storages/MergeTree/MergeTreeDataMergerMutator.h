@@ -111,6 +111,7 @@ public:
         const String & partition_id,
         bool final,
         const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn,
         String * out_disable_reason = nullptr,
         bool optimize_skip_merged_partitions = false);
 

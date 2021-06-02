@@ -268,7 +268,7 @@ Pipe StorageSystemPartsBase::read(
 
     while (StoragesInfo info = stream.next())
     {
-        processNextStorage(res_columns, columns_mask, info, has_state_column);
+        processNextStorage(context, res_columns, columns_mask, info, has_state_column);
     }
 
     if (has_state_column)
