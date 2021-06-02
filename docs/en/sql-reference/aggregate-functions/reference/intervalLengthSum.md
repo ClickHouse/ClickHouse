@@ -5,7 +5,7 @@ toc_title: intervalLengthSum
 
 # intervalLengthSum {#agg_function-intervallengthsum}
 
-Calculates the sum of the length of all ranges (segments on numeric axis) without counting intersection twice.
+Calculates the sum of the length of all ranges (segments on numeric axis) excluding intersections.
 
 **Syntax**
 
