@@ -29,7 +29,7 @@ public:
     Data get();
 
 private:
-    String readNextFilesystem(ReadBuffer& mounts_in);
+    String readNextFilesystem(ReadBuffer & mounts_in);
 };
 
 }
