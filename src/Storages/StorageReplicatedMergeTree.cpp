@@ -519,10 +519,11 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             if (wait_event->tryWait(1000))
                 continue;
 
-            /// Here we check mutation for errors or kill on local replica. If they happen on this replica
+            /// Here we check mutation for errors on local replica. If they happen on this replica
             /// they will happen on each replica, so we can check only in-memory info.
             auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
-            if (!mutation_status || !mutation_status->latest_fail_reason.empty())
+            /// If mutation status is empty, than local replica may just not loaded it into memory.
+            if (mutation_status && !mutation_status->latest_fail_reason.empty())
                 break;
         }
 
