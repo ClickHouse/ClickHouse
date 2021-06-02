@@ -114,6 +114,130 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
     return res;
 }
 
+class KeyCondition::Tree
+{
+public:
+    explicit Tree(const IAST * ast_) : ast(ast_) {}
+    explicit Tree(const ActionsDAG::Node * dag_) : dag(dag_) {}
+
+    std::string getColumnName() const
+    {
+        if (ast)
+            return ast->getColumnNameWithoutAlias();
+        else
+            getColumnNameWithoutAlias(dag);
+    }
+
+    // size_t numChildren() const
+    // {
+    //     if (ast)
+    //         return ast->children.size();
+    //     else
+    //         return dag->children.size();
+    // }
+
+    // Tree getChildrenAt(size_t idx) const
+    // {
+    //     if (ast)
+    //         return Tree(ast->children[idx].get());
+    //     else
+    //         return Tree(dag->children[idx]);
+    // }
+
+    bool isFunction() const
+    {
+        if (ast)
+            return typeid_cast<const ASTFunction *>(ast);
+        else
+            return dag->type == ActionsDAG::ActionType::FUNCTION;
+    }
+
+    bool isConstant() const
+    {
+        if (ast)
+            return typeid_cast<const ASTLiteral *>(ast);
+        else
+            return dag->type == ActionsDAG::ActionType::COLUMN;
+    }
+
+    ColumnWithTypeAndName getConstant() const
+    {
+        if (!isConstant())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "KeyCondition::Tree node is not a constant");
+
+        ColumnWithTypeAndName res;
+
+        if (ast)
+        {
+            const auto * literal = assert_cast<const ASTLiteral *>(ast);
+            res.type = applyVisitor(FieldToDataType(), literal->value);
+            res.column = res.type->createColumnConst(0, literal->value);
+
+        }
+        else
+        {
+            res.type = dag->result_type;
+            res.column = dag->column;
+        }
+
+        return res;
+    }
+
+    FunctionTree asFunction() const;
+
+protected:
+    const IAST * ast = nullptr;
+    const ActionsDAG::Node * dag = nullptr;
+};
+
+class KeyCondition::FunctionTree : public KeyCondition::Tree
+{
+public:
+    std::string getFunctionName() const
+    {
+        if (ast)
+            return assert_cast<const ASTFunction *>(ast)->name;
+        else
+            return dag->function_base->getName();
+    }
+
+    size_t numArguments() const
+    {
+        if (ast)
+        {
+            const auto * func = assert_cast<const ASTFunction *>(ast);
+            return func->arguments ? 0 : func->arguments->size();
+        }
+        else
+            return dag->children.size();
+    }
+
+    Tree getArgumentAt(size_t idx) const
+    {
+        if (ast)
+            return Tree(assert_cast<const ASTFunction *>(ast)->arguments->children[idx].get());
+        else
+            return Tree(dag->children[idx]);
+    }
+
+private:
+    using Tree::Tree;
+
+    friend class Tree;
+};
+
+
+KeyCondition::FunctionTree KeyCondition::Tree::asFunction() const
+{
+    if (!isFunction())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeyCondition::Tree node is not a function");
+
+    if (ast)
+        return KeyCondition::FunctionTree(ast);
+    else
+        return KeyCondition::FunctionTree(dag);
+}
+
 
 /// A dictionary containing actions to the corresponding functions to turn them into `RPNElement`
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -560,18 +684,19 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
-void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants)
+void KeyCondition::traverseAST(const Tree & node, ContextPtr context, Block & block_with_constants)
 {
     RPNElement element;
 
-    if (const auto * func = node->as<ASTFunction>())
+    if (node.isFunction())
     {
+        auto func = node.asFunction();
         if (tryParseLogicalOperatorFromAST(func, element))
         {
-            auto & args = func->arguments->children;
-            for (size_t i = 0, size = args.size(); i < size; ++i)
+            size_t num_args = func.numArguments();
+            for (size_t i = 0; i < num_args; ++i)
             {
-                traverseAST(args[i], context, block_with_constants);
+                traverseAST(func.getArgumentAt(i), context, block_with_constants);
 
                 /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
                   * - in this case `n - 1` elements are added (where `n` is the number of arguments).
@@ -968,13 +1093,13 @@ private:
 
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
-    const ASTPtr & node,
+    const Tree & node,
     ContextPtr context,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
     MonotonicFunctionsChain & out_functions_chain)
 {
-    std::vector<const ASTFunction *> chain_not_tested_for_monotonicity;
+    std::vector<FunctionTree> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
 
     if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(node, out_key_column_num, key_column_type, chain_not_tested_for_monotonicity))
@@ -982,14 +1107,14 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        const auto & args = (*it)->arguments->children;
-        auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
+        auto func = *it;
+        auto func_builder = FunctionFactory::instance().tryGet(func.getFunctionName(), context);
         if (!func_builder)
             return false;
         ColumnsWithTypeAndName arguments;
         ColumnWithTypeAndName const_arg;
         FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
-        if (args.size() == 2)
+        if (func.numArguments() == 2)
         {
             if (const auto * arg_left = args[0]->as<ASTLiteral>())
             {
@@ -1029,10 +1154,10 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 }
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
-    const ASTPtr & node,
+    const Tree & node,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
-    std::vector<const ASTFunction *> & out_functions_chain)
+    std::vector<FunctionTree> & out_functions_chain)
 {
     /** By itself, the key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
@@ -1040,7 +1165,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     const auto & sample_block = key_expr->getSampleBlock();
 
     // Key columns should use canonical names for index analysis
-    String name = node->getColumnNameWithoutAlias();
+    String name = node.getColumnName();
 
     auto it = key_columns.find(name);
     if (key_columns.end() != it)
@@ -1050,31 +1175,30 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         return true;
     }
 
-    if (const auto * func = node->as<ASTFunction>())
+    if (node.isFunction())
     {
-        if (!func->arguments)
-            return false;
+        auto func = node.asFunction();
 
-        const auto & args = func->arguments->children;
-        if (args.size() > 2 || args.empty())
+        size_t num_args = func.numArguments();
+        if (num_args > 2 || num_args == 0)
             return false;
 
         out_functions_chain.push_back(func);
         bool ret = false;
-        if (args.size() == 2)
+        if (num_args == 2)
         {
-            if (args[0]->as<ASTLiteral>())
+            if (func.getArgumentAt(0).isConstant())
             {
-                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[1], out_key_column_num, out_key_column_type, out_functions_chain);
+                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(func.getArgumentAt(1), out_key_column_num, out_key_column_type, out_functions_chain);
             }
-            else if (args[1]->as<ASTLiteral>())
+            else if (func.getArgumentAt(1).isConstant())
             {
-                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(func.getArgumentAt(0), out_key_column_num, out_key_column_type, out_functions_chain);
             }
         }
         else
         {
-            ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+            ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(func.getArgumentAt(0), out_key_column_num, out_key_column_type, out_functions_chain);
         }
         return ret;
     }
@@ -1099,7 +1223,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 }
 
 
-bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants, RPNElement & out)
+bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Block & block_with_constants, RPNElement & out)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
@@ -1107,27 +1231,28 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
       */
     Field const_value;
     DataTypePtr const_type;
-    if (const auto * func = node->as<ASTFunction>())
+    if (node.isFunction())
     {
-        const ASTs & args = func->arguments->children;
+        auto func = node.asFunction();
+        size_t num_args = func.numArguments();
 
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
         MonotonicFunctionsChain chain;
-        std::string func_name = func->name;
+        std::string func_name = func.getFunctionName();
 
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
-        if (args.size() == 1)
+        if (num_args == 1)
         {
-            if (!(isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain)))
+            if (!(isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(0), context, key_column_num, key_expr_type, chain)))
                 return false;
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
-        else if (args.size() == 2)
+        else if (num_args == 2)
         {
             size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
             bool is_set_const = false;
@@ -1315,25 +1440,24 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
     return false;
 }
 
-bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out)
+bool KeyCondition::tryParseLogicalOperatorFromAST(const FunctionTree & func, RPNElement & out)
 {
     /// Functions AND, OR, NOT.
     /// Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
     /// (or, the same thing - calling the function `and` from one argument).
-    const ASTs & args = func->arguments->children;
 
-    if (func->name == "not")
+    if (func.getFunctionName() == "not")
     {
-        if (args.size() != 1)
+        if (func.numArguments() != 1)
             return false;
 
         out.function = RPNElement::FUNCTION_NOT;
     }
     else
     {
-        if (func->name == "and" || func->name == "indexHint")
+        if (func.getFunctionName() == "and" || func.getFunctionName() == "indexHint")
             out.function = RPNElement::FUNCTION_AND;
-        else if (func->name == "or")
+        else if (func.getFunctionName() == "or")
             out.function = RPNElement::FUNCTION_OR;
         else
             return false;

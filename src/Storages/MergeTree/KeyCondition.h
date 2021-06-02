@@ -378,6 +378,10 @@ public:
     static const AtomMap atom_map;
 
 private:
+
+    class Tree;
+    class FunctionTree;
+
     BoolMask checkInRange(
         size_t used_key_size,
         const FieldRef * left_key,
@@ -386,9 +390,9 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    void traverseAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants);
-    bool tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants, RPNElement & out);
-    static bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
+    void traverseAST(const Tree & node, ContextPtr context, Block & block_with_constants);
+    bool tryParseAtomFromAST(const Tree & node, ContextPtr context, Block & block_with_constants, RPNElement & out);
+    static bool tryParseLogicalOperatorFromAST(const FunctionTree & func, RPNElement & out);
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,
@@ -397,17 +401,17 @@ private:
       *  and fills chain of possibly-monotonic functions.
       */
     bool isKeyPossiblyWrappedByMonotonicFunctions(
-        const ASTPtr & node,
+        const Tree & node,
         ContextPtr context,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
         MonotonicFunctionsChain & out_functions_chain);
 
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
-        const ASTPtr & node,
+        const Tree & node,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        std::vector<const ASTFunction *> & out_functions_chain);
+        std::vector<FunctionTree> & out_functions_chain);
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const ASTPtr & node,
