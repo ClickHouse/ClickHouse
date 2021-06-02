@@ -137,8 +137,8 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
-    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
-    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
+    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
+    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
 };
 
 /** Query along with some additional data,

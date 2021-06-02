@@ -8,11 +8,13 @@
 #include <Formats/MySQLBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -193,12 +195,11 @@ void commitMetadata(const std::function<void()> & function, const String & persi
     try
     {
         function();
-
-        Poco::File(persistent_tmp_path).renameTo(persistent_path);
+        fs::rename(persistent_tmp_path, persistent_path);
     }
     catch (...)
     {
-        Poco::File(persistent_tmp_path).remove();
+        fs::remove(persistent_tmp_path);
         throw;
     }
 }
@@ -231,7 +232,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
 
 MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & settings_) : persistent_path(path_), settings(settings_)
 {
-    if (Poco::File(persistent_path).exists())
+    if (fs::exists(persistent_path))
     {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
         assertString("Version:\t" + toString(meta_version), in);
