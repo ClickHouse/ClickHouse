@@ -1393,11 +1393,7 @@ void MergeTreeData::clearEmptyParts()
     for (const auto & part : parts)
     {
         if (part->rows_count == 0)
-        {
-            ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
-            /// If another replica has already started drop, it's ok, no need to throw.
-            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, getContext(), /* throw_if_noop = */ false);
-        }
+            dropPartNoWaitNoThrow(part->name);
     }
 }
 
@@ -2915,9 +2911,8 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
     getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
-void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
+void MergeTreeData::checkPartCanBeDropped(const String & part_name)
 {
-    String part_name = part_ast->as<ASTLiteral &>().value.safeGet<String>();
     auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
@@ -3052,12 +3047,20 @@ Pipe MergeTreeData::alterPartition(
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
+            {
                 if (command.part)
-                    checkPartCanBeDropped(command.partition);
+                {
+                    auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+                    checkPartCanBeDropped(part_name);
+                    dropPart(part_name, command.detach, query_context);
+                }
                 else
+                {
                     checkPartitionCanBeDropped(command.partition);
-                dropPartition(command.partition, command.detach, command.part, query_context);
-                break;
+                    dropPartition(command.partition, command.detach, query_context);
+                }
+            }
+            break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
                 dropDetached(command.partition, command.part, query_context);
@@ -3845,7 +3848,7 @@ static void selectBestProjection(
     const Names & required_columns,
     ProjectionCandidate & candidate,
     ContextPtr query_context,
-    const PartitionIdToMaxBlock * max_added_blocks,
+    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks,
     const Settings & settings,
     const MergeTreeData::DataPartsVector & parts,
     ProjectionCandidate *& selected_candidate,
@@ -3866,21 +3869,16 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    candidate.merge_tree_data_select_base_cache = std::make_unique<MergeTreeDataSelectCache>();
-    candidate.merge_tree_data_select_projection_cache = std::make_unique<MergeTreeDataSelectCache>();
-    reader.readFromParts(
+    auto sum_marks = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
         metadata_snapshot,
         candidate.desc->metadata,
         query_info, // TODO syntax_analysis_result set in index
         query_context,
-        0, // max_block_size is unused when getting cache
         settings.max_threads,
-        max_added_blocks,
-        candidate.merge_tree_data_select_projection_cache.get());
+        max_added_blocks);
 
-    size_t sum_marks = candidate.merge_tree_data_select_projection_cache->sum_marks;
     if (normal_parts.empty())
     {
         // All parts are projection parts which allows us to use in_order_optimization.
@@ -3889,18 +3887,15 @@ static void selectBestProjection(
     }
     else
     {
-        reader.readFromParts(
+        sum_marks += reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
             metadata_snapshot,
             metadata_snapshot,
             query_info, // TODO syntax_analysis_result set in index
             query_context,
-            0, // max_block_size is unused when getting cache
             settings.max_threads,
-            max_added_blocks,
-            candidate.merge_tree_data_select_base_cache.get());
-        sum_marks += candidate.merge_tree_data_select_base_cache->sum_marks;
+            max_added_blocks);
     }
 
     // We choose the projection with least sum_marks to read.
@@ -4128,32 +4123,21 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     if (!candidates.empty())
     {
         // First build a MergeTreeDataSelectCache to check if a projection is indeed better than base
-        query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
+        // query_info.merge_tree_data_select_cache = std::make_unique<MergeTreeDataSelectCache>();
 
-        std::unique_ptr<PartitionIdToMaxBlock> max_added_blocks;
+        std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
         if (settings.select_sequential_consistency)
         {
             if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(this))
-                max_added_blocks = std::make_unique<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
+                max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
         }
 
         auto parts = getDataPartsVector();
         MergeTreeDataSelectExecutor reader(*this);
-        reader.readFromParts(
-            parts,
-            analysis_result.required_columns,
-            metadata_snapshot,
-            metadata_snapshot,
-            query_info, // TODO syntax_analysis_result set in index
-            query_context,
-            0, // max_block_size is unused when getting cache
-            settings.max_threads,
-            max_added_blocks.get(),
-            query_info.merge_tree_data_select_cache.get());
 
-        // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
-        size_t min_sum_marks = query_info.merge_tree_data_select_cache->sum_marks + 1;
         ProjectionCandidate * selected_candidate = nullptr;
+        size_t min_sum_marks = std::numeric_limits<size_t>::max();
+        bool has_ordinary_projection = false;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
         {
@@ -4166,17 +4150,33 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     analysis_result.required_columns,
                     candidate,
                     query_context,
-                    max_added_blocks.get(),
+                    max_added_blocks,
                     settings,
                     parts,
                     selected_candidate,
                     min_sum_marks);
             }
+            else
+                has_ordinary_projection = true;
         }
 
         /// Select the best normal projection if no aggregate projection is available
-        if (!selected_candidate)
+        if (!selected_candidate && has_ordinary_projection)
         {
+            min_sum_marks = reader.estimateNumMarksToRead(
+                parts,
+                analysis_result.required_columns,
+                metadata_snapshot,
+                metadata_snapshot,
+                query_info, // TODO syntax_analysis_result set in index
+                query_context,
+                settings.max_threads,
+                max_added_blocks);
+
+            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
+            min_sum_marks += 1;
+
             for (auto & candidate : candidates)
             {
                 if (candidate.desc->type == ProjectionDescription::Type::Normal)
@@ -4188,7 +4188,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                         analysis_result.required_columns,
                         candidate,
                         query_context,
-                        max_added_blocks.get(),
+                        max_added_blocks,
                         settings,
                         parts,
                         selected_candidate,
