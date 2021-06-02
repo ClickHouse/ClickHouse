@@ -194,7 +194,7 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 }
 
 
-std::shared_ptr<Context> StorageRabbitMQ::addSettings(ContextPtr local_context) const
+ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", Field{true});
