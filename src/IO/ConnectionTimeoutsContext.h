@@ -27,7 +27,7 @@ inline ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const S
         settings.receive_data_timeout_ms);
 }
 
-inline ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(ContextPtr context)
+inline ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(ContextConstPtr context)
 {
     const auto & settings = context->getSettingsRef();
     const auto & config = context->getConfigRef();

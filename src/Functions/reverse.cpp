@@ -57,7 +57,7 @@ class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionReverse>();
     }
@@ -117,9 +117,9 @@ class ReverseOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextConstPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit ReverseOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit ReverseOverloadResolver(ContextConstPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -141,7 +141,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    ContextConstPtr context;
 };
 
 }

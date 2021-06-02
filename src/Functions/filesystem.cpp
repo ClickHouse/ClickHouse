@@ -34,7 +34,7 @@ class FilesystemImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextConstPtr context)
     {
         return std::make_shared<FilesystemImpl<Impl>>(std::filesystem::space(context->getConfigRef().getString("path")));
     }
