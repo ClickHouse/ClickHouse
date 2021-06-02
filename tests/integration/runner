@@ -252,7 +252,7 @@ if __name__ == "__main__":
         --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
-        {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=120 -e COMPOSE_HTTP_TIMEOUT=300 \
+        {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
         {env_tags} -e PYTEST_OPTS='{parallel} {opts} {tests_list}' {img} {command}".format(
         net=net,
         tty=tty,
