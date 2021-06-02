@@ -61,16 +61,22 @@ class AlterTableClause : public INode
     public:
         static PtrTo<AlterTableClause> createAddColumn(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
         static PtrTo<AlterTableClause> createAddIndex(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
+        static PtrTo<AlterTableClause> createAddProjection(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
         static PtrTo<AlterTableClause> createAttach(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> from);
-        static PtrTo<AlterTableClause> createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in);
+        static PtrTo<AlterTableClause> createClearColumn(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in);
+        static PtrTo<AlterTableClause> createClearIndex(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in);
+        static PtrTo<AlterTableClause> createClearProjection(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in);
         static PtrTo<AlterTableClause> createCodec(bool if_exists, PtrTo<Identifier> identifier, PtrTo<CodecExpr> codec);
         static PtrTo<AlterTableClause> createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> comment);
         static PtrTo<AlterTableClause> createDelete(PtrTo<ColumnExpr> expr);
         static PtrTo<AlterTableClause> createDetach(PtrTo<PartitionClause> clause);
         static PtrTo<AlterTableClause> createDropColumn(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createDropIndex(bool if_exists, PtrTo<Identifier> identifier);
+        static PtrTo<AlterTableClause> createDropProjection(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createDropPartition(PtrTo<PartitionClause> clause);
         static PtrTo<AlterTableClause> createFreezePartition(PtrTo<PartitionClause> clause);
+        static PtrTo<AlterTableClause> createMaterializeIndex(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in);
+        static PtrTo<AlterTableClause> createMaterializeProjection(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionClause> in);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
         static PtrTo<AlterTableClause> createMovePartitionToDisk(PtrTo<PartitionClause> clause, PtrTo<StringLiteral> literal);
         static PtrTo<AlterTableClause> createMovePartitionToTable(PtrTo<PartitionClause> clause, PtrTo<TableIdentifier> identifier);
@@ -88,19 +94,19 @@ class AlterTableClause : public INode
     private:
         enum ChildIndex : UInt8
         {
-            // ADD COLUMN or INDEX
-            ELEMENT = 0,  // TableElementExpr
+            // ADD COLUMN, INDEX or PROJECTION
+            ELEMENT = 0,  // TableElementExpr (COLUMN, CONSTRAINT, INDEX, PROJECTION)
             AFTER = 1,    // Identifier (optional)
 
             // ATTACH/REPLACE
             PARTITION = 0,  // PartitionClause
             FROM = 1,       // TableIdentifier (optional)
 
-            // CLEAR
-            COLUMN = 0,  // Identifier
+            // CLEAR COLUMN, INDEX or PROJECTION
             IN = 1,      // PartitionClause
 
-            // CODEC
+            // CODEC, COMMENT and RENAME
+            COLUMN = 0, // Identifier
             CODEC = 1,  // CodecExpr
 
             // COMMENT
@@ -127,16 +133,22 @@ class AlterTableClause : public INode
         {
             ADD_COLUMN,
             ADD_INDEX,
+            ADD_PROJECTION,
             ATTACH,
-            CLEAR,
+            CLEAR_COLUMN,
+            CLEAR_INDEX,
+            CLEAR_PROJECTION,
             CODEC,
             COMMENT,
             DELETE,
             DETACH,
             DROP_COLUMN,
             DROP_INDEX,
+            DROP_PROJECTION,
             DROP_PARTITION,
             FREEZE_PARTITION,
+            MATERIALIZE_INDEX,
+            MATERIALIZE_PROJECTION,
             MODIFY,
             MOVE_PARTITION_TO_DISK,
             MOVE_PARTITION_TO_TABLE,
