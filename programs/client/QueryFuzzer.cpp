@@ -390,10 +390,10 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 
     if (def.frame_type == WindowFrame::FrameType::Range
         && def.frame_begin_type == WindowFrame::BoundaryType::Unbounded
-        && def.frame_begin_preceding == true
+        && def.frame_begin_preceding
         && def.frame_end_type == WindowFrame::BoundaryType::Current)
     {
-        def.frame_is_default = true;
+        def.frame_is_default = true; /* NOLINT clang-tidy could you just shut up please */
     }
     else
     {
