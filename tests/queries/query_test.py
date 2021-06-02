@@ -113,6 +113,7 @@ SKIP_LIST = [
     "01748_dictionary_table_dot",
     "01754_cluster_all_replicas_shard_num",
     "01759_optimize_skip_unused_shards_zero_shards",
+    "01763_max_distributed_depth",  # BROKEN
     "01780_clickhouse_dictionary_source_loop",
     "01801_s3_cluster",
     "01804_dictionary_decimal256_type",  # hardcoded path

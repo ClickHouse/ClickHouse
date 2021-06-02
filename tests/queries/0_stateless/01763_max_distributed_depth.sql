@@ -1,29 +1,26 @@
-DROP TABLE IF EXISTS table1;
-DROP TABLE IF EXISTS table2;
+DROP TABLE IF EXISTS tt6;
 
-CREATE TABLE table1
+CREATE TABLE tt6
 (
-	`id` UInt32
+	`id` UInt32,
+	`first_column` UInt32,
+	`second_column` UInt32,
+	`third_column` UInt32,
+	`status` String
+
 )
-ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'table2', rand());
+ENGINE = Distributed('test_shard_localhost', '', 'tt6', rand());
 
-CREATE TABLE table2
-(
-	`id` UInt32
-)
-ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'table1', rand());
+INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 581 }
 
-INSERT INTO table1 VALUES (1); -- { serverError 581 }
-
-SELECT * FROM table1; -- { serverError 581 }
+SELECT * FROM tt6; -- { serverError 581 }
 
 SET max_distributed_depth = 0;
 
 -- stack overflow
-INSERT INTO table1 VALUES (1); -- { serverError 306 }
+INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 306}
 
 -- stack overflow
-SELECT * FROM table1; -- { serverError 306 }
+SELECT * FROM tt6; -- { serverError 306 }
 
-DROP TABLE table1;
-DROP TABLE table2;
+DROP TABLE tt6;
