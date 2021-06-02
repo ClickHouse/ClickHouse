@@ -10,6 +10,8 @@ The list of available `SYSTEM` statements:
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
+-   [RELOAD MODELS](#query_language-system-reload-models)
+-   [RELOAD MODEL](#query_language-system-reload-model)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
@@ -59,6 +61,14 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 ``` sql
 SELECT name, status FROM system.dictionaries;
 ```
+
+## RELOAD MODELS {#query_language-system-reload-models}
+
+Reloads all [CatBoost](../../operations/guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) models if the configuration was updated without restarting the server. The configuration for CatBoost models is the same as for dictionaries.
+
+## RELOAD MODEL {#query_language-system-reload-model}
+
+Completely reloads a CatBoost model `model_name` if the configuration was updated without restarting the server.
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
