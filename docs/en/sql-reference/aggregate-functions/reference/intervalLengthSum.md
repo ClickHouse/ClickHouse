@@ -23,7 +23,7 @@ intervalLengthSum(start, end)
 
 **Returned value**
 
--   Sum of the length of all ranges (segments on numeric axis) without counting intersection twice. If the arguments are of integer type, the function returns a value of the [UInt64](../../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) type. If the arguments are of the floating-point type, the function returns a value of the [Float64](../../../sql-reference/data-types/float.md#float32-float64) type.
+-   Sum of the length of all ranges (segments on numeric axis) excluding intersections. Depending on the type of the argument, the return value may be [UInt64](../../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64) type.
 
 **Examples**
 
