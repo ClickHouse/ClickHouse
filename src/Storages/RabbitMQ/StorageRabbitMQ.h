@@ -33,6 +33,13 @@ public:
     void startup() override;
     void shutdown() override;
 
+    /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
+    /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
+    /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
+    /// because of drop query. And drop() method is not suitable at all, because it will not only require to reopen connection, but also
+    /// it can be called considerable time after table is dropped (for example, in case of Atomic database), which is not appropriate for the case.
+    void checkTableCanBeDropped() const override { drop_table = true; }
+
     /// Always return virtual columns in addition to required columns
     Pipe read(
         const Names & column_names,
@@ -84,8 +91,15 @@ private:
     size_t num_consumers;
     size_t num_queues;
     String queue_base;
-    const String deadletter_exchange;
+    Names queue_settings_list;
+
+    /// For insert query. Mark messages as durable.
     const bool persistent;
+
+    /// A table setting. It is possible not to perform any RabbitMQ setup, which is supposed to be consumer-side setup:
+    /// declaring exchanges, queues, bindings. Instead everything needed from RabbitMQ table is to connect to a specific queue.
+    /// This solution disables all optimizations and is not really optimal, but allows user to fully control all RabbitMQ setup.
+    bool use_user_setup;
 
     bool hash_exchange;
     Poco::Logger * log;
@@ -108,12 +122,12 @@ private:
     /// maximum number of messages in RabbitMQ queue (x-max-length). Also used
     /// to setup size of inner buffer for received messages
     uint32_t queue_size;
+
     String sharding_exchange, bridge_exchange, consumer_exchange;
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
     std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
     std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
     std::atomic<bool> exchange_removed = false, rabbit_is_ready = false;
-    ChannelPtr setup_channel;
     std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
@@ -124,6 +138,7 @@ private:
 
     std::atomic<bool> stream_cancelled{false};
     size_t read_attempts = 0;
+    mutable bool drop_table = false;
 
     ConsumerBufferPtr createReadBuffer();
 
@@ -132,7 +147,7 @@ private:
     void loopingFunc();
     void connectionFunc();
 
-    static Names parseRoutingKeys(String routing_key_list);
+    static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
@@ -141,9 +156,11 @@ private:
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
     void initRabbitMQ();
-    void initExchange();
-    void bindExchange();
-    void bindQueue(size_t queue_id);
+    void cleanupRabbitMQ() const;
+
+    void initExchange(AMQP::TcpChannel & rabbit_channel);
+    void bindExchange(AMQP::TcpChannel & rabbit_channel);
+    void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
     bool restoreConnection(bool reconnecting);
     bool streamToViews();

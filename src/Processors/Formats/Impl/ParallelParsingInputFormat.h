@@ -202,7 +202,7 @@ private:
 
     Poco::Event first_parser_finished;
 
-    std::atomic<bool> initialized{false};
+    std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
 
     /// There are multiple "parsers", that's why we use thread pool.

@@ -443,8 +443,7 @@ class ClickHouseCluster:
         run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
-        start_deadline = time.time() + 20.0  # seconds
-        node.wait_for_start(start_deadline)
+        node.wait_for_start(start_timeout=20.0, connection_timeout=600.0)  # seconds
         return node
 
     def get_instance_ip(self, instance_name):
@@ -802,13 +801,13 @@ class ClickHouseCluster:
             subprocess_check_call(clickhouse_start_cmd)
             print("ClickHouse instance created")
 
-            start_deadline = time.time() + 20.0  # seconds
+            start_timeout = 20.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
 
                 print("Waiting for ClickHouse start...")
-                instance.wait_for_start(start_deadline)
+                instance.wait_for_start(start_timeout)
                 print("ClickHouse started")
 
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
@@ -1031,13 +1030,18 @@ class ClickHouseInstance:
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
 
-    def is_built_with_thread_sanitizer(self):
+    def is_built_with_sanitizer(self, sanitizer_name=''):
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=thread" in build_opts
+        return "-fsanitize={}".format(sanitizer_name) in build_opts
+
+    def is_built_with_thread_sanitizer(self):
+        return self.is_built_with_sanitizer('thread')
 
     def is_built_with_address_sanitizer(self):
-        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=address" in build_opts
+        return self.is_built_with_sanitizer('address')
+
+    def is_built_with_memory_sanitizer(self):
+        return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
@@ -1240,32 +1244,54 @@ class ClickHouseInstance:
     def start(self):
         self.get_docker_handle().start()
 
-    def wait_for_start(self, deadline=None, timeout=None):
-        start_time = time.time()
+    def wait_for_start(self, start_timeout=None, connection_timeout=None):
 
-        if timeout is not None:
-            deadline = start_time + timeout
+        if start_timeout is None or start_timeout <= 0:
+            raise Exception("Invalid timeout: {}".format(start_timeout))
+
+        if connection_timeout is not None and connection_timeout < start_timeout:
+            raise Exception("Connection timeout {} should be grater then start timeout {}"
+                            .format(connection_timeout, start_timeout))
+
+        start_time = time.time()
+        prev_rows_in_log = 0
+
+        def has_new_rows_in_log():
+            nonlocal prev_rows_in_log
+            try:
+                rows_in_log = int(self.count_in_log(".*").strip())
+                res = rows_in_log > prev_rows_in_log
+                prev_rows_in_log = rows_in_log
+                return res
+            except ValueError:
+                return False
 
         while True:
             handle = self.get_docker_handle()
             status = handle.status
             if status == 'exited':
-                raise Exception(
-                    "Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status,
-                                                                                           handle.logs().decode('utf-8')))
+                raise Exception("Instance `{}' failed to start. Container status: {}, logs: {}"
+                                .format(self.name, status, handle.logs().decode('utf-8')))
+
+            deadline = start_time + start_timeout
+            # It is possible that server starts slowly.
+            # If container is running, and there is some progress in log, check connection_timeout.
+            if connection_timeout and status == 'running' and has_new_rows_in_log():
+                deadline = start_time + connection_timeout
 
             current_time = time.time()
-            time_left = deadline - current_time
-            if deadline is not None and current_time >= deadline:
+            if current_time >= deadline:
                 raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
                                 "Container status: {}, logs: {}".format(self.name, self.ip_address, status,
                                                                         handle.logs().decode('utf-8')))
+
+            socket_timeout = min(start_timeout, deadline - current_time)
 
             # Repeatedly poll the instance address until there is something that listens there.
             # Usually it means that ClickHouse is ready to accept queries.
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(time_left)
+                sock.settimeout(socket_timeout)
                 sock.connect((self.ip_address, 9000))
                 return
             except socket.timeout:

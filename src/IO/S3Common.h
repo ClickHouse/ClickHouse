@@ -42,6 +42,7 @@ public:
         bool use_insecure_imds_request);
 
     PocoHTTPClientConfiguration createClientConfiguration(
+        const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects);
 

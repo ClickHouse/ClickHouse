@@ -72,11 +72,15 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(
              " IS_NULLABLE = 'YES' AS is_nullable,"
              " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
              " CHARACTER_MAXIMUM_LENGTH AS length,"
-             " NUMERIC_PRECISION as '',"
+             " NUMERIC_PRECISION as numeric_precision,"
              " IF(ISNULL(NUMERIC_SCALE), DATETIME_PRECISION, NUMERIC_SCALE) AS scale" // we know DATETIME_PRECISION as a scale in CH
              " FROM INFORMATION_SCHEMA.COLUMNS"
-             " WHERE TABLE_SCHEMA = " << quote << database_name
-          << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
+             " WHERE ";
+
+    if (!database_name.empty())
+        query << " TABLE_SCHEMA = " << quote << database_name << " AND ";
+
+    query << " TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
     StreamSettings mysql_input_stream_settings(settings);
     MySQLBlockInputStream result(pool.get(), query.str(), tables_columns_sample_block, mysql_input_stream_settings);

@@ -143,7 +143,7 @@ bool PartLog::addNewParts(
             if (query_id.data && query_id.size)
                 elem.query_id.insert(0, query_id.data, query_id.size);
 
-            elem.event_type = PartLogElement::NEW_PART;
+            elem.event_type = PartLogElement::NEW_PART; //-V1048
 
             // construct event_time and event_time_microseconds using the same time point
             // so that the two times will always be equal up to a precision of a second.

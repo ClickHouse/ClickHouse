@@ -55,7 +55,7 @@ struct ArraySinkCreator<>
 
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size)
 {
-    using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumbersAndUInt128>::Type;
+    using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumbersAndUUID>::Type;
     return Creator::create(col.getData(), col.getOffsets(), column_size);
 }
 }

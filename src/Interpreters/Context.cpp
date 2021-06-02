@@ -343,6 +343,8 @@ struct ContextSharedPart
     ConfigurationPtr external_models_config;
     ext::scope_guard models_repository_guard;
 
+    ext::scope_guard dictionaries_xmls;
+
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
@@ -453,7 +455,24 @@ struct ContextSharedPart
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
             /// TODO: Get rid of this.
 
+            /// Dictionaries may be required:
+            /// - for storage shutdown (during final flush of the Buffer engine)
+            /// - before storage startup (because of some streaming of, i.e. Kafka, to
+            ///   the table with materialized column that has dictGet)
+            ///
+            /// So they should be created before any storages and preserved until storages will be terminated.
+            ///
+            /// But they cannot be created before storages since they may required table as a source,
+            /// but at least they can be preserved for storage termination.
+            dictionaries_xmls.reset();
+
             delete_system_logs = std::move(system_logs);
+
+            #if USE_EMBEDDED_COMPILER
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
+            #endif
+
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
             models_repository_guard.reset();
@@ -985,7 +1004,8 @@ bool Context::hasScalar(const String & name) const
 }
 
 
-void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
+void Context::addQueryAccessInfo(
+    const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names, const String & projection_name)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
@@ -993,6 +1013,8 @@ void Context::addQueryAccessInfo(const String & quoted_database_name, const Stri
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
+    if (!projection_name.empty())
+        query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
 }
 
 
@@ -1221,13 +1243,13 @@ void Context::setCurrentQueryId(const String & query_id)
             UInt64 a;
             UInt64 b;
         } words;
-        __uint128_t uuid;
+        UUID uuid{};
     } random;
 
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != 0)
+    if (client_info.client_trace_context.trace_id != UUID())
     {
         // Use the OpenTelemetry trace context we received from the client, and
         // create a new span for the query.
@@ -1410,6 +1432,16 @@ void Context::tryCreateEmbeddedDictionaries() const
     static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
+void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.getBool("dictionaries_lazy_load", true))
+    {
+        tryCreateEmbeddedDictionaries();
+        getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
+    }
+    shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
+        std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+}
 
 void Context::setProgressCallback(ProgressCallback callback)
 {
