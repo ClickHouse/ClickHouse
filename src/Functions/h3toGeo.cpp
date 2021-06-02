@@ -32,11 +32,11 @@ namespace
 {
 
 /// Implements the function h3ToGeo which takes a single argument (h3Index)
-/// and returns the latitude and longitude that correspond to the provided h3 index
+/// and returns the longitude and latitude that correspond to the provided h3 index
 class FunctionH3ToGeo : public IFunction
 {
 public:
-    static constexpr auto name = "H3ToGeo";
+    static constexpr auto name = "h3ToGeo";
 
     static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionH3ToGeo>(); }
 
@@ -54,7 +54,7 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             return std::make_shared<DataTypeTuple>(
                 DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
-                Strings{"latitude", "longitude"});
+                Strings{"longitude", "latitude"});
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -79,13 +79,13 @@ public:
                 const UInt64 h3Index = col_index->getUInt(row);
                 GeoCoord coord;
                 h3ToGeo(h3Index,&coord);
-                lon_data[row] = coord.lon;
-                lat_data[row] = coord.lat;
+                lon_data[row] = radsToDegs(coord.lon);
+                lat_data[row] = radsToDegs(coord.lat);
 
             }
             MutableColumns result;
-            result.emplace_back(std::move(latitude));
             result.emplace_back(std::move(longitude));
+            result.emplace_back(std::move(latitude));
             return ColumnTuple::create(std::move(result));
         }
 };
