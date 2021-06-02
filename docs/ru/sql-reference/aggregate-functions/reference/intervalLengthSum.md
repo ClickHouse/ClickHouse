@@ -36,7 +36,9 @@ intervalLengthSum(start, end)
 └────┴───────┴─────┘
 ```
 
-В этом примере используются аргументы типа `Float32`. В этом случае функция возвращает значение типа `Float64`:
+В этом примере используются аргументы типа Float32. Функция возвращает значение типа Float64.
+
+Запрос:
 
 ``` sql
 SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM fl_interval GROUP BY id ORDER BY id;
@@ -59,7 +61,9 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
 └────┴─────────────────────┴─────────────────────┘
 ```
 
-В этом примере используются аргументы типа `DateTime`. В этом случае функция возвращает значение, выраженное в секундах:
+В этом примере используются аргументы типа DateTime. Функция возвращает значение, выраженное в секундах.
+
+Запрос:
 
 ``` sql
 SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM dt_interval GROUP BY id ORDER BY id;
@@ -82,7 +86,9 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
 └────┴────────────┴────────────┘
 ```
 
-В этом примере используются аргументы типа `Date`. В этом случае функция возвращает значение, выраженное в днях:
+В этом примере используются аргументы типа Date. Функция возвращает значение, выраженное в днях.
+
+Запрос:
 
 ``` sql
 SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM date_interval GROUP BY id ORDER BY id;
