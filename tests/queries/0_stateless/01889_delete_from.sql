@@ -1,8 +1,8 @@
 DROP TABLE IF EXISTS test_01889;
 
-CREATE TABLE test_01889 (
-    x Int64
-) ENGINE = MergeTree() ORDER BY x;
+CREATE TABLE test_01889 (x Int64)
+ENGINE = MergeTree()
+ORDER BY x;
 
 INSERT INTO test_01889 SELECT * FROM numbers(1000);
 

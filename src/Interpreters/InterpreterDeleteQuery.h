@@ -14,7 +14,6 @@ class InterpreterDeleteQuery : public IInterpreter, WithMutableContext
 public:
     InterpreterDeleteQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
 
-    /// Drop table or database.
     BlockIO execute() override;
 
 private:
