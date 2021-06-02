@@ -61,7 +61,7 @@ DiskStatisticsOS::Data DiskStatisticsOS::get()
     return data;
 }
 
-String DiskStatisticsOS::readNextFilesystem(ReadBuffer& mounts_in)
+String DiskStatisticsOS::readNextFilesystem(ReadBuffer & mounts_in)
 {
     String filesystem, unused;
 

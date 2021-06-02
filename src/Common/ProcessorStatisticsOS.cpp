@@ -110,7 +110,7 @@ void ProcessorStatisticsOS::calcStLoad(ProcStLoad & stload)
     last_proc_time = cur_proc_time;
 }
 
-void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcStLoad& stload)
+void ProcessorStatisticsOS::readProcTimeAndProcesses(ProcTime & proc_time, ProcStLoad & stload)
 {
     ReadBufferFromFile procst_in(procst_filename, READ_BUFFER_BUF_SIZE, O_RDONLY | O_CLOEXEC);
 

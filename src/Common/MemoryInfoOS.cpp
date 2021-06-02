@@ -63,7 +63,7 @@ MemoryInfoOS::Data MemoryInfoOS::get()
     return data;
 }
 
-std::pair<String, uint64_t> MemoryInfoOS::readField(ReadBuffer& meminfo_in)
+std::pair<String, uint64_t> MemoryInfoOS::readField(ReadBuffer & meminfo_in)
 {
     String key;
     uint64_t val;

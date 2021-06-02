@@ -75,10 +75,10 @@ private:
     };
 
     void readLoadavg(ProcLoadavg & loadavg);
-    void calcStLoad(ProcStLoad   & stload);
-    void readFreq(ProcFreq       & freq);
+    void calcStLoad(ProcStLoad & stload);
+    void readFreq(ProcFreq & freq);
 
-    void readProcTimeAndProcesses(ProcTime & proc_time, ProcStLoad& stload);
+    void readProcTimeAndProcesses(ProcTime & proc_time, ProcStLoad & stload);
 
 private:
     std::time_t last_stload_call_time;

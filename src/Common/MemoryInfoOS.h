@@ -39,7 +39,7 @@ public:
     Data get();
 
 private:
-    std::pair<String, uint64_t> readField(ReadBuffer& meminfo_in);
+    std::pair<String, uint64_t> readField(ReadBuffer & meminfo_in);
 };
 
 }
