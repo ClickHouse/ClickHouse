@@ -39,8 +39,8 @@ def create_table(cluster, table_name, additional_settings=None):
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
-FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
+FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1 + 1
+FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1 + 1
 
 
 def random_string(length):
