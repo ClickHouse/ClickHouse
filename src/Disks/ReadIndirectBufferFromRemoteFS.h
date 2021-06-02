@@ -16,7 +16,7 @@ template <typename T>
 class ReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
-    ReadIndirectBufferFromRemoteFS(IDiskRemote::Metadata metadata_);
+    explicit ReadIndirectBufferFromRemoteFS(IDiskRemote::Metadata metadata_);
 
     off_t seek(off_t offset_, int whence) override;
 
@@ -31,6 +31,8 @@ protected:
 
 private:
     std::unique_ptr<T> initialize();
+
+    bool nextAndShiftPosition();
 
     bool nextImpl() override;
 

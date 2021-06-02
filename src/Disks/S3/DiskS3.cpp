@@ -320,6 +320,8 @@ void DiskS3::startup()
 {
     auto settings = current_settings.get();
 
+    settings->client->EnableRequestProcessing();
+
     if (!settings->send_metadata)
         return;
 

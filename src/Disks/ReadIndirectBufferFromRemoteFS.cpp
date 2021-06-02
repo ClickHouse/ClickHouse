@@ -87,15 +87,14 @@ bool ReadIndirectBufferFromRemoteFS<T>::nextImpl()
 {
     /// Find first available buffer that fits to given offset.
     if (!current_buf)
+    {
         current_buf = initialize();
+        pos = working_buffer.begin();
+    }
 
     /// If current buffer has remaining data - use it.
-    if (current_buf && current_buf->next())
-    {
-        working_buffer = current_buf->buffer();
-        absolute_position += working_buffer.size();
-        return true;
-    }
+    if (current_buf)
+        return nextAndShiftPosition();
 
     /// If there is no available buffers - nothing to read.
     if (current_buf_idx + 1 >= metadata.remote_fs_objects.size())
@@ -105,12 +104,21 @@ bool ReadIndirectBufferFromRemoteFS<T>::nextImpl()
     const auto & path = metadata.remote_fs_objects[current_buf_idx].first;
 
     current_buf = createReadBuffer(path);
-    current_buf->next();
 
-    working_buffer = current_buf->buffer();
-    absolute_position += working_buffer.size();
+    return nextAndShiftPosition();
+}
 
-    return true;
+template <typename T>
+bool ReadIndirectBufferFromRemoteFS<T>::nextAndShiftPosition()
+{
+    swap(*current_buf);
+    auto result = current_buf->next();
+    swap(*current_buf);
+
+    if (result)
+        absolute_position += working_buffer.size();
+
+    return result;
 }
 
 

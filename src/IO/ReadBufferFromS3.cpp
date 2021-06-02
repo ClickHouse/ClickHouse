@@ -43,12 +43,6 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 bool ReadBufferFromS3::nextImpl()
 {
-    /// Restoring valid value of `count()` during `nextImpl()`. See `ReadBuffer::next()`.
-    pos = working_buffer.begin();
-
-    if (!impl)
-        impl = initialize();
-
     Stopwatch watch;
     bool next_result = false;
 
@@ -84,24 +78,30 @@ bool ReadBufferFromS3::nextImpl()
     ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
     if (!next_result)
         return false;
-    internal_buffer = impl->buffer();
+
+    working_buffer = internal_buffer = impl->buffer();
+    pos = working_buffer.begin();
 
     ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
 
-    working_buffer = internal_buffer;
+    offset += working_buffer.size();
+
     return true;
 }
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    if (impl)
-        throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     if (offset_ < 0)
         throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+
+    if (impl)
+    {
+        impl.reset();
+        pos = working_buffer.end();
+    }
 
     offset = offset_;
 
@@ -110,18 +110,17 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromS3::getPosition()
 {
-    return offset + count();
+    return offset - available();
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, getPosition());
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    if (getPosition())
-        req.SetRange("bytes=" + std::to_string(getPosition()) + "-");
+    req.SetRange(fmt::format("bytes={}-", offset));
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
