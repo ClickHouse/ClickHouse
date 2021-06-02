@@ -40,13 +40,6 @@ enum WindowFunctionName
     HOP_END,
     WINDOW_ID
 };
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-}
 
 template <IntervalKind::Kind unit>
 struct ToStartOfTransform;
