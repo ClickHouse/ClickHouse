@@ -124,3 +124,4 @@ endif()
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
 
 target_link_libraries(clickhouse_functions PRIVATE stemmer)
+target_link_libraries(clickhouse_functions PRIVATE wnb)

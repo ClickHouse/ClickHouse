@@ -1,10 +1,11 @@
 #include <Common/Exception.h>
-#include <Interpreters/SynonymsExtensions.h>
+#include <Functions/SynonymsExtensions.h>
 
 #include <fstream>
 #include <list>
 
 #include <boost/algorithm/string.hpp>
+#include <wnb/core/wordnet.hh>
 
 namespace DB
 {
@@ -48,7 +49,7 @@ public:
         }
     }
 
-    Synset * getSynonyms(const std::string_view & token) const override
+    const Synset * getSynonyms(const std::string_view & token) const override
     {
         auto it = table.find(token);
 
@@ -62,19 +63,22 @@ public:
 class WordnetSynonymsExtension : public ISynonymsExtension
 {
 private:
-    // std::vector<std::vector<String>> data;
+    wnb::wordnet wn;
 
 public:
-    WordnetSynonymsExtension(const String & /*path*/)
-    {
-        
-    }
+    WordnetSynonymsExtension(const String & path) : wn(path) {}
 
-    Synset * getSynonyms(const std::string_view & /*token*/) const override
+    const Synset * getSynonyms(const std::string_view & token) const override
     {
-        return nullptr;
+        return wn.get_synset(std::string(token));
     }
 };
+
+/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
+static bool startsWith(const std::string & s, const char * prefix)
+{
+    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
+}
 
 SynonymsExtensions::SynonymsExtensions(const Poco::Util::AbstractConfiguration & config)
 {
@@ -89,7 +93,7 @@ SynonymsExtensions::SynonymsExtensions(const Poco::Util::AbstractConfiguration &
 
     for (const auto & key : keys)
     {
-        if (key == "extension")
+        if (startsWith(key, "extension"))
         {
             const auto & ext_name = config.getString(prefix + "." + key + ".name", "");
             const auto & ext_path = config.getString(prefix + "." + key + ".path", "");
