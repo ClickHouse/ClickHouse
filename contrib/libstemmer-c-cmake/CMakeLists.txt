@@ -1,8 +1,9 @@
-set(STEMMER_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libstemmer_c/include")
+ser(STEMMER_DIR "${ClickHouse_SOURCE_DIR}/contrib/libstemmer_c")
+set(STEMMER_INCLUDE_DIR "${STEMMER_DIR}/include")
 
 FILE ( READ "${CMAKE_CURRENT_SOURCE_DIR}/mkinc.mak" _CONTENT )
 # replace '\ ' into one big line
-STRING ( REGEX REPLACE "\\\\\n" " " _CONTENT "${_CONTENT}" )
+STRING ( REGEX REPLACE "\\\\\n  " " ${STEMMER_DIR}/" _CONTENT "${_CONTENT}" )
 # escape ';' (if any)
 STRING ( REGEX REPLACE ";" "\\\\;" _CONTENT "${_CONTENT}" )
 # now replace lf into ';' (it makes list from the line)

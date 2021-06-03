@@ -330,4 +330,5 @@ if (USE_NURAFT)
 endif()
 
 add_subdirectory(fast_float)
-add_subdirectory(libstemmer_c)
+add_subdirectory(libstemmer-c-cmake)
+add_subdirectory(wordnet-blast)
