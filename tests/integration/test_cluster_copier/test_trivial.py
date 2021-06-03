@@ -124,7 +124,7 @@ class TaskReplicatedWithoutArguments:
 def execute_task(task, cmd_options):
     task.start()
 
-    zk = started_cluster.get_kazoo_client('zoo1')
+    zk = cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     try:
@@ -137,7 +137,7 @@ def execute_task(task, cmd_options):
     zk.create(zk_task_path + "/description", task.copier_task_config.encode())
 
     # Run cluster-copier processes on each node
-    docker_api = started_cluster.docker_client.api
+    docker_api = cluster.docker_client.api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
@@ -183,7 +183,7 @@ def execute_task(task, cmd_options):
 @pytest.mark.parametrize(('use_sample_offset'),[False,True])
 def test_trivial_copy(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(started_cluster, TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
+        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
     else:
         execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
 

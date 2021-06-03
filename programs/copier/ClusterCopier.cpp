@@ -23,12 +23,6 @@ namespace ErrorCodes
 }
 
 
-std::string wrapWithColor(const std::string & value)
-{
-    return "\u001b[36;1m" + value + "\u001b[0m";
-}
-
-
 void ClusterCopier::init()
 {
     auto zookeeper = getContext()->getZooKeeper();
@@ -649,31 +643,6 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
 
         if (inject_fault)
             throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
-
-        try
-        {
-            String query_deduplicate_ast_string;
-            if (!task_table.isReplicatedTable())
-            {
-                query_deduplicate_ast_string += " OPTIMIZE TABLE " + getQuotedTable(original_table) +
-                                                ((partition_name == "'all'") ? " PARTITION ID " : " PARTITION ") + partition_name + " DEDUPLICATE;";
-
-                LOG_INFO(log, "Executing OPTIMIZE DEDUPLICATE query: {}", query_deduplicate_ast_string);
-
-                UInt64 num_nodes = executeQueryOnCluster(
-                        task_table.cluster_push,
-                        query_deduplicate_ast_string,
-                        task_cluster->settings_push,
-                        ClusterExecutionMode::ON_EACH_SHARD);
-
-                LOG_INFO(log, "Number of shard that executed OPTIMIZE DEDUPLICATE query successfully : {}", toString(num_nodes));
-            }
-        }
-        catch (...)
-        {
-            LOG_INFO(log, "Error while executing OPTIMIZE DEDUPLICATE partition {}in the original table", partition_name);
-            throw;
-        }
     }
 
     /// Create node to signal that we finished moving
@@ -1389,6 +1358,21 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     }
 
 
+    /// Try to drop destination partition in original table
+    DatabaseAndTableName original_table = task_table.table_push;
+
+    if (task_table.allow_to_drop_target_partitions)
+    {
+        WriteBufferFromOwnString ss;
+        ss << "ALTER TABLE " << getQuotedTable(original_table) << ((task_partition.name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") << task_partition.name;
+
+        UInt64 num_shards_drop_partition = executeQueryOnCluster(task_table.cluster_push, ss.str(), task_cluster->settings_push, ClusterExecutionMode::ON_EACH_SHARD);
+
+        LOG_INFO(log, "Drop partiton {} in original table {} have been executed successfully on {} shards of {}",
+            task_partition.name, getQuotedTable(original_table), num_shards_drop_partition, task_table.cluster_push->getShardCount());
+    }
+
+
     /// Try create table (if not exists) on each shard
     /// We have to create this table even in case that partition piece is empty
     /// This is significant, because we will have simplier code
@@ -1417,7 +1401,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         auto create_query_push_ast = rewriteCreateQueryStorage(create_query_ast, database_and_table_for_current_piece, new_engine_push_ast);
         String query = queryToString(create_query_push_ast);
 
-        LOG_INFO(log, "Create destination tables. Query: \n {}", wrapWithColor(query));
+        LOG_INFO(log, "Create destination tables. Query: \n {}", query);
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push,  ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
@@ -1839,7 +1823,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     const auto & settings = getContext()->getSettingsRef();
     ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
-    LOG_INFO(log, "Computing destination partition set, executing query: \n {}", wrapWithColor(query));
+    LOG_INFO(log, "Computing destination partition set, executing query: \n {}", query);
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
