@@ -109,6 +109,8 @@ private:
     // Original ReadBuffer to read from.
     ReadBuffer & original_buffer;
 
+    std::atomic<bool> parsing_started{false};
+
     //Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
     size_t segmentator_ticket_number{0};

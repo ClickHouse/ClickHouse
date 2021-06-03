@@ -1285,12 +1285,20 @@ void MergeTreeData::dropIfEmpty()
     if (!data_parts_by_info.empty())
         return;
 
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    try
     {
-        /// Non recursive, exception is thrown if there are more files.
-        disk->remove(path + "format_version.txt");
-        disk->remove(path + "detached");
-        disk->remove(path);
+        for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+        {
+            /// Non recursive, exception is thrown if there are more files.
+            disk->remove(path + "format_version.txt");
+            disk->remove(path + "detached");
+            disk->remove(path);
+        }
+    }
+    catch (...)
+    {
+        // On unsuccessful creation of ReplicatedMergeTree table with multidisk configuration some files may not exist.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -1463,7 +1471,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 const IDataType * new_type = command.data_type.get();
                 const IDataType * old_type = old_types[command.column_name];
 
-                checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                if (new_type)
+                    checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
 
                 /// No other checks required
                 continue;
