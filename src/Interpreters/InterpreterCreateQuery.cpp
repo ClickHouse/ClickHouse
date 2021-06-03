@@ -957,6 +957,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!created)   /// Table already exists
         return {};
 
+    /// Check type compatible for materialized dest table and select columns
+    if (create.select && create.is_materialized_view && create.to_table_id)
+    {
+        StoragePtr table = DatabaseCatalog::instance().getTable({create.database, create.table, create.uuid}, getContext());
+        const auto & output_columns = table->getInMemoryMetadataPtr()->getSampleBlock();
+        Block input_columns=InterpreterSelectWithUnionQuery(
+            create.select->clone(), getContext(),SelectQueryOptions().analyze()).getSampleBlock();
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+            input_columns.getColumnsWithTypeAndName(),
+            output_columns.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
+    }
+
     return fillTableIfNeeded(create);
 }
 
