@@ -170,8 +170,7 @@ SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_n
 
 SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
 {
-    auto kind = info.getKind(column_name);
-    if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
+    if (supportsSparseSerialization() && info.getKind(column_name) == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
 
     return getDefaultSerialization();

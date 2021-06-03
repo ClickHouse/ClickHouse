@@ -33,12 +33,28 @@ void SerializationInfoBuilder::add(const Block & block)
     info->number_of_rows += block.rows();
     for (const auto & elem : block)
     {
+        /// Just skip column and always return default serialization.
+        if (!elem.type->supportsSparseSerialization())
+            continue;
+
         /// Multiply by step to restore approximate number of default values.
         info->columns[elem.name].num_defaults += elem.column->getNumberOfDefaultRows(default_rows_search_step) * default_rows_search_step;
-        for (const auto & subname : elem.type->getSubcolumnNames())
+        for (const auto & subcolumn_name : elem.type->getSubcolumnNames())
         {
-            auto subcolumn = elem.type->getSubcolumn(subname, *elem.column);
-            auto full_name = Nested::concatenateName(elem.name, subname);
+            auto subcolumn_type = elem.type->getSubcolumnType(subcolumn_name);
+            if (!subcolumn_type->supportsSparseSerialization())
+                continue;
+
+            auto parent_subcolumn_name = Nested::splitName(subcolumn_name, /*reverse=*/ true).first;
+            if (!parent_subcolumn_name.empty())
+            {
+                auto parent_subcolumn_type = elem.type->tryGetSubcolumnType(parent_subcolumn_name);
+                if (parent_subcolumn_type && !parent_subcolumn_type->supportsSparseSerialization())
+                    continue;
+            }
+
+            auto subcolumn = elem.type->getSubcolumn(subcolumn_name, *elem.column);
+            auto full_name = Nested::concatenateName(elem.name, subcolumn_name);
             info->columns[full_name].num_defaults += subcolumn->getNumberOfDefaultRows(default_rows_search_step) * default_rows_search_step;
         }
     }
@@ -185,10 +201,10 @@ SerializationInfo::NameToKind SerializationInfo::getKinds(const Block & block)
     for (const auto & elem : block)
     {
         kinds[elem.name] = ISerialization::getKind(*elem.column);
-        for (const auto & subname : elem.type->getSubcolumnNames())
+        for (const auto & subcolumn_name : elem.type->getSubcolumnNames())
         {
-            auto full_name = Nested::concatenateName(elem.name, subname);
-            auto subcolumn = elem.type->getSubcolumn(subname, *elem.column);
+            auto full_name = Nested::concatenateName(elem.name, subcolumn_name);
+            auto subcolumn = elem.type->getSubcolumn(subcolumn_name, *elem.column);
             kinds[full_name] = ISerialization::getKind(*subcolumn);
         }
     }

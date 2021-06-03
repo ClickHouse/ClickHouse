@@ -69,7 +69,8 @@ public:
     virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
     Names getSubcolumnNames() const;
 
-    virtual bool supportsSparseSerialization() const { return true; }
+    /// TODO: support more types.
+    virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
 
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;

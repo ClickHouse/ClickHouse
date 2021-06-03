@@ -33,42 +33,56 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
     return nested_table_name + "." + nested_field_name;
 }
 
+static const char * extractSimpleIdentifier(const char * begin, const char * end)
+{
+    const char * pos = begin;
+    if (pos >= end || !isValidIdentifierBegin(*pos))
+        return nullptr;
 
-/** Name can be treated as compound if and only if both parts are simple identifiers.
+    while (pos < end && isWordCharASCII(*pos))
+        ++pos;
+
+    if (pos < end && *pos != '.')
+        return nullptr;
+
+    return pos;
+}
+
+
+/** Name can be treated as compound if and only if one part is simple identifier
+  * and other part is simple or compound identifier.
   */
-std::pair<std::string, std::string> splitName(const std::string & name)
+std::pair<std::string, std::string> splitName(const std::string & name, bool reverse)
 {
     const char * begin = name.data();
     const char * pos = begin;
     const char * end = begin + name.size();
 
-    if (pos >= end || !isValidIdentifierBegin(*pos))
-        return {name, {}};
+    const char * first_end = nullptr;
+    const char * second_begin = nullptr;
 
-    ++pos;
+    while (true)
+    {
+        pos = extractSimpleIdentifier(pos, end);
+        if (!pos)
+            return {name, {}};
 
-    while (pos < end && isWordCharASCII(*pos))
+        if (pos >= end)
+            break;
+
+        if (reverse || !first_end)
+            first_end = pos;
+
         ++pos;
 
-    if (pos >= end || *pos != '.')
-        return {name, {}};
+        if (reverse || !second_begin)
+            second_begin = pos;
+    }
 
-    const char * first_end = pos;
-    ++pos;
-    const char * second_begin = pos;
+    if (first_end)
+        return {{ begin, first_end }, { second_begin, end }};
 
-    if (pos >= end || !isValidIdentifierBegin(*pos))
-        return {name, {}};
-
-    ++pos;
-
-    while (pos < end && isWordCharASCII(*pos))
-        ++pos;
-
-    if (pos != end)
-        return {name, {}};
-
-    return {{ begin, first_end }, { second_begin, end }};
+    return {name, {}};
 }
 
 
