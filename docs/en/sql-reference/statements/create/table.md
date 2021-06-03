@@ -50,14 +50,31 @@ Creates a table with the same result as that of the [table function](../../../sq
 ### From SELECT query {#from-select-query}
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
-Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from SELECT.
+Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from `SELECT`. Also you can explicitly specify columns description.
 
-In all cases, if `IF NOT EXISTS` is specified, the query won’t return an error if the table already exists. In this case, the query won’t do anything.
+If the table already exists and `IF NOT EXISTS` is specified, the query won’t do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+Result:
+
+```text
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
 
 ## NULL Or NOT NULL Modifiers {#null-modifiers}
 
@@ -79,13 +96,13 @@ If the default expression is defined, the column type is optional. If there isn�
 
 If the data type and default expression are defined explicitly, this expression will be cast to the specified type using type casting functions. Example: `Hits UInt32 DEFAULT 0` means the same thing as `Hits UInt32 DEFAULT toUInt32(0)`.
 
-Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions don’t contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
+Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions do not contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
 ### DEFAULT {#default}
 
 `DEFAULT expr`
 
-Normal default value. If the INSERT query doesn’t specify the corresponding column, it will be filled in by computing the corresponding expression.
+Normal default value. If the INSERT query does not specify the corresponding column, it will be filled in by computing the corresponding expression.
 
 ### MATERIALIZED {#materialized}
 
@@ -217,14 +234,14 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 ### Specialized Codecs {#create-query-specialized-codecs}
 
-These codecs are designed to make compression more effective by using specific features of data. Some of these codecs don’t compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
+These codecs are designed to make compression more effective by using specific features of data. Some of these codecs do not compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
 
 Specialized codecs:
 
 -   `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1.
 -   `DoubleDelta` — Calculates delta of deltas and writes it in compact binary form. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 -   `Gorilla` — Calculates XOR between current and previous value and writes it in compact binary form. Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
--   `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date` and `DateTime`). At each step of its algorithm, codec takes a block of 64 values, puts them into 64x64 bit matrix, transposes it, crops the unused bits of values and returns the rest as a sequence. Unused bits are the bits, that don’t differ between maximum and minimum values in the whole data part for which the compression is used.
+-   `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date` and `DateTime`). At each step of its algorithm, codec takes a block of 64 values, puts them into 64x64 bit matrix, transposes it, crops the unused bits of values and returns the rest as a sequence. Unused bits are the bits, that do not differ between maximum and minimum values in the whole data part for which the compression is used.
 
 `DoubleDelta` and `Gorilla` codecs are used in Gorilla TSDB as the components of its compressing algorithm. Gorilla approach is effective in scenarios when there is a sequence of slowly changing values with their timestamps. Timestamps are effectively compressed by the `DoubleDelta` codec, and values are effectively compressed by the `Gorilla` codec. For example, to get an effectively stored table, you can create it in the following configuration:
 
@@ -270,7 +287,7 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 !!!note "Note"
     This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
 
-If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that doesn't retrieve unwanted data, then drop the old table and rename the new one:
+If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, then drop the old table and rename the new one:
 
 ```sql
 CREATE TABLE myNewTable AS myOldTable;
@@ -287,7 +304,9 @@ REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
 
 ### Syntax
 
-{CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
+``` sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
 
 All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
 
@@ -334,4 +353,40 @@ SELECT * FROM base.t1;
 ┌─n─┐
 │ 3 │
 └───┘
+```
+
+## COMMENT Clause {#comment-table}
+
+You can add a comment to the table when you creating it.
+
+!!!note "Note"
+    The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+	
+
+**Syntax**
+
+``` sql
+CREATE TABLE db.table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+COMMENT 'Comment'
+```
+	
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+SELECT name, comment FROM system.tables WHERE name = 't1';
+```
+
+Result:
+
+```text
+┌─name─┬─comment─────────────┐
+│ t1   │ The temporary table │
+└──────┴─────────────────────┘
 ```

@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.3">
+<test>
     <create_query>
         CREATE TABLE simple_key_flat_dictionary_source_table
         (
@@ -21,7 +21,7 @@
         )
         PRIMARY KEY id
         SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_flat_dictionary_source_table'))
-        LAYOUT(FLAT())
+        LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
         LIFETIME(MIN 0 MAX 1000)
     </create_query>
 
@@ -29,7 +29,7 @@
         INSERT INTO simple_key_flat_dictionary_source_table
         SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 500000;
+        LIMIT 5000000;
     </fill_query>
 
     <substitutions>
@@ -46,25 +46,30 @@
         <substitution>
             <name>elements_count</name>
             <values>
-                <value>250000</value>
-                <value>500000</value>
-                <value>750000</value>
-                <value>1000000</value>
+                <value>5000000</value>
+                <value>7500000</value>
             </values>
         </substitution>
     </substitutions>
 
     <query>
-        SELECT dictGet('default.simple_key_flat_dictionary', {column_name}, number)
+        WITH rand64() % toUInt64({elements_count}) as key
+        SELECT dictGet('default.simple_key_flat_dictionary', {column_name}, key)
         FROM system.numbers
         LIMIT {elements_count}
-        FORMAR Null;
+        FORMAT Null;
     </query>
 
     <query>
-        SELECT dictHas('default.simple_key_flat_dictionary', number)
+        SELECT * FROM simple_key_flat_dictionary
+        FORMAT Null;
+    </query>
+
+    <query>
+        WITH rand64() % toUInt64(75000000) as key
+        SELECT dictHas('default.simple_key_flat_dictionary', key)
         FROM system.numbers
-        LIMIT {elements_count}
+        LIMIT 75000000
         FORMAT Null;
     </query>
 

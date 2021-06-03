@@ -24,7 +24,7 @@ public:
 
     explicit FunctionSvg() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionSvg>();
     }

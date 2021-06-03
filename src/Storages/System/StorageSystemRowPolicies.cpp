@@ -52,10 +52,10 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
 }
 
 
-void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_ROW_POLICIES);
-    const auto & access_control = context.getAccessControlManager();
+    context->checkAccess(AccessType::SHOW_ROW_POLICIES);
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<RowPolicy>();
 
     size_t column_index = 0;
@@ -63,7 +63,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Cont
     auto & column_short_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_database = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_table = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
     ColumnString * column_condition[MAX_CONDITION_TYPE];
@@ -93,7 +93,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Cont
         column_short_name.insertData(name_parts.short_name.data(), name_parts.short_name.length());
         column_database.insertData(name_parts.database.data(), name_parts.database.length());
         column_table.insertData(name_parts.table_name.data(), name_parts.table_name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
 
         for (auto condition_type : ext::range(MAX_CONDITION_TYPE))

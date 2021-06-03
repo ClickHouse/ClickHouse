@@ -20,7 +20,7 @@ public:
             const BlockOutputStreamPtr & output_,
             const Block & header_,
             const ConstraintsDescription & constraints_,
-            const Context & context_);
+            ContextPtr context_);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

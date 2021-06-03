@@ -36,9 +36,12 @@ public:
         SYNC_REPLICA,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
+        RELOAD_MODEL,
+        RELOAD_MODELS,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_SYMBOLS,
+        RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
         STOP_TTL_MERGES,
@@ -63,6 +66,7 @@ public:
     Type type = Type::UNKNOWN;
 
     String target_dictionary;
+    String target_model;
     String database;
     String table;
     String replica;
@@ -70,6 +74,7 @@ public:
     bool is_drop_whole_replica{};
     String storage_policy;
     String volume;
+    String disk;
     UInt64 seconds{};
 
     String getID(char) const override { return "SYSTEM query"; }

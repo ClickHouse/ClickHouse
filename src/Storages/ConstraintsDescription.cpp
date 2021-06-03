@@ -41,7 +41,7 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
     return res;
 }
 
-ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context & context,
+ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
     ConstraintsExpressions res;
@@ -52,7 +52,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context 
         auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         ASTPtr expr = constraint_ptr->expr->clone();
         auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-        res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false));
+        res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false, true, CompileExpressions::yes));
     }
     return res;
 }

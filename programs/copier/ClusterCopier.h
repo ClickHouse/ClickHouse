@@ -12,18 +12,17 @@
 namespace DB
 {
 
-class ClusterCopier
+class ClusterCopier : WithMutableContext
 {
 public:
     ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
-                  Context & context_)
-            :
+                  ContextMutablePtr context_)
+            : WithMutableContext(context_),
             task_zookeeper_path(task_path_),
             host_id(host_id_),
             working_database_name(proxy_database_name_),
-            context(context_),
             log(&Poco::Logger::get("ClusterCopier")) {}
 
     void init();
@@ -36,7 +35,7 @@ public:
     /// Compute set of partitions, assume set of partitions aren't changed during the processing
     void discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads = 0);
 
-    void uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force);
+    void uploadTaskDescription(const std::string & task_path, const std::string & task_file, bool force);
 
     void reloadTaskDescription();
 
@@ -120,7 +119,7 @@ protected:
     /// Removes MATERIALIZED and ALIAS columns from create table query
     static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
 
-    bool tryDropPartitionPiece(ShardPartition & task_partition, const size_t current_piece_number,
+    bool tryDropPartitionPiece(ShardPartition & task_partition, size_t current_piece_number,
             const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
 
     static constexpr UInt64 max_table_tries = 3;
@@ -141,7 +140,7 @@ protected:
 
     TaskStatus processPartitionPieceTaskImpl(const ConnectionTimeouts & timeouts,
                                              ShardPartition & task_partition,
-                                             const size_t current_piece_number,
+                                             size_t current_piece_number,
                                              bool is_unprioritized_task);
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast);
@@ -219,7 +218,6 @@ private:
 
     bool experimental_use_sample_offset{false};
 
-    Context & context;
     Poco::Logger * log;
 
     std::chrono::milliseconds default_sleep_time{1000};

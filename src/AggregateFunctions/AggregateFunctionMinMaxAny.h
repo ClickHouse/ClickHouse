@@ -15,6 +15,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -181,7 +183,7 @@ public:
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString
+struct SingleValueDataString //-V730
 {
 private:
     using Self = SingleValueDataString;

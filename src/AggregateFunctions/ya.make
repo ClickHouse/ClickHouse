@@ -20,6 +20,7 @@ SRCS(
     AggregateFunctionCombinatorFactory.cpp
     AggregateFunctionCount.cpp
     AggregateFunctionDeltaSum.cpp
+    AggregateFunctionDeltaSumTimestamp.cpp
     AggregateFunctionDistinct.cpp
     AggregateFunctionEntropy.cpp
     AggregateFunctionFactory.cpp
@@ -42,7 +43,9 @@ SRCS(
     AggregateFunctionRankCorrelation.cpp
     AggregateFunctionResample.cpp
     AggregateFunctionRetention.cpp
+    AggregateFunctionSegmentLengthSum.cpp
     AggregateFunctionSequenceMatch.cpp
+    AggregateFunctionSequenceNextNode.cpp
     AggregateFunctionSimpleLinearRegression.cpp
     AggregateFunctionSimpleState.cpp
     AggregateFunctionState.cpp
@@ -50,6 +53,7 @@ SRCS(
     AggregateFunctionStatisticsSimple.cpp
     AggregateFunctionStudentTTest.cpp
     AggregateFunctionSum.cpp
+    AggregateFunctionSumCount.cpp
     AggregateFunctionSumMap.cpp
     AggregateFunctionTopK.cpp
     AggregateFunctionUniq.cpp
