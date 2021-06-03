@@ -1,8 +1,12 @@
 #include <Parsers/ExpressionListParsers.h>
 
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -52,19 +56,6 @@ const char * ParserComparisonExpression::operators[] =
     "NOT IN",        "notIn",
     "GLOBAL IN",     "globalIn",
     "GLOBAL NOT IN", "globalNotIn",
-    nullptr
-};
-
-const char * ParserComparisonWithSubqueryExpression::operators[] =
-{
-    "==",            "equals",
-    "!=",            "notEquals",
-    "<>",            "notEquals",
-    "<=",            "lessOrEquals",
-    ">=",            "greaterOrEquals",
-    "<",             "less",
-    ">",             "greater",
-    "=",             "equals",
     nullptr
 };
 
@@ -180,6 +171,158 @@ static bool parseOperator(IParser::Pos & pos, const char * op, Expected & expect
     }
 }
 
+enum class SubqueryFunctionType
+{
+    NONE,
+    ANY,
+    ALL
+};
+
+static bool modifyAST(String operator_name, std::shared_ptr<ASTFunction> & function, SubqueryFunctionType type)
+{
+    // = ANY --> IN, != ALL --> NOT IN
+    if ((operator_name == "equals" && type == SubqueryFunctionType::ANY)
+        || (operator_name == "notEquals" && type == SubqueryFunctionType::ALL))
+    {
+        function->name = "in";
+        if (operator_name == "notEquals")
+        {
+            auto function_not = std::make_shared<ASTFunction>();
+            auto exp_list_not = std::make_shared<ASTExpressionList>();
+            exp_list_not->children.push_back(function);
+            function_not->name = "not";
+            function_not->children.push_back(exp_list_not);
+            function_not->arguments = exp_list_not;
+            function = function_not;
+        }
+        return true;
+    }
+
+    // subquery --> (SELECT aggregate_function(*) FROM subquery)
+    auto aggregate_function = std::make_shared<ASTFunction>();
+    auto aggregate_function_exp_list = std::make_shared<ASTExpressionList>();
+    aggregate_function_exp_list ->children.push_back(std::make_shared<ASTAsterisk>());
+    aggregate_function->arguments = aggregate_function_exp_list;
+    aggregate_function->children.push_back(aggregate_function_exp_list);
+
+    ASTPtr subquery_node = function->children[0]->children[1];
+    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
+    auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto table_expression = std::make_shared<ASTTableExpression>();
+    table_expression->subquery = subquery_node;
+    table_expression->children.push_back(subquery_node);
+    tables_in_select_element->table_expression = table_expression;
+    tables_in_select_element->children.push_back(table_expression);
+    tables_in_select->children.push_back(tables_in_select_element);
+    auto select_exp_list = std::make_shared<ASTExpressionList>();
+    select_exp_list->children.push_back(aggregate_function);
+    select_query->children.push_back(select_exp_list);
+    select_query->children.push_back(tables_in_select);
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_exp_list));
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select));
+
+    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+    auto list_of_selects = std::make_shared<ASTExpressionList>();
+    list_of_selects->children.push_back(select_query);
+    select_with_union_query->list_of_selects = list_of_selects;
+    select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+
+    auto new_subquery = std::make_shared<ASTSubquery>();
+    new_subquery->children.push_back(select_with_union_query);
+    function->children[0]->children.pop_back();
+    function->children[0]->children.push_back(new_subquery);
+
+    if (operator_name == "greaterOrEquals" || operator_name == "greater")
+    {
+        aggregate_function->name = type == SubqueryFunctionType::ANY ? "min" : "max";
+        return true;
+    }
+    if (operator_name == "lessOrEquals" || operator_name == "less")
+    {
+        aggregate_function->name = type == SubqueryFunctionType::ANY ? "max" : "min";
+        return true;
+    }
+    if (operator_name == "equals" || operator_name == "notEquals")
+    {
+        aggregate_function->name = "singleValueOrNull";
+        return true;
+    }
+    return false;
+}
+
+bool ParserComparisonExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    bool first = true;
+
+    auto current_depth = pos.depth;
+    while (true)
+    {
+        if (first)
+        {
+            ASTPtr elem;
+            if (!elem_parser.parse(pos, elem, expected))
+                return false;
+
+            node = elem;
+            first = false;
+        }
+        else
+        {
+            /// try to find any of the valid operators
+            const char ** it;
+            Expected stub;
+            for (it = overlapping_operators_to_skip; *it; ++it)
+                if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
+                    break;
+
+            if (*it)
+                break;
+
+            for (it = operators; *it; it += 2)
+                if (parseOperator(pos, *it, expected))
+                    break;
+
+            if (!*it)
+                break;
+
+            /// the function corresponding to the operator
+            auto function = std::make_shared<ASTFunction>();
+
+            /// function arguments
+            auto exp_list = std::make_shared<ASTExpressionList>();
+
+            ASTPtr elem;
+            SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+            if (ParserKeyword("ANY").ignore(pos, expected))
+                subquery_function_type = SubqueryFunctionType::ANY;
+            else if (ParserKeyword("ALL").ignore(pos, expected))
+                subquery_function_type = SubqueryFunctionType::ALL;
+            else if (!elem_parser.parse(pos, elem, expected))
+                return false;
+
+            if (subquery_function_type != SubqueryFunctionType::NONE && !ParserSubquery().parse(pos, elem, expected))
+                return false;
+
+            /// the first argument of the function is the previous element, the second is the next one
+            function->name = it[1];
+            function->arguments = exp_list;
+            function->children.push_back(exp_list);
+
+            exp_list->children.push_back(node);
+            exp_list->children.push_back(elem);
+
+            if (subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function->name, function, subquery_function_type))
+                return false;
+
+            pos.increaseDepth();
+            node = function;
+        }
+    }
+
+    pos.depth = current_depth;
+    return true;
+}
 
 bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -369,119 +512,6 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     }
 
     return true;
-}
-
-bool ParserComparisonWithSubqueryExpression::modifySubquery(String operator_name, ASTPtr subquery_node, bool is_any)
-{
-        ASTPtr select_with_union_node = subquery_node->children[0];
-        if (select_with_union_node->children[0]->children.size() != 1)
-            return false;
-        ASTPtr select_node = select_with_union_node->children[0]->children[0];
-        ASTPtr exp_list = select_node->children[0];
-        auto function = std::make_shared<ASTFunction>();
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
-
-        ASTPtr new_exp_list = std::make_shared<ASTExpressionList>();
-        new_exp_list->children.push_back(function);
-
-        if (operator_name == "greaterOrEquals" || operator_name == "greater")
-        {
-            function->name = is_any ? "min" : "max";
-            select_node->children[0] = new_exp_list;
-            return true;
-        }
-
-        if (operator_name == "lessOrEquals" || operator_name == "less")
-        {
-            function->name = is_any ? "max" : "min";
-            select_node->children[0] = new_exp_list;
-            return true;
-        }
-    return false;
-}
-
-bool ParserComparisonWithSubqueryExpression::addFunctionIn(String operator_name, ASTPtr & node, bool is_any)
-{
-
-    auto function_in = std::make_shared<ASTFunction>();
-    auto exp_list_in = std::make_shared<ASTExpressionList>();
-    exp_list_in->children.push_back(node->children[0]->children[0]);
-    exp_list_in->children.push_back(node->children[0]->children[1]);
-    function_in->name = "in";
-    function_in->children.push_back(exp_list_in);
-    function_in->arguments = exp_list_in;
-
-    if (operator_name == "equals" && is_any)
-    {
-        node = function_in;
-        return true;
-    }
-
-    if (operator_name == "notEquals" && !is_any)
-    {
-        auto function_not = std::make_shared<ASTFunction>();
-        auto exp_list_not = std::make_shared<ASTExpressionList>();
-        exp_list_not->children.push_back(function_in);
-        function_not->name = "not";
-        function_not->children.push_back(exp_list_not);
-        function_not->arguments = exp_list_not;
-        node = function_not;
-        return true;
-    }
-    return false;
-}
-
-bool ParserComparisonWithSubqueryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    Pos begin = pos;
-    ASTPtr elem;
-    if (!elem_parser.parse(pos, elem, expected))
-        return next_parser.parse(pos, node, expected);
-
-    /// try to find any of the valid operators
-    const char ** it;
-    for (it = operators; *it; it += 2)
-        if (parseOperator(pos, *it, expected))
-            break;
-
-    if (!*it)
-    {
-        node = elem;
-        return true;
-    }
-
-    bool is_any = true;
-    if (!ParserKeyword("ANY").ignore(pos, expected))
-    {
-        is_any = false;
-        if (!ParserKeyword("ALL").ignore(pos, expected))
-        {
-            pos = begin;
-            return next_parser.parse(pos, node, expected);
-        }
-    }
-
-    ASTPtr subquery_node;
-    if (!ParserSubquery().parse(pos, subquery_node, expected))
-        return false;
-
-    /// the first argument of the function is the previous element, the second is the next one
-    String operator_name = it[1];
-
-    /// the function corresponding to the operator
-    auto function = std::make_shared<ASTFunction>();
-
-    /// function arguments
-    auto exp_list = std::make_shared<ASTExpressionList>();
-    exp_list->children.push_back(elem);
-    exp_list->children.push_back(subquery_node);
-
-    function->name = operator_name;
-    function->arguments = exp_list;
-    function->children.push_back(exp_list);
-    node = function;
-    return modifySubquery(operator_name, subquery_node, is_any) || addFunctionIn(operator_name, node, is_any);
 }
 
 bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
