@@ -616,8 +616,6 @@ void PartMovesBetweenShardsOrchestrator::Entry::fromString(const String & buf)
     dst_part_name = json->getValue<std::string>(JSON_KEY_DST_PART_NAME);
     state.value = EntryState::fromString(json->getValue<std::string>(JSON_KEY_STATE));
     rollback = json->getValue<bool>(JSON_KEY_ROLLBACK);
-    // TODO(nv): This struggles parsing some exceptions,
-    //      example: https://gist.github.com/nvartolomei/75373514a94835be4218e0f6b44bff79
     last_exception_msg = json->getValue<std::string>(JSON_KEY_LAST_EX_MSG);
     num_tries = json->getValue<UInt64>(JSON_KEY_NUM_TRIES);
 }

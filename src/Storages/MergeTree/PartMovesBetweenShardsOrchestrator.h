@@ -23,9 +23,16 @@ class StorageReplicatedMergeTree;
  * Cross shard part movement workflow orchestration.
  *
  * TODO(nv) Issues:
- *  Usage of `waitForAllReplicasToProcessLogEntry` for waiting on foreign shards is problematic:
+ *  * Usage of `waitForAllReplicasToProcessLogEntry` for waiting on foreign shards is problematic:
  *      1. We wait in background schedule pool which is not meant for long running tasks.
  *      2. It is blocking. There is no opportunity to execute rollback if task is blocked.
+ *  * Add ACL, implement as separate PR to avoid conflicts as there is a small
+ *      refactoring opportunity in InterpretAlterQuery.
+ *  * Usage of `format_version` when acting on the behalf of the remote shard.
+ *      There needs to be sort of an API to coordinate with remote replicas.
+ *  * Entry POCO JSON ser/de may fail on contents serialized by POCO itself.
+ *      Example: https://gist.github.com/nvartolomei/75373514a94835be4218e0f6b44bff79
+ *  * Hard to test thoroughly, need to introduce failpoints.
  */
 class PartMovesBetweenShardsOrchestrator
 {
