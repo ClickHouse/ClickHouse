@@ -39,12 +39,12 @@ def started_cluster():
 
 
 @pytest.mark.parametrize("table,query,expected,n1,n2", [
-    ("sometable", "ALTER TABLE sometable DROP PARTITION 201706", '1', node1, node2),
-    ("sometable", "TRUNCATE TABLE sometable", '0', node1, node2),
-    ("sometable", "OPTIMIZE TABLE sometable", '4', node1, node2),
-    ("someothertable", "ALTER TABLE someothertable DROP PARTITION 201706", '1', node3, node4),
-    ("someothertable", "TRUNCATE TABLE someothertable", '0', node3, node4),
-    ("someothertable", "OPTIMIZE TABLE someothertable", '4', node3, node4),
+    pytest.param("sometable", "ALTER TABLE sometable DROP PARTITION 201706", '1', node1, node2, id="case1"),
+    pytest.param("sometable", "TRUNCATE TABLE sometable", '0', node1, node2, id="case2"),
+    pytest.param("sometable", "OPTIMIZE TABLE sometable", '4', node1, node2, id="case3"),
+    pytest.param("someothertable", "ALTER TABLE someothertable DROP PARTITION 201706", '1', node3, node4, id="case4"),
+    pytest.param("someothertable", "TRUNCATE TABLE someothertable", '0', node3, node4, id="case5"),
+    pytest.param("someothertable", "OPTIMIZE TABLE someothertable", '4', node3, node4, id="case6"),
 ])
 def test_alter_table_drop_partition(started_cluster, table, query, expected, n1, n2):
     to_insert = '''\
