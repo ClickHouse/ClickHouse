@@ -9,7 +9,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
+#include <Storages/PostgreSQL/PoolWithFailover.h>
 
 
 namespace DB

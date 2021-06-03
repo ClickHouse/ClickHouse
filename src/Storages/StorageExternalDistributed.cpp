@@ -83,7 +83,7 @@ StorageExternalDistributed::StorageExternalDistributed(
             {
                 addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
 
-                postgres::PoolWithFailover pool(
+                auto pool = std::make_shared<postgres::PoolWithFailover>(
                     remote_database,
                     addresses,
                     username, password,
