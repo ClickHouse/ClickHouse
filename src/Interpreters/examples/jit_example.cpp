@@ -18,7 +18,7 @@ int main(int argc, char **argv)
 
     jit.registerExternalSymbol("test_function", reinterpret_cast<void *>(&test_function));
 
-    auto compiled_module_info = jit.compileModule([](llvm::Module & module)
+    auto compiled_module = jit.compileModule([](llvm::Module & module)
     {
         auto & context = module.getContext();
         llvm::IRBuilder<> b (context);
@@ -43,13 +43,14 @@ int main(int argc, char **argv)
         b.CreateRet(value);
     });
 
-    for (const auto & compiled_function_name : compiled_module_info.compiled_functions)
+    for (const auto & [compiled_function_name, _] : compiled_module.function_name_to_symbol)
     {
         std::cerr << compiled_function_name << std::endl;
     }
 
     int64_t value = 5;
-    auto * test_name_function = reinterpret_cast<int64_t (*)(int64_t *)>(jit.findCompiledFunction(compiled_module_info, "test_name"));
+    auto * symbol = compiled_module.function_name_to_symbol["test_name"];
+    auto * test_name_function = reinterpret_cast<int64_t (*)(int64_t *)>(symbol);
     auto result = test_name_function(&value);
     std::cerr << "Result " << result << std::endl;
 

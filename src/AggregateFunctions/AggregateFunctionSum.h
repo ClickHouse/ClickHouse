@@ -395,18 +395,65 @@ public:
 
     #if USE_EMBEDDED_COMPILER
 
-    virtual bool isCompilable() const override { return Type == AggregateFunctionTypeSum; }
+    bool isCompilable() const override
+    {
+        if constexpr (Type == AggregateFunctionTypeSumKahan)
+            return false;
 
-    virtual void compile(llvm::IRBuilderBase & builder, llvm::Value * aggregate_function_place, const DataTypePtr & value_type, llvm::Value * value) const override
+        auto return_type = getReturnType();
+
+        return canBeNativeType(*return_type);
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_native_type = toNativeType(b, removeNullable(getReturnType()));
-        auto * sum_value_ptr = b.CreatePointerCast(aggregate_function_place, return_native_type->getPointerTo());
-        auto * sum_value = b.CreateLoad(return_native_type, sum_value_ptr);
-        auto * value_cast_to_result = nativeCast(b, value_type, value, return_native_type);
+        auto * return_type = toNativeType(b, removeNullable(getReturnType()));
+        auto * aggregate_sum_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+
+        b.CreateStore(llvm::ConstantInt::get(return_type, 0), aggregate_sum_ptr);
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypePtr & value_type, llvm::Value * value) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * return_type = toNativeType(b, removeNullable(getReturnType()));
+
+        auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
+
+        auto * value_cast_to_result = nativeCast(b, value_type, value, return_type);
         auto * sum_result_value = sum_value->getType()->isIntegerTy() ? b.CreateAdd(sum_value, value_cast_to_result) : b.CreateFAdd(sum_value, value_cast_to_result);
+
         b.CreateStore(sum_result_value, sum_value_ptr);
+    }
+
+    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * return_type = toNativeType(b, removeNullable(getReturnType()));
+
+        auto * sum_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
+        auto * sum_value_dst = b.CreateLoad(return_type, sum_value_dst_ptr);
+
+        auto * sum_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
+        auto * sum_value_src = b.CreateLoad(return_type, sum_value_src_ptr);
+
+        auto * sum_return_value = b.CreateAdd(sum_value_dst, sum_value_src);
+        b.CreateStore(sum_return_value, sum_value_dst_ptr);
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * return_type = toNativeType(b, removeNullable(getReturnType()));
+        auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+
+        return b.CreateLoad(return_type, sum_value_ptr);
     }
 
     #endif

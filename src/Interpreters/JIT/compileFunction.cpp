@@ -250,205 +250,288 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     b.CreateRetVoid();
 }
 
-CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBase & function)
+CompiledFunction compileFunction(CHJIT & jit, const IFunctionBase & function)
 {
     Stopwatch watch;
 
-    auto compiled_module_info = jit.compileModule([&](llvm::Module & module)
+    auto compiled_module = jit.compileModule([&](llvm::Module & module)
     {
         compileFunction(module, function);
     });
 
     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-    ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module_info.size);
+    ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
-    return compiled_module_info;
+    auto compiled_function_ptr = reinterpret_cast<JITCompiledFunction>(compiled_module.function_name_to_symbol[function.getName()]);
+    assert(compiled_function_ptr);
+
+    CompiledFunction result_compiled_function
+    {
+        .compiled_function = compiled_function_ptr,
+        .compiled_module = compiled_module
+    };
+
+    return result_compiled_function;
 }
 
-CHJIT::CompiledModuleInfo compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionToCompile> & functions, const std::string & result_name)
+static void compileCreateAggregateStatesFunctions(llvm::Module & module, const std::vector<AggregateFunctionWithOffset> & functions, const std::string & name)
 {
-    auto compiled_module_info = jit.compileModule([&](llvm::Module & module)
+    auto & context = module.getContext();
+    llvm::IRBuilder<> b(context);
+
+    auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo();
+    auto * create_aggregate_states_function_type = llvm::FunctionType::get(b.getVoidTy(), { aggregate_data_places_type }, false);
+    auto * create_aggregate_states_function = llvm::Function::Create(create_aggregate_states_function_type, llvm::Function::ExternalLinkage, name, module);
+
+    auto * arguments = create_aggregate_states_function->args().begin();
+    llvm::Value * aggregate_data_place_arg = arguments++;
+
+    auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", create_aggregate_states_function);
+    b.SetInsertPoint(entry);
+
+    std::vector<ColumnDataPlaceholder> columns(functions.size());
+    for (const auto & function_to_compile : functions)
     {
-        auto & context = module.getContext();
-        llvm::IRBuilder<> b (context);
+        size_t aggregate_function_offset = function_to_compile.aggregate_data_offset;
+        const auto * aggregate_function = function_to_compile.function;
+        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_arg, aggregate_function_offset);
+        aggregate_function->compileCreate(b, aggregation_place_with_offset);
+    }
 
-        auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
+    module.print(llvm::errs(), nullptr);
 
-        auto * column_data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
-        auto * get_place_func_declaration = llvm::FunctionType::get(b.getInt8Ty()->getPointerTo(), { b.getInt8Ty()->getPointerTo(), size_type }, /*isVarArg=*/false);
-        auto * aggregate_loop_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, column_data_type->getPointerTo(), get_place_func_declaration->getPointerTo(), b.getInt8Ty()->getPointerTo() }, false);
-
-        auto * aggregate_loop_func_definition = llvm::Function::Create(aggregate_loop_func_declaration, llvm::Function::ExternalLinkage, result_name, module);
-
-        auto * arguments = aggregate_loop_func_definition->args().begin();
-        llvm::Value * rows_count_arg = &*arguments++;
-        llvm::Value * columns_arg = &*arguments++;
-        llvm::Value * get_place_function_arg = &*arguments++;
-        llvm::Value * get_place_function_context_arg = &*arguments++;
-
-       /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
-
-        auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", aggregate_loop_func_definition);
-        b.SetInsertPoint(entry);
-
-        std::vector<ColumnDataPlaceholder> columns(functions.size());
-        for (size_t i = 0; i < functions.size(); ++i)
-        {
-            auto argument_type = functions[i].function->getArgumentTypes()[0];
-            auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, i));
-            columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(argument_type))->getPointerTo());
-        }
-
-        /// Initialize loop
-
-        auto * end = llvm::BasicBlock::Create(b.getContext(), "end", aggregate_loop_func_definition);
-        auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", aggregate_loop_func_definition);
-
-        b.CreateCondBr(b.CreateICmpEQ(rows_count_arg, llvm::ConstantInt::get(size_type, 0)), end, loop);
-
-        b.SetInsertPoint(loop);
-
-        auto * counter_phi = b.CreatePHI(rows_count_arg->getType(), 2);
-        counter_phi->addIncoming(llvm::ConstantInt::get(size_type, 0), entry);
-
-        for (auto & col : columns)
-        {
-            col.data = b.CreatePHI(col.data_init->getType(), 2);
-            col.data->addIncoming(col.data_init, entry);
-        }
-
-        auto * aggregation_place = b.CreateCall(get_place_func_declaration, get_place_function_arg, { get_place_function_context_arg, counter_phi });
-
-        for (size_t i = 0; i < functions.size(); ++i)
-        {
-            size_t aggregate_function_offset = functions[i].aggregate_data_offset;
-            const auto * aggregate_function_ptr = functions[i].function;
-
-            auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregation_place, aggregate_function_offset);
-
-            auto column_type = functions[i].function->getArgumentTypes()[0];
-            auto * column_data = b.CreateLoad(toNativeType(b, column_type), columns[i].data);
-            aggregate_function_ptr->compile(b, aggregation_place_with_offset, column_type, column_data);
-        }
-
-        /// End of loop
-
-        auto * cur_block = b.GetInsertBlock();
-        for (auto & col : columns)
-        {
-            col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
-            if (col.null)
-                col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
-        }
-
-        auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1));
-        counter_phi->addIncoming(value, loop);
-
-        b.CreateCondBr(b.CreateICmpEQ(value, rows_count_arg), end, loop);
-
-        b.SetInsertPoint(end);
-        b.CreateRetVoid();
-
-        llvm::errs() << "Module before optimizations \n";
-        module.print(llvm::errs(), nullptr);
-    });
-
-    return compiled_module_info;
+    b.CreateRetVoid();
 }
 
-CHJIT::CompiledModuleInfo compileAggregateFunctonsV2(CHJIT & jit, const std::vector<AggregateFunctionToCompile> & functions, const std::string & result_name)
+static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const std::vector<AggregateFunctionWithOffset> & functions, const std::string & name)
 {
-    auto compiled_module_info = jit.compileModule([&](llvm::Module & module)
+    auto & context = module.getContext();
+    llvm::IRBuilder<> b(context);
+
+    auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
+
+    auto * column_data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * get_place_func_declaration = llvm::FunctionType::get(b.getInt8Ty()->getPointerTo(), { b.getInt8Ty()->getPointerTo(), size_type }, /*isVarArg=*/false);
+    auto * aggregate_loop_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, column_data_type->getPointerTo(), get_place_func_declaration->getPointerTo(), b.getInt8Ty()->getPointerTo() }, false);
+
+    auto * aggregate_loop_func_definition = llvm::Function::Create(aggregate_loop_func_declaration, llvm::Function::ExternalLinkage, name, module);
+
+    auto * arguments = aggregate_loop_func_definition->args().begin();
+    llvm::Value * rows_count_arg = arguments++;
+    llvm::Value * columns_arg = arguments++;
+    llvm::Value * get_place_function_arg = arguments++;
+    llvm::Value * get_place_function_context_arg = arguments++;
+
+    /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
+
+    auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", aggregate_loop_func_definition);
+    b.SetInsertPoint(entry);
+
+    std::vector<ColumnDataPlaceholder> columns(functions.size());
+    for (size_t i = 0; i < functions.size(); ++i)
     {
-        auto & context = module.getContext();
-        llvm::IRBuilder<> b (context);
+        auto argument_type = functions[i].function->getArgumentTypes()[0];
+        auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, i));
+        columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(argument_type))->getPointerTo());
+    }
 
-        auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
+    /// Initialize loop
 
-        auto * column_data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
-        auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo()->getPointerTo();
-        auto * aggregate_loop_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, column_data_type->getPointerTo(), aggregate_data_places_type }, false);
+    auto * end = llvm::BasicBlock::Create(b.getContext(), "end", aggregate_loop_func_definition);
+    auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", aggregate_loop_func_definition);
 
-        auto * aggregate_loop_func_definition = llvm::Function::Create(aggregate_loop_func_declaration, llvm::Function::ExternalLinkage, result_name, module);
+    b.CreateCondBr(b.CreateICmpEQ(rows_count_arg, llvm::ConstantInt::get(size_type, 0)), end, loop);
 
-        auto * arguments = aggregate_loop_func_definition->args().begin();
-        llvm::Value * rows_count_arg = &*arguments++;
-        llvm::Value * columns_arg = &*arguments++;
-        llvm::Value * aggregate_data_places_arg = &*arguments++;
+    b.SetInsertPoint(loop);
 
-       /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
+    auto * counter_phi = b.CreatePHI(rows_count_arg->getType(), 2);
+    counter_phi->addIncoming(llvm::ConstantInt::get(size_type, 0), entry);
 
-        auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", aggregate_loop_func_definition);
-        b.SetInsertPoint(entry);
+    for (auto & col : columns)
+    {
+        col.data = b.CreatePHI(col.data_init->getType(), 2);
+        col.data->addIncoming(col.data_init, entry);
+    }
 
-        std::vector<ColumnDataPlaceholder> columns(functions.size());
-        for (size_t i = 0; i < functions.size(); ++i)
-        {
-            auto argument_type = functions[i].function->getArgumentTypes()[0];
-            auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, i));
-            columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(argument_type))->getPointerTo());
-        }
+    auto * aggregation_place = b.CreateCall(get_place_func_declaration, get_place_function_arg, { get_place_function_context_arg, counter_phi });
 
-        /// Initialize loop
+    for (size_t i = 0; i < functions.size(); ++i)
+    {
+        size_t aggregate_function_offset = functions[i].aggregate_data_offset;
+        const auto * aggregate_function_ptr = functions[i].function;
 
-        auto * end = llvm::BasicBlock::Create(b.getContext(), "end", aggregate_loop_func_definition);
-        auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", aggregate_loop_func_definition);
+        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregation_place, aggregate_function_offset);
 
-        b.CreateCondBr(b.CreateICmpEQ(rows_count_arg, llvm::ConstantInt::get(size_type, 0)), end, loop);
+        auto column_type = functions[i].function->getArgumentTypes()[0];
+        auto * column_data = b.CreateLoad(toNativeType(b, column_type), columns[i].data);
+        aggregate_function_ptr->compileAdd(b, aggregation_place_with_offset, column_type, column_data);
+    }
 
-        b.SetInsertPoint(loop);
+    /// End of loop
 
-        auto * counter_phi = b.CreatePHI(rows_count_arg->getType(), 2);
-        counter_phi->addIncoming(llvm::ConstantInt::get(size_type, 0), entry);
+    auto * cur_block = b.GetInsertBlock();
+    for (auto & col : columns)
+    {
+        col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
+        if (col.null)
+            col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
+    }
 
-        auto * aggregate_data_place_phi = b.CreatePHI(aggregate_data_places_type, 2);
-        aggregate_data_place_phi->addIncoming(aggregate_data_places_arg, entry);
+    auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1));
+    counter_phi->addIncoming(value, loop);
 
-        for (auto & col : columns)
-        {
-            col.data = b.CreatePHI(col.data_init->getType(), 2);
-            col.data->addIncoming(col.data_init, entry);
-        }
+    b.CreateCondBr(b.CreateICmpEQ(value, rows_count_arg), end, loop);
 
-        for (size_t i = 0; i < functions.size(); ++i)
-        {
-            size_t aggregate_function_offset = functions[i].aggregate_data_offset;
-            const auto * aggregate_function_ptr = functions[i].function;
+    b.SetInsertPoint(end);
+    b.CreateRetVoid();
+}
 
-            auto * aggregate_data_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), aggregate_data_place_phi);
-            auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place, aggregate_function_offset);
+static void compileMergeAggregatesStates(llvm::Module & module, const std::vector<AggregateFunctionWithOffset> & functions, const std::string & name)
+{
+    auto & context = module.getContext();
+    llvm::IRBuilder<> b(context);
 
-            auto column_type = functions[i].function->getArgumentTypes()[0];
-            auto * column_data = b.CreateLoad(toNativeType(b, column_type), columns[i].data);
-            aggregate_function_ptr->compile(b, aggregation_place_with_offset, column_type, column_data);
-        }
+    auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo();
+    auto * aggregate_loop_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { aggregate_data_places_type, aggregate_data_places_type }, false);
+    auto * aggregate_loop_func = llvm::Function::Create(aggregate_loop_func_declaration, llvm::Function::ExternalLinkage, name, module);
 
-        /// End of loop
+    auto * arguments = aggregate_loop_func->args().begin();
+    llvm::Value * aggregate_data_place_dst_arg = arguments++;
+    llvm::Value * aggregate_data_place_src_arg = arguments++;
 
-        auto * cur_block = b.GetInsertBlock();
-        for (auto & col : columns)
-        {
-            col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
-            if (col.null)
-                col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
-        }
+    auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", aggregate_loop_func);
+    b.SetInsertPoint(entry);
 
-        auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1), "", true, true);
-        counter_phi->addIncoming(value, loop);
+    for (const auto & function_to_compile : functions)
+    {
+        size_t aggregate_function_offset = function_to_compile.aggregate_data_offset;
+        const auto * aggregate_function_ptr = function_to_compile.function;
 
-        aggregate_data_place_phi->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_phi, 1), loop);
+        auto * aggregate_data_place_merge_dst_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_dst_arg, aggregate_function_offset);
+        auto * aggregate_data_place_merge_src_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_src_arg, aggregate_function_offset);
 
-        b.CreateCondBr(b.CreateICmpEQ(value, rows_count_arg), end, loop);
+        aggregate_function_ptr->compileMerge(b, aggregate_data_place_merge_dst_with_offset, aggregate_data_place_merge_src_with_offset);
+    }
 
-        b.SetInsertPoint(end);
-        b.CreateRetVoid();
+    b.CreateRetVoid();
+}
 
-        llvm::errs() << "Module before optimizations \n";
-        module.print(llvm::errs(), nullptr);
+static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, const std::vector<AggregateFunctionWithOffset> & functions, const std::string & name)
+{
+    auto & context = module.getContext();
+    llvm::IRBuilder<> b(context);
+
+    auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
+
+    auto * column_data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo()->getPointerTo();
+    auto * aggregate_loop_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, column_data_type->getPointerTo(), aggregate_data_places_type }, false);
+    auto * aggregate_loop_func = llvm::Function::Create(aggregate_loop_func_declaration, llvm::Function::ExternalLinkage, name, module);
+
+    auto * arguments = aggregate_loop_func->args().begin();
+    llvm::Value * rows_count_arg = &*arguments++;
+    llvm::Value * columns_arg = &*arguments++;
+    llvm::Value * aggregate_data_places_arg = &*arguments++;
+
+    auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", aggregate_loop_func);
+    b.SetInsertPoint(entry);
+
+    std::vector<ColumnDataPlaceholder> columns(functions.size());
+    for (size_t i = 0; i < functions.size(); ++i)
+    {
+        auto return_type = functions[i].function->getReturnType();
+        auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, i));
+        columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(return_type))->getPointerTo());
+    }
+
+    auto * end = llvm::BasicBlock::Create(b.getContext(), "end", aggregate_loop_func);
+    auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", aggregate_loop_func);
+
+    b.CreateCondBr(b.CreateICmpEQ(rows_count_arg, llvm::ConstantInt::get(size_type, 0)), end, loop);
+
+    b.SetInsertPoint(loop);
+
+    auto * counter_phi = b.CreatePHI(rows_count_arg->getType(), 2);
+    counter_phi->addIncoming(llvm::ConstantInt::get(size_type, 0), entry);
+
+    auto * aggregate_data_place_phi = b.CreatePHI(aggregate_data_places_type, 2);
+    aggregate_data_place_phi->addIncoming(aggregate_data_places_arg, entry);
+
+    for (auto & col : columns)
+    {
+        col.data = b.CreatePHI(col.data_init->getType(), 2);
+        col.data->addIncoming(col.data_init, entry);
+    }
+
+    for (size_t i = 0; i < functions.size(); ++i)
+    {
+        size_t aggregate_function_offset = functions[i].aggregate_data_offset;
+        const auto * aggregate_function_ptr = functions[i].function;
+
+        auto * aggregate_data_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), aggregate_data_place_phi);
+        auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place, aggregate_function_offset);
+
+        auto column_type = functions[i].function->getArgumentTypes()[0];
+        auto * final_value = aggregate_function_ptr->compileGetResult(b, aggregation_place_with_offset);
+        b.CreateStore(final_value, columns[i].data);
+    }
+
+    /// End of loop
+
+    auto * cur_block = b.GetInsertBlock();
+    for (auto & col : columns)
+    {
+        col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
+        if (col.null)
+            col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
+    }
+
+    auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1), "", true, true);
+    counter_phi->addIncoming(value, loop);
+
+    aggregate_data_place_phi->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, aggregate_data_place_phi, 1), loop);
+
+    b.CreateCondBr(b.CreateICmpEQ(value, rows_count_arg), end, loop);
+
+    b.SetInsertPoint(end);
+    b.CreateRetVoid();
+}
+
+CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name)
+{
+    std::string create_aggregate_states_functions_name = functions_dump_name + "_create";
+    std::string add_aggregate_states_functions_name = functions_dump_name + "_add";
+    std::string merge_aggregate_states_functions_name = functions_dump_name + "_merge";
+    std::string insert_aggregate_states_functions_name = functions_dump_name + "_insert";
+
+    auto compiled_module = jit.compileModule([&](llvm::Module & module)
+    {
+        compileCreateAggregateStatesFunctions(module, functions, create_aggregate_states_functions_name);
+        compileAddIntoAggregateStatesFunctions(module, functions, add_aggregate_states_functions_name);
+        compileMergeAggregatesStates(module, functions, merge_aggregate_states_functions_name);
+        compileInsertAggregatesIntoResultColumns(module, functions, insert_aggregate_states_functions_name);
     });
 
-    return compiled_module_info;
+    auto create_aggregate_states_function = reinterpret_cast<JITCreateAggregateStatesFunction>(compiled_module.function_name_to_symbol[create_aggregate_states_functions_name]);
+    auto add_into_aggregate_states_function = reinterpret_cast<JITAddIntoAggregateStatesFunction>(compiled_module.function_name_to_symbol[add_aggregate_states_functions_name]);
+    auto merge_aggregate_states_function = reinterpret_cast<JITMergeAggregateStatesFunction>(compiled_module.function_name_to_symbol[merge_aggregate_states_functions_name]);
+    auto insert_aggregate_states_function = reinterpret_cast<JITInsertAggregatesIntoColumnsFunction>(compiled_module.function_name_to_symbol[insert_aggregate_states_functions_name]);
+
+    assert(create_aggregate_states_function);
+    assert(add_into_aggregate_states_function);
+    assert(merge_aggregate_states_function);
+    assert(insert_aggregate_states_function);
+
+    CompiledAggregateFunctions compiled_aggregate_functions
+    {
+        .create_aggregate_states_function = create_aggregate_states_function,
+        .add_into_aggregate_states_function = add_into_aggregate_states_function,
+        .merge_aggregate_states_function = merge_aggregate_states_function,
+        .insert_aggregates_into_columns_function = insert_aggregate_states_function
+    };
+
+    return compiled_aggregate_functions;
 }
 
 }
