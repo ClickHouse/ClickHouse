@@ -167,6 +167,37 @@ bool PartMovesBetweenShardsOrchestrator::step()
 
 PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(Entry entry, zkutil::ZooKeeperPtr zk)
 {
+    auto make_stop_wait_cond = [&]()
+    {
+        auto watch = std::make_shared<Stopwatch>();
+        watch->start();
+
+        return [&, watch]()
+        {
+            auto entry_fresh = getEntryByUUID(entry.task_uuid);
+            if (!entry_fresh.has_value())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The task we are processing disappeared. This is a bug.");
+
+            if (entry_fresh->rollback != entry.rollback)
+            {
+                LOG_DEBUG(log, "Rollback state on entry changed, stop waiting.");
+                return true;
+            }
+
+            // Hack: Block for at most one minute, abort afterwards and let this be retried.
+            // How to fix: Persist "a reference" to the log entry that we can use later
+            //  for checking the status.
+            //  TODO(nv)
+            if (watch->elapsedSeconds() > 60)
+            {
+                LOG_DEBUG(log, "Timeout for waiting exceeded.");
+                return true;
+            }
+
+            return false;
+        };
+    };
+
     switch (entry.state.value)
     {
         case EntryState::DONE: [[fallthrough]];
@@ -217,7 +248,9 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 /// This wait in background schedule pool is useless. It'd be
                 /// better to have some notification which will call `step`
                 /// function when all replicated will finish. TODO.
-                storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
+                Strings unwaited = storage.waitForAllReplicasToProcessLogEntry(log_entry, true, make_stop_wait_cond());
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
 
                 entry.state = EntryState::SYNC_DESTINATION;
                 return entry;
@@ -255,7 +288,9 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+                Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
 
                 entry.state = EntryState::DESTINATION_FETCH;
                 return entry;
@@ -298,7 +333,9 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+                Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
 
                 entry.state = EntryState::DESTINATION_ATTACH;
                 return entry;
@@ -311,10 +348,6 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
             if (entry.rollback)
             {
-                // ReplicatedMergeTreeLogEntry log_entry;
-                // if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
-                //     storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
-
                 Coordination::Stat attach_log_entry_stat;
                 String attach_log_entry_str;
                 if (!zk->tryGet(block_id_path, attach_log_entry_str, &attach_log_entry_stat))
@@ -361,7 +394,9 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size]).path_created;
                     log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-                    storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+                    Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
+                    if (!unwaited.empty())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
 
                     entry.state = EntryState::DESTINATION_FETCH;
                     return entry;
@@ -418,7 +453,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     log_entry.znode_name = "queue--fake-name";
                 }
 
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+                Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
+                if (!unwaited.empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
+
 
                 entry.dst_part_name = log_entry.new_part_name;
                 entry.state = EntryState::SOURCE_DROP_PRE_DELAY;
@@ -449,8 +487,11 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             {
                 ReplicatedMergeTreeLogEntry log_entry;
                 if (storage.dropPartImpl(zk, entry.part_name, log_entry, false, false))
-                    storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
-
+                {
+                    Strings unwaited = storage.waitForAllReplicasToProcessLogEntry(log_entry, true, make_stop_wait_cond());
+                    if (!unwaited.empty())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
+                }
                 entry.state = EntryState::SOURCE_DROP_POST_DELAY;
                 return entry;
             }
@@ -512,29 +553,14 @@ void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil:
 
 CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const UUID & task_uuid)
 {
-    std::optional<Entry> maybe_entry;
+    std::optional<Entry> maybe_entry = getEntryByUUID(task_uuid);
 
-    {
-        /// Need latest state in case user tries to kill a move observed on a different replica.
-        fetchStateFromZK();
-
-        std::lock_guard lock(state_mutex);
-        for (auto const & entry : entries | boost::adaptors::map_values)
-        {
-            if (entry.task_uuid == task_uuid)
-            {
-                maybe_entry.emplace(entry);
-                break;
-            }
-        }
-
-        /// Opt for CancelCannotBeSent because the main use-case for this method
-        /// is for it to be called from a KILL query. KILL interpreter calls this
-        /// method only with tasks that exist but we don't want to crash when task
-        /// is suddenly removed.
-        if (!maybe_entry.has_value())
-            return CancellationCode::CancelCannotBeSent;
-    }
+    /// Opt for CancelCannotBeSent because the main use-case for this method
+    /// is for it to be called from a KILL query. KILL interpreter calls this
+    /// method only with tasks that exist but we don't want to crash when task
+    /// is suddenly removed.
+    if (!maybe_entry.has_value())
+        return CancellationCode::CancelCannotBeSent;
 
     Entry entry = maybe_entry.value();
 
@@ -577,6 +603,23 @@ std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrc
         res.push_back(e.second);
 
     return res;
+}
+
+std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntryByUUID(const UUID & task_uuid)
+{
+    /// Need latest state in case user tries to kill a move observed on a different replica.
+    fetchStateFromZK();
+
+    std::lock_guard lock(state_mutex);
+    for (auto const & entry : entries | boost::adaptors::map_values)
+    {
+        if (entry.task_uuid == task_uuid)
+        {
+            return std::optional(entry);
+        }
+    }
+
+    return std::nullopt;
 }
 
 String PartMovesBetweenShardsOrchestrator::Entry::toString() const
