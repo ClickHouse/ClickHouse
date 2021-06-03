@@ -4373,7 +4373,8 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
         deduplicate,
-        local_context->getSettingsRef().optimize_on_insert);
+        local_context->getSettingsRef().optimize_on_insert,
+        local_context);
 }
 
 
@@ -4995,7 +4996,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false,
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false, query_context,
         /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)

@@ -31,6 +31,7 @@ public:
         bool quorum_parallel_,
         bool deduplicate_,
         bool optimize_on_insert,
+        ContextPtr context_,
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false);
@@ -84,6 +85,7 @@ private:
     Poco::Logger * log;
 
     bool optimize_on_insert;
+    ContextPtr context;
 };
 
 }
