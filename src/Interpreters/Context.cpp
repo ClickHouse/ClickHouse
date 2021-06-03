@@ -53,6 +53,7 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
+#include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -342,6 +343,8 @@ struct ContextSharedPart
     ext::scope_guard models_repository_guard;
 
     ext::scope_guard dictionaries_xmls;
+
+    mutable std::optional<SynonymsExtensions> synonyms_extensions;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -1436,6 +1439,16 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
     }
     shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+}
+
+SynonymsExtensions & Context::getSynonymsExtensions()
+{
+    auto lock = getLock();
+    
+    if(!shared->synonyms_extensions)
+        shared->synonyms_extensions.emplace(getConfigRef());
+
+    return *shared->synonyms_extensions;    
 }
 
 void Context::setProgressCallback(ProgressCallback callback)
