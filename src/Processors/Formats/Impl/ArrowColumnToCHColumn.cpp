@@ -89,8 +89,11 @@ namespace DB
             arrow::BinaryArray & chunk = static_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
             const size_t chunk_length = chunk.length();
 
-            chars_t_size += chunk.value_offset(chunk_length - 1) + chunk.value_length(chunk_length - 1);
-            chars_t_size += chunk_length; /// additional space for null bytes
+            if (chunk_length > 0)
+            {
+                chars_t_size += chunk.value_offset(chunk_length - 1) + chunk.value_length(chunk_length - 1);
+                chars_t_size += chunk_length; /// additional space for null bytes
+            }
         }
 
         column_chars_t.reserve(chars_t_size);
