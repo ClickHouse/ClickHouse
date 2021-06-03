@@ -290,6 +290,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , part_moves_between_shards_orchestrator(*this)
     , allow_renaming(allow_renaming_)
     , replicated_fetches_pool_size(getContext()->getSettingsRef().background_fetches_pool_size)
+    , replicated_fetches_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_fetches_network_bandwidth, getContext()->getReplicatedFetchesThrottler()))
+    , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
 {
     queue_updating_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
@@ -2507,7 +2509,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
             part_desc->res_part = fetcher.fetchPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, source_replica_path,
-                address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, TMP_PREFIX + "fetch_");
+                address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
+                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
 
@@ -2624,7 +2627,8 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
             return fetcher.fetchPart(
                 metadata_snapshot, getContext(), entry.new_part_name, source_replica_path,
                 address.host, address.replication_port,
-                timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, true);
+                timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
+                replicated_fetches_throttler, true);
         };
 
         part = get_part();
@@ -3160,6 +3164,13 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
     if (busy_threads_in_pool >= replicated_fetches_pool_size)
     {
         disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, replicated_fetches_pool_size);
+        return false;
+    }
+
+    if (replicated_fetches_throttler->isThrottling())
+    {
+        disable_reason = fmt::format("Not executing fetch of part {} because fetches have already throttled by network settings "
+                                     "<max_replicated_fetches_network_bandwidth> or <max_replicated_fetches_network_bandwidth_for_server>.", entry.new_part_name);
         return false;
     }
 
@@ -4031,6 +4042,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 credentials->getUser(),
                 credentials->getPassword(),
                 interserver_scheme,
+                replicated_fetches_throttler,
                 to_detached,
                 "",
                 &tagger_ptr,
@@ -4180,7 +4192,8 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         return fetcher.fetchPart(
             metadata_snapshot, getContext(), part_name, source_replica_path,
             address.host, address.replication_port,
-            timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, "", nullptr, true,
+            timeouts, credentials->getUser(), credentials->getPassword(),
+            interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true,
             replaced_disk);
     };
 
@@ -4384,9 +4397,9 @@ void StorageReplicatedMergeTree::read(
     */
     if (local_context->getSettingsRef().select_sequential_consistency)
     {
-        auto max_added_blocks = getMaxAddedBlocks();
+        auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
         if (auto plan = reader.read(
-                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, &max_added_blocks))
+                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, std::move(max_added_blocks)))
             query_plan = std::move(*plan);
         return;
     }
@@ -6162,7 +6175,7 @@ bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(const St
                 {
                     Coordination::Requests ops;
                     removePartFromZooKeeper(part_names[i], ops, exists_resp.stat.numChildren > 0);
-                    remove_futures.emplace_back(zookeeper->tryAsyncMulti(ops));
+                    remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
                 }
             }
 
@@ -6223,7 +6236,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             {
                 Coordination::Requests ops;
                 removePartFromZooKeeper(part_names[i], ops, exists_resp.stat.numChildren > 0);
-                remove_futures.emplace_back(zookeeper->tryAsyncMulti(ops));
+                remove_futures.emplace_back(zookeeper->asyncTryMultiNoThrow(ops));
             }
             else
             {

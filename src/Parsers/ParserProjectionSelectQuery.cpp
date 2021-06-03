@@ -17,20 +17,15 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     ParserKeyword s_with("WITH");
     ParserKeyword s_select("SELECT");
-    ParserKeyword s_distinct("DISTINCT");
-    ParserKeyword s_where("WHERE");
     ParserKeyword s_group_by("GROUP BY");
     ParserKeyword s_order_by("ORDER BY");
 
-    ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true); /// Allows aliases without AS keyword.
-    ParserExpressionWithOptionalAlias exp_elem(false);
     ParserExpression order_expression_p;
 
     ASTPtr with_expression_list;
     ASTPtr select_expression_list;
-    ASTPtr where_expression;
     ASTPtr group_expression_list;
     ASTPtr order_expression;
 
@@ -48,20 +43,9 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         if (!s_select.ignore(pos, expected))
             return false;
 
-        if (s_distinct.ignore(pos, expected))
-            select_query->distinct = true;
-
         if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
             return false;
     }
-
-    // TODO: wait for condition normalizer to land
-    /// WHERE expr
-    // if (s_where.ignore(pos, expected))
-    // {
-    //     if (!exp_elem.parse(pos, where_expression, expected))
-    //         return false;
-    // }
 
     // If group by is specified, AggregatingMergeTree engine is used, and the group by keys are implied to be order by keys
     if (s_group_by.ignore(pos, expected))
@@ -70,6 +54,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
                  .parse(pos, group_expression_list, expected))
             return false;
     }
+
     if (s_order_by.ignore(pos, expected))
     {
         ASTPtr expr_list;
@@ -92,7 +77,6 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
-    // select_query->setExpression(ASTProjectionSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expression));
     return true;
