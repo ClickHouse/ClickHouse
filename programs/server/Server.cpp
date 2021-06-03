@@ -1056,11 +1056,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             /// DDL worker should be started after all tables were loaded
             String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-            int pool_size = config().getInt("distributed_ddl.pool_size", 1);
-            if (pool_size < 1)
-                throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
-                                                                     "distributed_ddl"));
+            global_context->setDDLWorker(std::make_unique<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
         }
 
         for (auto & server : servers)
