@@ -219,6 +219,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))", "12")
 
+@pytest.mark.skip(reason="Flaky")
 def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
@@ -227,6 +228,7 @@ def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))", "hello")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))", "world")
 
+@pytest.mark.skip(reason="Flaky")
 def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()

@@ -33,6 +33,7 @@ def corrupt_data_part_on_disk(node, table, part_name):
                                 p=part_path)], privileged=True)
 
 
+@pytest.mark.skip(reason="Fails in 20.8 because of python2")
 def test_merge_and_part_corruption(started_cluster):
     node1.query("SYSTEM STOP REPLICATION QUEUES replicated_mt")
     for i in range(4):
