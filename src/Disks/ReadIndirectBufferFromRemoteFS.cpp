@@ -94,7 +94,11 @@ bool ReadIndirectBufferFromRemoteFS<T>::nextImpl()
 
     /// If current buffer has remaining data - use it.
     if (current_buf)
-        return nextAndShiftPosition();
+    {
+        bool result = nextAndShiftPosition();
+        if (result)
+            return true;
+    }
 
     /// If there is no available buffers - nothing to read.
     if (current_buf_idx + 1 >= metadata.remote_fs_objects.size())
