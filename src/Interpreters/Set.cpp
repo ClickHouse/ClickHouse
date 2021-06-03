@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Core/Field.h>
+#include <Core/Row.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>

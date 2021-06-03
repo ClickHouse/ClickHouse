@@ -557,13 +557,13 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(ContextConstPtr context_)
+    explicit FunctionComparison(ContextPtr context_)
         : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -1147,24 +1147,17 @@ public:
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
         if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
-            ColumnPtr result_column;
-
             /// Always true: =, <=, >=
             if constexpr (IsOperation<Op>::equals
                 || IsOperation<Op>::less_or_equals
                 || IsOperation<Op>::greater_or_equals)
             {
-                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
+                return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
             }
             else
             {
-                result_column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+                return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
             }
-
-            if (!isColumnConst(*col_left_untyped))
-                result_column = result_column->convertToFullColumnIfConst();
-
-            return result_column;
         }
 
         WhichDataType which_left{left_type};

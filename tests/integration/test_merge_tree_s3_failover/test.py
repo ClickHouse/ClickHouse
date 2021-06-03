@@ -7,6 +7,9 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler())
+
 
 # Runs custom python-based S3 endpoint.
 def run_endpoint(cluster):

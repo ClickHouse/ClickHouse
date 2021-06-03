@@ -11,7 +11,6 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
-#include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
@@ -75,10 +74,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <filesystem>
 
-
-namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -144,7 +140,7 @@ public:
     /// Find existing session or create a new.
     std::shared_ptr<NamedSession> acquireSession(
         const String & session_id,
-        ContextMutablePtr context,
+        ContextPtr context,
         std::chrono::steady_clock::duration timeout,
         bool throw_if_not_found)
     {
@@ -318,8 +314,8 @@ struct ContextSharedPart
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
 #if USE_NURAFT
-    mutable std::mutex keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperStorageDispatcher> keeper_storage_dispatcher;
+    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperStorageDispatcher> nu_keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -364,10 +360,6 @@ struct ContextSharedPart
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
-
-    mutable ThrottlerPtr replicated_fetches_throttler; /// A server-wide throttler for replicated fetches
-    mutable ThrottlerPtr replicated_sends_throttler; /// A server-wide throttler for replicated sends
-
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -471,6 +463,12 @@ struct ContextSharedPart
             dictionaries_xmls.reset();
 
             delete_system_logs = std::move(system_logs);
+
+            #if USE_EMBEDDED_COMPILER
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
+            #endif
+
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
             models_repository_guard.reset();
@@ -521,7 +519,7 @@ SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shar
 
 void SharedContextHolder::reset() { shared.reset(); }
 
-ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
+ContextPtr Context::createGlobal(ContextSharedPart * shared)
 {
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared;
@@ -538,19 +536,19 @@ SharedContextHolder Context::createShared()
     return SharedContextHolder(std::make_unique<ContextSharedPart>());
 }
 
-ContextMutablePtr Context::createCopy(const ContextPtr & other)
+ContextPtr Context::createCopy(const ContextConstPtr & other)
 {
     return std::shared_ptr<Context>(new Context(*other));
 }
 
-ContextMutablePtr Context::createCopy(const ContextWeakConstPtr & other)
+ContextPtr Context::createCopy(const ContextWeakConstPtr & other)
 {
     auto ptr = other.lock();
     if (!ptr) throw Exception("Can't copy an expired context", ErrorCodes::LOGICAL_ERROR);
     return createCopy(ptr);
 }
 
-ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
+ContextPtr Context::createCopy(const ContextPtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
 }
@@ -1087,7 +1085,7 @@ void Context::addViewSource(const StoragePtr & storage)
 }
 
 
-StoragePtr Context::getViewSource() const
+StoragePtr Context::getViewSource()
 {
     return view_source;
 }
@@ -1321,7 +1319,7 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
     shared->macros.set(std::move(macros));
 }
 
-ContextMutablePtr Context::getQueryContext() const
+ContextPtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
     if (!ptr) throw Exception("There is no query or query context has expired", ErrorCodes::THERE_IS_NO_QUERY);
@@ -1334,21 +1332,21 @@ bool Context::isInternalSubquery() const
     return ptr && ptr.get() != this;
 }
 
-ContextMutablePtr Context::getSessionContext() const
+ContextPtr Context::getSessionContext() const
 {
     auto ptr = session_context.lock();
     if (!ptr) throw Exception("There is no session or session context has expired", ErrorCodes::THERE_IS_NO_SESSION);
     return ptr;
 }
 
-ContextMutablePtr Context::getGlobalContext() const
+ContextPtr Context::getGlobalContext() const
 {
     auto ptr = global_context.lock();
     if (!ptr) throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
     return ptr;
 }
 
-ContextMutablePtr Context::getBufferContext() const
+ContextPtr Context::getBufferContext() const
 {
     if (!buffer_context) throw Exception("There is no buffer context", ErrorCodes::LOGICAL_ERROR);
     return buffer_context;
@@ -1633,26 +1631,6 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     return *shared->message_broker_schedule_pool;
 }
 
-ThrottlerPtr Context::getReplicatedFetchesThrottler() const
-{
-    auto lock = getLock();
-    if (!shared->replicated_fetches_throttler)
-        shared->replicated_fetches_throttler = std::make_shared<Throttler>(
-            settings.max_replicated_fetches_network_bandwidth_for_server);
-
-    return shared->replicated_fetches_throttler;
-}
-
-ThrottlerPtr Context::getReplicatedSendsThrottler() const
-{
-    auto lock = getLock();
-    if (!shared->replicated_sends_throttler)
-        shared->replicated_sends_throttler = std::make_shared<Throttler>(
-            settings.max_replicated_sends_network_bandwidth_for_server);
-
-    return shared->replicated_sends_throttler;
-}
-
 bool Context::hasDistributedDDL() const
 {
     return getConfigRef().has("distributed_ddl");
@@ -1700,16 +1678,16 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 void Context::initializeKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
 
-    if (shared->keeper_storage_dispatcher)
+    if (shared->nu_keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        shared->keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
-        shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
+        shared->nu_keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
+        shared->nu_keeper_storage_dispatcher->initialize(config);
     }
 #endif
 }
@@ -1717,22 +1695,22 @@ void Context::initializeKeeperStorageDispatcher() const
 #if USE_NURAFT
 std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
 {
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
-    if (!shared->keeper_storage_dispatcher)
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (!shared->nu_keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->keeper_storage_dispatcher;
+    return shared->nu_keeper_storage_dispatcher;
 }
 #endif
 
 void Context::shutdownKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
-    if (shared->keeper_storage_dispatcher)
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (shared->nu_keeper_storage_dispatcher)
     {
-        shared->keeper_storage_dispatcher->shutdown();
-        shared->keeper_storage_dispatcher.reset();
+        shared->nu_keeper_storage_dispatcher->shutdown();
+        shared->nu_keeper_storage_dispatcher.reset();
     }
 #endif
 }
@@ -1899,7 +1877,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 }
 
 
-void Context::reloadClusterConfig() const
+void Context::reloadClusterConfig()
 {
     while (true)
     {
@@ -1986,7 +1964,7 @@ bool Context::hasTraceCollector() const
 }
 
 
-std::shared_ptr<QueryLog> Context::getQueryLog() const
+std::shared_ptr<QueryLog> Context::getQueryLog()
 {
     auto lock = getLock();
 
@@ -1997,7 +1975,7 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
 }
 
 
-std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
+std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
@@ -2008,7 +1986,7 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 }
 
 
-std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
+std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
@@ -2026,7 +2004,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 }
 
 
-std::shared_ptr<TraceLog> Context::getTraceLog() const
+std::shared_ptr<TraceLog> Context::getTraceLog()
 {
     auto lock = getLock();
 
@@ -2037,7 +2015,7 @@ std::shared_ptr<TraceLog> Context::getTraceLog() const
 }
 
 
-std::shared_ptr<TextLog> Context::getTextLog() const
+std::shared_ptr<TextLog> Context::getTextLog()
 {
     auto lock = getLock();
 
@@ -2048,7 +2026,7 @@ std::shared_ptr<TextLog> Context::getTextLog() const
 }
 
 
-std::shared_ptr<MetricLog> Context::getMetricLog() const
+std::shared_ptr<MetricLog> Context::getMetricLog()
 {
     auto lock = getLock();
 
@@ -2070,7 +2048,7 @@ std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
 }
 
 
-std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog() const
+std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog()
 {
     auto lock = getLock();
 
@@ -2240,14 +2218,14 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
-    fs::path force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = fs::exists(force_file);
+    Poco::File force_file(getFlagsPath() + "force_drop_table");
+    bool force_file_exists = force_file.exists();
 
     if (force_file_exists)
     {
         try
         {
-            fs::remove(force_file);
+            force_file.remove();
             return;
         }
         catch (...)
@@ -2269,9 +2247,9 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
                     "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
                     backQuoteIfNeed(database), backQuoteIfNeed(table),
                     size_str, max_size_to_drop_str,
-                    force_file.string(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
-                    force_file.string(),
-                    force_file.string(), force_file.string());
+                    force_file.path(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
+                    force_file.path(),
+                    force_file.path(), force_file.path());
 }
 
 
@@ -2668,14 +2646,11 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
     return metadata_transaction;
 }
 
-PartUUIDsPtr Context::getPartUUIDs() const
+PartUUIDsPtr Context::getPartUUIDs()
 {
     auto lock = getLock();
     if (!part_uuids)
-        /// For context itself, only this initialization is not const.
-        /// We could have done in constructor.
-        /// TODO: probably, remove this from Context.
-        const_cast<PartUUIDsPtr &>(part_uuids) = std::make_shared<PartUUIDs>();
+        part_uuids = std::make_shared<PartUUIDs>();
 
     return part_uuids;
 }
@@ -2694,11 +2669,11 @@ void Context::setReadTaskCallback(ReadTaskCallback && callback)
     next_task_callback = callback;
 }
 
-PartUUIDsPtr Context::getIgnoredPartUUIDs() const
+PartUUIDsPtr Context::getIgnoredPartUUIDs()
 {
     auto lock = getLock();
     if (!ignored_part_uuids)
-        const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
+        ignored_part_uuids = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
 }

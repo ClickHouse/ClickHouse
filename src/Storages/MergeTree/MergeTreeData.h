@@ -20,7 +20,6 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
-#include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
@@ -113,7 +112,7 @@ namespace ErrorCodes
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public IStorage, public WithMutableContext
+class MergeTreeData : public IStorage, public WithContext
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -128,8 +127,6 @@ public:
     using DataPartState = IMergeTreeDataPart::State;
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
-
-    using PinnedPartUUIDsPtr = std::shared_ptr<const PinnedPartUUIDs>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
     constexpr static auto DETACHED_DIR_NAME = "detached";
@@ -353,7 +350,7 @@ public:
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata_,
-                  ContextMutablePtr context_,
+                  ContextPtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
@@ -613,7 +610,7 @@ public:
 
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
-    void checkPartCanBeDropped(const String & part_name);
+    void checkPartCanBeDropped(const ASTPtr & part);
 
     Pipe alterPartition(
         const StorageMetadataPtr & metadata_snapshot,
@@ -804,8 +801,6 @@ public:
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
-    PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
-
     /// Return main processing background job, like merge/mutate/fetch and so on
     virtual std::optional<JobAndPool> getDataProcessingJob() = 0;
     /// Return job to move parts between disks/volumes and so on.
@@ -859,10 +854,6 @@ protected:
     /// Storage settings.
     /// Use get and set to receive readonly versions.
     MultiVersion<MergeTreeSettings> storage_settings;
-
-    /// Used to determine which UUIDs to send to root query executor for deduplication.
-    mutable std::shared_mutex pinned_part_uuids_mutex;
-    PinnedPartUUIDsPtr pinned_part_uuids;
 
     /// Work with data parts
 
@@ -993,23 +984,18 @@ protected:
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
 
-    /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
-    virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;
-
-    virtual void dropPart(const String & part_name, bool detach, ContextPtr context) = 0;
-    virtual void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) = 0;
+    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr context, bool throw_if_noop = true) = 0;
     virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) = 0;
     virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) = 0;
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) = 0;
 
+    /// Makes sense only for replicated tables
     virtual void fetchPartition(
         const ASTPtr & partition,
         const StorageMetadataPtr & metadata_snapshot,
         const String & from,
         bool fetch_part,
         ContextPtr query_context);
-
-    virtual void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context);
 
     void writePartLog(
         PartLogElement::Type type,

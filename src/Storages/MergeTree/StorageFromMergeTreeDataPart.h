@@ -41,7 +41,10 @@ public:
                                                   query_info,
                                                   context,
                                                   max_block_size,
-                                                  num_streams));
+                                                  num_streams,
+                                                  nullptr,
+                                                  query_info.projection ? query_info.projection->merge_tree_data_select_base_cache.get()
+                                                                        : query_info.merge_tree_data_select_cache.get()));
 
         return query_plan.convertToPipe(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));

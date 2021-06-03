@@ -211,10 +211,7 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPartNoWaitNoThrow(const String & part_name) override;
-    void dropPart(const String & part_name, bool detach, ContextPtr context) override;
-    void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
-    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr context, bool throw_if_noop) override;
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
@@ -253,7 +250,7 @@ protected:
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         bool attach,
-        ContextMutablePtr context_,
+        ContextPtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,

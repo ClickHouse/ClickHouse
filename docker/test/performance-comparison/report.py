@@ -446,17 +446,11 @@ if args.report == 'main':
                 attrs[3] = f'style="background: {color_bad}"'
             else:
                 attrs[3] = ''
-                # Just don't add the slightly unstable queries we don't consider
-                # errors. It's not clear what the user should do with them.
-                continue
 
             text += tableRow(r, attrs, anchor)
 
         text += tableEnd()
-
-        # Don't add an empty table.
-        if very_unstable_queries:
-            tables.append(text)
+        tables.append(text)
 
     add_unstable_queries()
 
@@ -555,15 +549,16 @@ if args.report == 'main':
         message_array.append(str(slower_queries) + ' slower')
 
     if unstable_partial_queries:
-        very_unstable_queries += unstable_partial_queries
+        unstable_queries += unstable_partial_queries
+        error_tests += unstable_partial_queries
         status = 'failure'
 
-    # Don't show mildly unstable queries, only the very unstable ones we
-    # treat as errors.
-    if very_unstable_queries:
-        error_tests += very_unstable_queries
-        status = 'failure'
-        message_array.append(str(very_unstable_queries) + ' unstable')
+    if unstable_queries:
+        message_array.append(str(unstable_queries) + ' unstable')
+
+#    Disabled before fix.
+#    if very_unstable_queries:
+#        status = 'failure'
 
     error_tests += slow_average_tests
     if error_tests:

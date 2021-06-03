@@ -19,7 +19,7 @@ public:
     using list_type = std::list<std::pair<key_type, value_type>>;
     using map_type = std::unordered_map<key_type, typename list_type::iterator>;
 
-    explicit LRUHashMapBasic(size_t max_size_, bool preallocated = false)
+    LRUHashMapBasic(size_t max_size_, bool preallocated = false)
         : hash_map(preallocated ? max_size_ : 32)
         , max_size(max_size_)
     {

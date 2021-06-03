@@ -36,8 +36,8 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
-    void applyCmdOptions(ContextMutablePtr context);
-    void applyCmdSettings(ContextMutablePtr context);
+    void applyCmdOptions(ContextPtr context);
+    void applyCmdSettings(ContextPtr context);
     void processQueries();
     void setupUsers();
     void cleanup();
@@ -45,7 +45,7 @@ private:
 
 protected:
     SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
+    ContextPtr global_context;
 
     /// Settings specified via command line args
     Settings cmd_settings;

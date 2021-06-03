@@ -1133,7 +1133,7 @@ try
     }
 
     SharedContextHolder shared_context = Context::createShared();
-    auto context = Context::createGlobal(shared_context.get());
+    ContextPtr context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);

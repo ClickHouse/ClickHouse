@@ -13,7 +13,6 @@ using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
 enum SnapshotVersion : uint8_t
 {
     V0 = 0,
-    V1 = 1, /// with ACL map
 };
 
 struct KeeperStorageSnapshot
@@ -30,14 +29,12 @@ public:
 
     KeeperStorage * storage;
 
-    SnapshotVersion version = SnapshotVersion::V1;
+    SnapshotVersion version = SnapshotVersion::V0;
     SnapshotMetadataPtr snapshot_meta;
     int64_t session_id;
     size_t snapshot_container_size;
     KeeperStorage::Container::const_iterator begin;
     SessionAndTimeout session_and_timeout;
-    KeeperStorage::SessionAndAuth session_and_auth;
-    std::unordered_map<uint64_t, Coordination::ACLs> acl_map;
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
@@ -49,7 +46,7 @@ using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;
 class KeeperSnapshotManager
 {
 public:
-    KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, const std::string & superdigest_ = "", size_t storage_tick_time_ = 500);
+    KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_ = 500);
 
     SnapshotMetaAndStorage restoreFromLatestSnapshot();
 
@@ -80,7 +77,6 @@ private:
     const std::string snapshots_path;
     const size_t snapshots_to_keep;
     std::map<uint64_t, std::string> existing_snapshots;
-    const std::string superdigest;
     size_t storage_tick_time;
 };
 

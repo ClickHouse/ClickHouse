@@ -28,7 +28,7 @@ public:
     virtual Poco::Logger & logger() const = 0;
 
     /// Returns global application's context.
-    virtual ContextMutablePtr context() const = 0;
+    virtual ContextPtr context() const = 0;
 
     /// Returns true if shutdown signaled.
     virtual bool isCancelled() const = 0;

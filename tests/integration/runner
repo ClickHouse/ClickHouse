@@ -27,7 +27,7 @@ def check_args_and_update_paths(args):
         else:
             CLICKHOUSE_ROOT = args.clickhouse_root
     else:
-        logging.info("ClickHouse root is not set. Will use %s" % (DEFAULT_CLICKHOUSE_ROOT))
+        logging.info("ClickHouse root is not set. Will use {}".format(DEFAULT_CLICKHOUSE_ROOT))
         CLICKHOUSE_ROOT = DEFAULT_CLICKHOUSE_ROOT
 
     if not os.path.isabs(args.binary):
@@ -48,21 +48,21 @@ def check_args_and_update_paths(args):
             args.base_configs_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.base_configs_dir))
     else:
         args.base_configs_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, CONFIG_DIR_IN_REPO))
-        logging.info("Base configs dir is not set. Will use %s" % (args.base_configs_dir))
+        logging.info("Base configs dir is not set. Will use {}".format(args.base_configs_dir))
 
     if args.cases_dir:
         if not os.path.isabs(args.cases_dir):
             args.cases_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.cases_dir))
     else:
         args.cases_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, INTERGATION_DIR_IN_REPO))
-        logging.info("Cases dir is not set. Will use %s" % (args.cases_dir))
+        logging.info("Cases dir is not set. Will use {}".format(args.cases_dir))
 
     if args.src_dir:
         if not os.path.isabs(args.src_dir):
             args.src_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.src_dir))
     else:
         args.src_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, SRC_DIR_IN_REPO))
-        logging.info("src dir is not set. Will use %s" % (args.src_dir))
+        logging.info("src dir is not set. Will use {}".format(args.src_dir))
 
     logging.info("base_configs_dir: {}, binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
 
@@ -70,15 +70,11 @@ def check_args_and_update_paths(args):
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exist".format(path))
 
-    if args.dockerd_volume:
-        if not os.path.isabs(args.dockerd_volume):
-            args.src_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.dockerd_volume))
+    if not os.path.exists(os.path.join(args.base_configs_dir, "config.xml")):
+        raise Exception("No configs.xml in {}".format(args.base_configs_dir))
 
-    if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))):
-        raise Exception("No configs.xml or configs.yaml in {}".format(args.base_configs_dir))
-
-    if (not os.path.exists(os.path.join(args.base_configs_dir, "users.xml"))) and (not os.path.exists(os.path.join(args.base_configs_dir, "users.yaml"))):
-        raise Exception("No users.xml or users.yaml in {}".format(args.base_configs_dir))
+    if not os.path.exists(os.path.join(args.base_configs_dir, "users.xml")):
+        raise Exception("No users.xml in {}".format(args.base_configs_dir))
 
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call('docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(name=CONTAINER_NAME), shell=True)
@@ -148,11 +144,6 @@ if __name__ == "__main__":
         help="Don't use net host in parent docker container")
 
     parser.add_argument(
-        "--network",
-        default='host',
-        help="Set network driver for runnner container")
-
-    parser.add_argument(
         "--docker-image-version",
         default="latest",
         help="Version of docker image which runner will use to run tests")
@@ -162,48 +153,14 @@ if __name__ == "__main__":
         action="append",
         help="Set non-default tags for images used in docker compose recipes(yandex/my_container:my_tag)")
 
-    parser.add_argument(
-        "-n", "--parallel",
-        action="store",
-        dest="parallel",
-        help="Parallelism")
-
-    parser.add_argument(
-        "-t", "--tests_list",
-        action="store",
-        nargs='+',
-        default=[],
-        dest="tests_list",
-        help="List of tests to run")
-
-    parser.add_argument(
-        "--tmpfs",
-        action='store_true',
-        default=False,
-        dest="tmpfs",
-        help="Use tmpfs for dockerd files")
-
-    parser.add_argument(
-        "--dockerd-volume-dir",
-        action='store',
-        dest="dockerd_volume",
-        help="Bind volume to this dir to use for dockerd files")
-
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
 
     check_args_and_update_paths(args)
 
-    parallel_args = ""
-    if args.parallel:
-        parallel_args += "--dist=loadfile"
-        parallel_args += " -n {}".format(args.parallel)
-
     net = ""
-    if args.network:
-        net = "--net={}".format(args.network)
-    elif not args.disable_net_host:
+    if not args.disable_net_host:
         net = "--net=host"
 
     env_tags = ""
@@ -226,34 +183,25 @@ if __name__ == "__main__":
             elif image == "yandex/clickhouse-kerberos-kdc":
                 env_tags += "-e {}={}".format("DOCKER_KERBEROS_KDC_TAG", tag)
             else:
-                logging.info("Unknown image %s" % (image))
+                logging.info("Unknown image {}".format(image))
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time
     #
     # should be removed manually when not needed
-    dockerd_internal_volume = ""
-    if args.tmpfs:
-        dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
-    elif args.dockerd_volume:
-        dockerd_internal_volume = "--mount type=bind,source={},target=/var/lib/docker".format(args.dockerd_volume)
-    else:
-        subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
-        dockerd_internal_volume = "--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
+    subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
 
     # enable tty mode & interactive for docker if we have real tty
     tty = ""
     if sys.stdout.isatty() and sys.stdin.isatty():
         tty = "-it"
 
-
     cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
-        {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
-        {env_tags} -e PYTEST_OPTS='{parallel} {opts} {tests_list}' {img} {command}".format(
+        --volume={name}_volume:/var/lib/docker {env_tags} -e PYTEST_OPTS='{opts}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -263,10 +211,7 @@ if __name__ == "__main__":
         cases_dir=args.cases_dir,
         src_dir=args.src_dir,
         env_tags=env_tags,
-        parallel=parallel_args,
         opts=' '.join(args.pytest_args),
-        tests_list=' '.join(args.tests_list),
-        dockerd_internal_volume=dockerd_internal_volume,
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
         command=args.command

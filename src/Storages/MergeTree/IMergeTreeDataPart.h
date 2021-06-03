@@ -2,6 +2,7 @@
 
 #include <DataStreams/IBlockInputStream.h>
 
+#include <Core/Row.h>
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
@@ -16,6 +17,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+
+#include <Poco/Path.h>
 
 #include <shared_mutex>
 

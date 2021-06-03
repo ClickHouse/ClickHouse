@@ -1,6 +1,10 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+
+#include <Poco/File.h>
+#include <Poco/Path.h>
+
 #include <common/logger_useful.h>
 
 #include <atomic>

@@ -22,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
 static const UInt64 max_block_size = 8192;
 
 
@@ -31,8 +30,8 @@ HTTPDictionarySource::HTTPDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block_,
-    ContextConstPtr context_,
-    bool created_from_ddl)
+    ContextPtr context_,
+    bool check_config)
     : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
@@ -43,7 +42,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
-    if (created_from_ddl)
+    if (check_config)
         context->getRemoteHostFilter().checkURL(Poco::URI(url));
 
     const auto & credentials_prefix = config_prefix + ".credentials";
@@ -231,16 +230,16 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
-                                   ContextConstPtr context,
+                                   ContextPtr context,
                                    const std::string & /* default_database */,
-                                   bool created_from_ddl) -> DictionarySourcePtr {
+                                   bool check_config) -> DictionarySourcePtr {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `http` does not support attribute expressions");
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
         return std::make_unique<HTTPDictionarySource>(
-            dict_struct, config, config_prefix + ".http", sample_block, context_local_copy, created_from_ddl);
+            dict_struct, config, config_prefix + ".http", sample_block, context_local_copy, check_config);
     };
     factory.registerSource("http", create_table_source);
 }

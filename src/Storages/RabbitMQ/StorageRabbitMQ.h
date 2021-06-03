@@ -79,7 +79,7 @@ protected:
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
-    ContextMutablePtr rabbitmq_context;
+    ContextPtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
     const String exchange_name;
@@ -135,8 +135,6 @@ private:
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
     BackgroundSchedulePool::TaskHolder connection_task;
-
-    uint64_t milliseconds_to_wait;
 
     std::atomic<bool> stream_cancelled{false};
     size_t read_attempts = 0;

@@ -74,7 +74,6 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
-#include <filesystem>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -117,8 +116,6 @@ namespace CurrentMetrics
     extern const Metric MemoryTracking;
     extern const Metric MaxDDLEntryID;
 }
-
-namespace fs = std::filesystem;
 
 #if USE_JEMALLOC
 static bool jemallocOptionEnabled(const char *name)
@@ -186,19 +183,19 @@ void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    fs::create_directories(path);
+    Poco::File(path).createDirectories();
 
     /// Clearing old temporary files.
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
-        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
+        if (it->isFile() && startsWith(it.name(), "tmp"))
         {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-            fs::remove(it->path());
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path());
+            it->remove();
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
+            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path());
     }
 }
 
@@ -681,38 +678,37 @@ int Server::main(const std::vector<std::string> & /*args*/)
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        auto flags_path = fs::path(path) / "flags/";
-        fs::create_directories(flags_path);
-        global_context->setFlagsPath(flags_path);
+        Poco::File(path + "flags/").createDirectories();
+        global_context->setFlagsPath(path + "flags/");
     }
 
     /** Directory with user provided files that are usable by 'file' table function.
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
+        std::string user_files_path = config().getString("user_files_path", path + "user_files/");
         global_context->setUserFilesPath(user_files_path);
-        fs::create_directories(user_files_path);
+        Poco::File(user_files_path).createDirectories();
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
-        fs::create_directories(dictionaries_lib_path);
+        Poco::File(dictionaries_lib_path).createDirectories();
     }
 
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
-        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/") + "/";
+        TLDListsHolder::getInstance().parseConfig(top_level_domains_path, config());
     }
 
     {
-        fs::create_directories(fs::path(path) / "data/");
-        fs::create_directories(fs::path(path) / "metadata/");
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(fs::path(path) / "metadata_dropped/");
+        Poco::File(path + "metadata_dropped/").createDirectories();
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -895,9 +891,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     /// Set path for format schema files
-    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path);
-    fs::create_directories(format_schema_path);
+    auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
+    global_context->setFormatSchemaPath(format_schema_path.path());
+    format_schema_path.createDirectories();
 
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);

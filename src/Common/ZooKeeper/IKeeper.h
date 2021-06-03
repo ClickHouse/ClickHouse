@@ -148,40 +148,6 @@ struct WatchResponse : virtual Response
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
 
-struct SetACLRequest : virtual Request
-{
-    String path;
-    ACLs acls;
-    int32_t version = -1;
-
-    void addRootPath(const String & root_path) override;
-    String getPath() const override { return path; }
-    size_t bytesSize() const override { return path.size() + sizeof(version) + acls.size() * sizeof(ACL); }
-};
-
-struct SetACLResponse : virtual Response
-{
-    Stat stat;
-
-    size_t bytesSize() const override { return sizeof(Stat); }
-};
-
-struct GetACLRequest : virtual Request
-{
-    String path;
-
-    void addRootPath(const String & root_path) override;
-    String getPath() const override { return path; }
-    size_t bytesSize() const override { return path.size(); }
-};
-
-struct GetACLResponse : virtual Response
-{
-    ACLs acl;
-    Stat stat;
-    size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
-};
-
 struct CreateRequest : virtual Request
 {
     String path;
@@ -411,7 +377,7 @@ public:
   * - whenever you receive exception with ZSESSIONEXPIRED code or method isExpired returns true,
   *   the ZooKeeper instance is no longer usable - you may only destroy it and probably create another.
   * - whenever session is expired or ZooKeeper instance is destroying, all callbacks are notified with special event.
-  * - data for callbacks must be alive when ZooKeeper instance is alive, so try to avoid capturing references in callbacks, it's error-prone.
+  * - data for callbacks must be alive when ZooKeeper instance is alive.
   */
 class IKeeper
 {
@@ -428,9 +394,6 @@ public:
     ///
     /// After the method is executed successfully, you must wait for callbacks
     ///  (don't destroy callback data before it will be called).
-    /// TODO: The above line is the description of an error-prone interface. It's better
-    ///  to replace callbacks with std::future results, so the caller shouldn't think about
-    ///  lifetime of the callback data.
     ///
     /// All callbacks are executed sequentially (the execution of callbacks is serialized).
     ///

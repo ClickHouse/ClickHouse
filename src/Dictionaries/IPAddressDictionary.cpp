@@ -934,9 +934,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr,
-                             ContextConstPtr /* context */,
-                             bool /*created_from_ddl*/) -> DictionaryPtr
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary of layout 'ip_trie' has to have one 'key'");

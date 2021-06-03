@@ -156,8 +156,7 @@ std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfigurat
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),
         config.getInt(config_prefix + ".thread_pool_size", 16),
-        config.getInt(config_prefix + ".list_object_keys_size", 1000),
-        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
+        config.getInt(config_prefix + ".list_object_keys_size", 1000));
 }
 
 }
@@ -174,7 +173,7 @@ void registerDiskS3(DiskFactory & factory)
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
-        fs::create_directories(metadata_path);
+        Poco::File (metadata_path).createDirectories();
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
@@ -226,3 +225,4 @@ void registerDiskS3(DiskFactory & factory)
 void registerDiskS3(DiskFactory &) {}
 
 #endif
+

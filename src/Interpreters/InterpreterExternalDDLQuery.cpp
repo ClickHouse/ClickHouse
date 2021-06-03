@@ -26,8 +26,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-InterpreterExternalDDLQuery::InterpreterExternalDDLQuery(const ASTPtr & query_, ContextMutablePtr context_)
-    : WithMutableContext(context_), query(query_)
+InterpreterExternalDDLQuery::InterpreterExternalDDLQuery(const ASTPtr & query_, ContextPtr context_)
+    : WithContext(context_), query(query_)
 {
 }
 

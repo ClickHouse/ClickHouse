@@ -9,6 +9,7 @@
 
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeFixedString.h>
 #    include <Columns/ColumnConst.h>
 #    include <Columns/ColumnNullable.h>
 #    pragma GCC diagnostic push
@@ -40,8 +41,7 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDa
     {
         const auto & data_type_nullable = static_cast<const DataTypeNullable&>(type);
         auto * wrapped = toNativeType(builder, *data_type_nullable.getNestedType());
-        auto * is_null_type = builder.getInt1Ty();
-        return wrapped ? llvm::StructType::get(wrapped, is_null_type) : nullptr;
+        return wrapped ? llvm::StructType::get(wrapped, /* is null = */ builder.getInt1Ty()) : nullptr;
     }
 
     /// LLVM doesn't have unsigned types, it has unsigned instructions.
@@ -57,6 +57,11 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDa
         return builder.getFloatTy();
     else if (data_type.isFloat64())
         return builder.getDoubleTy();
+    else if (data_type.isFixedString())
+    {
+        const auto & data_type_fixed_string = static_cast<const DataTypeFixedString &>(type);
+        return llvm::VectorType::get(builder.getInt8Ty(), data_type_fixed_string.getN());
+    }
 
     return nullptr;
 }
@@ -71,7 +76,7 @@ static inline bool canBeNativeType(const IDataType & type)
         return canBeNativeType(*data_type_nullable.getNestedType());
     }
 
-    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isDate();
+    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isFixedString() || data_type.isDate();
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
