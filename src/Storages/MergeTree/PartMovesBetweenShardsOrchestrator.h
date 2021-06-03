@@ -122,7 +122,7 @@ public:
 
         /// Reset on successful transitions.
         String last_exception_msg;
-        UInt64 num_tries;
+        UInt64 num_tries = 0;
 
         String znode_name;
 

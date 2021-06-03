@@ -136,6 +136,9 @@ bool PartMovesBetweenShardsOrchestrator::step()
         throw;
     }
 
+    LOG_DEBUG(log, "stepEntry on task {} from state {}, try: {}",
+              entry_to_process->znode_name, entry_to_process->state.toString(), entry_to_process->num_tries);
+
     try
     {
         /// Use the same ZooKeeper connection. If we'd lost the lock then connection
