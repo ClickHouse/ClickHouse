@@ -183,11 +183,13 @@ ContextAccess::ContextAccess(const AccessControlManager & manager_, const Params
     : manager(&manager_)
     , params(params_)
 {
+    std::lock_guard lock{mutex};
+
     subscription_for_user_change = manager->subscribeForChanges(
         *params.user_id, [this](const UUID &, const AccessEntityPtr & entity)
     {
         UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
-        std::lock_guard lock{mutex};
+        std::lock_guard lock2{mutex};
         setUser(changed_user);
     });
 
