@@ -448,7 +448,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             else
             {
                 ReplicatedMergeTreeLogEntry log_entry;
-                if (storage.dropPart(zk, entry.part_name, log_entry,false, false))
+                if (storage.dropPartImpl(zk, entry.part_name, log_entry, false, false))
                     storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
 
                 entry.state = EntryState::SOURCE_DROP_POST_DELAY;

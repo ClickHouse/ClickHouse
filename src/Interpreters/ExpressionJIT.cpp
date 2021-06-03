@@ -286,15 +286,13 @@ static FunctionBasePtr compile(
             return nullptr;
     }
 
-    LOG_TRACE(getLogger(), "Try to compile expression {}", dag.dump());
-
     auto llvm_function = std::make_shared<LLVMFunction>(dag);
 
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-
-        auto [compiled_function_cache_entry, was_inserted] = compilation_cache->getOrSet(hash_key, [&] ()
+        auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(hash_key, [&] ()
         {
+            LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
             CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
             auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
             auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
@@ -302,26 +300,16 @@ static FunctionBasePtr compile(
             return std::make_shared<CompiledFunctionCacheEntry>(std::move(compiled_function), compiled_module_info.size);
         });
 
-        if (was_inserted)
-            LOG_TRACE(getLogger(),
-                "Put compiled expression {} in cache used cache size {} total cache size {}",
-                llvm_function->getName(),
-                compilation_cache->weight(),
-                compilation_cache->maxSize());
-        else
-            LOG_TRACE(getLogger(), "Get compiled expression {} from cache", llvm_function->getName());
-
         llvm_function->setCompiledFunction(compiled_function_cache_entry->getCompiledFunction());
     }
     else
     {
+        LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
         CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
         auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
         auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
         llvm_function->setCompiledFunction(compiled_function);
     }
-
-    LOG_TRACE(getLogger(), "Use compiled expression {}", llvm_function->getName());
 
     return llvm_function;
 }
