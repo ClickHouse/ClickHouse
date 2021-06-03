@@ -19,6 +19,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+
 namespace DB
 {
 
@@ -29,14 +30,14 @@ namespace ErrorCodes
 }
 
 
-std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
 {
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
-    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(ast);
 
-    if (context->getSettingsRef().normalize_function_names)
+    if (context.getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
     String name = ast->getColumnName();
@@ -65,7 +66,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 }
 
 
-ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
 {
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
@@ -73,7 +74,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr conte
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
-ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
         return std::make_shared<ASTLiteral>(id->name());
@@ -81,18 +82,18 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, Cont
     return evaluateConstantExpressionAsLiteral(node, context);
 }
 
-ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Context & context)
 {
     ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(node, context);
     auto & literal = res->as<ASTLiteral &>();
     if (literal.value.safeGet<String>().empty())
     {
-        String current_database = context->getCurrentDatabase();
+        String current_database = context.getCurrentDatabase();
         if (current_database.empty())
         {
             /// Table was created on older version of ClickHouse and CREATE contains not folded expression.
             /// Current database is not set yet during server startup, so we cannot evaluate it correctly.
-            literal.value = context->getConfigRef().getString("default_database", "default");
+            literal.value = context.getConfigRef().getString("default_database", "default");
         }
         else
             literal.value = current_database;

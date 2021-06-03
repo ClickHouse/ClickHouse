@@ -34,7 +34,7 @@ public:
 
     explicit FunctionPolygonsUnion() = default;
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionPolygonsUnion>();
     }

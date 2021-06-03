@@ -5,7 +5,7 @@ toc_title: Dates and Times
 
 # Functions for Working with Dates and Times {#functions-for-working-with-dates-and-times}
 
-Support for time zones.
+Support for time zones
 
 All functions for working with the date and time that have a logical use for the time zone can accept a second optional time zone argument. Example: Asia/Yekaterinburg. In this case, they use the specified time zone instead of the local (default) one.
 
@@ -23,53 +23,13 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
-## timeZone {#timezone}
-
-Returns the timezone of the server.
-
-**Syntax** 
-
-``` sql
-timeZone()
-```
-
-Alias: `timezone`. 
-
-**Returned value**
-
--   Timezone. 
-
-Type: [String](../../sql-reference/data-types/string.md).
-
 ## toTimeZone {#totimezone}
 
-Converts time or date and time to the specified time zone. The time zone is an attribute of the `Date` and `DateTime` data types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
-
-**Syntax** 
-
-``` sql
-toTimezone(value, timezone)
-```
-
-Alias: `toTimezone`.
-
-**Arguments** 
-
--   `value` — Time or date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Date and time. 
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Example**
-
-Query:
+Convert time or date and time to the specified time zone. The time zone is an attribute of the Date/DateTime types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
 
 ```sql
-SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+SELECT
+    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
     toTypeName(time_utc) AS type_utc,
     toInt32(time_utc) AS int32utc,
     toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
@@ -80,7 +40,6 @@ SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
     toInt32(time_samoa) AS int32samoa
 FORMAT Vertical;
 ```
-Result:
 
 ```text
 Row 1:
@@ -97,82 +56,6 @@ int32samoa: 1546300800
 ```
 
 `toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes the `DateTime('UTC')` type to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stays the same, but the string representation (the result of the toString() function) changes from `time_utc:   2019-01-01 00:00:00` to `time_yekat: 2019-01-01 05:00:00`.
-
-## timeZoneOf {#timezoneof}
-
-Returns the timezone name of [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) data types.
-
-**Syntax** 
-
-``` sql
-timeZoneOf(value)
-```
-
-Alias: `timezoneOf`. 
-
-**Arguments**
-
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
-
-**Returned value**
-
--   Timezone name. 
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-``` sql
-SELECT timezoneOf(now());
-```
-
-Result:
-``` text
-┌─timezoneOf(now())─┐
-│ Etc/UTC           │
-└───────────────────┘
-```
-
-## timeZoneOffset {#timezoneoffset}
-
-Returns a timezone offset in seconds from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time). The function takes into account [daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes at the specified date and time.
-[IANA timezone database](https://www.iana.org/time-zones) is used to calculate the offset.
-
-**Syntax**
-
-``` sql
-timeZoneOffset(value)
-```
-
-Alias: `timezoneOffset`.
-
-**Arguments**
-
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
-
-**Returned value**
-
--   Offset from UTC in seconds. 
-
-Type: [Int32](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT toDateTime('2021-04-21 10:20:30', 'America/New_York') AS Time, toTypeName(Time) AS Type,
-       timeZoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
-```
-
-Result:
-
-``` text
-┌────────────────Time─┬─Type─────────────────────────┬─Offset_in_seconds─┬─Offset_in_hours─┐
-│ 2021-04-21 10:20:30 │ DateTime('America/New_York') │            -14400 │              -4 │
-└─────────────────────┴──────────────────────────────┴───────────────────┴─────────────────┘
-```
 
 ## toYear {#toyear}
 
@@ -263,9 +146,6 @@ Result:
 │     1509836867 │
 └────────────────┘
 ```
-
-!!! attention "Attention"
-    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of normal range (years 1970 - 2105) will give incorrect result.
 
 ## toStartOfYear {#tostartofyear}
 
@@ -460,7 +340,7 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 -   Otherwise, it is the last week of the previous year, and the next week is week 1.
 
-For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
+For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn’t matter how many days in the new year the week contained, even if it contained only one day.
 
 ``` sql
 toWeek(date, [, mode][, Timezone])
@@ -508,13 +388,13 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 Truncates date and time data to the specified part of date.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 date_trunc(unit, value[, timezone])
 ```
 
-Alias: `dateTrunc`.
+Alias: `dateTrunc`. 
 
 **Arguments**
 
@@ -577,13 +457,13 @@ Result:
 
 Adds the time interval or date interval to the provided date or date with time.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 date_add(unit, value, date)
 ```
 
-Aliases: `dateAdd`, `DATE_ADD`.
+Aliases: `dateAdd`, `DATE_ADD`. 
 
 **Arguments**
 
@@ -598,7 +478,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
     - `month`
     - `quarter`
     - `year`
-
+	
 -   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).  
 -   `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -703,7 +583,7 @@ Aliases: `dateSub`, `DATE_SUB`.
     - `month`
     - `quarter`
     - `year`
-
+	
 -   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).    
 -   `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -733,16 +613,16 @@ Result:
 
 Adds the specified time value with the provided date or date time value.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 timestamp_add(date, INTERVAL value unit)
 ```
 
-Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
+Aliases: `timeStampAdd`, `TIMESTAMP_ADD`. 
 
 **Arguments**
-
+    
 -   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 -   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
 -   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
@@ -762,7 +642,7 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 Date or date with time with the specified `value` expressed in `unit` added to `date`.
 
 Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-
+    
 **Example**
 
 Query:
@@ -783,13 +663,13 @@ Result:
 
 Subtracts the time interval from the provided date or date with time.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 timestamp_sub(unit, value, date)
 ```
 
-Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
+Aliases: `timeStampSub`, `TIMESTAMP_SUB`. 
 
 **Arguments**
 
@@ -804,7 +684,7 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
     - `month`
     - `quarter`
     - `year`
-
+	
 -   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).   
 -   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -829,12 +709,12 @@ Result:
 │                                          2018-07-18 01:02:03 │
 └──────────────────────────────────────────────────────────────┘
 ```
-
+    
 ## now {#now}
 
-Returns the current date and time.
+Returns the current date and time. 
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 now([timezone])
@@ -1189,3 +1069,4 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
+

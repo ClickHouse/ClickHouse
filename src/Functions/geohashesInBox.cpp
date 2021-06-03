@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GeoHash.h>
@@ -29,7 +29,7 @@ class FunctionGeohashesInBox : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashesInBox>(); }
 
     String getName() const override { return name; }
 

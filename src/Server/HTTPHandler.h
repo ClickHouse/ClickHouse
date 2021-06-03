@@ -18,6 +18,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class Context;
 class Credentials;
 class IServer;
 class WriteBufferFromHTTPServerResponse;
@@ -33,11 +34,11 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */) {}
+    virtual void customizeContext(HTTPServerRequest & /* request */, Context & /* context */) {}
 
-    virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
+    virtual bool customizeQueryParam(Context & context, const std::string & key, const std::string & value) = 0;
 
-    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
+    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context) = 0;
 
 private:
     struct Output
@@ -73,7 +74,7 @@ private:
 
     // The request_context and the request_credentials instances may outlive a single request/response loop.
     // This happens only when the authentication mechanism requires more than a single request/response exchange (e.g., SPNEGO).
-    ContextMutablePtr request_context;
+    std::unique_ptr<Context> request_context;
     std::unique_ptr<Credentials> request_credentials;
 
     // Returns true when the user successfully authenticated,
@@ -82,14 +83,14 @@ private:
     //  the request_context and request_credentials instances are preserved.
     // Throws an exception if authentication failed.
     bool authenticateUser(
-        ContextMutablePtr context,
+        Context & context,
         HTTPServerRequest & request,
         HTMLForm & params,
         HTTPServerResponse & response);
 
     /// Also initializes 'used_output'.
     void processQuery(
-        ContextMutablePtr context,
+        Context & context,
         HTTPServerRequest & request,
         HTMLForm & params,
         HTTPServerResponse & response,
@@ -113,9 +114,9 @@ private:
 public:
     explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query");
 
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
+    bool customizeQueryParam(Context &context, const std::string &key, const std::string &value) override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler
@@ -130,11 +131,11 @@ public:
         IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
         , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_);
 
-    virtual void customizeContext(HTTPServerRequest & request, ContextMutablePtr context) override;
+    virtual void customizeContext(HTTPServerRequest & request, Context & context) override;
 
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
+    bool customizeQueryParam(Context & context, const std::string & key, const std::string & value) override;
 };
 
 }

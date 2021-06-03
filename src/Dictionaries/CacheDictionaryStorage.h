@@ -77,7 +77,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
+            throw Exception("Method fetchColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
@@ -85,7 +85,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             insertColumnsForKeysImpl(keys, columns);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
+            throw Exception("Method insertColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
@@ -93,7 +93,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
+            throw Exception("Method insertDefaultKeysImpl is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
@@ -101,7 +101,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return getCachedKeysImpl();
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
+            throw Exception("Method getCachedSimpleKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
@@ -113,7 +113,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
+            throw Exception("Method fetchColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
@@ -121,7 +121,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             insertColumnsForKeysImpl(keys, columns);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
+            throw Exception("Method insertColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
@@ -129,7 +129,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
+            throw Exception("Method insertDefaultKeysImpl is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
@@ -137,7 +137,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return getCachedKeysImpl();
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedComplexKeys is not supported for simple key storage");
+            throw Exception("Method getCachedComplexKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     size_t getSize() const override { return size; }
@@ -594,20 +594,15 @@ private:
             PaddedPODArray<UInt32>,
             PaddedPODArray<UInt64>,
             PaddedPODArray<UInt128>,
-            PaddedPODArray<UInt256>,
             PaddedPODArray<Int8>,
             PaddedPODArray<Int16>,
             PaddedPODArray<Int32>,
             PaddedPODArray<Int64>,
-            PaddedPODArray<Int128>,
-            PaddedPODArray<Int256>,
             PaddedPODArray<Decimal32>,
             PaddedPODArray<Decimal64>,
             PaddedPODArray<Decimal128>,
-            PaddedPODArray<Decimal256>,
             PaddedPODArray<Float32>,
             PaddedPODArray<Float64>,
-            PaddedPODArray<UUID>,
             PaddedPODArray<StringRef>,
             std::vector<Field>> attribute_container;
     };

@@ -257,7 +257,6 @@ class FirstMessage : public FrontMessage
 {
 public:
     Int32 payload_size;
-
     FirstMessage() = delete;
     FirstMessage(int payload_size_) : payload_size(payload_size_) {}
 };
@@ -265,9 +264,8 @@ public:
 class CancelRequest : public FirstMessage
 {
 public:
-    Int32 process_id = 0;
-    Int32 secret_key = 0;
-
+    Int32 process_id;
+    Int32 secret_key;
     CancelRequest(int payload_size_) : FirstMessage(payload_size_) {}
 
     void deserialize(ReadBuffer & in) override
@@ -799,15 +797,15 @@ namespace PGAuthentication
 class AuthenticationMethod
 {
 protected:
-    static void setPassword(
+    void setPassword(
         const String & user_name,
         const String & password,
-        ContextMutablePtr context,
+        Context & context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
         try {
-            context->setUser(user_name, password, address);
+            context.setUser(user_name, password, address);
         }
         catch (const Exception &)
         {
@@ -821,7 +819,7 @@ protected:
 public:
     virtual void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        Context & context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
@@ -834,13 +832,10 @@ class NoPasswordAuth : public AuthenticationMethod
 {
 public:
     void authenticate(
-        const String & user_name,
-        ContextMutablePtr context,
-        Messaging::MessageTransport & mt,
-        const Poco::Net::SocketAddress & address) override
-    {
-        setPassword(user_name, "", context, mt, address);
-    }
+        const String & /* user_name */,
+        Context & /* context */,
+        Messaging::MessageTransport & /* mt */,
+        const Poco::Net::SocketAddress & /* address */) override {}
 
     Authentication::Type getType() const override
     {
@@ -853,7 +848,7 @@ class CleartextPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        Context & context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -896,11 +891,11 @@ public:
 
     void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        Context & context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        auto user = context->getAccessControlManager().read<User>(user_name);
+        auto user = context.getAccessControlManager().read<User>(user_name);
         Authentication::Type user_auth_type = user->authentication.getType();
 
         if (type_to_method.find(user_auth_type) != type_to_method.end())

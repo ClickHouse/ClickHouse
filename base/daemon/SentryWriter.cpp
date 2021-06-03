@@ -1,5 +1,6 @@
 #include <daemon/SentryWriter.h>
 
+#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -8,7 +9,6 @@
 #include <common/getMemoryAmount.h>
 #include <common/logger_useful.h>
 
-#include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -24,7 +24,6 @@
 #    include <stdio.h>
 #    include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace
 {
@@ -53,7 +52,8 @@ void setExtras()
     sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
 
     if (!server_data_path.empty())
-        sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(fs::space(server_data_path).free).c_str()));
+        sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(
+            Poco::File(server_data_path).freeSpace()).c_str()));
 }
 
 void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
@@ -101,7 +101,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     auto * logger = &Poco::Logger::get("SentryWriter");
     if (config.getBool("send_crash_reports.enabled", false))
     {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0)) //-V560
+        if (debug || (strlen(VERSION_OFFICIAL) > 0))
         {
             enabled = true;
         }
@@ -109,12 +109,12 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     if (enabled)
     {
         server_data_path = config.getString("path", "");
-        const std::filesystem::path & default_tmp_path = fs::path(config.getString("tmp_path", fs::temp_directory_path())) / "sentry";
+        const std::filesystem::path & default_tmp_path = std::filesystem::path(config.getString("tmp_path", Poco::Path::temp())) / "sentry";
         const std::string & endpoint
             = config.getString("send_crash_reports.endpoint");
         const std::string & temp_folder_path
             = config.getString("send_crash_reports.tmp_path", default_tmp_path);
-        fs::create_directories(temp_folder_path);
+        Poco::File(temp_folder_path).createDirectories();
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);

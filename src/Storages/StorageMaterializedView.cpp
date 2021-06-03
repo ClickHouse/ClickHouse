@@ -50,11 +50,11 @@ static inline String generateInnerTableName(const StorageID & view_id)
 
 StorageMaterializedView::StorageMaterializedView(
     const StorageID & table_id_,
-    ContextPtr local_context,
+    Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
+    : IStorage(table_id_), global_context(local_context.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -95,7 +95,7 @@ StorageMaterializedView::StorageMaterializedView(
     else
     {
         /// We will create a query to create an internal table.
-        auto create_context = Context::createCopy(local_context);
+        auto create_context = Context(local_context);
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = getStorageID().database_name;
         manual_create_query->table = generateInnerTableName(getStorageID());
@@ -111,36 +111,32 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, getContext())->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, global_context)->getStorageID();
     }
 
     if (!select.select_table_id.empty())
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
-    ContextPtr local_context,
-    QueryProcessingStage::Enum to_stage,
-    const StorageMetadataPtr &,
-    SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
-    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getInMemoryMetadataPtr(), query_info);
+    return getTargetTable()->getQueryProcessingStage(context, to_stage, query_info);
 }
 
 Pipe StorageMaterializedView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr local_context,
+    const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
     QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context),
-        BuildQueryPipelineSettings::fromContext(local_context));
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 void StorageMaterializedView::read(
@@ -148,23 +144,23 @@ void StorageMaterializedView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr local_context,
+    const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto lock = storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, local_context);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
-    storage->read(query_plan, column_names, target_metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    storage->read(query_plan, column_names, target_metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
     {
-        auto mv_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
+        auto mv_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, context, processed_stage);
         auto target_header = query_plan.getCurrentDataStream().header;
         if (!blocksHaveEqualStructure(mv_header, target_header))
         {
@@ -194,20 +190,20 @@ void StorageMaterializedView::read(
     }
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context)
+BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto lock = storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto stream = storage->write(query, metadata_snapshot, local_context);
+    auto stream = storage->write(query, metadata_snapshot, context);
 
     stream->addTableLock(lock);
     return stream;
 }
 
 
-static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool no_delay)
+static void executeDropQuery(ASTDropQuery::Kind kind, const Context & global_context, const Context & current_context, const StorageID & target_table_id, bool no_delay)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
@@ -223,13 +219,13 @@ static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context,
         /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege
         /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
         /// looks like expected behaviour and we have tests for it.
-        auto drop_context = Context::createCopy(global_context);
-        drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        auto drop_context = Context(global_context);
+        drop_context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        if (auto txn = current_context.getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
-            drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
-            drop_context->initZooKeeperMetadataTransaction(txn, true);
+            drop_context.setQueryContext(const_cast<Context &>(current_context));
+            drop_context.initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();
@@ -244,19 +240,19 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
-    dropInnerTable(true, getContext());
+    dropInnerTable(true, global_context);
 }
 
-void StorageMaterializedView::dropInnerTable(bool no_delay, ContextPtr local_context)
+void StorageMaterializedView::dropInnerTable(bool no_delay, const Context & context)
 {
     if (has_inner_table && tryGetTargetTable())
-        executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, context, target_table_id, no_delay);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
+void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context & context, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
-        executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, target_table_id, true);
+        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, context, target_table_id, true);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
@@ -274,26 +270,26 @@ bool StorageMaterializedView::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    ContextPtr local_context)
+    const Context & context)
 {
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
+    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
 }
 
 void StorageMaterializedView::alter(
     const AlterCommands & params,
-    ContextPtr local_context,
+    const Context & context,
     TableLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, local_context);
+    params.apply(new_metadata, context);
 
     /// start modify query
-    if (local_context->getSettingsRef().allow_experimental_alter_materialized_view_structure)
+    if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
     {
         const auto & new_select = new_metadata.select;
         const auto & old_select = old_metadata.getSelectQuery();
@@ -304,14 +300,14 @@ void StorageMaterializedView::alter(
     }
     /// end modify query
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
-    const auto & settings = local_context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     if (settings.allow_experimental_alter_materialized_view_structure)
     {
         for (const auto & command : commands)
@@ -341,10 +337,10 @@ void StorageMaterializedView::checkMutationIsPossible(const MutationCommands & c
 }
 
 Pipe StorageMaterializedView::alterPartition(
-    const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr local_context)
+    const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
 {
     checkStatementCanBeForwarded();
-    return getTargetTable()->alterPartition(metadata_snapshot, commands, local_context);
+    return getTargetTable()->alterPartition(metadata_snapshot, commands, context);
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
@@ -354,10 +350,10 @@ void StorageMaterializedView::checkAlterPartitionIsPossible(
     getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
-void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
+void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->mutate(commands, local_context);
+    getTargetTable()->mutate(commands, context);
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
@@ -385,7 +381,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         elem.to = to;
         rename->elements.emplace_back(elem);
 
-        InterpreterRenameQuery(rename, getContext()).execute();
+        InterpreterRenameQuery(rename, global_context).execute();
         target_table_id.database_name = new_table_id.database_name;
         target_table_id.table_name = new_target_table_name;
     }
@@ -413,13 +409,13 @@ void StorageMaterializedView::shutdown()
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
     checkStackSize();
-    return DatabaseCatalog::instance().getTable(target_table_id, getContext());
+    return DatabaseCatalog::instance().getTable(target_table_id, global_context);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
-    return DatabaseCatalog::instance().tryGetTable(target_table_id, getContext());
+    return DatabaseCatalog::instance().tryGetTable(target_table_id, global_context);
 }
 
 Strings StorageMaterializedView::getDataPaths() const
@@ -431,12 +427,7 @@ Strings StorageMaterializedView::getDataPaths() const
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
-    if (has_inner_table)
-    {
-        if (auto target_table = tryGetTargetTable())
-            return target_table->getActionLock(type);
-    }
-    return ActionLock{};
+    return has_inner_table ? getTargetTable()->getActionLock(type) : ActionLock{};
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)
@@ -445,7 +436,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
     {
         /// Pass local_context here to convey setting for inner table
         return StorageMaterializedView::create(
-            args.table_id, args.getLocalContext(), args.query,
+            args.table_id, args.local_context, args.query,
             args.columns, args.attach);
     });
 }

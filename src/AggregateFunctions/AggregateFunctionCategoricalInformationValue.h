@@ -13,7 +13,6 @@
 
 namespace DB
 {
-struct Settings;
 
 template <typename T = UInt64>
 class AggregateFunctionCategoricalIV final : public IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>>
@@ -33,8 +32,6 @@ public:
     {
         return "categoricalInformationValue";
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void create(AggregateDataPtr __restrict place) const override
     {

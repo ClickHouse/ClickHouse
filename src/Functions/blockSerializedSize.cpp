@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/NullWriteBuffer.h>
@@ -15,7 +15,7 @@ class FunctionBlockSerializedSize : public IFunction
 public:
     static constexpr auto name = "blockSerializedSize";
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBlockSerializedSize>();
     }

@@ -33,7 +33,7 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 
 ``` text
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
-│     │ AggregateFunction(groupBitmap, UInt8)        │
+│     │ AggregateFunction(groupBitmap, UInt8)    │
 └─────┴──────────────────────────────────────────────┘
 ```
 
@@ -140,7 +140,7 @@ bitmapContains(haystack, needle)
 
 **Returned values**
 
--   0 — If `haystack` does not contain `needle`.
+-   0 — If `haystack` doesn’t contain `needle`.
 -   1 — If `haystack` contains `needle`.
 
 Type: `UInt8`.

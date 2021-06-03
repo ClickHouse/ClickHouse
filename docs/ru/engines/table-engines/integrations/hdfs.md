@@ -1,5 +1,5 @@
 ---
-toc_priority: 6
+toc_priority: 4
 toc_title: HDFS
 ---
 
@@ -183,7 +183,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 #### Ограничения {#limitations}
   * hadoop\_security\_kerberos\_ticket\_cache\_path могут быть определены только на глобальном уровне
 
-## Поддержка Kerberos {#kerberos-support}
+## Поддержика Kerberos {#kerberos-support}
 
 Если hadoop\_security\_authentication параметр имеет значение 'kerberos', ClickHouse аутентифицируется с помощью Kerberos.
 [Расширенные параметры](#clickhouse-extras) и hadoop\_security\_kerberos\_ticket\_cache\_path помогают сделать это.

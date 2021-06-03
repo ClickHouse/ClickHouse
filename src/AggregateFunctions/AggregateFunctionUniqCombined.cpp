@@ -3,18 +3,14 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 
-#include <Common/FieldVisitors.h>
-
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <functional>
-
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -135,16 +131,8 @@ namespace
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 {
     using namespace std::placeholders;
-    factory.registerFunction("uniqCombined",
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return createAggregateFunctionUniqCombined(false, name, argument_types, parameters);
-        });
-    factory.registerFunction("uniqCombined64",
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return createAggregateFunctionUniqCombined(true, name, argument_types, parameters);
-        });
+    factory.registerFunction("uniqCombined", std::bind(createAggregateFunctionUniqCombined, false, _1, _2, _3)); // NOLINT
+    factory.registerFunction("uniqCombined64", std::bind(createAggregateFunctionUniqCombined, true, _1, _2, _3)); // NOLINT
 }
 
 }

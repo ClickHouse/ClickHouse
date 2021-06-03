@@ -69,7 +69,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
     hyperrectangle.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
-        String file_name = fs::path(part_path) / ("minmax_" + escapeForFileName(minmax_column_names[i]) + ".idx");
+        String file_name = part_path + "minmax_" + escapeForFileName(minmax_column_names[i]) + ".idx";
         auto file = openForReading(disk_, file_name);
         auto serialization = minmax_column_types[i]->getDefaultSerialization();
 
@@ -111,7 +111,7 @@ void IMergeTreeDataPart::MinMaxIndex::store(
         String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
         auto serialization = data_types.at(i)->getDefaultSerialization();
 
-        auto out = disk_->writeFile(fs::path(part_path) / file_name);
+        auto out = disk_->writeFile(part_path + file_name);
         HashingWriteBuffer out_hashing(*out);
         serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
         serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
@@ -255,23 +255,15 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
 
 
 IMergeTreeDataPart::IMergeTreeDataPart(
-    MergeTreeData & storage_,
-    const String & name_,
-    const VolumePtr & volume_,
-    const std::optional<String> & relative_path_,
-    Type part_type_,
-    const IMergeTreeDataPart * parent_part_)
+    MergeTreeData & storage_, const String & name_, const VolumePtr & volume_, const std::optional<String> & relative_path_, Type part_type_)
     : storage(storage_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
-    , volume(parent_part_ ? parent_part_->volume : volume_)
+    , volume(volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
-    , parent_part(parent_part_)
 {
-    if (parent_part)
-        state = State::Committed;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 }
@@ -282,19 +274,15 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreePartInfo & info_,
     const VolumePtr & volume_,
     const std::optional<String> & relative_path_,
-    Type part_type_,
-    const IMergeTreeDataPart * parent_part_)
+    Type part_type_)
     : storage(storage_)
     , name(name_)
     , info(info_)
-    , volume(parent_part_ ? parent_part_->volume : volume_)
+    , volume(volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
-    , parent_part(parent_part_)
 {
-    if (parent_part)
-        state = State::Committed;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 }
@@ -428,10 +416,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                 }
             }
 
-            if (parent_part)
-                projectionRemove(parent_part->getFullRelativePath(), keep_s3_on_delete);
-            else
-                remove(keep_s3_on_delete);
+            remove(false);
 
             if (state == State::DeleteOnDestroy)
             {
@@ -524,9 +509,7 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const
 {
     const auto & storage_columns = metadata_snapshot->getColumns().getAllPhysical();
-    MergeTreeData::AlterConversions alter_conversions;
-    if (!parent_part)
-        alter_conversions = storage.getAlterConversionsForPart(shared_from_this());
+    auto alter_conversions = storage.getAlterConversionsForPart(shared_from_this());
 
     std::optional<std::string> minimum_size_column;
     UInt64 minimum_size = std::numeric_limits<UInt64>::max();
@@ -560,7 +543,7 @@ String IMergeTreeDataPart::getFullPath() const
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
 
-    return fs::path(storage.getFullPathOnDisk(volume->getDisk())) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
+    return storage.getFullPathOnDisk(volume->getDisk()) + relative_path + "/";
 }
 
 String IMergeTreeDataPart::getFullRelativePath() const
@@ -568,7 +551,7 @@ String IMergeTreeDataPart::getFullRelativePath() const
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
 
-    return fs::path(storage.relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
+    return storage.relative_data_path + relative_path + "/";
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
@@ -588,31 +571,11 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
     loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
-    if (!parent_part)
-    {
-        loadTTLInfos();
-        loadProjections(require_columns_checksums, check_consistency);
-    }
-
+    loadTTLInfos();
     if (check_consistency)
         checkConsistency(require_columns_checksums);
     loadDefaultCompressionCodec();
 
-}
-
-void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency)
-{
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    for (const auto & projection : metadata_snapshot->projections)
-    {
-        String path = getFullRelativePath() + projection.name + ".proj";
-        if (volume->getDisk()->exists(path))
-        {
-            auto part = storage.createPart(projection.name, {"all", 0, 0, 0}, volume, projection.name + ".proj", this);
-            part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
-            projection_parts.emplace(projection.name, std::move(part));
-        }
-    }
 }
 
 void IMergeTreeDataPart::loadIndexGranularity()
@@ -627,8 +590,6 @@ void IMergeTreeDataPart::loadIndex()
         throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     size_t key_size = primary_key.column_names.size();
 
@@ -643,18 +604,14 @@ void IMergeTreeDataPart::loadIndex()
             loaded_index[i]->reserve(index_granularity.getMarksCount());
         }
 
-        String index_path = fs::path(getFullRelativePath()) / "primary.idx";
+        String index_path = getFullRelativePath() + "primary.idx";
         auto index_file = openForReading(volume->getDisk(), index_path);
 
         size_t marks_count = index_granularity.getMarksCount();
 
-        Serializations serializations(key_size);
-        for (size_t j = 0; j < key_size; ++j)
-            serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
-
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
+                primary_key.data_types[j]->getDefaultSerialization()->deserializeBinary(*loaded_index[j], *index_file);
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -678,7 +635,7 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
         return {};
 
     NameSet result = {"checksums.txt", "columns.txt"};
-    String default_codec_path = fs::path(getFullRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    String default_codec_path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
 
     if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
@@ -695,7 +652,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         return;
     }
 
-    String path = fs::path(getFullRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    String path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
     if (!volume->getDisk()->exists(path))
     {
         default_codec = detectDefaultCompressionCodec();
@@ -756,7 +713,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
             {
                 if (path_to_data_file.empty())
                 {
-                    String candidate_path = fs::path(getFullRelativePath()) / (ISerialization::getFileNameForStream(part_column, substream_path) + ".bin");
+                    String candidate_path = getFullRelativePath() + ISerialization::getFileNameForStream(part_column, substream_path) + ".bin";
 
                     /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
                     if (volume->getDisk()->exists(candidate_path) && volume->getDisk()->getFileSize(candidate_path) != 0)
@@ -783,7 +740,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
 
 void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
-    if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING && !parent_part)
+    if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         DayNum min_date;
         DayNum max_date;
@@ -796,19 +753,9 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     else
     {
         String path = getFullRelativePath();
-        if (!parent_part)
-            partition.load(storage, volume->getDisk(), path);
-
+        partition.load(storage, volume->getDisk(), path);
         if (!isEmpty())
-        {
-            if (parent_part)
-                // projection parts don't have minmax_idx, and it's always initialized
-                minmax_idx.initialized = true;
-            else
-                minmax_idx.load(storage, volume->getDisk(), path);
-        }
-        if (parent_part)
-            return;
+            minmax_idx.load(storage, volume->getDisk(), path);
     }
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
@@ -822,7 +769,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
-    const String path = fs::path(getFullRelativePath()) / "checksums.txt";
+    const String path = getFullRelativePath() + "checksums.txt";
 
     if (volume->getDisk()->exists(path))
     {
@@ -847,11 +794,11 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         checksums = checkDataPart(shared_from_this(), false);
 
         {
-            auto out = volume->getDisk()->writeFile(fs::path(getFullRelativePath()) / "checksums.txt.tmp", 4096);
+            auto out = volume->getDisk()->writeFile(getFullRelativePath() + "checksums.txt.tmp", 4096);
             checksums.write(*out);
         }
 
-        volume->getDisk()->moveFile(fs::path(getFullRelativePath()) / "checksums.txt.tmp", fs::path(getFullRelativePath()) / "checksums.txt");
+        volume->getDisk()->moveFile(getFullRelativePath() + "checksums.txt.tmp", getFullRelativePath() + "checksums.txt");
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
     }
@@ -859,12 +806,12 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
 void IMergeTreeDataPart::loadRowsCount()
 {
-    String path = fs::path(getFullRelativePath()) / "count.txt";
+    String path = getFullRelativePath() + "count.txt";
     if (index_granularity.empty())
     {
         rows_count = 0;
     }
-    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::COMPACT || parent_part)
+    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::COMPACT)
     {
         if (!volume->getDisk()->exists(path))
             throw Exception("No count.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -960,7 +907,7 @@ void IMergeTreeDataPart::loadRowsCount()
 
 void IMergeTreeDataPart::loadTTLInfos()
 {
-    String path = fs::path(getFullRelativePath()) / "ttl.txt";
+    String path = getFullRelativePath() + "ttl.txt";
     if (volume->getDisk()->exists(path))
     {
         auto in = openForReading(volume->getDisk(), path);
@@ -987,7 +934,7 @@ void IMergeTreeDataPart::loadTTLInfos()
 
 void IMergeTreeDataPart::loadUUID()
 {
-    String path = fs::path(getFullRelativePath()) / UUID_FILE_NAME;
+    String path = getFullRelativePath() + UUID_FILE_NAME;
 
     if (volume->getDisk()->exists(path))
     {
@@ -1000,10 +947,8 @@ void IMergeTreeDataPart::loadUUID()
 
 void IMergeTreeDataPart::loadColumns(bool require)
 {
-    String path = fs::path(getFullRelativePath()) / "columns.txt";
+    String path = getFullRelativePath() + "columns.txt";
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
     NamesAndTypesList loaded_columns;
 
     if (!volume->getDisk()->exists(path))
@@ -1015,7 +960,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
-            if (volume->getDisk()->exists(fs::path(getFullRelativePath()) / (getFileNameForColumn(column) + ".bin")))
+            if (volume->getDisk()->exists(getFullRelativePath() + getFileNameForColumn(column) + ".bin"))
                 loaded_columns.push_back(column);
 
         if (columns.empty())
@@ -1053,7 +998,7 @@ UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const
     disk_->listFiles(from, files);
     UInt64 res = 0;
     for (const auto & file : files)
-        res += calculateTotalSizeOnDisk(disk_, fs::path(from) / file);
+        res += calculateTotalSizeOnDisk(disk_, from + file);
     return res;
 }
 
@@ -1063,7 +1008,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     assertOnDisk();
 
     String from = getFullRelativePath();
-    String to = fs::path(storage.relative_data_path) / (parent_part ? parent_part->relative_path : "") / new_relative_path / "";
+    String to = storage.relative_data_path + new_relative_path + "/";
 
     if (!volume->getDisk()->exists(from))
         throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is a logical error.", ErrorCodes::FILE_DOESNT_EXIST);
@@ -1105,13 +1050,6 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
 
-    if (isProjectionPart())
-    {
-        LOG_WARNING(storage.log, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
-        projectionRemove(parent_part->getFullRelativePath(), keep_s3);
-        return;
-    }
-
     /** Atomic directory removal:
       * - rename directory to temporary name;
       * - remove it recursive.
@@ -1124,52 +1062,40 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
-    fs::path from = fs::path(storage.relative_data_path) / relative_path;
-    fs::path to = fs::path(storage.relative_data_path) / ("delete_tmp_" + name);
+    String from = storage.relative_data_path + relative_path;
+    String to = storage.relative_data_path + "delete_tmp_" + name;
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
 
-    auto disk = volume->getDisk();
-    if (disk->exists(to))
+    if (volume->getDisk()->exists(to))
     {
-        LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart. Removing it.", fullPath(disk, to));
+        LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart. Removing it.", fullPath(volume->getDisk(), to));
+
         try
         {
-            disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+            volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
         }
         catch (...)
         {
-            LOG_ERROR(storage.log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
+            LOG_ERROR(storage.log, "Cannot recursively remove directory {}. Exception: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
             throw;
         }
     }
 
     try
     {
-        disk->moveDirectory(from, to);
+        volume->getDisk()->moveDirectory(from, to);
     }
-    catch (const fs::filesystem_error & e)
+    catch (const Poco::FileNotFoundException &)
     {
-        if (e.code() == std::errc::no_such_file_or_directory)
-        {
-            LOG_ERROR(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, to));
-            return;
-        }
-        throw;
-    }
+        LOG_ERROR(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(volume->getDisk(), to));
 
-    // Record existing projection directories so we don't remove them twice
-    std::unordered_set<String> projection_directories;
-    for (const auto & [p_name, projection_part] : projection_parts)
-    {
-        projection_part->projectionRemove(to, keep_s3);
-        projection_directories.emplace(p_name + ".proj");
+        return;
     }
-
 
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+        volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
     }
     else
     {
@@ -1177,86 +1103,34 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
         {
             /// Remove each expected file in directory, then remove directory itself.
 
-    #if !defined(__clang__)
+    #if !__clang__
     #    pragma GCC diagnostic push
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-            {
-                if (projection_directories.find(file) == projection_directories.end())
-                    disk->removeSharedFile(fs::path(to) / file, keep_s3);
-            }
-    #if !defined(__clang__)
+                volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
+    #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(fs::path(to) / file, keep_s3);
+                volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
 
-            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+            volume->getDisk()->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
+            volume->getDisk()->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
 
-            disk->removeDirectory(to);
+            volume->getDisk()->removeDirectory(to);
         }
         catch (...)
         {
             /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
-            LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
+            LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(fs::path(to) / "", keep_s3);
+            volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
         }
     }
 }
-
-
-void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_s3) const
-{
-    String to = parent_to + "/" + relative_path;
-    auto disk = volume->getDisk();
-    if (checksums.empty())
-    {
-
-        LOG_ERROR(
-            storage.log,
-            "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
-            fullPath(disk, to));
-        /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(to + "/", keep_s3);
-    }
-    else
-    {
-        try
-        {
-            /// Remove each expected file in directory, then remove directory itself.
-
-    #if !defined(__clang__)
-    #    pragma GCC diagnostic push
-    #    pragma GCC diagnostic ignored "-Wunused-variable"
-    #endif
-            for (const auto & [file, _] : checksums.files)
-                disk->removeSharedFile(to + "/" + file, keep_s3);
-    #if !defined(__clang__)
-    #    pragma GCC diagnostic pop
-    #endif
-
-            for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(to + "/" + file, keep_s3);
-            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
-
-            disk->removeSharedRecursive(to, keep_s3);
-        }
-        catch (...)
-        {
-            /// Recursive directory removal does many excessive "stat" syscalls under the hood.
-
-            LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
-
-            disk->removeSharedRecursive(to + "/", keep_s3);
-         }
-     }
- }
 
 String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
 {
@@ -1271,7 +1145,7 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
     {
         res = (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
-        if (!volume->getDisk()->exists(fs::path(getFullRelativePath()) / res))
+        if (!volume->getDisk()->exists(getFullRelativePath() + res))
             return res;
 
         LOG_WARNING(storage.log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
@@ -1294,11 +1168,11 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
-    String destination_path = fs::path(storage.relative_data_path) / getRelativePathForDetachedPart(prefix);
+    String destination_path = storage.relative_data_path + getRelativePathForDetachedPart(prefix);
 
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
     localBackup(volume->getDisk(), getFullRelativePath(), destination_path, 0);
-    volume->getDisk()->removeFileIfExists(fs::path(destination_path) / DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->removeFileIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
@@ -1310,16 +1184,16 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
     if (directory_name.empty())
         throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
-    String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
+    String path_to_clone = storage.relative_data_path + directory_name + '/';
 
-    if (disk->exists(fs::path(path_to_clone) / relative_path))
+    if (disk->exists(path_to_clone + relative_path))
     {
         LOG_WARNING(storage.log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
-        disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
+        disk->removeRecursive(path_to_clone + relative_path + '/');
     }
     disk->createDirectories(path_to_clone);
     volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
-    volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->removeFileIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
@@ -1327,13 +1201,6 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     String path = getFullRelativePath();
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
-    else
-    {
-        // No need to check projections here because we already did consistent checking when loading projections if necessary.
-    }
-
     const auto & pk = metadata_snapshot->getPrimaryKey();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     if (!checksums.empty())
@@ -1349,7 +1216,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             if (metadata_snapshot->hasPartitionKey() && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            if (!isEmpty() && !parent_part)
+            if (!isEmpty())
             {
                 for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
                 {
@@ -1373,20 +1240,17 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
         /// Check that the primary key index is not empty.
         if (!pk.column_names.empty())
-            check_file_not_empty(volume->getDisk(), fs::path(path) / "primary.idx");
+            check_file_not_empty(volume->getDisk(), path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            check_file_not_empty(volume->getDisk(), fs::path(path) / "count.txt");
+            check_file_not_empty(volume->getDisk(), path + "count.txt");
 
             if (metadata_snapshot->hasPartitionKey())
-                check_file_not_empty(volume->getDisk(), fs::path(path) / "partition.dat");
+                check_file_not_empty(volume->getDisk(), path + "partition.dat");
 
-            if (!parent_part)
-            {
-                for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
-                    check_file_not_empty(volume->getDisk(), fs::path(path) / ("minmax_" + escapeForFileName(col_name) + ".idx"));
-            }
+            for (const String & col_name : storage.getMinMaxColumnsNames(partition_key))
+                check_file_not_empty(volume->getDisk(), path + "minmax_" + escapeForFileName(col_name) + ".idx");
         }
     }
 }
@@ -1480,30 +1344,12 @@ String IMergeTreeDataPart::getUniqueId() const
     auto disk = volume->getDisk();
 
     if (disk->getType() == DB::DiskType::Type::S3)
-        id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
+        id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
 
     if (id.empty())
         throw Exception("Can't get unique S3 object", ErrorCodes::LOGICAL_ERROR);
 
     return id;
-}
-
-
-String IMergeTreeDataPart::getZeroLevelPartBlockID() const
-{
-    if (info.level != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
-
-    SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
-    union
-    {
-        char bytes[16];
-        UInt64 words[2];
-    } hash_value;
-    hash.get128(hash_value.bytes);
-
-    return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
@@ -1522,3 +1368,4 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 }
 
 }
+

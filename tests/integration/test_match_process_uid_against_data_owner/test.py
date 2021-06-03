@@ -20,7 +20,7 @@ def test_different_user():
 
     cluster.start()
 
-    docker_api = cluster.docker_client.api
+    docker_api = docker.from_env().api
     container = node.get_docker_handle()
     container.stop()
     container.start()
@@ -31,8 +31,7 @@ def test_different_user():
 
     with open(os.path.join(node.path, 'logs/clickhouse-server.err.log')) as log:
         expected_message = "Effective user of the process \(.*\) does not match the owner of the data \(.*\)\. Run under 'sudo -u .*'\."
-
-        last_message = [row for row in log.readlines() if "Effective" in row][-1]
+        last_message = log.readlines()[-1].strip()
 
         if re.search(expected_message, last_message) is None:
             pytest.fail(

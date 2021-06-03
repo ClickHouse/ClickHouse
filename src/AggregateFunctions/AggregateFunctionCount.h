@@ -13,7 +13,6 @@
 
 namespace DB
 {
-struct Settings;
 
 struct AggregateFunctionCountData
 {
@@ -38,8 +37,6 @@ public:
     {
         return std::make_shared<DataTypeUInt64>();
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn **, size_t, Arena *) const override
     {
@@ -128,8 +125,6 @@ public:
     {
         return std::make_shared<DataTypeUInt64>();
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

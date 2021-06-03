@@ -13,13 +13,12 @@ using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
 enum SnapshotVersion : uint8_t
 {
     V0 = 0,
-    V1 = 1, /// with ACL map
 };
 
 struct KeeperStorageSnapshot
 {
 public:
-    KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_);
+    KeeperStorageSnapshot(KeeperStorage * storage_, size_t up_to_log_idx_);
 
     KeeperStorageSnapshot(KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_);
     ~KeeperStorageSnapshot();
@@ -30,14 +29,12 @@ public:
 
     KeeperStorage * storage;
 
-    SnapshotVersion version = SnapshotVersion::V1;
+    SnapshotVersion version = SnapshotVersion::V0;
     SnapshotMetadataPtr snapshot_meta;
     int64_t session_id;
     size_t snapshot_container_size;
     KeeperStorage::Container::const_iterator begin;
     SessionAndTimeout session_and_timeout;
-    KeeperStorage::SessionAndAuth session_and_auth;
-    std::unordered_map<uint64_t, Coordination::ACLs> acl_map;
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
@@ -49,19 +46,19 @@ using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;
 class KeeperSnapshotManager
 {
 public:
-    KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, const std::string & superdigest_ = "", size_t storage_tick_time_ = 500);
+    KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_ = 500);
 
     SnapshotMetaAndStorage restoreFromLatestSnapshot();
 
     static nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot);
-    std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
+    std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx);
 
     SnapshotMetaAndStorage deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
-    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;
+    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const;
     nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk();
 
-    void removeSnapshot(uint64_t log_idx);
+    void removeSnapshot(size_t log_idx);
 
     size_t totalSnapshots() const
     {
@@ -79,8 +76,7 @@ private:
     void removeOutdatedSnapshotsIfNeeded();
     const std::string snapshots_path;
     const size_t snapshots_to_keep;
-    std::map<uint64_t, std::string> existing_snapshots;
-    const std::string superdigest;
+    std::map<size_t, std::string> existing_snapshots;
     size_t storage_tick_time;
 };
 

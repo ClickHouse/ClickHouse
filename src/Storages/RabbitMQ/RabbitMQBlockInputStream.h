@@ -15,7 +15,7 @@ public:
     RabbitMQBlockInputStream(
             StorageRabbitMQ & storage_,
             const StorageMetadataPtr & metadata_snapshot_,
-            ContextPtr context_,
+            std::shared_ptr<Context> context_,
             const Names & columns,
             size_t max_block_size_,
             bool ack_in_suffix = true);
@@ -38,7 +38,7 @@ public:
 private:
     StorageRabbitMQ & storage;
     StorageMetadataPtr metadata_snapshot;
-    ContextPtr context;
+    std::shared_ptr<Context> context;
     Names column_names;
     const size_t max_block_size;
     bool ack_in_suffix;

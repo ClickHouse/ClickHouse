@@ -4,7 +4,6 @@ import time
 
 import pymysql
 import pytest
-import logging
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -24,7 +23,6 @@ node4 = cluster.add_instance('node4', user_configs=['configs/user_admin.xml', 'c
 
 
 def create_mysql_conn(user, password, hostname, port):
-    logging.debug("Created MySQL connection user:{}, password:{}, host:{}, port{}".format(user, password, hostname, port))
     return pymysql.connect(
         user=user,
         password=password,
@@ -33,7 +31,6 @@ def create_mysql_conn(user, password, hostname, port):
 
 
 def execute_mysql_query(connection, query):
-    logging.debug("Execute MySQL query:{}".format(query))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         with connection.cursor() as cursor:
@@ -60,15 +57,14 @@ def started_cluster():
 
 
 @pytest.mark.parametrize("clickhouse,name,layout", [
-    pytest.param(node1, 'complex_node1_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())', id="complex_node1_hashed"),
-    pytest.param(node1, 'complex_node1_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))', id="complex_node1_cache"),
-    pytest.param(node2, 'complex_node2_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())', id="complex_node2_hashed"),
-    pytest.param(node2, 'complex_node2_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))', id="complex_node2_cache"),
+    (node1, 'complex_node1_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())'),
+    (node1, 'complex_node1_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))'),
+    (node2, 'complex_node2_hashed', 'LAYOUT(COMPLEX_KEY_HASHED())'),
+    (node2, 'complex_node2_cache', 'LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))'),
 ])
 def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
-    mysql_conn = create_mysql_conn("root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port)
-    execute_mysql_query(mysql_conn, "DROP DATABASE IF EXISTS clickhouse")
-    execute_mysql_query(mysql_conn, "CREATE DATABASE clickhouse")
+    mysql_conn = create_mysql_conn("root", "clickhouse", "localhost", 3308)
+    execute_mysql_query(mysql_conn, "CREATE DATABASE IF NOT EXISTS clickhouse")
     execute_mysql_query(mysql_conn,
                         "CREATE TABLE clickhouse.{} (key_field1 int, key_field2 bigint, value1 text, value2 float, PRIMARY KEY (key_field1, key_field2))".format(
                             name))
@@ -91,7 +87,7 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
         DB 'clickhouse'
         TABLE '{}'
         REPLICA(PRIORITY 1 HOST '127.0.0.1' PORT 3333)
-        REPLICA(PRIORITY 2 HOST 'mysql57' PORT 3306)
+        REPLICA(PRIORITY 2 HOST 'mysql1' PORT 3306)
     ))
     {}
     LIFETIME(MIN 1 MAX 3)
@@ -245,7 +241,7 @@ def test_file_dictionary_restrictions(started_cluster):
 
 
 def test_dictionary_with_where(started_cluster):
-    mysql_conn = create_mysql_conn("root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port)
+    mysql_conn = create_mysql_conn("root", "clickhouse", "localhost", 3308)
     execute_mysql_query(mysql_conn, "CREATE DATABASE IF NOT EXISTS clickhouse")
     execute_mysql_query(mysql_conn,
                         "CREATE TABLE clickhouse.special_table (key_field1 int, value1 text, PRIMARY KEY (key_field1))")
@@ -262,7 +258,7 @@ def test_dictionary_with_where(started_cluster):
         PASSWORD 'clickhouse'
         DB 'clickhouse'
         TABLE 'special_table'
-        REPLICA(PRIORITY 1 HOST 'mysql57' PORT 3306)
+        REPLICA(PRIORITY 1 HOST 'mysql1' PORT 3306)
         WHERE 'value1 = \\'qweqwe\\' OR value1 = \\'\\\\u3232\\''
     ))
     LAYOUT(FLAT())
@@ -292,23 +288,6 @@ def test_clickhouse_remote(started_cluster):
             time.sleep(0.5)
 
     node3.query("detach dictionary if exists test.clickhouse_remote")
-
-    with pytest.raises(QueryRuntimeException):
-        node3.query("""
-            CREATE DICTIONARY test.clickhouse_remote(
-                id UInt64,
-                SomeValue1 UInt8,
-                SomeValue2 String
-            )
-            PRIMARY KEY id
-            LAYOUT(FLAT())
-            SOURCE(CLICKHOUSE(HOST 'node4' PORT 9000 USER 'default' PASSWORD 'default' TABLE 'xml_dictionary_table' DB 'test'))
-            LIFETIME(MIN 1 MAX 10)
-            """)
-
-    node3.query("attach dictionary test.clickhouse_remote")
-    node3.query("drop dictionary test.clickhouse_remote")
-
     node3.query("""
         CREATE DICTIONARY test.clickhouse_remote(
             id UInt64,

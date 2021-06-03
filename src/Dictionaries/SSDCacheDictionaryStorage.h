@@ -53,6 +53,7 @@ struct SSDCacheDictionaryStorageConfiguration
 {
     const size_t strict_max_lifetime_seconds;
     const DictionaryLifetime lifetime;
+
     const std::string file_path;
     const size_t max_partitions_count;
     const size_t block_size;
@@ -464,7 +465,7 @@ public:
         /// If cache file is in directory that does not exists create it
         if (!std::filesystem::exists(parent_path_directory))
             if (!std::filesystem::create_directories(parent_path_directory))
-                throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories.");
+                throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -513,7 +514,7 @@ public:
         while (io_submit(aio_context.ctx, 1, &write_request_ptr) < 0)
         {
             if (errno != EINTR)
-                throw Exception(ErrorCodes::CANNOT_IO_SUBMIT, "Cannot submit request for asynchronous IO on file {}", file_path);
+                throw Exception("Cannot submit request for asynchronous IO on file " + file_path, ErrorCodes::CANNOT_IO_SUBMIT);
         }
 
         // CurrentMetrics::Increment metric_increment_write{CurrentMetrics::Write};
@@ -523,7 +524,7 @@ public:
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)
         {
             if (errno != EINTR)
-                throw Exception(ErrorCodes::CANNOT_IO_GETEVENTS, "Failed to wait for asynchronous IO completion on file {}", file_path);
+                throw Exception("Failed to wait for asynchronous IO completion on file " + file_path, ErrorCodes::CANNOT_IO_GETEVENTS);
         }
 
         // Unpoison the memory returned from an uninstrumented system function.
@@ -535,10 +536,7 @@ public:
         ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
-            throw Exception(ErrorCodes::AIO_WRITE_ERROR,
-                "Not all data was written for asynchronous IO on file {}. returned: {}",
-                file_path,
-                std::to_string(bytes_written));
+            throw Exception("Not all data was written for asynchronous IO on file " + file_path + ". returned: " + std::to_string(bytes_written), ErrorCodes::AIO_WRITE_ERROR);
 
         if (::fsync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
@@ -595,10 +593,7 @@ public:
 
         if (read_bytes != static_cast<ssize_t>(buffer_size_in_bytes))
             throw Exception(ErrorCodes::AIO_READ_ERROR,
-                "GC: AIO failed to read file {}. Expected bytes {}. Actual bytes {}",
-                file_path,
-                buffer_size_in_bytes,
-                read_bytes);
+                "GC: AIO failed to read file ({}). Expected bytes ({}). Actual bytes ({})", file_path, buffer_size_in_bytes, read_bytes);
 
         SSDCacheBlock block(block_size);
 
@@ -699,10 +694,7 @@ public:
                 {
                     std::string calculated_check_sum = std::to_string(block.calculateCheckSum());
                     std::string check_sum = std::to_string(block.getCheckSum());
-                    throw Exception(ErrorCodes::CORRUPTED_DATA,
-                        "Cache data corrupted. Checksum validation failed. Calculated {} in block {}",
-                        calculated_check_sum,
-                        check_sum);
+                    throw Exception("Cache data corrupted. Checksum validation failed. Calculated " +  calculated_check_sum + " in block " + check_sum, ErrorCodes::CORRUPTED_DATA);
                 }
 
                 std::forward<FetchBlockFunc>(func)(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
@@ -743,9 +735,6 @@ private:
 
         FileDescriptor & operator=(FileDescriptor && rhs)
         {
-            if (this == &rhs)
-                return *this;
-
             close(fd);
 
             fd = rhs.fd;
@@ -846,7 +835,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
+            throw Exception("Method insertColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
@@ -854,7 +843,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             insertColumnsForKeysImpl(keys, columns);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
+            throw Exception("Method insertColumnsForKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
@@ -862,7 +851,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
+            throw Exception("Method insertDefaultKeysImpl is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
@@ -870,7 +859,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return getCachedKeysImpl();
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
+            throw Exception("Method getCachedSimpleKeys is not supported for complex key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
@@ -882,7 +871,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, fetch_request);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
+            throw Exception("Method fetchColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
@@ -890,7 +879,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             insertColumnsForKeysImpl(keys, columns);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
+            throw Exception("Method insertColumnsForKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
@@ -898,7 +887,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
+            throw Exception("Method insertDefaultKeysImpl is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
@@ -906,7 +895,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return getCachedKeysImpl();
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for simple key storage");
+            throw Exception("Method getCachedSimpleKeys is not supported for simple key storage", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     size_t getSize() const override { return index.size(); }
@@ -1119,7 +1108,7 @@ private:
             SSDCacheKeyType ssd_cache_key { key, allocated_size_for_columns, block_start };
 
             if (!SSDCacheBlock::canBeWrittenInEmptyBlock(ssd_cache_key, configuration.block_size))
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Serialized columns size is greater than allowed block size and metadata");
+                throw Exception("Serialized columns size is greater than allowed block size and metadata", ErrorCodes::UNSUPPORTED_METHOD);
 
             /// We cannot reuse place that is already allocated in file or memory cache so we erase key from index
             eraseKeyFromIndex(key);

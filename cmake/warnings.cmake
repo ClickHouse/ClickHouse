@@ -171,7 +171,6 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wtrampolines)
     # Obvious
     add_cxx_compile_options(-Wunused)
-    add_cxx_compile_options(-Wundef)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
     # XXX: libstdc++ has some of these for 3way compare

@@ -23,13 +23,13 @@ bool isStorageTouchedByMutations(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextMutablePtr context_copy
+    Context context_copy
 );
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const MutationCommand & command,
     const StoragePtr & storage,
-    ContextPtr context
+    const Context & context
 );
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
@@ -43,7 +43,7 @@ public:
         StoragePtr storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
-        ContextPtr context_,
+        const Context & context_,
         bool can_execute_);
 
     void validate();
@@ -58,24 +58,6 @@ public:
 
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
-
-    NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
-
-    NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
-
-    struct MutationKind
-    {
-        enum MutationKindEnum
-        {
-            MUTATE_UNKNOWN,
-            MUTATE_INDEX_PROJECTION,
-            MUTATE_OTHER,
-        } mutation_kind = MUTATE_UNKNOWN;
-
-        void set(const MutationKindEnum & kind);
-    };
-
-    MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
 private:
     ASTPtr prepare(bool dry_run);
@@ -92,7 +74,7 @@ private:
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
-    ContextPtr context;
+    Context context;
     bool can_execute;
     SelectQueryOptions select_limits;
 
@@ -119,7 +101,7 @@ private:
 
     struct Stage
     {
-        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
+        Stage(const Context & context_) : expressions_chain(context_) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -143,11 +125,6 @@ private:
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
-
-    NameSet materialized_indices;
-    NameSet materialized_projections;
-
-    MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 };
 
 }

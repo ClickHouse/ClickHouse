@@ -661,7 +661,8 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
     if stress is not None:
         self.context.stress = stress
 
-    with Pool(20) as pool:
+    pool = Pool(20)
+    try:
         tasks = []
         try:
 
@@ -685,3 +686,5 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
 
         finally:
             join(tasks)
+    finally:
+        pool.close()

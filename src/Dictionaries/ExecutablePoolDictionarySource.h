@@ -1,8 +1,7 @@
 #pragma once
 
-#include <common/BorrowedObjectPool.h>
-
 #include <Core/Block.h>
+#include <Common/BorrowedObjectPool.h>
 #include <Interpreters/Context.h>
 
 #include "IDictionarySource.h"
@@ -42,7 +41,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         Block & sample_block_,
-        ContextConstPtr context_);
+        const Context & context_);
 
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
@@ -78,7 +77,7 @@ private:
     const Configuration configuration;
 
     Block sample_block;
-    ContextConstPtr context;
+    Context context;
     std::shared_ptr<ProcessPool> process_pool;
 };
 

@@ -1,33 +1,32 @@
 #pragma once
 
-#include <Dictionaries/IDictionary.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/ExternalLoader.h>
-#include <Common/quoteString.h>
-
 #include <memory>
+
+#include <Common/quoteString.h>
+#include <Interpreters/ExternalLoader.h>
+#include <Dictionaries/IDictionary.h>
 
 namespace DB
 {
-
+class Context;
 class IExternalLoaderConfigRepository;
 
 /// Manages user-defined dictionaries.
-class ExternalDictionariesLoader : public ExternalLoader, WithConstContext
+class ExternalDictionariesLoader : public ExternalLoader
 {
 public:
     using DictPtr = std::shared_ptr<const IDictionary>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    explicit ExternalDictionariesLoader(ContextConstPtr global_context_);
+    explicit ExternalDictionariesLoader(Context & global_context_);
 
-    DictPtr getDictionary(const std::string & dictionary_name, ContextConstPtr context) const;
+    DictPtr getDictionary(const std::string & dictionary_name, const Context & context) const;
 
-    DictPtr tryGetDictionary(const std::string & dictionary_name, ContextConstPtr context) const;
+    DictPtr tryGetDictionary(const std::string & dictionary_name, const Context & context) const;
 
-    void reloadDictionary(const std::string & dictionary_name, ContextConstPtr context) const;
+    void reloadDictionary(const std::string & dictionary_name, const Context & context) const;
 
-    DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextConstPtr context) const;
+    DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, const Context & context) const;
 
     static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");
 
@@ -46,6 +45,9 @@ protected:
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
+
+private:
+    Context & global_context;
 };
 
 }

@@ -171,13 +171,16 @@ def user_with_privileges_on_cluster(self, privilege, table_type, node=None):
 def scenario_parallelization(self, table_type, privilege):
     """Runs all scenarios in parallel for a given privilege.
     """
-    with Pool(4) as pool:
+    pool = Pool(4)
+    try:
         tasks = []
         try:
             for scenario in loads(current_module(), Scenario):
                 run_scenario(pool, tasks, Scenario(test=scenario), {"table_type": table_type, "privilege": privilege})
         finally:
             join(tasks)
+    finally:
+        pool.close()
 
 @TestFeature
 @Requirements(
@@ -207,7 +210,8 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
             continue
 
         with Example(str(example)):
-            with Pool(4) as pool:
+            pool = Pool(4)
+            try:
                 tasks = []
                 try:
                     for alias in aliases:
@@ -216,3 +220,5 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
                                      {"table_type": table_type, "privilege": alias})
                 finally:
                     join(tasks)
+            finally:
+                pool.close()
