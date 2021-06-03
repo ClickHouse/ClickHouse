@@ -157,11 +157,11 @@ private:
 };
 
 template <typename Name, template <typename> typename Impl>
-class FunctionSQLJSON : public IFunction
+class FunctionSQLJSON : public IFunction, WithConstContext
 {
 public:
-    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionSQLJSON>(context_); }
-    FunctionSQLJSON(const Context & context_) : context(context_) { }
+    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionSQLJSON>(context_); }
+    FunctionSQLJSON(ContextConstPtr context_) : WithConstContext(context_) {}
 
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }
@@ -182,7 +182,7 @@ public:
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
         /// 4. Execute functions, call interpreter for each json (in function)
 #if USE_SIMDJSON
-        if (context.getSettingsRef().allow_simdjson)
+        if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
 
@@ -192,9 +192,6 @@ public:
         return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
     }
-
-private:
-    const Context & context;
 };
 
 struct NameJSONExists
@@ -239,9 +236,9 @@ public:
         /// or Exhausted (if we never found the item)
         ColumnUInt8 & col_bool = assert_cast<ColumnUInt8 &>(dest);
         if (status == VisitorStatus::Ok) {
-            col_bool.insert(0);
-        } else {
             col_bool.insert(1);
+        } else {
+            col_bool.insert(0);
         }
         return true;
     }
