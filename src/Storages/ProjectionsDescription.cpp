@@ -172,15 +172,15 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
             metadata.sorting_key = KeyDescription::getSortingKeyFromAST({}, metadata.columns, query_context, {});
             metadata.primary_key = KeyDescription::getKeyFromAST({}, metadata.columns, query_context);
         }
-        if (query_select.orderBy())
+        if (query.orderBy())
             throw Exception(
                 "When aggregation is used in projection, ORDER BY cannot be specified", ErrorCodes::ILLEGAL_PROJECTION);
     }
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query_select.orderBy(), metadata.columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query_select.orderBy(), metadata.columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), metadata.columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), metadata.columns, query_context);
     }
     metadata.primary_key.definition_ast = nullptr;
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
@@ -265,11 +265,15 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
     map[it->name] = it;
 }
 
-void ProjectionsDescription::remove(const String & projection_name)
+void ProjectionsDescription::remove(const String & projection_name, bool if_exists)
 {
     auto it = map.find(projection_name);
     if (it == map.end())
+    {
+        if (if_exists)
+            return;
         throw Exception("There is no projection " + projection_name + " in table.", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+    }
 
     projections.erase(it->second);
     map.erase(it);

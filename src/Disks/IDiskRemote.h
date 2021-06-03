@@ -4,11 +4,12 @@
 #include <atomic>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
-#include <Poco/DirectoryIterator.h>
 #include <utility>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -193,21 +194,21 @@ public:
 
     void next() override { ++iter; }
 
-    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
+    bool isValid() const override { return iter != fs::directory_iterator(); }
 
     String path() const override
     {
-        if (iter->isDirectory())
-            return folder_path + iter.name() + '/';
+        if (fs::is_directory(iter->path()))
+            return folder_path / iter->path().filename().string() / "";
         else
-            return folder_path + iter.name();
+            return folder_path / iter->path().filename().string();
     }
 
-    String name() const override { return iter.name(); }
+    String name() const override { return iter->path().filename(); }
 
 private:
-    Poco::DirectoryIterator iter;
-    String folder_path;
+    fs::directory_iterator iter;
+    fs::path folder_path;
 };
 
 
