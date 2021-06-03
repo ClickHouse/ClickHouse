@@ -219,3 +219,61 @@ class _NetworkManager:
             raise subprocess.CalledProcessError(exit_code, cmd)
 
         return output
+
+# Approximately mesure network I/O speed for interface
+class NetThroughput(object):
+    def __init__(self, node, interface="eth0"):
+        self.interface = interface
+        self.node = node
+        try:
+            check = subprocess.check_output(f'grep "^ *{self.interface}:" /proc/net/dev', shell=True)
+            if not check:
+                raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
+        except:
+            raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
+
+        self.current_in = self._get_in_bytes()
+        self.current_out = self._get_out_bytes()
+        self.measure_time = time.time()
+
+    def _get_in_bytes(self):
+        try:
+            result = self.node.exec_in_container(['bash', '-c', f'awk "/^ *{self.interface}:/"\' {{ if ($1 ~ /.*:[0-9][0-9]*/) {{ sub(/^.*:/, "") ; print $1 }} else {{ print $2 }} }}\' /proc/net/dev'])
+        except:
+            raise Exception(f"Cannot receive in bytes from /proc/net/dev for interface {self.interface}")
+
+        try:
+            return int(result)
+        except:
+            raise Exception(f"Got non-numeric in bytes '{result}' from /proc/net/dev for interface {self.interface}")
+
+    def _get_out_bytes(self):
+        try:
+            result = self.node.exec_in_container(['bash', '-c', f'awk "/^ *{self.interface}:/"\' {{ if ($1 ~ /.*:[0-9][0-9]*/) {{ print $9 }} else {{ print $10 }} }}\' /proc/net/dev'])
+        except:
+            raise Exception(f"Cannot receive out bytes from /proc/net/dev for interface {self.interface}")
+
+        try:
+            return int(result)
+        except:
+            raise Exception(f"Got non-numeric out bytes '{result}' from /proc/net/dev for interface {self.interface}")
+
+    def measure_speed(self, measure='bytes'):
+        new_in = self._get_in_bytes()
+        new_out = self._get_out_bytes()
+        current_time = time.time()
+        in_speed = (new_in - self.current_in) / (current_time - self.measure_time)
+        out_speed = (new_out - self.current_out) / (current_time - self.measure_time)
+
+        self.current_out = new_out
+        self.current_in = new_in
+        self.measure_time = current_time
+
+        if measure == 'bytes':
+            return in_speed, out_speed
+        elif measure == 'kilobytes':
+            return in_speed / 1024., out_speed / 1024.
+        elif measure == 'megabytes':
+            return in_speed / (1024 * 1024), out_speed / (1024 * 1024)
+        else:
+            raise Exception(f"Unknown measure {measure}")
