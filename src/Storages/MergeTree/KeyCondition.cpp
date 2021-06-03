@@ -451,6 +451,8 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
     // Constant expr should use alias names if any
     String column_name = expr->getColumnName();
 
+    std::cerr << "========= get const for : " << column_name << "\n" << block_with_constants.dumpStructure() << std::endl;
+
     if (const auto * lit = expr->as<ASTLiteral>())
     {
         /// By default block_with_constants has only one column named "_dummy".
@@ -594,11 +596,13 @@ void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & 
 
 bool KeyCondition::canConstantBeWrapped(const ASTPtr & node, const String & expr_name, String & result_expr_name)
 {
-    const auto & sample_block = key_expr->getSampleBlock();
+    NameSet names;
+    for (const auto & action : key_expr->getActions())
+        names.insert(action.node->result_name);
 
     /// sample_block from key_expr cannot contain modulo and moduloLegacy at the same time.
     /// For partition key it is always moduloLegacy.
-    if (sample_block.has(expr_name))
+    if (names.count(expr_name))
     {
         result_expr_name = expr_name;
     }
@@ -608,7 +612,7 @@ bool KeyCondition::canConstantBeWrapped(const ASTPtr & node, const String & expr
         KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
         String adjusted_expr_name = adjusted_ast->getColumnName();
 
-        if (!sample_block.has(adjusted_expr_name))
+        if (!names.count(adjusted_expr_name))
             return false;
 
         result_expr_name = adjusted_expr_name;
@@ -624,72 +628,76 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value [[maybe_unused]],
     DataTypePtr & out_type [[maybe_unused]])
 {
-    return false;
+    // Constant expr should use alias names if any
+    String passed_expr_name = node->getColumnName();
+    String expr_name;
+    if (!canConstantBeWrapped(node, passed_expr_name, expr_name))
+        return false;
 
-    // // Constant expr should use alias names if any
-    // String passed_expr_name = node->getColumnName();
-    // String expr_name;
-    // if (!canConstantBeWrapped(node, passed_expr_name, expr_name))
-    //     return false;
+    //const auto & sample_block = key_expr->getSampleBlock();
 
-    // const auto & sample_block = key_expr->getSampleBlock();
+    /// TODO Nullable index is not yet landed.
+    if (out_value.isNull())
+        return false;
 
-    // /// TODO Nullable index is not yet landed.
-    // if (out_value.isNull())
-    //     return false;
+    bool found_transformation = false;
 
-    // bool found_transformation = false;
-    // auto input_column = sample_block.getByName(expr_name);
-    // auto const_column = out_type->createColumnConst(1, out_value);
-    // auto const_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
-    // auto const_type = input_column.type;
-    // for (const auto & action : key_expr->getActions())
-    // {
-    //     /** The key functional expression constraint may be inferred from a plain column in the expression.
-    //       * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
-    //       * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
-    //       * condition also holds, so the index may be used to select only parts satisfying this condition.
-    //       *
-    //       * To check the assumption, we'd need to assert that the inverse function to this transformation is also monotonic, however the
-    //       * inversion isn't exported (or even viable for not strictly monotonic functions such as `toStartOfHour()`).
-    //       * Instead, we can qualify only functions that do not transform the range (for example rounding),
-    //       * which while not strictly monotonic, are monotonic everywhere on the input range.
-    //       */
-    //     const auto & children = action.node->children;
-    //     if (action.node->type == ActionsDAG::ActionType::FUNCTION
-    //         && children.size() == 1
-    //         && children[0]->result_name == expr_name)
-    //     {
-    //         if (!action.node->function_base->hasInformationAboutMonotonicity())
-    //             return false;
+    DataTypePtr input_type;
+    for (const auto & action : key_expr->getActions())
+        if (action.node->result_name == expr_name)
+            input_type = action.node->result_type;
 
-    //         /// Range is irrelevant in this case.
-    //         IFunction::Monotonicity monotonicity = action.node->function_base->getMonotonicityForRange(*const_type, Field(), Field());
-    //         if (!monotonicity.is_always_monotonic)
-    //             return false;
+    //auto input_column = sample_block.getByName(expr_name);
+    auto const_column = out_type->createColumnConst(1, out_value);
+    auto const_value = (*castColumn({const_column, out_type, "c"}, input_type))[0];
+    auto const_type = input_type;
+    for (const auto & action : key_expr->getActions())
+    {
+        /** The key functional expression constraint may be inferred from a plain column in the expression.
+          * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
+          * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
+          * condition also holds, so the index may be used to select only parts satisfying this condition.
+          *
+          * To check the assumption, we'd need to assert that the inverse function to this transformation is also monotonic, however the
+          * inversion isn't exported (or even viable for not strictly monotonic functions such as `toStartOfHour()`).
+          * Instead, we can qualify only functions that do not transform the range (for example rounding),
+          * which while not strictly monotonic, are monotonic everywhere on the input range.
+          */
+        const auto & children = action.node->children;
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION
+            && children.size() == 1
+            && children[0]->result_name == expr_name)
+        {
+            if (!action.node->function_base->hasInformationAboutMonotonicity())
+                return false;
 
-    //         /// Apply the next transformation step.
-    //         std::tie(const_value, const_type) = applyFunctionForFieldOfUnknownType(
-    //             action.node->function_builder,
-    //             const_type, const_value);
+            /// Range is irrelevant in this case.
+            IFunction::Monotonicity monotonicity = action.node->function_base->getMonotonicityForRange(*const_type, Field(), Field());
+            if (!monotonicity.is_always_monotonic)
+                return false;
 
-    //         expr_name = action.node->result_name;
+            /// Apply the next transformation step.
+            std::tie(const_value, const_type) = applyFunctionForFieldOfUnknownType(
+                action.node->function_builder,
+                const_type, const_value);
 
-    //         /// Transformation results in a key expression, accept.
-    //         auto it = key_columns.find(expr_name);
-    //         if (key_columns.end() != it)
-    //         {
-    //             out_key_column_num = it->second;
-    //             out_key_column_type = sample_block.getByName(it->first).type;
-    //             out_value = const_value;
-    //             out_type = const_type;
-    //             found_transformation = true;
-    //             break;
-    //         }
-    //     }
-    // }
+            expr_name = action.node->result_name;
 
-    // return found_transformation;
+            /// Transformation results in a key expression, accept.
+            auto it = key_columns.find(expr_name);
+            if (key_columns.end() != it)
+            {
+                out_key_column_num = it->second;
+                out_key_column_type = action.node->result_type; //sample_block.getByName(it->first).type;
+                out_value = const_value;
+                out_type = const_type;
+                found_transformation = true;
+                break;
+            }
+        }
+    }
+
+    return found_transformation;
 }
 
 /// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
