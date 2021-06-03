@@ -23,7 +23,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
+@pytest.mark.skip(reason="SSD cache test can run on disk only")
 @pytest.mark.parametrize("type", ["memory", "ssd"])
 def test_memory_consumption(started_cluster, type):
     node = started_cluster.instances[f'node_{type}']
