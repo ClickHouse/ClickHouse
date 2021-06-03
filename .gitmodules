@@ -232,3 +232,6 @@
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
+[submodule "contrib/libstemmer_c"]
+	path = contrib/libstemmer_c
+	url = https://github.com/evillique/libstemmer_c.git
