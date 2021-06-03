@@ -97,6 +97,10 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 
 Если словарь с источником `FILE` создается с помощью DDL-команды (`CREATE DICTIONARY ...`), источник словаря должен быть расположен в каталоге `user_files`. Иначе пользователи базы данных будут иметь доступ к произвольному файлу на узле ClickHouse.
 
+**Смотрите также**
+
+-   [Функция dictionary](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
+
 ## Исполняемый файл {#dicts-external_dicts_dict_sources-executable}
 
 Работа с исполняемым файлом зависит от [размещения словаря в памяти](external-dicts-dict-layout.md). Если тип размещения словаря `cache` и `complex_key_cache`, то ClickHouse запрашивает необходимые ключи, отправляя запрос в `STDIN` исполняемого файла.
