@@ -6,7 +6,6 @@
 #include <boost/range/adaptor/reversed.hpp>
 
 #include <Common/ArenaWithFreeLists.h>
-#include <Common/UInt128.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -85,7 +84,7 @@ public:
 
     struct Counter
     {
-        Counter() {}
+        Counter() = default; //-V730
 
         Counter(const TKey & k, UInt64 c = 0, UInt64 e = 0, size_t h = 0)
           : key(k), slot(0), hash(h), count(c), error(e) {}
@@ -148,7 +147,7 @@ public:
         // Increase weight of a key that already exists
         auto hash = counter_map.hash(key);
 
-        if (auto counter = findCounter(key, hash); counter)
+        if (auto * counter = findCounter(key, hash); counter)
         {
             counter->count += increment;
             counter->error += error;
@@ -159,12 +158,12 @@ public:
         // Key doesn't exist, but can fit in the top K
         if (unlikely(size() < capacity()))
         {
-            auto c = new Counter(arena.emplace(key), increment, error, hash);
+            auto * c = new Counter(arena.emplace(key), increment, error, hash);
             push(c);
             return;
         }
 
-        auto min = counter_list.back();
+        auto * min = counter_list.back();
         // The key doesn't exist and cannot fit in the current top K, but
         // the new key has a bigger weight and is virtually more present
         // compared to the element who is less present on the set. This part
@@ -218,7 +217,7 @@ public:
          */
         if (m2 > 0)
         {
-            for (auto counter : counter_list)
+            for (auto * counter : counter_list)
             {
                 counter->count += m2;
                 counter->error += m2;
@@ -226,10 +225,10 @@ public:
         }
 
         // The list is sorted in descending order, we have to scan in reverse
-        for (auto counter : boost::adaptors::reverse(rhs.counter_list))
+        for (auto * counter : boost::adaptors::reverse(rhs.counter_list))
         {
             size_t hash = counter_map.hash(counter->key);
-            if (auto current = findCounter(counter->key, hash))
+            if (auto * current = findCounter(counter->key, hash))
             {
                 // Subtract m2 previously added, guaranteed not negative
                 current->count += (counter->count - m2);
@@ -262,7 +261,7 @@ public:
     std::vector<Counter> topK(size_t k) const
     {
         std::vector<Counter> res;
-        for (auto counter : counter_list)
+        for (auto * counter : counter_list)
         {
             res.push_back(*counter);
             if (res.size() == k)
@@ -274,7 +273,7 @@ public:
     void write(WriteBuffer & wb) const
     {
         writeVarUInt(size(), wb);
-        for (auto counter : counter_list)
+        for (auto * counter : counter_list)
             counter->write(wb);
 
         writeVarUInt(alpha_map.size(), wb);
@@ -290,7 +289,7 @@ public:
 
         for (size_t i = 0; i < count; ++i)
         {
-            auto counter = new Counter();
+            auto * counter = new Counter();
             counter->read(rb);
             counter->hash = counter_map.hash(counter->key);
             push(counter);
@@ -325,7 +324,7 @@ protected:
     {
         while (counter->slot > 0)
         {
-            auto next = counter_list[counter->slot - 1];
+            auto * next = counter_list[counter->slot - 1];
             if (*counter > *next)
             {
                 std::swap(next->slot, counter->slot);
@@ -339,7 +338,7 @@ protected:
 private:
     void destroyElements()
     {
-        for (auto counter : counter_list)
+        for (auto * counter : counter_list)
         {
             arena.free(counter->key);
             delete counter;
@@ -376,7 +375,7 @@ private:
     {
         removed_keys = 0;
         counter_map.clear();
-        for (auto counter : counter_list)
+        for (auto * counter : counter_list)
             counter_map[counter->key] = counter;
     }
 

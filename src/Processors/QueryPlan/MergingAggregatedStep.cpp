@@ -68,4 +68,9 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
     return params->params.explain(settings.out, settings.offset);
 }
 
+void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    params->params.explain(map);
+}
+
 }

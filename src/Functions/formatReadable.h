@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -28,7 +28,7 @@ class FunctionFormatReadable : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
 
     String getName() const override
     {

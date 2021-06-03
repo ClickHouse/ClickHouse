@@ -58,7 +58,7 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    void updatePeak(Int64 will_be);
+    void updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
 public:
@@ -72,6 +72,10 @@ public:
     /** Call the following functions before calling of corresponding operations with memory allocators.
       */
     void alloc(Int64 size);
+
+    void allocNoThrow(Int64 size);
+
+    void allocImpl(Int64 size, bool throw_if_memory_exceeded);
 
     void realloc(Int64 old_size, Int64 new_size)
     {
@@ -208,7 +212,7 @@ public:
 
         static bool isBlocked(VariableContext current_level, bool fault_injection)
         {
-            return counter > 0 && current_level >= level && (!fault_injection || (fault_injection && block_fault_injections));
+            return counter > 0 && current_level >= level && (!fault_injection || block_fault_injections);
         }
     };
 };

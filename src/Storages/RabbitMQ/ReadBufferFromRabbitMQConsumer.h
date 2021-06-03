@@ -48,14 +48,15 @@ public:
     {
         String message;
         String message_id;
-        uint64_t timestamp;
-        bool redelivered;
-        AckTracker track;
+        uint64_t timestamp = 0;
+        bool redelivered = false;
+        AckTracker track{};
     };
 
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();
     bool needChannelUpdate();
+    void closeChannel() { consumer_channel->close(); }
 
     void updateQueues(std::vector<String> & queues_) { queues = queues_; }
     size_t queuesCount() { return queues.size(); }

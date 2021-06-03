@@ -128,7 +128,11 @@ public:
     bool allowDictJoin(const String & dict_key, const Block & sample_block, Names &, NamesAndTypesList &) const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
     bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
-    bool forceHashJoin() const { return join_algorithm == JoinAlgorithm::HASH; }
+    bool forceHashJoin() const
+    {
+        /// HashJoin always used for DictJoin
+        return dictionary_reader || join_algorithm == JoinAlgorithm::HASH;
+    }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
@@ -199,6 +203,8 @@ public:
     /// Split key and other columns by keys name list
     void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
+
+    String renamedRightColumnName(const String & name) const;
 };
 
 }

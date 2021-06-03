@@ -44,8 +44,8 @@ ChangelogFileDescription getChangelogFileDescription(const std::string & path_st
 
     ChangelogFileDescription result;
     result.prefix = filename_parts[0];
-    result.from_log_index = parse<size_t>(filename_parts[1]);
-    result.to_log_index = parse<size_t>(filename_parts[2]);
+    result.from_log_index = parse<uint64_t>(filename_parts[1]);
+    result.to_log_index = parse<uint64_t>(filename_parts[2]);
     result.path = path_str;
     return result;
 }
@@ -73,14 +73,14 @@ Checksum computeRecordChecksum(const ChangelogRecord & record)
 class ChangelogWriter
 {
 public:
-    ChangelogWriter(const std::string & filepath_, WriteMode mode, size_t start_index_)
+    ChangelogWriter(const std::string & filepath_, WriteMode mode, uint64_t start_index_)
         : filepath(filepath_)
         , plain_buf(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY))
         , start_index(start_index_)
     {}
 
 
-    off_t appendRecord(ChangelogRecord && record, bool sync)
+    off_t appendRecord(ChangelogRecord && record)
     {
         off_t result = plain_buf.count();
         writeIntBinary(computeRecordChecksum(record), plain_buf);
@@ -96,41 +96,39 @@ public:
 
         entries_written++;
 
-        if (sync)
-            plain_buf.sync();
-        else
-            plain_buf.next();
         return result;
     }
 
     void truncateToLength(off_t new_length)
     {
-        flush();
+        plain_buf.next();
         plain_buf.truncate(new_length);
         plain_buf.seek(new_length, SEEK_SET);
     }
 
-    void flush()
+    void flush(bool force_fsync)
     {
-        plain_buf.sync();
+        plain_buf.next();
+        if (force_fsync)
+            plain_buf.sync();
     }
 
-    size_t getEntriesWritten() const
+    uint64_t getEntriesWritten() const
     {
         return entries_written;
     }
 
-    void setEntriesWritten(size_t entries_written_)
+    void setEntriesWritten(uint64_t entries_written_)
     {
         entries_written = entries_written_;
     }
 
-    size_t getStartIndex() const
+    uint64_t getStartIndex() const
     {
         return start_index;
     }
 
-    void setStartIndex(size_t start_index_)
+    void setStartIndex(uint64_t start_index_)
     {
         start_index = start_index_;
     }
@@ -138,14 +136,14 @@ public:
 private:
     std::string filepath;
     WriteBufferFromFile plain_buf;
-    size_t entries_written = 0;
-    size_t start_index;
+    uint64_t entries_written = 0;
+    uint64_t start_index;
 };
 
 struct ChangelogReadResult
 {
-    size_t entries_read;
-    size_t first_read_index;
+    uint64_t entries_read;
+    uint64_t first_read_index;
     off_t last_position;
     bool error;
 };
@@ -158,9 +156,9 @@ public:
         , read_buf(filepath)
     {}
 
-    ChangelogReadResult readChangelog(IndexToLogEntry & logs, size_t start_log_index, IndexToOffset & index_to_offset, Poco::Logger * log)
+    ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, IndexToOffset & index_to_offset, Poco::Logger * log)
     {
-        size_t previous_index = 0;
+        uint64_t previous_index = 0;
         ChangelogReadResult result{};
         try
         {
@@ -247,9 +245,14 @@ private:
     ReadBufferFromFile read_buf;
 };
 
-Changelog::Changelog(const std::string & changelogs_dir_, size_t rotate_interval_, Poco::Logger * log_)
+Changelog::Changelog(
+    const std::string & changelogs_dir_,
+    uint64_t rotate_interval_,
+    bool force_sync_,
+    Poco::Logger * log_)
     : changelogs_dir(changelogs_dir_)
     , rotate_interval(rotate_interval_)
+    , force_sync(force_sync_)
     , log(log_)
 {
     namespace fs = std::filesystem;
@@ -263,15 +266,15 @@ Changelog::Changelog(const std::string & changelogs_dir_, size_t rotate_interval
     }
 }
 
-void Changelog::readChangelogAndInitWriter(size_t last_commited_log_index, size_t logs_to_keep)
+void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
 {
-    size_t total_read = 0;
-    size_t entries_in_last = 0;
-    size_t incomplete_log_index = 0;
+    uint64_t total_read = 0;
+    uint64_t entries_in_last = 0;
+    uint64_t incomplete_log_index = 0;
     ChangelogReadResult result{};
-    size_t first_read_index = 0;
+    uint64_t first_read_index = 0;
 
-    size_t start_to_read_from = last_commited_log_index;
+    uint64_t start_to_read_from = last_commited_log_index;
     if (start_to_read_from > logs_to_keep)
         start_to_read_from -= logs_to_keep;
     else
@@ -293,7 +296,7 @@ void Changelog::readChangelogAndInitWriter(size_t last_commited_log_index, size_
                     break;
                 }
                 else if (changelog_description.from_log_index > start_to_read_from)
-                    LOG_WARNING(log, "Don't have required amount of reserved log records. Need to read from {}, smalled available log index on disk {}.", start_to_read_from, changelog_description.from_log_index);
+                    LOG_WARNING(log, "Don't have required amount of reserved log records. Need to read from {}, smallest available log index on disk {}.", start_to_read_from, changelog_description.from_log_index);
             }
 
             started = true;
@@ -355,11 +358,10 @@ void Changelog::readChangelogAndInitWriter(size_t last_commited_log_index, size_
         rotate(start_index + total_read);
 }
 
-void Changelog::rotate(size_t new_start_log_index)
+void Changelog::rotate(uint64_t new_start_log_index)
 {
-    //// doesn't exist on init
-    if (current_writer)
-        current_writer->flush();
+    /// Flush previous log
+    flush();
 
     ChangelogFileDescription new_description;
     new_description.prefix = DEFAULT_PREFIX;
@@ -373,7 +375,7 @@ void Changelog::rotate(size_t new_start_log_index)
     current_writer = std::make_unique<ChangelogWriter>(new_description.path, WriteMode::Rewrite, new_start_log_index);
 }
 
-ChangelogRecord Changelog::buildRecord(size_t index, const LogEntryPtr & log_entry)
+ChangelogRecord Changelog::buildRecord(uint64_t index, const LogEntryPtr & log_entry)
 {
     ChangelogRecord record;
     record.header.version = ChangelogVersion::V0;
@@ -391,7 +393,7 @@ ChangelogRecord Changelog::buildRecord(size_t index, const LogEntryPtr & log_ent
     return record;
 }
 
-void Changelog::appendEntry(size_t index, const LogEntryPtr & log_entry, bool force_sync)
+void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (!current_writer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before appending records");
@@ -402,14 +404,14 @@ void Changelog::appendEntry(size_t index, const LogEntryPtr & log_entry, bool fo
     if (current_writer->getEntriesWritten() == rotate_interval)
         rotate(index);
 
-    auto offset = current_writer->appendRecord(buildRecord(index, log_entry), force_sync);
+    auto offset = current_writer->appendRecord(buildRecord(index, log_entry));
     if (!index_to_start_pos.try_emplace(index, offset).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Record with index {} already exists", index);
 
     logs[index] = makeClone(log_entry);
 }
 
-void Changelog::writeAt(size_t index, const LogEntryPtr & log_entry, bool force_sync)
+void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (index_to_start_pos.count(index) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write at index {} because changelog doesn't contain it", index);
@@ -443,7 +445,7 @@ void Changelog::writeAt(size_t index, const LogEntryPtr & log_entry, bool force_
     }
 
     /// Remove redundant logs from memory
-    for (size_t i = index; ; ++i)
+    for (uint64_t i = index; ; ++i)
     {
         auto log_itr = logs.find(i);
         if (log_itr == logs.end())
@@ -455,10 +457,10 @@ void Changelog::writeAt(size_t index, const LogEntryPtr & log_entry, bool force_
 
     current_writer->setEntriesWritten(entries_written);
 
-    appendEntry(index, log_entry, force_sync);
+    appendEntry(index, log_entry);
 }
 
-void Changelog::compact(size_t up_to_log_index)
+void Changelog::compact(uint64_t up_to_log_index)
 {
     for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
     {
@@ -480,9 +482,9 @@ void Changelog::compact(size_t up_to_log_index)
 
 LogEntryPtr Changelog::getLastEntry() const
 {
-    static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(size_t)));
+    static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(uint64_t)));
 
-    size_t next_index = getNextEntryIndex() - 1;
+    uint64_t next_index = getNextEntryIndex() - 1;
     auto entry = logs.find(next_index);
     if (entry == logs.end())
         return fake_entry;
@@ -490,13 +492,13 @@ LogEntryPtr Changelog::getLastEntry() const
     return entry->second;
 }
 
-LogEntriesPtr Changelog::getLogEntriesBetween(size_t start, size_t end)
+LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end)
 {
     LogEntriesPtr ret = nuraft::cs_new<std::vector<nuraft::ptr<nuraft::log_entry>>>();
 
     ret->resize(end - start);
-    size_t result_pos = 0;
-    for (size_t i = start; i < end; ++i)
+    uint64_t result_pos = 0;
+    for (uint64_t i = start; i < end; ++i)
     {
         (*ret)[result_pos] = entryAt(i);
         result_pos++;
@@ -504,7 +506,7 @@ LogEntriesPtr Changelog::getLogEntriesBetween(size_t start, size_t end)
     return ret;
 }
 
-LogEntryPtr Changelog::entryAt(size_t index)
+LogEntryPtr Changelog::entryAt(uint64_t index)
 {
     nuraft::ptr<nuraft::log_entry> src = nullptr;
     auto entry = logs.find(index);
@@ -515,12 +517,12 @@ LogEntryPtr Changelog::entryAt(size_t index)
     return src;
 }
 
-nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(size_t index, int32_t count)
+nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, int32_t count)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> returned_logs;
 
-    size_t size_total = 0;
-    for (size_t i = index; i < index + count; ++i)
+    uint64_t size_total = 0;
+    for (uint64_t i = index; i < index + count; ++i)
     {
         auto entry = logs.find(i);
         if (entry == logs.end())
@@ -544,14 +546,14 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(size_t index, in
     return buf_out;
 }
 
-void Changelog::applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer, bool force_sync)
+void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
 {
     buffer.pos(0);
     int num_logs = buffer.get_int();
 
     for (int i = 0; i < num_logs; ++i)
     {
-        size_t cur_index = index + i;
+        uint64_t cur_index = index + i;
         int buf_size = buffer.get_int();
 
         nuraft::ptr<nuraft::buffer> buf_local = nuraft::buffer::alloc(buf_size);
@@ -559,23 +561,23 @@ void Changelog::applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer, bo
 
         LogEntryPtr log_entry = nuraft::log_entry::deserialize(*buf_local);
         if (i == 0 && logs.count(cur_index))
-            writeAt(cur_index, log_entry, force_sync);
+            writeAt(cur_index, log_entry);
         else
-            appendEntry(cur_index, log_entry, force_sync);
+            appendEntry(cur_index, log_entry);
     }
 }
 
 void Changelog::flush()
 {
-    current_writer->flush();
+    if (current_writer)
+        current_writer->flush(force_sync);
 }
 
 Changelog::~Changelog()
 {
     try
     {
-        if (current_writer)
-            current_writer->flush();
+        flush();
     }
     catch (...)
     {

@@ -138,7 +138,7 @@ void WriteBufferValidUTF8::finish()
 WriteBufferValidUTF8::~WriteBufferValidUTF8()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     finish();
 }
 

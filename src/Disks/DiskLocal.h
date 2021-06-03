@@ -1,12 +1,11 @@
 #pragma once
 
+#include <common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
 
 namespace DB
 {
@@ -26,7 +25,7 @@ public:
         : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_)
     {
         if (disk_path.back() != '/')
-            throw Exception("Disk path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Disk path must end with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
     }
 
     const String & getName() const override { return name; }
@@ -115,6 +114,8 @@ private:
     UInt64 reservation_count = 0;
 
     static std::mutex reservation_mutex;
+
+    Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 };
 
 }

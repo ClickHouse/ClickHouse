@@ -138,18 +138,8 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 {
     for (auto & child : select.children)
     {
-        if (child == select.groupBy() || child == select.orderBy() || child == select.having())
-        {
-            bool old_setting = data.settings.prefer_column_name_to_alias;
-            data.settings.prefer_column_name_to_alias = false;
+        if (needVisitChild(child))
             visit(child, data);
-            data.settings.prefer_column_name_to_alias = old_setting;
-        }
-        else
-        {
-            if (needVisitChild(child))
-                visit(child, data);
-        }
     }
 
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
@@ -248,6 +238,8 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());
+    if (data.ignore_alias && !ast->tryGetAlias().empty())
+        ast->setAlias("");
     finished_asts[initial_ast] = ast;
 
     /// @note can not place it in CheckASTDepth dtor cause of exception.

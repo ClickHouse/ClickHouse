@@ -1,8 +1,10 @@
 #include <Interpreters/WindowDescription.h>
 
 #include <Core/Field.h>
+#include <Common/FieldVisitors.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+
 
 namespace DB
 {
@@ -86,6 +88,38 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
+    // Check the validity of offsets.
+    if (type == WindowFrame::FrameType::Rows
+        || type == WindowFrame::FrameType::Groups)
+    {
+        if (begin_type == BoundaryType::Offset
+            && !((begin_offset.getType() == Field::Types::UInt64
+                    || begin_offset.getType() == Field::Types::Int64)
+                && begin_offset.get<Int64>() >= 0
+                && begin_offset.get<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given.",
+                toString(type),
+                applyVisitor(FieldVisitorToString(), begin_offset),
+                Field::Types::toString(begin_offset.getType()));
+        }
+
+        if (end_type == BoundaryType::Offset
+            && !((end_offset.getType() == Field::Types::UInt64
+                    || end_offset.getType() == Field::Types::Int64)
+                && end_offset.get<Int64>() >= 0
+                && end_offset.get<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given.",
+                toString(type),
+                applyVisitor(FieldVisitorToString(), end_offset),
+                Field::Types::toString(end_offset.getType()));
+        }
+    }
+
+    // Check relative positioning of offsets.
     // UNBOUNDED PRECEDING end and UNBOUNDED FOLLOWING start should have been
     // forbidden at the parsing level.
     assert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));

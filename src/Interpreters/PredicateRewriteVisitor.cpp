@@ -17,8 +17,16 @@ namespace DB
 {
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
-    const Context & context_, const ASTs & predicates_, const TableWithColumnNamesAndTypes & table_columns_, bool optimize_final_, bool optimize_with_)
-    : context(context_), predicates(predicates_), table_columns(table_columns_), optimize_final(optimize_final_), optimize_with(optimize_with_)
+    ContextConstPtr context_,
+    const ASTs & predicates_,
+    const TableWithColumnNamesAndTypes & table_columns_,
+    bool optimize_final_,
+    bool optimize_with_)
+    : WithConstContext(context_)
+    , predicates(predicates_)
+    , table_columns(table_columns_)
+    , optimize_final(optimize_final_)
+    , optimize_with(optimize_with_)
 {
 }
 
@@ -64,7 +72,9 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     }
 
     const Names & internal_columns = InterpreterSelectQuery(
-        temp_internal_select, context, SelectQueryOptions().analyze()).getSampleBlock().getNames();
+        temp_internal_select,
+        const_pointer_cast<Context>(getContext()),
+        SelectQueryOptions().analyze()).getSampleBlock().getNames();
 
     if (rewriteSubquery(*temp_select_query, internal_columns))
     {
@@ -96,7 +106,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         || (!optimize_with && subquery.with())
         || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength()
-        || hasNonRewritableFunction(subquery.select(), context))
+        || hasNonRewritableFunction(subquery.select(), getContext()))
         return false;
 
     Names outer_columns = table_columns.columns.getNames();
