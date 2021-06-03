@@ -109,6 +109,7 @@
         "01153_attach_mv_uuid"
     ],
     "database-replicated": [
+        /// Unclassified
         "memory_tracking",
         "memory_usage",
         "live_view",
@@ -167,8 +168,9 @@
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
         "00140_rename",
-        "01783_http_chunk_size",
-        "01710_projection_fetch"
+        /// Requires investigation
+        "00953_zookeeper_suetin_deduplication_bug",
+        "01783_http_chunk_size"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -395,9 +397,6 @@
         "01475_read_subcolumns_storages",
         "01674_clickhouse_client_query_param_cte",
         "01666_merge_tree_max_query_limit",
-        "01710_projections",
-        "01710_normal_projections",
-        "01710_aggregate_projections",
         "01786_explain_merge_tree",
         "01666_merge_tree_max_query_limit",
         "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
