@@ -152,8 +152,6 @@ public:
             return to;
         }
     };
-
-private:
 };
 
 template <typename Name, template <typename> typename Impl>
@@ -184,10 +182,6 @@ public:
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
-#endif
-
-#if USE_RAPIDJSON
-        throw Exception{"RapidJSON is not supported :(", ErrorCodes::BAD_ARGUMENTS};
 #else
         return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
