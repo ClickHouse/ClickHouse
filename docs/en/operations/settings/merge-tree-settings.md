@@ -125,7 +125,7 @@ The hash sum is calculated from the composition of the field names and types and
 
 ## non_replicated_deduplication_window {#non-replicated-deduplication-window}
 
-The number of the most recently inserted blocks in the non-replicated 'MergeTree' table for which hash sums are stored to check for duplicates.
+The number of the most recently inserted blocks in the non-replicated [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table for which hash sums are stored to check for duplicates.
 
 Possible values:
 
