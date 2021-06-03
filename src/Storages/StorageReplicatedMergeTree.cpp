@@ -5280,7 +5280,7 @@ StorageReplicatedMergeTree::allocateBlockNumber(
 
 
 Strings StorageReplicatedMergeTree::waitForAllTableReplicasToProcessLogEntry(
-    const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
+    const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active, const std::function<bool()> stop_waiting)
 {
     LOG_DEBUG(log, "Waiting for all replicas to process {}", entry.znode_name);
 
@@ -5291,7 +5291,7 @@ Strings StorageReplicatedMergeTree::waitForAllTableReplicasToProcessLogEntry(
     {
         if (wait_for_non_active || zookeeper->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active"))
         {
-            if (!waitForTableReplicaToProcessLogEntry(table_zookeeper_path, replica, entry, wait_for_non_active))
+            if (!waitForTableReplicaToProcessLogEntry(table_zookeeper_path, replica, entry, wait_for_non_active, stop_waiting))
                 unwaited.push_back(replica);
         }
         else
@@ -5306,14 +5306,18 @@ Strings StorageReplicatedMergeTree::waitForAllTableReplicasToProcessLogEntry(
 
 
 Strings StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
-    const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
+    const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active, const std::function<bool()> stop_waiting)
 {
-    return waitForAllTableReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_non_active);
+    return waitForAllTableReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_non_active, stop_waiting);
 }
 
 
 bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
-    const String & table_zookeeper_path, const String & replica, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
+    const String & table_zookeeper_path,
+    const String & replica,
+    const ReplicatedMergeTreeLogEntryData & entry,
+    bool wait_for_non_active,
+    const std::function<bool()> stop_waiting_)
 {
     String entry_str = entry.toString();
     String log_node_name;
@@ -5335,12 +5339,16 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
       */
 
     bool waiting_itself = replica == replica_name;
+    bool stop_waiting_requested = false;
 
     const auto & stop_waiting = [&]()
     {
+        bool stop_waiting_parent = stop_waiting_ && stop_waiting_();
         bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || is_dropped);
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
-        return stop_waiting_itself || stop_waiting_non_active;
+        stop_waiting_requested = stop_waiting_parent || stop_waiting_itself || stop_waiting_non_active;
+
+        return stop_waiting_requested;
     };
 
     /// Don't recheck ZooKeeper too often
@@ -5357,7 +5365,7 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
         LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
         /// Let's wait until entry gets into the replica queue.
-        while (!stop_waiting())
+        do
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -5369,8 +5377,9 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
             /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
             /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
             /// but the query will never finish because the drop already shut down the table.
-            event->tryWait(event_wait_timeout_ms);
-        }
+            if (!stop_waiting())
+                event->tryWait(event_wait_timeout_ms);
+        } while (!stop_waiting());
     }
     else if (startsWith(entry.znode_name, "queue-"))
     {
@@ -5406,7 +5415,7 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
             LOG_DEBUG(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
             /// Let's wait until the entry gets into the replica queue.
-            while (!stop_waiting())
+            do
             {
                 zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -5418,8 +5427,9 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
                 /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
                 /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
                 /// but the query will never finish because the drop already shut down the table.
-                event->tryWait(event_wait_timeout_ms);
-            }
+                if (!stop_waiting())
+                    event->tryWait(event_wait_timeout_ms);
+            } while (!stop_waiting());
         }
     }
     else
@@ -5449,6 +5459,12 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
         }
     }
 
+    if (stop_waiting_requested && queue_entry_to_wait_for.empty())
+    {
+        LOG_DEBUG(log, "Stop waiting for log entry to be processed requested. Assume it wasn't processed.");
+        return false;
+    }
+
     /// While looking for the record, it has already been executed and deleted.
     if (queue_entry_to_wait_for.empty())
     {
@@ -5466,9 +5482,9 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
 
 
 bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
-    const String & replica, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
+    const String & replica, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active, const std::function<bool()> stop_waiting)
 {
-    return waitForTableReplicaToProcessLogEntry(zookeeper_path, replica, entry, wait_for_non_active);
+    return waitForTableReplicaToProcessLogEntry(zookeeper_path, replica, entry, wait_for_non_active, stop_waiting);
 }
 
 
