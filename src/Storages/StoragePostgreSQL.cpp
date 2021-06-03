@@ -4,7 +4,6 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
@@ -42,21 +41,23 @@ namespace ErrorCodes
 
 StoragePostgreSQL::StoragePostgreSQL(
     const StorageID & table_id_,
-    const postgres::PoolWithFailover & pool_,
+    postgres::PoolWithFailoverPtr pool_,
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , global_context(context_)
-    , pool(std::make_shared<postgres::PoolWithFailover>(pool_))
+    , pool(std::move(pool_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -98,10 +99,10 @@ class PostgreSQLBlockOutputStream : public IBlockOutputStream
 public:
     explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
-        postgres::ConnectionHolderPtr connection_,
+        postgres::ConnectionHolderPtr connection_holder_,
         const std::string & remote_table_name_)
         : metadata_snapshot(metadata_snapshot_)
-        , connection(std::move(connection_))
+        , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
     {
     }
@@ -111,7 +112,7 @@ public:
 
     void writePrefix() override
     {
-        work = std::make_unique<pqxx::work>(connection->conn());
+        work = std::make_unique<pqxx::work>(connection_holder->get());
     }
 
 
@@ -277,7 +278,7 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
-    postgres::ConnectionHolderPtr connection;
+    postgres::ConnectionHolderPtr connection_holder;
     std::string remote_table_name;
 
     std::unique_ptr<pqxx::work> work;
@@ -320,7 +321,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         if (engine_args.size() == 6)
             remote_table_schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
-        postgres::PoolWithFailover pool(
+        auto pool = std::make_shared<postgres::PoolWithFailover>(
             remote_database,
             addresses,
             username,
@@ -329,8 +330,14 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return StoragePostgreSQL::create(
-            args.table_id, pool, remote_table,
-            args.columns, args.constraints, args.getContext(), remote_table_schema);
+            args.table_id,
+            std::move(pool),
+            remote_table,
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.getContext(),
+            remote_table_schema);
     },
     {
         .source_access_type = AccessType::POSTGRES,

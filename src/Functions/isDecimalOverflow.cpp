@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,7 +28,7 @@ class FunctionIsDecimalOverflow : public IFunction
 public:
     static constexpr auto name = "isDecimalOverflow";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextConstPtr)
     {
         return std::make_shared<FunctionIsDecimalOverflow>();
     }
@@ -85,7 +85,7 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&](const auto & types) -> bool //-V657
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;

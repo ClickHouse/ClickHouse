@@ -28,6 +28,13 @@
 namespace DB
 {
 
+struct HashedDictionaryStorageConfiguration
+{
+    const bool preallocate;
+    const bool require_nonempty;
+    const DictionaryLifetime lifetime;
+};
+
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 class HashedDictionary final : public IDictionary
 {
@@ -39,8 +46,7 @@ public:
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
-        bool require_nonempty_,
+        const HashedDictionaryStorageConfiguration & configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
 
     std::string getTypeName() const override
@@ -59,6 +65,14 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
+
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
@@ -67,12 +81,12 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, update_field_loaded_block);
+        return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
-    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+    const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
@@ -145,16 +159,20 @@ private:
             UInt32,
             UInt64,
             UInt128,
+            UInt256,
             Int8,
             Int16,
             Int32,
             Int64,
+            Int128,
+            Int256,
             Decimal32,
             Decimal64,
             Decimal128,
             Decimal256,
             Float32,
             Float64,
+            UUID,
             StringRef>
             null_values;
 
@@ -164,16 +182,20 @@ private:
             CollectionType<UInt32>,
             CollectionType<UInt64>,
             CollectionType<UInt128>,
+            CollectionType<UInt256>,
             CollectionType<Int8>,
             CollectionType<Int16>,
             CollectionType<Int32>,
             CollectionType<Int64>,
+            CollectionType<Int128>,
+            CollectionType<Int256>,
             CollectionType<Decimal32>,
             CollectionType<Decimal64>,
             CollectionType<Decimal128>,
             CollectionType<Decimal256>,
             CollectionType<Float32>,
             CollectionType<Float64>,
+            CollectionType<UUID>,
             CollectionType<StringRef>>
             container;
 
@@ -210,8 +232,7 @@ private:
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
-    const DictionaryLifetime dict_lifetime;
-    const bool require_nonempty;
+    const HashedDictionaryStorageConfiguration configuration;
 
     std::vector<Attribute> attributes;
 
@@ -219,6 +240,7 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
     Arena complex_key_arena;

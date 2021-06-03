@@ -6,11 +6,13 @@
 #include <Common/formatReadable.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/thread_local_rng.h>
 
 #include <atomic>
 #include <cmath>
 #include <random>
 #include <cstdlib>
+
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 thread_local bool _memory_tracker_always_throw_logical_error_on_allocation = false;
@@ -126,7 +128,7 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
 }
 
 
-void MemoryTracker::alloc(Int64 size)
+void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 {
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
@@ -135,7 +137,7 @@ void MemoryTracker::alloc(Int64 size)
     {
         /// Since the BlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-            loaded_next->alloc(size);
+            loaded_next->allocImpl(size, throw_if_memory_exceeded);
         return;
     }
 
@@ -179,20 +181,27 @@ void MemoryTracker::alloc(Int64 size)
 #endif
 
     std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true))
+    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
     {
+        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+        amount.fetch_sub(size, std::memory_order_relaxed);
+
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock(VariableContext::Global);
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         const auto * description = description_ptr.load(std::memory_order_relaxed);
         amount.fetch_sub(size, std::memory_order_relaxed);
-        throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                            "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
-                            description ? " " : "", description ? description : "",
-                            formatReadableSizeWithBinarySuffix(will_be),
-                            size, formatReadableSizeWithBinarySuffix(current_hard_limit));
+        throw DB::Exception(
+            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+            "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+            description ? " " : "",
+            description ? description : "",
+            formatReadableSizeWithBinarySuffix(will_be),
+            size,
+            formatReadableSizeWithBinarySuffix(current_hard_limit));
     }
+
 
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
@@ -208,36 +217,59 @@ void MemoryTracker::alloc(Int64 size)
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false))
+    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock(VariableContext::Global);
-
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         const auto * description = description_ptr.load(std::memory_order_relaxed);
-        amount.fetch_sub(size, std::memory_order_relaxed);
-        throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                            "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
-                            description ? " " : "", description ? description : "",
-                            formatReadableSizeWithBinarySuffix(will_be),
-                            size, formatReadableSizeWithBinarySuffix(current_hard_limit));
+        throw DB::Exception(
+            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+            "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+            description ? " " : "",
+            description ? description : "",
+            formatReadableSizeWithBinarySuffix(will_be),
+            size,
+            formatReadableSizeWithBinarySuffix(current_hard_limit));
     }
 
-    updatePeak(will_be);
+    if (throw_if_memory_exceeded)
+    {
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        BlockerInThread untrack_lock(VariableContext::Global);
+        bool log_memory_usage = true;
+        updatePeak(will_be, log_memory_usage);
+    }
+    else
+    {
+        bool log_memory_usage = false;
+        updatePeak(will_be, log_memory_usage);
+    }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-        loaded_next->alloc(size);
+        loaded_next->allocImpl(size, throw_if_memory_exceeded);
 }
 
+void MemoryTracker::alloc(Int64 size)
+{
+    bool throw_if_memory_exceeded = true;
+    allocImpl(size, throw_if_memory_exceeded);
+}
 
-void MemoryTracker::updatePeak(Int64 will_be)
+void MemoryTracker::allocNoThrow(Int64 size)
+{
+    bool throw_if_memory_exceeded = false;
+    allocImpl(size, throw_if_memory_exceeded);
+}
+
+void MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 {
     auto peak_old = peak.load(std::memory_order_relaxed);
     if (will_be > peak_old)        /// Races doesn't matter. Could rewrite with CAS, but not worth.
     {
         peak.store(will_be, std::memory_order_relaxed);
 
-        if ((level == VariableContext::Process || level == VariableContext::Global)
+        if (log_memory_usage && (level == VariableContext::Process || level == VariableContext::Global)
             && will_be / log_peak_memory_usage_every > peak_old / log_peak_memory_usage_every)
             logMemoryUsage(will_be);
     }
@@ -315,7 +347,9 @@ void MemoryTracker::reset()
 void MemoryTracker::set(Int64 to)
 {
     amount.store(to, std::memory_order_relaxed);
-    updatePeak(to);
+
+    bool log_memory_usage = true;
+    updatePeak(to, log_memory_usage);
 }
 
 

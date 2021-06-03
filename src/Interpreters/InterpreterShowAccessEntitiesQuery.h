@@ -7,10 +7,10 @@
 namespace DB
 {
 
-class InterpreterShowAccessEntitiesQuery : public IInterpreter, WithContext
+class InterpreterShowAccessEntitiesQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
 
     BlockIO execute() override;
 

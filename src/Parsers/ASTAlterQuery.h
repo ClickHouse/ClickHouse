@@ -46,6 +46,10 @@ public:
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
 
+        ADD_PROJECTION,
+        DROP_PROJECTION,
+        MATERIALIZE_PROJECTION,
+
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
         ATTACH_PARTITION,
@@ -106,6 +110,17 @@ public:
     */
     ASTPtr constraint;
 
+    /** The ADD PROJECTION query stores the ProjectionDeclaration there.
+     */
+    ASTPtr projection_decl;
+
+    /** The ADD PROJECTION query stores the name of the projection following AFTER.
+     *  The DROP PROJECTION query stores the name for deletion.
+     *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
+     *  The CLEAR PROJECTION query stores the name of the projection to clear.
+     */
+    ASTPtr projection;
+
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
@@ -140,6 +155,8 @@ public:
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
+
+    bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
 
     bool if_not_exists = false; /// option for ADD_COLUMN
 

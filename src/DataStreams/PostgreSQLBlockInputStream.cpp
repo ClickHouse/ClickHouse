@@ -28,13 +28,13 @@ namespace ErrorCodes
 }
 
 PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
-    postgres::ConnectionHolderPtr connection_,
+    postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
     : query_str(query_str_)
     , max_block_size(max_block_size_)
-    , connection(std::move(connection_))
+    , connection_holder(std::move(connection_holder_))
 {
     description.init(sample_block);
     for (const auto idx : ext::range(0, description.sample_block.columns()))
@@ -48,7 +48,7 @@ PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
 
 void PostgreSQLBlockInputStream::readPrefix()
 {
-    tx = std::make_unique<pqxx::read_transaction>(connection->conn());
+    tx = std::make_unique<pqxx::read_transaction>(connection_holder->get());
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 
@@ -161,7 +161,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
         case ValueType::vtUUID:
-            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
+            assert_cast<ColumnUUID &>(column).insert(parse<UUID>(value.data(), value.size()));
             break;
         case ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
@@ -193,7 +193,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
 
             size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info[idx].num_dimensions;
             const auto parse_value = array_info[idx].pqxx_parser;
-            std::vector<std::vector<Field>> dimensions(expected_dimensions + 1);
+            std::vector<Row> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
@@ -210,7 +210,8 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
                 {
                     max_dimension = std::max(max_dimension, dimension);
 
-                    if (--dimension == 0)
+                    --dimension;
+                    if (dimension == 0)
                         break;
 
                     dimensions[dimension].emplace_back(Array(dimensions[dimension + 1].begin(), dimensions[dimension + 1].end()));
