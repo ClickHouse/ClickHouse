@@ -11,10 +11,13 @@ import json
 import csv
 
 
-MAX_RETRY = 2
+MAX_RETRY = 3
+NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
+PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
+DOCKERD_LOGS_PATH = "/ClickHouse/tests/integration/dockerd.log"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-library-bridge"
 
 TRIES_COUNT = 10
@@ -50,6 +53,11 @@ def filter_existing_tests(tests_to_run, repo_path):
 def _get_deselect_option(tests):
     return ' '.join(['--deselect {}'.format(t) for t in tests])
 
+# https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 def parse_test_results_output(fname):
     read = False
@@ -82,7 +90,7 @@ def get_counters(output):
             else:
                 logging.info("Strange line %s", line)
         else:
-            logging.info("Strange line %s")
+            logging.info("Strange line %s", line)
     return {k: list(v) for k, v in counters.items()}
 
 
@@ -253,7 +261,7 @@ class ClickhouseIntegrationTestsRunner:
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
-        cmd = "cd {}/tests/integration && ./runner {} ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' > all_tests.txt".format(repo_path, image_cmd)
+        cmd = "cd {}/tests/integration && ./runner --tmpfs {} ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' | sort -u  > all_tests.txt".format(repo_path, image_cmd)
         logging.info("Getting all tests with cmd '%s'", cmd)
         subprocess.check_call(cmd, shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
@@ -266,6 +274,16 @@ class ClickhouseIntegrationTestsRunner:
             for line in all_tests_file:
                 all_tests.append(line.strip())
         return list(sorted(all_tests))
+
+    def _get_parallel_tests_skip_list(self, repo_path):
+        skip_list_file_path = "{}/tests/integration/parallel_skip.json".format(repo_path)
+        if not os.path.isfile(skip_list_file_path) or os.path.getsize(skip_list_file_path) == 0:
+            raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(skip_list_file_path))
+
+        skip_list_tests = []
+        with open(skip_list_file_path, "r") as skip_list_file:
+            skip_list_tests = json.load(skip_list_file)
+        return list(sorted(skip_list_tests))
 
     def group_test_by_file(self, tests):
         result = {}
@@ -286,7 +304,6 @@ class ClickhouseIntegrationTestsRunner:
                 if test in main_counters["ERROR"]:
                     main_counters["ERROR"].remove(test)
                     is_flaky = True
-
                 if is_flaky:
                     main_counters["FLAKY"].append(test)
                 else:
@@ -319,7 +336,7 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Cannot run with custom docker image version :(")
         return image_cmd
 
-    def run_test_group(self, repo_path, test_group, tests_in_group, num_tries):
+    def run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
         counters = {
             "ERROR": [],
             "PASSED": [],
@@ -359,8 +376,9 @@ class ClickhouseIntegrationTestsRunner:
                         test_names.add(test_name)
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
-            cmd = "cd {}/tests/integration && ./runner {} '-ss {} -rfEp --color=no --durations=0 {}' | tee {}".format(
-                repo_path, image_cmd, test_cmd, _get_deselect_option(self.should_skip_tests()), output_path)
+            parallel_cmd = " --parallel {} ".format(num_workers) if num_workers > 0 else ""
+            cmd = "cd {}/tests/integration && ./runner --tmpfs {} -t {} {} '-ss -rfEp --color=no --durations=0 {}' | tee {}".format(
+                repo_path, image_cmd, test_cmd, parallel_cmd, _get_deselect_option(self.should_skip_tests()), output_path)
 
             with open(log_path, 'w') as log:
                 logging.info("Executing cmd: %s", cmd)
@@ -412,7 +430,7 @@ class ClickhouseIntegrationTestsRunner:
         for i in range(TRIES_COUNT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run, 1)
+            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
             logs += log_paths
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", ' '.join(counters["FAILED"]))
@@ -439,6 +457,10 @@ class ClickhouseIntegrationTestsRunner:
         self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
         logging.info("Compression finished")
 
+        result_path_dockerd_logs = os.path.join(str(self.path()), "dockerd.log")
+        if os.path.exists(result_path_dockerd_logs):
+            shutil.copy(DOCKERD_LOGS_PATH, result_path_dockerd_logs)
+
         test_result = []
         for state in ("ERROR", "FAILED", "PASSED", "SKIPPED", "FLAKY"):
             if state == "PASSED":
@@ -459,8 +481,19 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
+        parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
-        grouped_tests = self.group_test_by_file(all_tests)
+        filtered_sequential_tests = list(filter(lambda test: test in all_tests, parallel_skip_tests))
+        filtered_parallel_tests = list(filter(lambda test: test not in parallel_skip_tests, all_tests))
+        not_found_tests = list(filter(lambda test: test not in all_tests, parallel_skip_tests))
+        logging.info("Found %s tests first 3 %s, parallel %s, other %s", len(all_tests), ' '.join(all_tests[:3]), len(filtered_parallel_tests), len(filtered_sequential_tests))
+        logging.info("Not found %s tests first 3 %s", len(not_found_tests), ' '.join(not_found_tests[:3]))
+
+        grouped_tests = self.group_test_by_file(filtered_sequential_tests)
+        i = 0
+        for par_group in  chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
+            grouped_tests["parallel{}".format(i)] = par_group
+            i+=1
         logging.info("Found %s tests groups", len(grouped_tests))
 
         counters = {
@@ -482,7 +515,7 @@ class ClickhouseIntegrationTestsRunner:
 
         for group, tests in items_to_run:
             logging.info("Running test group %s countaining %s tests", group, len(tests))
-            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests, MAX_RETRY)
+            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info("Tests from group %s stats, %s count %s", group, counter, len(value))
@@ -503,6 +536,10 @@ class ClickhouseIntegrationTestsRunner:
         test_logs = os.path.join(str(self.path()), "./test_dir.tar.gz")
         self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
         logging.info("Compression finished")
+
+        result_path_dockerd_logs = os.path.join(str(self.path()), "dockerd.log")
+        if os.path.exists(result_path_dockerd_logs):
+            shutil.copy(DOCKERD_LOGS_PATH, result_path_dockerd_logs)
 
         if counters["FAILED"] or counters["ERROR"]:
             logging.info("Overall status failure, because we have tests in FAILED or ERROR state")

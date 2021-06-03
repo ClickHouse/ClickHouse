@@ -80,6 +80,7 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
+    Throttler.cpp
     TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
