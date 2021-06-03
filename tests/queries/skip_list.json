@@ -407,7 +407,8 @@
         "01053_ssd_dictionary",
         "01280_ssd_complex_key_dictionary",
         "01684_ssd_cache_dictionary_simple_key",
-        "01685_ssd_cache_dictionary_complex_key"
+        "01685_ssd_cache_dictionary_complex_key",
+        "01889_postgresql_protocol_null_fields"
     ],
     "parallel":
     [
