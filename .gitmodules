@@ -235,3 +235,6 @@
 [submodule "contrib/libstemmer_c"]
 	path = contrib/libstemmer_c
 	url = https://github.com/evillique/libstemmer_c.git
+[submodule "contrib/wordnet-blast"]
+	path = contrib/wordnet-blast
+	url = git@github.com:evillique/wordnet-blast.git

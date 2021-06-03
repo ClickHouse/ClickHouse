@@ -1,7 +1,0 @@
-cat
-lions
-city
-building
-salvation
-medications
-haven
