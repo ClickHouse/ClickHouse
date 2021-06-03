@@ -40,7 +40,8 @@ struct DummyJSONParser
         Array getArray() const { return {}; }
         Object getObject() const { return {}; }
 
-        Element getElement() {return {}; }
+        Element getElement() { return {}; }
+        std::ostream & operator<<(std::ostream & os) { return os; }
     };
 
     /// References an array in a JSON document.
