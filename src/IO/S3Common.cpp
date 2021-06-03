@@ -2,6 +2,8 @@
 
 #if USE_AWS_S3
 
+#    include <Common/quoteString.h>
+
 #    include <IO/S3Common.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <Storages/StorageS3Settings.h>
@@ -631,7 +633,7 @@ namespace S3
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
                 throw Exception(
-                    "Bucket name length is out of bounds in virtual hosted style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                    "Bucket name length is out of bounds in virtual hosted style S3 URI: " + backQuote(bucket) + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
             if (!uri.getPath().empty())
             {
@@ -644,7 +646,7 @@ namespace S3
             boost::to_upper(name);
             if (name != S3 && name != COS)
             {
-                throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + name + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + backQuote(name) + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
             }
             if (name == S3)
             {
@@ -664,10 +666,10 @@ namespace S3
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
                 throw Exception(
-                    "Bucket name length is out of bounds in path style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                    "Bucket name length is out of bounds in path style S3 URI: " + backQuote(bucket) + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
             if (key.empty() || key == "/")
-                throw Exception("Key name is empty in path style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Key name is empty in path style S3 URI: " + backQuote(key) + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else
             throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
