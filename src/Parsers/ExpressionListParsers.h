@@ -353,27 +353,10 @@ class ParserComparisonExpression : public IParserBase
 private:
     static const char * operators[];
     static const char * overlapping_operators_to_skip[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>()};
+    ParserBetweenExpression elem_parser;
 
 protected:
     const char * getName() const  override{ return "comparison expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return operator_parser.parse(pos, node, expected);
-    }
-};
-
-class ParserComparisonWithSubqueryExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-    ParserComparisonExpression next_parser;
-    ParserBetweenExpression elem_parser;
-    static bool addFunctionIn(String operator_name, ASTPtr & node, bool is_any);
-    static bool modifySubquery(String operator_name, ASTPtr subquery_node, bool is_any);
-protected:
-    const char * getName() const override { return "comparison with ANY/ALL expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -383,7 +366,7 @@ protected:
 class ParserNullityChecking : public IParserBase
 {
 private:
-    ParserComparisonWithSubqueryExpression elem_parser;
+    ParserComparisonExpression elem_parser;
 protected:
     const char * getName() const override { return "nullity checking"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
