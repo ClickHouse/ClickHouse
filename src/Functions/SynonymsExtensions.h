@@ -19,7 +19,7 @@ public:
     
     //ISynonymsExtension(const String & path);
 
-    virtual Synset * getSynonyms(const std::string_view & token) const = 0;
+    virtual const Synset * getSynonyms(const std::string_view & token) const = 0;
 
     virtual ~ISynonymsExtension() = default;
 };

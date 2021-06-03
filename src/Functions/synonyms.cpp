@@ -6,7 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/SynonymsExtensions.h>
+#include <Functions/SynonymsExtensions.h>
 #include <Interpreters/Context.h>
 
 #include <string_view>
