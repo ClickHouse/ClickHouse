@@ -666,32 +666,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
   */
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
-    // Constant expr should use alias names if any
-    String column_name = expr->getColumnName();
-
-    if (const auto * lit = expr->as<ASTLiteral>())
-    {
-        /// By default block_with_constants has only one column named "_dummy".
-        /// If block contains only constants it's may not be preprocessed by
-        //  ExpressionAnalyzer, so try to look up in the default column.
-        if (!block_with_constants.has(column_name))
-            column_name = "_dummy";
-
-        /// Simple literal
-        out_value = lit->value;
-        out_type = block_with_constants.getByName(column_name).type;
-        return true;
-    }
-    else if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
-    {
-        /// An expression which is dependent on constants only
-        const auto & expr_info = block_with_constants.getByName(column_name);
-        out_value = (*expr_info.column)[0];
-        out_type = expr_info.type;
-        return true;
-    }
-    else
-        return false;
+    return Tree(expr.get()).getConstant(block_with_constants, out_value, out_type);
 }
 
 
@@ -1350,22 +1325,22 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
                 else
                     return false;
             }
-            else if (getConstant(args[1], block_with_constants, const_value, const_type))
+            else if (func.getArgumentAt(1).getConstant(block_with_constants, const_value, const_type))
             {
-                if (isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+                if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(0), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 0;
                 }
                 else if (
                     !strict_condition
-                    && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByMonotonicFunctions(func.getArgumentAt(0), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
                 }
                 else if (
                     single_point && func_name == "equals" && !strict_condition
-                    && canConstantBeWrappedByFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByFunctions(func.getArgumentAt(0), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
