@@ -27,12 +27,12 @@ pymdown-extensions==8.0
 python-slugify==4.0.1
 PyYAML==5.4.1
 repackage==0.7.3
-requests==2.24.0
+requests==2.25.1
 singledispatch==3.4.0.3
 six==1.15.0
 soupsieve==2.0.1
 termcolor==1.1.0
 tornado==6.1
 Unidecode==1.1.1
-urllib3==1.25.10
+urllib3>=1.26.5
 Pygments>=2.7.4
