@@ -26,6 +26,7 @@
 
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/JIT/compileFunction.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -1082,6 +1083,12 @@ private:
     /// For external aggregation.
     TemporaryFiles temporary_files;
 
+    std::optional<CompiledAggregateFunctions> compiled_functions;
+
+    /** Try to compile aggregate functions.
+      */
+    void compileAggregateFunctions();
+
     /** Select the aggregation method based on the number and types of keys. */
     AggregatedDataVariants::Type chooseAggregationMethod();
 
@@ -1109,6 +1116,41 @@ private:
     /// Specialization for a particular value no_more_keys.
     template <bool no_more_keys, typename Method>
     void executeImplBatch(
+        Method & method,
+        typename Method::State & state,
+        Arena * aggregates_pool,
+        size_t rows,
+        AggregateFunctionInstruction * aggregate_instructions,
+        AggregateDataPtr overflow_row) const;
+
+    template <bool no_more_keys, typename Method>
+    void handleAggregationJIT(
+        Method & method,
+        typename Method::State & state,
+        Arena * aggregates_pool,
+        size_t rows,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+
+    // template <bool no_more_keys, typename Method>
+    // void handleAggregationJITV2(
+    //     Method & method,
+    //     typename Method::State & state,
+    //     Arena * aggregates_pool,
+    //     size_t rows,
+    //     AggregateFunctionInstruction * aggregate_instructions,
+    //     AggregateDataPtr overflow_row) const;
+
+    // template <bool no_more_keys, typename Method>
+    // void handleAggregationJITV3(
+    //     Method & method,
+    //     typename Method::State & state,
+    //     Arena * aggregates_pool,
+    //     size_t rows,
+    //     AggregateFunctionInstruction * aggregate_instructions,
+    //     AggregateDataPtr overflow_row) const;
+
+    template <bool no_more_keys, typename Method>
+    void handleAggregationDefault(
         Method & method,
         typename Method::State & state,
         Arena * aggregates_pool,

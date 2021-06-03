@@ -165,37 +165,6 @@ public:
         ++this->data(place).denominator;
     }
 
-#if USE_EMBEDDED_COMPILER
-
-    virtual bool isCompilable() const override
-    {
-        using AverageFieldType = AvgFieldType<T>;
-        return std::is_same_v<AverageFieldType, UInt64> || std::is_same_v<AverageFieldType, Int64>;
-    }
-
-    virtual void compile(llvm::IRBuilderBase & builder, llvm::Value * aggregate_function_place, const DataTypePtr & value_type, llvm::Value * value) const override
-    {
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-        llvm::Type * numerator_type = b.getInt64Ty();
-        llvm::Type * denominator_type = b.getInt64Ty();
-
-        auto * numerator_value_ptr = b.CreatePointerCast(aggregate_function_place, numerator_type->getPointerTo());
-        auto * numerator_value = b.CreateLoad(numerator_type, numerator_value_ptr);
-        auto * value_cast_to_result = nativeCast(b, value_type, value, numerator_type);
-        auto * sum_result_value = numerator_value->getType()->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_result) : b.CreateFAdd(numerator_value, value_cast_to_result);
-        b.CreateStore(sum_result_value, numerator_value_ptr);
-
-        auto * denominator_place_ptr_untyped = b.CreateConstInBoundsGEP1_32(nullptr, aggregate_function_place, 8);
-        auto * denominator_place_ptr = b.CreatePointerCast(denominator_place_ptr_untyped, denominator_type->getPointerTo());
-        auto * denominator_value = b.CreateLoad(denominator_place_ptr, numerator_value_ptr);
-        auto * increate_denominator_value = b.CreateAdd(denominator_value, llvm::ConstantInt::get(denominator_type, 1));
-        b.CreateStore(increate_denominator_value, denominator_place_ptr);
-    }
-
-#endif
-
-
     String getName() const final { return "avg"; }
 };
 }

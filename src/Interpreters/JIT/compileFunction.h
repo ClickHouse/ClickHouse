@@ -32,6 +32,14 @@ using ColumnDataRowsSize = size_t;
 
 using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
 
+struct CompiledFunction
+{
+
+    JITCompiledFunction compiled_function;
+
+    CHJIT::CompiledModule compiled_module;
+};
+
 /** Compile function to native jit code using CHJIT instance.
   * Function is compiled as single module.
   * After this function execution, code for function will be compiled and can be queried using
@@ -41,22 +49,33 @@ using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
   * It is important that ColumnData parameter of JITCompiledFunction is result column,
   * and will be filled by compiled function.
   */
-CHJIT::CompiledModuleInfo compileFunction(CHJIT & jit, const IFunctionBase & function);
+CompiledFunction compileFunction(CHJIT & jit, const IFunctionBase & function);
 
-using GetAggregateDataContext = char *;
-using GetAggregateDataFunction = AggregateDataPtr (*)(GetAggregateDataContext, size_t);
-using JITCompiledAggregateFunction = void (*)(ColumnDataRowsSize, ColumnData *, GetAggregateDataFunction, GetAggregateDataContext);
-
-struct AggregateFunctionToCompile
+struct AggregateFunctionWithOffset
 {
     const IAggregateFunction * function;
     size_t aggregate_data_offset;
 };
 
-CHJIT::CompiledModuleInfo compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionToCompile> & functions, const std::string & result_name);
+using GetAggregateDataContext = char *;
+using GetAggregateDataFunction = AggregateDataPtr (*)(GetAggregateDataContext, size_t);
 
-using JITCompiledAggregateFunctionV2 = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
-CHJIT::CompiledModuleInfo compileAggregateFunctonsV2(CHJIT & jit, const std::vector<AggregateFunctionToCompile> & functions, const std::string & result_name);
+using JITCreateAggregateStatesFunction = void (*)(AggregateDataPtr);
+using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsSize, ColumnData *, GetAggregateDataFunction, GetAggregateDataContext);
+using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr, AggregateDataPtr);
+using JITInsertAggregatesIntoColumnsFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
+
+struct CompiledAggregateFunctions
+{
+    JITCreateAggregateStatesFunction create_aggregate_states_function;
+    JITAddIntoAggregateStatesFunction add_into_aggregate_states_function;
+    JITMergeAggregateStatesFunction merge_aggregate_states_function;
+    JITInsertAggregatesIntoColumnsFunction insert_aggregates_into_columns_function;
+
+    CHJIT::CompiledModule compiled_module;
+};
+
+CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
 
 }
 

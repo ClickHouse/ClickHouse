@@ -42,36 +42,29 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
-class CompiledFunction
+class CompiledFunctionHolder
 {
 public:
 
-    CompiledFunction(void * compiled_function_, CHJIT::CompiledModuleInfo module_info_)
+    explicit CompiledFunctionHolder(CompiledFunction compiled_function_)
         : compiled_function(compiled_function_)
-        , module_info(std::move(module_info_))
     {}
 
-    void * getCompiledFunction() const { return compiled_function; }
-
-    ~CompiledFunction()
+    ~CompiledFunctionHolder()
     {
-        getJITInstance().deleteCompiledModule(module_info);
+        getJITInstance().deleteCompiledModule(compiled_function.compiled_module);
     }
 
-private:
-
-    void * compiled_function;
-
-    CHJIT::CompiledModuleInfo module_info;
+    CompiledFunction compiled_function;
 };
 
 class LLVMExecutableFunction : public IExecutableFunction
 {
 public:
 
-    explicit LLVMExecutableFunction(const std::string & name_, std::shared_ptr<CompiledFunction> compiled_function_)
+    explicit LLVMExecutableFunction(const std::string & name_, std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_)
         : name(name_)
-        , compiled_function(compiled_function_)
+        , compiled_function_holder(compiled_function_holder_)
     {
     }
 
@@ -104,8 +97,8 @@ public:
 
             columns[arguments.size()] = getColumnData(result_column.get());
 
-            JITCompiledFunction jit_compiled_function_typed = reinterpret_cast<JITCompiledFunction>(compiled_function->getCompiledFunction());
-            jit_compiled_function_typed(input_rows_count, columns.data());
+            auto jit_compiled_function = compiled_function_holder->compiled_function.compiled_function;
+            jit_compiled_function(input_rows_count, columns.data());
 
             #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer don't know about stores from JIT-ed code.
@@ -135,7 +128,7 @@ public:
 
 private:
     std::string name;
-    std::shared_ptr<CompiledFunction> compiled_function;
+    std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
 };
 
 class LLVMFunction : public IFunctionBase
@@ -157,9 +150,9 @@ public:
         }
     }
 
-    void setCompiledFunction(std::shared_ptr<CompiledFunction> compiled_function_)
+    void setCompiledFunction(std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_)
     {
-        compiled_function = compiled_function_;
+        compiled_function_holder = compiled_function_holder_;
     }
 
     bool isCompilable() const override { return true; }
@@ -177,10 +170,10 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        if (!compiled_function)
+        if (!compiled_function_holder)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Compiled function was not initialized {}", name);
 
-        return std::make_unique<LLVMExecutableFunction>(name, compiled_function);
+        return std::make_unique<LLVMExecutableFunction>(name, compiled_function_holder);
     }
 
     bool isDeterministic() const override
@@ -269,7 +262,7 @@ private:
     CompileDAG dag;
     DataTypes argument_types;
     std::vector<FunctionBasePtr> nested_functions;
-    std::shared_ptr<CompiledFunction> compiled_function;
+    std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
 };
 
 static FunctionBasePtr compile(
@@ -293,22 +286,20 @@ static FunctionBasePtr compile(
         auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(hash_key, [&] ()
         {
             LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
-            CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
-            auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
-            auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
+            auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
+            auto compiled_function_holder = std::make_shared<CompiledFunctionHolder>(compiled_function);
 
-            return std::make_shared<CompiledFunctionCacheEntry>(std::move(compiled_function), compiled_module_info.size);
+            return std::make_shared<CompiledFunctionCacheEntry>(std::move(compiled_function_holder), compiled_function.compiled_module.size);
         });
 
-        llvm_function->setCompiledFunction(compiled_function_cache_entry->getCompiledFunction());
+        llvm_function->setCompiledFunction(compiled_function_cache_entry->getCompiledFunctionHolder());
     }
     else
     {
-        LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
-        CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
-        auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
-        auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
-        llvm_function->setCompiledFunction(compiled_function);
+        auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
+        auto compiled_function_ptr = std::make_shared<CompiledFunctionHolder>(compiled_function);
+
+        llvm_function->setCompiledFunction(compiled_function_ptr);
     }
 
     return llvm_function;

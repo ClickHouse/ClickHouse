@@ -11,22 +11,22 @@
 namespace DB
 {
 
-class CompiledFunction;
+class CompiledFunctionHolder;
 
 class CompiledFunctionCacheEntry
 {
 public:
-    CompiledFunctionCacheEntry(std::shared_ptr<CompiledFunction> compiled_function_, size_t compiled_function_size_)
-        : compiled_function(std::move(compiled_function_))
+    CompiledFunctionCacheEntry(std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_, size_t compiled_function_size_)
+        : compiled_function_holder(std::move(compiled_function_holder_))
         , compiled_function_size(compiled_function_size_)
     {}
 
-    std::shared_ptr<CompiledFunction> getCompiledFunction() const { return compiled_function; }
+    std::shared_ptr<CompiledFunctionHolder> getCompiledFunctionHolder() const { return compiled_function_holder; }
 
     size_t getCompiledFunctionSize() const { return compiled_function_size; }
 
 private:
-    std::shared_ptr<CompiledFunction> compiled_function;
+    std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
 
     size_t compiled_function_size;
 };

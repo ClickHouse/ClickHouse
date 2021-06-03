@@ -1,9 +1,11 @@
 #include <functional>
 
+/** Adapt functor to static method where functor passed as context.
+  * Main use case to convert lambda into function that can be passed into JIT code.
+  */
 template <typename Functor>
 class FunctorToStaticMethodAdaptor : public FunctorToStaticMethodAdaptor<decltype(&Functor::operator())>
 {
-public:
 };
 
 template <typename R, typename C, typename ...Args>
