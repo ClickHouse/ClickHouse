@@ -2451,7 +2451,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(
-                metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
+                metadata_snapshot, getContext(), part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
@@ -3915,6 +3915,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
             return fetcher.fetchPart(
                 metadata_snapshot,
+                getContext(),
                 part_name,
                 source_replica_path,
                 address.host,
@@ -4070,7 +4071,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
                 ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
         return fetcher.fetchPart(
-            metadata_snapshot, part_name, source_replica_path,
+            metadata_snapshot, getContext(), part_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, "", nullptr, true,
             replaced_disk);
@@ -4372,7 +4373,8 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
         deduplicate,
-        local_context->getSettingsRef().optimize_on_insert);
+        local_context->getSettingsRef().optimize_on_insert,
+        local_context);
 }
 
 
@@ -4997,7 +4999,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false,
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false, query_context,
         /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)

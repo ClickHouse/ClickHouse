@@ -266,7 +266,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
         minmax_idx_condition.emplace(query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
-        partition_pruner.emplace(metadata_snapshot->getPartitionKey(), query_info, context, false /* strict */);
+        partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
@@ -292,7 +292,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         selectPartsToReadWithUUIDFilter(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, query_context);
     else
         selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read);
-
 
     /// Sampling.
     Names column_names_to_read = real_column_names;
