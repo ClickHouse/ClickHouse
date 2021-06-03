@@ -80,10 +80,10 @@ public:
 /// Parsing of external table used when sending tables via http
 /// The `handlePart` function will be called for each table passed,
 /// so it's also necessary to call `clean` at the end of the `handlePart`.
-class ExternalTablesHandler : public HTMLForm::PartHandler, BaseExternalTable, WithMutableContext
+class ExternalTablesHandler : public HTMLForm::PartHandler, BaseExternalTable, WithContext
 {
 public:
-    ExternalTablesHandler(ContextMutablePtr context_, const Poco::Net::NameValueCollection & params_) : WithMutableContext(context_), params(params_) {}
+    ExternalTablesHandler(ContextPtr context_, const Poco::Net::NameValueCollection & params_) : WithContext(context_), params(params_) {}
 
     void handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream) override;
 

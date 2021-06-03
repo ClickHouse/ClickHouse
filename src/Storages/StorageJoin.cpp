@@ -1,25 +1,24 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageSet.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/joinDispatch.h>
-#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Common/Exception.h>
 
-#include <Compression/CompressedWriteBuffer.h>
+#include <Poco/String.h>    /// toLower
+#include <Poco/File.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-#include <Poco/String.h> /// toLower
 
 
 namespace DB
@@ -47,10 +46,9 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool overwrite_,
     bool persistent_)
-    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
+    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, persistent_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -68,18 +66,10 @@ StorageJoin::StorageJoin(
     restore();
 }
 
-BlockOutputStreamPtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
-{
-    std::lock_guard mutate_lock(mutate_mutex);
-    return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
-}
 
 void StorageJoin::truncate(
     const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder&)
 {
-    std::lock_guard mutate_lock(mutate_mutex);
-    std::unique_lock<std::shared_mutex> lock(rwlock);
-
     disk->removeRecursive(path);
     disk->createDirectories(path);
     disk->createDirectories(path + "tmp/");
@@ -88,70 +78,6 @@ void StorageJoin::truncate(
     join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
 }
 
-void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
-{
-    for (const auto & command : commands)
-        if (command.type != MutationCommand::DELETE)
-            throw Exception("Table engine Join supports only DELETE mutations", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
-{
-    /// Firstly accuire lock for mutation, that locks changes of data.
-    /// We cannot accuire rwlock here, because read lock is needed
-    /// for execution of mutation interpreter.
-    std::lock_guard mutate_lock(mutate_mutex);
-
-    constexpr auto tmp_backup_file_name = "tmp/mut.bin";
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-
-    auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
-    auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
-    auto backup_stream = NativeBlockOutputStream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
-
-    auto new_data = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
-
-    // New scope controls lifetime of InputStream.
-    {
-        auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-        auto in = interpreter->execute();
-        in->readPrefix();
-
-        while (const Block & block = in->read())
-        {
-            new_data->addJoinedBlock(block, true);
-            if (persistent)
-                backup_stream.write(block);
-        }
-
-        in->readSuffix();
-    }
-
-    /// Now accuire exclusive lock and modify storage.
-    std::unique_lock<std::shared_mutex> lock(rwlock);
-
-    join = std::move(new_data);
-    increment = 1;
-
-    if (persistent)
-    {
-        backup_stream.flush();
-        compressed_backup_buf.next();
-        backup_buf->next();
-        backup_buf->finalize();
-
-        std::vector<std::string> files;
-        disk->listFiles(path, files);
-        for (const auto & file_name: files)
-        {
-            if (file_name.ends_with(".bin"))
-                disk->removeFileIfExists(path + file_name);
-        }
-
-        disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
-    }
-}
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const
 {
@@ -166,9 +92,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join)
 
     /// TODO: check key columns
 
-    /// Set names qualifiers: table.column -> column
-    /// It's required because storage join stores non-qualified names
-    /// Qualifies will be added by join implementation (HashJoin)
+    /// Some HACK to remove wrong names qualifiers: table.column -> column.
     analyzed_join->setRightKeys(key_names);
 
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
@@ -339,7 +263,6 @@ void registerStorageJoin(StorageFactory & factory)
             strictness,
             args.columns,
             args.constraints,
-            args.comment,
             join_any_take_last_row,
             persistent);
     };
@@ -485,7 +408,7 @@ private:
 
         if (!position)
             position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
+                static_cast<void *>(new typename Map::const_iterator(map.begin())),
                 [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
 
         auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());

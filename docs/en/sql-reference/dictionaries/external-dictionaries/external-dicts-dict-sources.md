@@ -53,7 +53,7 @@ optional settings are available:
 or
 
 ``` sql
-SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
@@ -70,7 +70,7 @@ Types of sources (`source_type`):
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
     -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)    
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
 
@@ -88,7 +88,7 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:
@@ -97,10 +97,6 @@ Setting fields:
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
 When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
-
-**See Also**
-
--   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 

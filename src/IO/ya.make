@@ -47,7 +47,6 @@ SRCS(
     ReadBufferAIO.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
-    ReadBufferFromFileDecorator.cpp
     ReadBufferFromFileDescriptor.cpp
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
@@ -58,7 +57,6 @@ SRCS(
     UseSSL.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
-    WriteBufferFromFileDecorator.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp

@@ -37,8 +37,8 @@ def test_attach_detach(start_cluster):
 
     node2.query("INSERT INTO test VALUES (3), (4)")
 
-    node1.query_with_retry("SYSTEM SYNC REPLICA test", timeout=10)
-    node2.query_with_retry("SYSTEM SYNC REPLICA test", timeout=10)
+    node1.query("SYSTEM SYNC REPLICA test", timeout=10)
+    node2.query("SYSTEM SYNC REPLICA test", timeout=10)
 
     assert node1.query("SELECT COUNT() FROM  test") == "4\n"
     assert node2.query("SELECT COUNT() FROM  test") == "4\n"

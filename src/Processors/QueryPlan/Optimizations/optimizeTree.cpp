@@ -23,7 +23,7 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
 
     struct Frame
     {
-        QueryPlan::Node * node = nullptr;
+        QueryPlan::Node * node;
 
         /// If not zero, traverse only depth_limit layers of tree (if no other optimizations happen).
         /// Otherwise, traverse all children.

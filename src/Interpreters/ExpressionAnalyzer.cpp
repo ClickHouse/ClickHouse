@@ -26,8 +26,6 @@
 #include <Interpreters/DictionaryReader.h>
 #include <Interpreters/Context.h>
 
-#include <Processors/QueryPlan/ExpressionStep.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
@@ -121,14 +119,11 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
     return true;
 }
 
-ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
-
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
 {}
 
-ExpressionAnalyzer::~ExpressionAnalyzer() = default;
 
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
@@ -474,57 +469,9 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     return !aggregates().empty();
 }
 
-void makeWindowDescriptionFromAST(const WindowDescriptions & existing_descriptions,
-    WindowDescription & desc, const IAST * ast)
+void makeWindowDescriptionFromAST(WindowDescription & desc, const IAST * ast)
 {
     const auto & definition = ast->as<const ASTWindowDefinition &>();
-
-    if (!definition.parent_window_name.empty())
-    {
-        auto it = existing_descriptions.find(definition.parent_window_name);
-        if (it == existing_descriptions.end())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Window definition '{}' references an unknown window '{}'",
-                definition.formatForErrorMessage(),
-                definition.parent_window_name);
-        }
-
-        const auto & parent = it->second;
-        desc.partition_by = parent.partition_by;
-        desc.order_by = parent.order_by;
-        desc.frame = parent.frame;
-
-        // If an existing_window_name is specified it must refer to an earlier
-        // entry in the WINDOW list; the new window copies its partitioning clause
-        // from that entry, as well as its ordering clause if any. In this case
-        // the new window cannot specify its own PARTITION BY clause, and it can
-        // specify ORDER BY only if the copied window does not have one. The new
-        // window always uses its own frame clause; the copied window must not
-        // specify a frame clause.
-        // -- https://www.postgresql.org/docs/current/sql-select.html
-        if (definition.partition_by)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Derived window definition '{}' is not allowed to override PARTITION BY",
-                definition.formatForErrorMessage());
-        }
-
-        if (definition.order_by && !parent.order_by.empty())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Derived window definition '{}' is not allowed to override a non-empty ORDER BY",
-                definition.formatForErrorMessage());
-        }
-
-        if (!parent.frame.is_default)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Parent window '{}' is not allowed to define a frame: while processing derived window definition '{}'",
-                definition.parent_window_name,
-                definition.formatForErrorMessage());
-        }
-    }
 
     if (definition.partition_by)
     {
@@ -605,7 +552,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
             const auto & elem = ptr->as<const ASTWindowListElement &>();
             WindowDescription desc;
             desc.window_name = elem.name;
-            makeWindowDescriptionFromAST(window_descriptions, desc, elem.definition.get());
+            makeWindowDescriptionFromAST(desc, elem.definition.get());
 
             auto [it, inserted] = window_descriptions.insert(
                 {desc.window_name, desc});
@@ -690,7 +637,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                 const ASTWindowDefinition &>();
             WindowDescription desc;
             desc.window_name = definition.getDefaultWindowName();
-            makeWindowDescriptionFromAST(window_descriptions, desc, &definition);
+            makeWindowDescriptionFromAST(desc, &definition);
 
             auto [it, inserted] = window_descriptions.insert(
                 {desc.window_name, desc});
@@ -799,20 +746,20 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
     return {};
 }
 
-static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
+static ExpressionActionsPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
     auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
-    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
+    return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
 static bool allowDictJoin(StoragePtr joined_storage, ContextPtr context, String & dict_name, String & key_name)
 {
-    if (!joined_storage->isDictionary())
+    const auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
+    if (!dict)
         return false;
 
-    StorageDictionary & storage_dictionary = static_cast<StorageDictionary &>(*joined_storage);
-    dict_name = storage_dictionary.getDictionaryName();
+    dict_name = dict->dictionaryName();
     auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
     if (!dictionary)
         return false;
@@ -855,77 +802,67 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
+    auto join_hash = join_element.getTreeHash();
+    String join_subquery_id = toString(join_hash.first) + "_" + toString(join_hash.second);
 
-    if (joined_plan)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
+    SubqueryForSet & subquery_for_join = subqueries_for_sets[join_subquery_id];
 
     /// Use StorageJoin if any.
-    JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
+    if (!subquery_for_join.join)
+        subquery_for_join.join = tryGetStorageJoin(syntax->analyzed_join);
 
-    if (!join)
+    if (!subquery_for_join.join)
     {
         /// Actions which need to be calculated on joined block.
-        auto joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
+        ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
 
         Names original_right_columns;
-
-        NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
-            Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
-        for (auto & pr : required_columns_with_aliases)
-            original_right_columns.push_back(pr.first);
-
-        /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
-            * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
-            *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
-            * - this function shows the expression JOIN _data1.
-            */
-        auto interpreter = interpretSubquery(join_element.table_expression, getContext(), original_right_columns, query_options);
-
+        if (!subquery_for_join.source)
         {
-            joined_plan = std::make_unique<QueryPlan>();
-            interpreter->buildQueryPlan(*joined_plan);
+            NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
+                joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
+            for (auto & pr : required_columns_with_aliases)
+                original_right_columns.push_back(pr.first);
 
-            auto sample_block = interpreter->getSampleBlock();
+            /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
+                * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
+                *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
+                * - this function shows the expression JOIN _data1.
+                */
+            auto interpreter = interpretSubquery(join_element.table_expression, getContext(), original_right_columns, query_options);
 
-            auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
-            for (const auto & name_with_alias : required_columns_with_aliases)
-            {
-                if (sample_block.has(name_with_alias.first))
-                {
-                    auto pos = sample_block.getPositionByName(name_with_alias.first);
-                    const auto & alias = rename_dag->addAlias(*rename_dag->getInputs()[pos], name_with_alias.second);
-                    rename_dag->getIndex()[pos] = &alias;
-                }
-            }
-
-            auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
-            rename_step->setStepDescription("Rename joined columns");
-            joined_plan->addStep(std::move(rename_step));
+            subquery_for_join.makeSource(interpreter, std::move(required_columns_with_aliases));
         }
 
-        auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(joined_block_actions));
-        joined_actions_step->setStepDescription("Joined actions");
-        joined_plan->addStep(std::move(joined_actions_step));
+        /// TODO You do not need to set this up when JOIN is only needed on remote servers.
+        subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
 
-        const ColumnsWithTypeAndName & right_sample_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
+        const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
         bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
         if (need_convert)
-        {
-            auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), syntax->analyzed_join->rightConvertingActions());
-            converting_step->setStepDescription("Convert joined columns");
-            joined_plan->addStep(std::move(converting_step));
-        }
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(
+                syntax->analyzed_join->rightConvertingActions(),
+                ExpressionActionsSettings::fromContext(getContext())));
 
-        join = makeJoin(syntax->analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
+        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, getContext());
 
         /// Do not make subquery for join over dictionary.
         if (syntax->analyzed_join->dictionary_reader)
-            joined_plan.reset();
+        {
+            JoinPtr join = subquery_for_join.join;
+            subqueries_for_sets.erase(join_subquery_id);
+            return join;
+        }
     }
     else
-        syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, {});
+    {
+        const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
+        bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
+        if (need_convert)
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(syntax->analyzed_join->rightConvertingActions()));
+    }
 
-    return join;
+    return subquery_for_join.join;
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
@@ -957,8 +894,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
         tmp_actions_dag->removeUnusedActions(NameSet{prewhere_column_name});
-
-        auto required_columns = tmp_actions_dag->getRequiredColumnsNames();
+        auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag, ExpressionActionsSettings::fromContext(getContext()));
+        auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
         required_source_columns.insert(first_action_names.begin(), first_action_names.end());
 
@@ -1076,7 +1013,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
             group_by_elements_actions.emplace_back(
-                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
+                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext())));
         }
     }
 
@@ -1235,7 +1172,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
             order_by_elements_actions.emplace_back(
-                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
+                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext())));
         }
     }
 
@@ -1393,11 +1330,12 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
     return actions_dag;
 }
 
-ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result, CompileExpressions compile_expressions)
+ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
 {
     return std::make_shared<ExpressionActions>(
-        getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions));
+        getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext()));
 }
+
 
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
 {
@@ -1405,11 +1343,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAn
 
     getRootActions(query, true, actions, true);
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
-}
-
-std::unique_ptr<QueryPlan> SelectQueryExpressionAnalyzer::getJoinedPlan()
-{
-    return std::move(joined_plan);
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
@@ -1685,7 +1618,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
 
     if (hasWhere())
     {
-        where_column_name = query.where()->getColumnName();
+        auto where_column_name = query.where()->getColumnName();
         remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
     }
 }

@@ -7,12 +7,11 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Core/DecimalFunctions.h>
+#include "Core/DecimalFunctions.h"
 
 
 namespace DB
 {
-struct Settings;
 template <typename T>
 using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
@@ -97,7 +96,7 @@ public:
         UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
         : Base(argument_types_, {}), num_scale(num_scale_), denom_scale(denom_scale_) {}
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
+    DataTypePtr getReturnType() const final { return std::make_shared<DataTypeNumber<Float64>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 

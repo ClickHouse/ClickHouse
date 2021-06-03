@@ -36,7 +36,7 @@ option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
-    set(RECONFIGURE_MESSAGE_LEVEL WARNING)
+    set(RECONFIGURE_MESSAGE_LEVEL STATUS)
 endif()
 
 enable_language(C CXX ASM)
@@ -167,10 +167,9 @@ endif ()
 
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
-option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-    # Only for Linux, x86_64 or aarch64.
+if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
+    # Only for Linux, x86_64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
@@ -258,16 +257,11 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
-option(ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated.")
+option(ARCH_NATIVE "Add -march=native compiler flag")
 
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
-
-# Asynchronous unwind tables are needed for Query Profiler.
-# They are already by default on some platforms but possibly not on all platforms.
-# Enable it explicitly.
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
@@ -500,10 +494,10 @@ include (cmake/find/krb5.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/cyrus-sasl.cmake)
 include (cmake/find/rdkafka.cmake)
-include (cmake/find/libuv.cmake) # for amqpcpp and cassandra
 include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
+include (cmake/find/termcap.cmake) # for external static llvm
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
@@ -522,11 +516,10 @@ include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
-include (cmake/find/nanodbc.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
+include (cmake/find/nanodbc.cmake)
 include (cmake/find/nuraft.cmake)
-include (cmake/find/yaml-cpp.cmake)
 
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
@@ -592,9 +585,6 @@ include_directories(${ConfigIncludePath})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
-
-# Check if needed compiler flags are supported
-include (cmake/check_flags.cmake)
 
 add_subdirectory (base)
 add_subdirectory (src)

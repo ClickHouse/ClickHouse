@@ -57,14 +57,12 @@ public:
 private:
 
 protected:
-    StorageNull(
-        const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
+    StorageNull(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
         : IStorage(table_id_)
     {
         StorageInMemoryMetadata metadata_;
         metadata_.setColumns(columns_description_);
         metadata_.setConstraints(constraints_);
-        metadata_.setComment(comment);
         setInMemoryMetadata(metadata_);
     }
 };

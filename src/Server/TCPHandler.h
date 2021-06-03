@@ -119,7 +119,7 @@ public:
     void run() override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(ContextMutablePtr /*context*/) {}
+    virtual void customizeContext(ContextPtr /*context*/) {}
 
 private:
     IServer & server;
@@ -132,8 +132,8 @@ private:
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
 
-    ContextMutablePtr connection_context;
-    ContextMutablePtr query_context;
+    ContextPtr connection_context;
+    ContextPtr query_context;
 
     size_t unknown_packet_in_send_data = 0;
 

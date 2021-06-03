@@ -240,7 +240,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
-            String{},
             remote_table_id.database_name,
             remote_table_id.table_name,
             String{},

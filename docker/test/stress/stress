@@ -27,7 +27,7 @@ def get_options(i):
         options += " --db-engine=Ordinary"
 
     if i % 3 == 2:
-        options += ''' --client-option='allow_experimental_database_replicated=1' --db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
+        options += ''' --db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -57,10 +57,6 @@ def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_t
         pipes.append(p)
         time.sleep(0.5)
     return pipes
-
-def compress_stress_logs(output_path, files_prefix):
-    cmd = f"cd {output_path} && tar -zcf stress_run_logs.tar.gz {files_prefix}* && rm {files_prefix}*"
-    check_output(cmd, shell=True)
 
 def prepare_for_hung_check():
     # FIXME this function should not exist, but...
@@ -120,7 +116,7 @@ if __name__ == "__main__":
     parser.add_argument("--server-log-folder", default='/var/log/clickhouse-server')
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=3600)
-    parser.add_argument("--num-parallel", type=int, default=cpu_count())
+    parser.add_argument("--num-parallel", default=cpu_count())
     parser.add_argument('--hung-check', action='store_true', default=False)
 
     args = parser.parse_args()
@@ -139,11 +135,6 @@ if __name__ == "__main__":
         time.sleep(5)
 
     logging.info("All processes finished")
-
-    logging.info("Compressing stress logs")
-    compress_stress_logs(args.output_folder, "stress_test_run_")
-    logging.info("Logs compressed")
-
     if args.hung_check:
         have_long_running_queries = prepare_for_hung_check()
         logging.info("Checking if some queries hung")

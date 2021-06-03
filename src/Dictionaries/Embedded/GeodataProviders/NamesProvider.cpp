@@ -2,9 +2,7 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include "NamesFormatReader.h"
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 bool LanguageRegionsNamesDataSource::isModified() const
 {
@@ -13,7 +11,7 @@ bool LanguageRegionsNamesDataSource::isModified() const
 
 size_t LanguageRegionsNamesDataSource::estimateTotalSize() const
 {
-    return fs::file_size(path);
+    return Poco::File(path).getSize();
 }
 
 ILanguageRegionsNamesReaderPtr LanguageRegionsNamesDataSource::createReader()
@@ -41,7 +39,7 @@ RegionsNamesDataProvider::RegionsNamesDataProvider(const std::string & directory
 ILanguageRegionsNamesDataSourcePtr RegionsNamesDataProvider::getLanguageRegionsNamesSource(const std::string & language) const
 {
     const auto data_file = getDataFilePath(language);
-    if (fs::exists(data_file))
+    if (Poco::File(data_file).exists())
         return std::make_unique<LanguageRegionsNamesDataSource>(data_file, language);
     else
         return {};

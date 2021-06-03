@@ -55,12 +55,12 @@ namespace MySQLInterpreter
     };
 
 template <typename InterpreterImpl>
-class InterpreterMySQLDDLQuery : public IInterpreter, WithMutableContext
+class InterpreterMySQLDDLQuery : public IInterpreter, WithContext
 {
 public:
     InterpreterMySQLDDLQuery(
-        const ASTPtr & query_ptr_, ContextMutablePtr context_, const String & mapped_to_database_, const String & mysql_database_)
-        : WithMutableContext(context_), query_ptr(query_ptr_), mapped_to_database(mapped_to_database_), mysql_database(mysql_database_)
+        const ASTPtr & query_ptr_, ContextPtr context_, const String & mapped_to_database_, const String & mysql_database_)
+        : WithContext(context_), query_ptr(query_ptr_), mapped_to_database(mapped_to_database_), mysql_database(mysql_database_)
     {
     }
 

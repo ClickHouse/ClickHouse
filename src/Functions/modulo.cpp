@@ -43,7 +43,7 @@ struct ModuloByConstantImpl
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
-    static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
+    static void NO_INLINE vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -96,11 +96,6 @@ struct ModuloByConstantImpl
     }
 };
 
-template <typename A, typename B>
-struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
-{
-    using Op = ModuloLegacyImpl<A, B>;
-};
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -137,14 +132,6 @@ void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
-}
-
-struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
-using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
-
-void registerFunctionModuloLegacy(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionModuloLegacy>();
 }
 
 }

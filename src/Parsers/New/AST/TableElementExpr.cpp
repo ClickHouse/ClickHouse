@@ -4,12 +4,10 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/ColumnTypeExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
-#include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -81,13 +79,6 @@ PtrTo<TableElementExpr>
 TableElementExpr::createIndex(PtrTo<Identifier> name, PtrTo<ColumnExpr> expr, PtrTo<ColumnTypeExpr> type, PtrTo<NumberLiteral> granularity)
 {
     return PtrTo<TableElementExpr>(new TableElementExpr(ExprType::INDEX, {name, expr, type, granularity}));
-}
-
-// static
-PtrTo<TableElementExpr>
-TableElementExpr::createProjection(PtrTo<Identifier> name, PtrTo<ProjectionSelectStmt> query)
-{
-    return PtrTo<TableElementExpr>(new TableElementExpr(ExprType::PROJECTION, {name, query}));
 }
 
 TableElementExpr::TableElementExpr(ExprType type, PtrList exprs) : INode(exprs), expr_type(type)
@@ -163,15 +154,6 @@ ASTPtr TableElementExpr::convertToOld() const
 
             return expr;
         }
-        case ExprType::PROJECTION:
-        {
-            auto expr = std::make_shared<ASTProjectionDeclaration>();
-
-            expr->name = get<Identifier>(NAME)->getName();
-            expr->set(expr->query, get(QUERY)->convertToOld());
-
-            return expr;
-        }
     }
     __builtin_unreachable();
 }
@@ -240,11 +222,6 @@ antlrcpp::Any ParseTreeVisitor::visitTableElementExprIndex(ClickHouseParser::Tab
     return visit(ctx->tableIndexDfnt());
 }
 
-antlrcpp::Any ParseTreeVisitor::visitTableElementExprProjection(ClickHouseParser::TableElementExprProjectionContext *ctx)
-{
-    return visit(ctx->tableProjectionDfnt());
-}
-
 antlrcpp::Any ParseTreeVisitor::visitTableIndexDfnt(ClickHouseParser::TableIndexDfntContext *ctx)
 {
     return TableElementExpr::createIndex(
@@ -252,13 +229,6 @@ antlrcpp::Any ParseTreeVisitor::visitTableIndexDfnt(ClickHouseParser::TableIndex
         visit(ctx->columnExpr()),
         visit(ctx->columnTypeExpr()),
         Literal::createNumber(ctx->DECIMAL_LITERAL()));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitTableProjectionDfnt(ClickHouseParser::TableProjectionDfntContext *ctx)
-{
-    return TableElementExpr::createProjection(
-        visit(ctx->nestedIdentifier()),
-        visit(ctx->projectionSelectStmt()));
 }
 
 }

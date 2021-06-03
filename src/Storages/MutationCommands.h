@@ -28,11 +28,9 @@ struct MutationCommand
         DELETE,
         UPDATE,
         MATERIALIZE_INDEX,
-        MATERIALIZE_PROJECTION,
         READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
         DROP_COLUMN,
         DROP_INDEX,
-        DROP_PROJECTION,
         MATERIALIZE_TTL,
         RENAME_COLUMN,
     };
@@ -45,9 +43,8 @@ struct MutationCommand
     /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
-    /// For MATERIALIZE INDEX and PROJECTION
+    /// For MATERIALIZE INDEX.
     String index_name;
-    String projection_name;
 
     /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition;

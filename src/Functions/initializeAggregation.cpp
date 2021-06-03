@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -29,7 +29,7 @@ class FunctionInitializeAggregation : public IFunction
 {
 public:
     static constexpr auto name = "initializeAggregation";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionInitializeAggregation>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionInitializeAggregation>(); }
 
     String getName() const override { return name; }
 

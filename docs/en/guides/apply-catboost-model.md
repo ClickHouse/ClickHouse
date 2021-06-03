@@ -20,7 +20,7 @@ For more information about training CatBoost models, see [Training and applying 
 
 ## Prerequisites {#prerequisites}
 
-If you do not have the [Docker](https://docs.docker.com/install/) yet, install it.
+If you don’t have the [Docker](https://docs.docker.com/install/) yet, install it.
 
 !!! note "Note"
     [Docker](https://www.docker.com) is a software platform that allows you to create containers that isolate a CatBoost and ClickHouse installation from the rest of the system.
@@ -158,9 +158,6 @@ The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dl
 <catboost_dynamic_library_path>/home/catboost/data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
-
-!!! note "Note"
-    You can change path to the CatBoost model configuration later without restarting server.
 
 ## 4. Run the Model Inference from SQL {#run-model-inference}
 

@@ -90,8 +90,6 @@ struct IDictionary : public IExternalLoadable
 
     virtual size_t getQueryCount() const = 0;
 
-    virtual double getFoundRate() const = 0;
-
     virtual double getHitRate() const = 0;
 
     virtual size_t getElementCount() const = 0;

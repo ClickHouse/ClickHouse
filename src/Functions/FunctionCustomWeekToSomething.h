@@ -3,8 +3,9 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/CustomWeekTransforms.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/TransformDateTime64.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -24,7 +25,7 @@ class FunctionCustomWeekToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
 
     String getName() const override { return name; }
 

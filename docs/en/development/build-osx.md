@@ -20,7 +20,7 @@ Install the latest [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12
 
 Open it at least once to accept the end-user license agreement and automatically install the required components.
 
-Then, make sure that the latest Command Line Tools are installed and selected in the system:
+Then, make sure that the latest Comman Line Tools are installed and selected in the system:
 
 ``` bash
 sudo rm -rf /Library/Developer/CommandLineTools
@@ -123,12 +123,5 @@ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 Reboot.
 
 To check if it’s working, you can use `ulimit -n` command.
-
-## Run ClickHouse server:
-
-```
-cd ClickHouse
-./build/programs/clickhouse-server --config-file ./programs/server/config.xml
-```
 
 [Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

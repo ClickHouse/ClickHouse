@@ -2,11 +2,11 @@ configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
 
 add_subdirectory(divide)
 
-include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_functions .)
 
-list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
-list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
+list(REMOVE_ITEM clickhouse_functions_sources IFunctionImpl.cpp FunctionFactory.cpp FunctionHelpers.cpp)
+list(REMOVE_ITEM clickhouse_functions_headers IFunctionImpl.h FunctionFactory.h FunctionHelpers.h)
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
@@ -66,8 +66,8 @@ if (USE_FASTOPS)
     target_include_directories (clickhouse_functions SYSTEM PRIVATE ${FASTOPS_INCLUDE_DIR})
 endif ()
 
-if (ENABLE_EXAMPLES)
-    add_subdirectory(examples)
+if (ENABLE_TESTS)
+    add_subdirectory (tests)
 endif ()
 
 if (USE_EMBEDDED_COMPILER)

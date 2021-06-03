@@ -4,7 +4,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnsNumber.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <ext/map.h>
 
@@ -30,7 +30,7 @@ class FunctionLeastGreatestGeneric : public IFunction
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionLeastGreatestGeneric<kind>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionLeastGreatestGeneric<kind>>(); }
 
 private:
     String getName() const override { return name; }
@@ -87,35 +87,35 @@ private:
 
 
 template <LeastGreatest kind, typename SpecializedFunction>
-class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
+class LeastGreatestOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
 
-    static FunctionOverloadResolverPtr create(ContextConstPtr context)
+    static FunctionOverloadResolverImplPtr create(ContextPtr context)
     {
         return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context);
     }
 
-    explicit LeastGreatestOverloadResolver(ContextConstPtr context_) : context(context_) {}
+    explicit LeastGreatestOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
 
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2 && isNumber(arguments[0].type) && isNumber(arguments[1].type))
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
+            return std::make_unique<DefaultFunction>(SpecializedFunction::create(context), argument_types, return_type);
 
-        return std::make_unique<FunctionToFunctionBaseAdaptor>(
+        return std::make_unique<DefaultFunction>(
             FunctionLeastGreatestGeneric<kind>::create(context), argument_types, return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
+    DataTypePtr getReturnType(const DataTypes & types) const override
     {
         if (types.empty())
             throw Exception("Function " + getName() + " cannot be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -127,7 +127,7 @@ public:
     }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 };
 
 }

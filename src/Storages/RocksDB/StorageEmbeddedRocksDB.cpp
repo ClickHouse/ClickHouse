@@ -16,7 +16,6 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
 
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
@@ -27,16 +26,14 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <Poco/File.h>
+#include <Poco/Path.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
 
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>
 
-#include <filesystem>
-
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -256,7 +253,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     rocksdb_dir = context_->getPath() + relative_data_path_;
     if (!attach)
     {
-        fs::create_directories(rocksdb_dir);
+        Poco::File(rocksdb_dir).createDirectories();
     }
     initDb();
 }
@@ -264,8 +261,8 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &)
 {
     rocksdb_ptr->Close();
-    fs::remove_all(rocksdb_dir);
-    fs::create_directories(rocksdb_dir);
+    Poco::File(rocksdb_dir).remove(true);
+    Poco::File(rocksdb_dir).createDirectories();
     initDb();
 }
 

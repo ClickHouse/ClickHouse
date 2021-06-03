@@ -50,9 +50,9 @@ void FunctionFactory::registerFunction(const
 }
 
 
-FunctionOverloadResolverPtr FunctionFactory::getImpl(
+FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
     const std::string & name,
-    ContextConstPtr context) const
+    ContextPtr context) const
 {
     auto res = tryGetImpl(name, context);
     if (!res)
@@ -82,17 +82,17 @@ std::vector<std::string> FunctionFactory::getAllNames() const
 
 FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
-    ContextConstPtr context) const
+    ContextPtr context) const
 {
-    return getImpl(name, context);
+    return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
 }
 
-FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
+FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
-    ContextConstPtr context) const
+    ContextPtr context) const
 {
     String name = getAliasToOrName(name_param);
-    FunctionOverloadResolverPtr res;
+    FunctionOverloadResolverImplPtr res;
 
     auto it = functions.find(name);
     if (functions.end() != it)
@@ -120,10 +120,11 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(
         const std::string & name,
-        ContextConstPtr context) const
+        ContextPtr context) const
 {
     auto impl = tryGetImpl(name, context);
-    return impl ? std::move(impl) : nullptr;
+    return impl ? std::make_shared<FunctionOverloadResolverAdaptor>(std::move(impl))
+                : nullptr;
 }
 
 FunctionFactory & FunctionFactory::instance()
