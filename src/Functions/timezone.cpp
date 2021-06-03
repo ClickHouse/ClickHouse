@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <common/DateLUT.h>
 #include <Core/Field.h>
@@ -12,13 +12,13 @@ namespace
 
 /** Returns the server time zone.
   */
-class FunctionTimezone : public IFunction
+class FunctionTimeZone : public IFunction
 {
 public:
     static constexpr auto name = "timezone";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionTimezone>();
+        return std::make_shared<FunctionTimeZone>();
     }
 
     String getName() const override
@@ -45,10 +45,9 @@ public:
 
 }
 
-void registerFunctionTimezone(FunctionFactory & factory)
+void registerFunctionTimeZone(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionTimezone>();
-    factory.registerAlias("timeZone", "timezone");
+    factory.registerFunction<FunctionTimeZone>();
 }
 
 }

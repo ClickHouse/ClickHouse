@@ -14,7 +14,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -30,7 +29,7 @@ namespace
   * It differs, for example, in that it uses a trivial hash function, since `uniq` of many arguments first hashes them out itself.
   */
 template <typename Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     assertNoParameters(name, params);
 
@@ -74,7 +73,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 }
 
 template <bool is_exact, template <typename> class Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     assertNoParameters(name, params);
 
@@ -133,12 +132,6 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 
     factory.registerFunction("uniqExact",
         {createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>, properties});
-
-#if USE_DATASKETCHES
-    factory.registerFunction("uniqTheta",
-        {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaData>, properties});
-#endif
-
 }
 
 }

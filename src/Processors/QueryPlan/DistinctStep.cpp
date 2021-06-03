@@ -2,7 +2,6 @@
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -63,7 +62,7 @@ DistinctStep::DistinctStep(
     }
 }
 
-void DistinctStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void DistinctStep::transformPipeline(QueryPipeline & pipeline)
 {
     if (checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns))
         return;
@@ -101,15 +100,6 @@ void DistinctStep::describeActions(FormatSettings & settings) const
     }
 
     settings.out << '\n';
-}
-
-void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
-    for (const auto & column : columns)
-        columns_array->add(column);
-
-    map.add("Columns", std::move(columns_array));
 }
 
 }

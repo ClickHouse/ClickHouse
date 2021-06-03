@@ -1,11 +1,10 @@
 #pragma once
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -24,7 +23,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
     String getName() const override
     {
@@ -108,7 +107,6 @@ public:
         else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
-
             const TransformDateTime64<Transform> transformer(scale);
             return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
@@ -135,6 +133,7 @@ public:
 
         /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
         const DateLUTImpl & date_lut = DateLUT::instance();
+
         if (left.isNull() || right.isNull())
             return is_not_monotonic;
 

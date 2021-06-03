@@ -229,7 +229,7 @@ public:
     /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
     KeyCondition(
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
@@ -293,16 +293,6 @@ public:
 
     String toString() const;
 
-    /// Condition description for EXPLAIN query.
-    struct Description
-    {
-        /// Which columns from PK were used, in PK order.
-        std::vector<std::string> used_keys;
-        /// Condition which was applied, mostly human-readable.
-        std::string condition;
-    };
-
-    Description getDescription() const;
 
     /** A chain of possibly monotone functions.
       * If the key column is wrapped in functions that can be monotonous in some value ranges
@@ -317,7 +307,7 @@ public:
             const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context);
+        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
@@ -355,7 +345,6 @@ private:
             : function(function_), range(range_), key_column(key_column_) {}
 
         String toString() const;
-        String toString(const std::string_view & column_name, bool print_constants) const;
 
         Function function = FUNCTION_UNKNOWN;
 
@@ -386,8 +375,8 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    void traverseAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants);
-    bool tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants, RPNElement & out);
+    void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
+    bool tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
     static bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the key column
@@ -398,7 +387,7 @@ private:
       */
     bool isKeyPossiblyWrappedByMonotonicFunctions(
         const ASTPtr & node,
-        ContextPtr context,
+        const Context & context,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
         MonotonicFunctionsChain & out_functions_chain);
@@ -419,18 +408,12 @@ private:
     bool canConstantBeWrappedByFunctions(
         const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
 
-    /// Check if ASTPtr node, passed to canConstantBeWrappedBy*, can be used by them for further checks.
-    /// Always call this method at start of other methods, which require key comparison, because it also checks if adjusted
-    /// key expression can also be used (with substitution from modulo to moduloLegacy). This is needed because partition key
-    /// is always modified, when passed into keyCondition, - with recursive substitution from modulo to moduloLegacy.
-    bool canConstantBeWrapped(const ASTPtr & node, const String & expr_name, String & result_expr_name);
-
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
         const ASTs & args,
-        ContextPtr context,
+        const Context & context,
         RPNElement & out,
         size_t & out_key_column_num);
 

@@ -45,3 +45,4 @@
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md) (семейство ReplicatedMergeTree)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/mutations) <!--hide-->

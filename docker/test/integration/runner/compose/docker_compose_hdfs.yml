@@ -5,10 +5,6 @@ services:
         hostname: hdfs1
         restart: always
         ports:
-            - ${HDFS_NAME_EXTERNAL_PORT}:${HDFS_NAME_INTERNAL_PORT} #50070
-            - ${HDFS_DATA_EXTERNAL_PORT}:${HDFS_DATA_INTERNAL_PORT} #50075
+            - 50075:50075
+            - 50070:50070
         entrypoint: /etc/bootstrap.sh -d
-        volumes:
-            - type: ${HDFS_FS:-tmpfs}
-              source: ${HDFS_LOGS:-}
-              target: /usr/local/hadoop/logs

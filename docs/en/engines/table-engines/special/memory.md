@@ -6,7 +6,7 @@ toc_title: Memory
 # Memory Table Engine {#memory}
 
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
-Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
+Concurrent data access is synchronized. Locks are short: read and write operations don’t block each other.
 Indexes are not supported. Reading is parallelized.
 
 Maximal productivity (over 10 GB/sec) is reached on simple queries, because there is no reading from the disk, decompressing, or deserializing data. (We should note that in many cases, the productivity of the MergeTree engine is almost as high.)

@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include <Poco/File.h>
 
 namespace DB
 {
@@ -83,8 +84,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                         buffer_size,
                         0,
                         settings.min_bytes_to_use_direct_io,
-                        settings.min_bytes_to_use_mmap_io,
-                        settings.mmap_cache.get());
+                        settings.min_bytes_to_use_mmap_io);
                 },
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
@@ -103,12 +103,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             auto buffer =
                 std::make_unique<CompressedReadBufferFromFile>(
                     data_part->volume->getDisk()->readFile(
-                        full_data_path,
-                        buffer_size,
-                        0,
-                        settings.min_bytes_to_use_direct_io,
-                        settings.min_bytes_to_use_mmap_io,
-                        settings.mmap_cache.get()),
+                        full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io),
                     /* allow_different_codecs = */ true);
 
             if (profile_callback_)
@@ -205,16 +200,16 @@ void MergeTreeReaderCompact::readData(
     if (!isContinuousReading(from_mark, column_position))
         seekToMark(from_mark, column_position);
 
-    auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
+    auto buffer_getter = [&](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
     {
-        if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != ISerialization::Substream::ArraySizes))
+        if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != IDataType::Substream::ArraySizes))
             return nullptr;
 
         return data_buffer;
     };
 
-    ISerialization::DeserializeBinaryBulkStatePtr state;
-    ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+    IDataType::DeserializeBinaryBulkStatePtr state;
+    IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = buffer_getter;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
 
@@ -223,16 +218,14 @@ void MergeTreeReaderCompact::readData(
         auto type_in_storage = name_and_type.getTypeInStorage();
         ColumnPtr temp_column = type_in_storage->createColumn();
 
-        auto serialization = type_in_storage->getDefaultSerialization();
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+        type_in_storage->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        type_in_storage->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
         column = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
     }
     else
     {
-        auto serialization = type->getDefaultSerialization();
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
+        type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        type->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
     }
 
     /// The buffer is left in inconsistent state after reading single offsets

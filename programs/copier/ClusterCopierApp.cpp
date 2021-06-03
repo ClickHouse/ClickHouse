@@ -3,11 +3,8 @@
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
-#include <ext/scope_guard_safe.h>
 #include <unistd.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -28,7 +25,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
     if (config().has("move-fault-probability"))
         move_fault_probability = std::max(std::min(config().getDouble("move-fault-probability"), 1.0), 0.0);
-    base_dir = (config().has("base-dir")) ? config().getString("base-dir") : fs::current_path().string();
+    base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
 
 
     if (config().has("experimental-use-sample-offset"))
@@ -40,18 +37,18 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
     process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
     host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
-    process_path = fs::weakly_canonical(fs::path(base_dir) / ("clickhouse-copier_" + process_id));
-    fs::create_directories(process_path);
+    process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
+    Poco::File(process_path).createDirectories();
 
     /// Override variables for BaseDaemon
     if (config().has("log-level"))
         config().setString("logger.level", config().getString("log-level"));
 
     if (config().has("base-dir") || !config().has("logger.log"))
-        config().setString("logger.log", fs::path(process_path) / "log.log");
+        config().setString("logger.log", process_path + "/log.log");
 
     if (config().has("base-dir") || !config().has("logger.errorlog"))
-        config().setString("logger.errorlog", fs::path(process_path) / "log.err.log");
+        config().setString("logger.errorlog", process_path + "/log.err.log");
 
     Base::initialize(self);
 }
@@ -113,9 +110,9 @@ void ClusterCopierApp::mainImpl()
     LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
 
     SharedContextHolder shared_context = Context::createShared();
-    auto context = Context::createGlobal(shared_context.get());
+    auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
     context->makeGlobalContext();
-    SCOPE_EXIT_SAFE(context->shutdown());
+    SCOPE_EXIT(context->shutdown());
 
     context->setConfig(loaded_config.configuration);
     context->setApplicationType(Context::ApplicationType::LOCAL);
@@ -130,13 +127,13 @@ void ClusterCopierApp::mainImpl()
     registerFormats();
 
     static const std::string default_database = "_local";
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
     context->setCurrentDatabase(default_database);
 
     /// Initialize query scope just in case.
-    CurrentThread::QueryScope query_scope(context);
+    CurrentThread::QueryScope query_scope(*context);
 
-    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context);
+    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);

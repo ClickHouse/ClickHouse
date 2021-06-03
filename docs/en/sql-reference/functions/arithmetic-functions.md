@@ -70,7 +70,7 @@ Calculates a number with the reverse sign. The result is always signed.
 
 ## abs(a) {#arithm_func-abs}
 
-Calculates the absolute value of the number (a). That is, if a \< 0, it returns -a. For unsigned types it does not do anything. For signed integer types, it returns an unsigned number.
+Calculates the absolute value of the number (a). That is, if a \< 0, it returns -a. For unsigned types it doesn’t do anything. For signed integer types, it returns an unsigned number.
 
 ## gcd(a, b) {#gcda-b}
 
@@ -82,3 +82,4 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 Returns the least common multiple of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

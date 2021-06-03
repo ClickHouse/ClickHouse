@@ -38,7 +38,7 @@ def config_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=config,
+        Suite(run=config, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in config.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -59,7 +59,7 @@ def config_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=config,
+        Suite(run=config, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in config.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -69,7 +69,6 @@ def config_privileges_granted_via_role(self, node=None):
     RQ_SRS_006_RBAC_Privileges_System_Reload_Config("1.0"),
 )
 @Examples("privilege",[
-    ("ALL",),
     ("SYSTEM",),
     ("SYSTEM RELOAD",),
     ("SYSTEM RELOAD CONFIG",),
@@ -84,19 +83,11 @@ def config(self, privilege, grant_target_name, user_name, node=None):
         node = self.context.node
 
     with Scenario("SYSTEM RELOAD CONFIG without privilege"):
-
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user is unable to execute SYSTEM RELOAD CONFIG"):
+        with When("I check the user is unable to execute SYSTEM RELOAD CONFIG"):
             node.query("SYSTEM RELOAD CONFIG", settings = [("user", f"{user_name}")],
                 exitcode=exitcode, message=message)
 
     with Scenario("SYSTEM RELOAD CONFIG with privilege"):
-
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -104,7 +95,6 @@ def config(self, privilege, grant_target_name, user_name, node=None):
             node.query("SYSTEM RELOAD CONFIG", settings = [("user", f"{user_name}")])
 
     with Scenario("SYSTEM RELOAD CONFIG with revoked privilege"):
-
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -127,7 +117,7 @@ def dictionary_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=dictionary,
+        Suite(run=dictionary, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in dictionary.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -148,7 +138,7 @@ def dictionary_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dictionary,
+        Suite(run=dictionary, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in dictionary.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -158,7 +148,6 @@ def dictionary_privileges_granted_via_role(self, node=None):
     RQ_SRS_006_RBAC_Privileges_System_Reload_Dictionary("1.0"),
 )
 @Examples("privilege",[
-    ("ALL",),
     ("SYSTEM",),
     ("SYSTEM RELOAD",),
     ("SYSTEM RELOAD DICTIONARIES",),
@@ -174,24 +163,16 @@ def dictionary(self, privilege, grant_target_name, user_name, node=None):
         node = self.context.node
 
     with Scenario("SYSTEM RELOAD DICTIONARY without privilege"):
-
         dict_name = f"dict_{getuid()}"
         table_name = f"table_{getuid()}"
 
         with dict_setup(node, table_name, dict_name):
 
-            with When("I grant the user NONE privilege"):
-                node.query(f"GRANT NONE TO {grant_target_name}")
-
-            with And("I grant the user USAGE privilege"):
-                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-            with Then("I check the user is unable to execute SYSTEM RELOAD DICTIONARY"):
+            with When("I check the user is unable to execute SYSTEM RELOAD DICTIONARY"):
                 node.query(f"SYSTEM RELOAD DICTIONARY default.{dict_name}", settings = [("user", f"{user_name}")],
                     exitcode=exitcode, message=message)
 
     with Scenario("SYSTEM RELOAD DICTIONARY with privilege"):
-
         dict_name = f"dict_{getuid()}"
         table_name = f"table_{getuid()}"
 
@@ -204,7 +185,6 @@ def dictionary(self, privilege, grant_target_name, user_name, node=None):
                 node.query(f"SYSTEM RELOAD DICTIONARY default.{dict_name}", settings = [("user", f"{user_name}")])
 
     with Scenario("SYSTEM RELOAD DICTIONARY with revoked privilege"):
-
         dict_name = f"dict_{getuid()}"
         table_name = f"table_{getuid()}"
 
@@ -232,7 +212,7 @@ def dictionaries_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=dictionaries,
+        Suite(run=dictionaries, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in dictionaries.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -253,7 +233,7 @@ def dictionaries_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=dictionaries,
+        Suite(run=dictionaries, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in dictionaries.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -263,7 +243,6 @@ def dictionaries_privileges_granted_via_role(self, node=None):
     RQ_SRS_006_RBAC_Privileges_System_Reload_Dictionaries("1.0"),
 )
 @Examples("privilege",[
-    ("ALL",),
     ("SYSTEM",),
     ("SYSTEM RELOAD",),
     ("SYSTEM RELOAD DICTIONARIES",),
@@ -279,19 +258,11 @@ def dictionaries(self, privilege, grant_target_name, user_name, node=None):
         node = self.context.node
 
     with Scenario("SYSTEM RELOAD DICTIONARIES without privilege"):
-
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user is unable to execute SYSTEM RELOAD DICTIONARIES"):
+        with When("I check the user is unable to execute SYSTEM RELOAD DICTIONARIES"):
             node.query("SYSTEM RELOAD DICTIONARIES", settings = [("user", f"{user_name}")],
                 exitcode=exitcode, message=message)
 
     with Scenario("SYSTEM RELOAD DICTIONARIES with privilege"):
-
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -299,7 +270,6 @@ def dictionaries(self, privilege, grant_target_name, user_name, node=None):
             node.query("SYSTEM RELOAD DICTIONARIES", settings = [("user", f"{user_name}")])
 
     with Scenario("SYSTEM RELOAD DICTIONARIES with revoked privilege"):
-
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -322,7 +292,7 @@ def embedded_dictionaries_privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=embedded_dictionaries,
+        Suite(run=embedded_dictionaries, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in embedded_dictionaries.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -343,7 +313,7 @@ def embedded_dictionaries_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=embedded_dictionaries,
+        Suite(run=embedded_dictionaries, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in embedded_dictionaries.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -353,7 +323,6 @@ def embedded_dictionaries_privileges_granted_via_role(self, node=None):
     RQ_SRS_006_RBAC_Privileges_System_Reload_EmbeddedDictionaries("1.0"),
 )
 @Examples("privilege",[
-    ("ALL",),
     ("SYSTEM",),
     ("SYSTEM RELOAD",),
     ("SYSTEM RELOAD EMBEDDED DICTIONARIES",),
@@ -368,19 +337,11 @@ def embedded_dictionaries(self, privilege, grant_target_name, user_name, node=No
         node = self.context.node
 
     with Scenario("SYSTEM RELOAD EMBEDDED DICTIONARIES without privilege"):
-
-        with When("I grant the user NONE privilege"):
-            node.query(f"GRANT NONE TO {grant_target_name}")
-
-        with And("I grant the user USAGE privilege"):
-            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-        with Then("I check the user is unable to execute SYSTEM RELOAD EMBEDDED DICTIONARIES"):
+        with When("I check the user is unable to execute SYSTEM RELOAD EMBEDDED DICTIONARIES"):
             node.query("SYSTEM RELOAD EMBEDDED DICTIONARIES", settings = [("user", f"{user_name}")],
                 exitcode=exitcode, message=message)
 
     with Scenario("SYSTEM RELOAD EMBEDDED DICTIONARIES with privilege"):
-
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -388,7 +349,6 @@ def embedded_dictionaries(self, privilege, grant_target_name, user_name, node=No
             node.query("SYSTEM RELOAD EMBEDDED DICTIONARIES", settings = [("user", f"{user_name}")])
 
     with Scenario("SYSTEM RELOAD EMBEDDED DICTIONARIES with revoked privilege"):
-
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON *.* TO {grant_target_name}")
 
@@ -403,8 +363,6 @@ def embedded_dictionaries(self, privilege, grant_target_name, user_name, node=No
 @Name("system reload")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_Reload("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SYSTEM RELOAD.

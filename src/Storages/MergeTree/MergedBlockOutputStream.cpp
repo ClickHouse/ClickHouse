@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Interpreters/Context.h>
+#include <Poco/File.h>
 #include <Parsers/queryToString.h>
 
 
@@ -25,7 +26,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
 {
     MergeTreeWriterSettings writer_settings(
-        storage.getContext()->getSettings(),
+        storage.global_context.getSettings(),
         storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         /* rewrite_primary_key = */ true,
@@ -71,12 +72,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     /// Finish columns serialization.
     writer->finish(checksums, sync);
 
-    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
-        checksums.addFile(
-            projection_name + ".proj",
-            projection_part->checksums.getTotalSizeOnDisk(),
-            projection_part->checksums.getTotalChecksumUInt128());
-
     NamesAndTypesList part_columns;
     if (!total_columns_list)
         part_columns = columns_list;
@@ -96,7 +91,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->calculateColumnsSizesOnDisk();
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
-    new_part->storage.lockSharedData(*new_part);
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
@@ -105,58 +99,42 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
-
-    if (new_part->isProjectionPart())
+    if (new_part->uuid != UUIDHelpers::Nil)
     {
-        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
-        {
-            auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
-            HashingWriteBuffer count_out_hashing(*count_out);
-            writeIntText(rows_count, count_out_hashing);
-            count_out_hashing.next();
-            checksums.files["count.txt"].file_size = count_out_hashing.count();
-            checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-        }
+        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
+        HashingWriteBuffer out_hashing(*out);
+        writeUUIDText(new_part->uuid, out_hashing);
+        checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
+        checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+        out->finalize();
+        if (sync)
+            out->sync();
     }
-    else
+
+    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
-        if (new_part->uuid != UUIDHelpers::Nil)
-        {
-            auto out = volume->getDisk()->writeFile(fs::path(part_path) / IMergeTreeDataPart::UUID_FILE_NAME, 4096);
-            HashingWriteBuffer out_hashing(*out);
-            writeUUIDText(new_part->uuid, out_hashing);
-            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-            out->finalize();
-            if (sync)
-                out->sync();
-        }
+        new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
+        if (new_part->minmax_idx.initialized)
+            new_part->minmax_idx.store(storage, volume->getDisk(), part_path, checksums);
+        else if (rows_count)
+            throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
+                + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
-        {
-            new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
-            if (new_part->minmax_idx.initialized)
-                new_part->minmax_idx.store(storage, volume->getDisk(), part_path, checksums);
-            else if (rows_count)
-                throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
-                        + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-            auto count_out = volume->getDisk()->writeFile(fs::path(part_path) / "count.txt", 4096);
-            HashingWriteBuffer count_out_hashing(*count_out);
-            writeIntText(rows_count, count_out_hashing);
-            count_out_hashing.next();
-            checksums.files["count.txt"].file_size = count_out_hashing.count();
-            checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            count_out->finalize();
-            if (sync)
-                count_out->sync();
-        }
+        auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
+        HashingWriteBuffer count_out_hashing(*count_out);
+        writeIntText(rows_count, count_out_hashing);
+        count_out_hashing.next();
+        checksums.files["count.txt"].file_size = count_out_hashing.count();
+        checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+        count_out->finalize();
+        if (sync)
+            count_out->sync();
     }
 
     if (!new_part->ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
-        auto out = volume->getDisk()->writeFile(fs::path(part_path) / "ttl.txt", 4096);
+        auto out = volume->getDisk()->writeFile(part_path + "ttl.txt", 4096);
         HashingWriteBuffer out_hashing(*out);
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -170,7 +148,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     {
         /// Write a file with a description of columns.
-        auto out = volume->getDisk()->writeFile(fs::path(part_path) / "columns.txt", 4096);
+        auto out = volume->getDisk()->writeFile(part_path + "columns.txt", 4096);
         part_columns.writeText(*out);
         out->finalize();
         if (sync)
@@ -191,7 +169,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     {
         /// Write file with checksums.
-        auto out = volume->getDisk()->writeFile(fs::path(part_path) / "checksums.txt", 4096);
+        auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", 4096);
         checksums.write(*out);
         out->finalize();
         if (sync)
@@ -207,6 +185,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
+
     rows_count += rows;
 }
 

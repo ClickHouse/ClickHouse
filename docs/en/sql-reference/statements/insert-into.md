@@ -57,7 +57,7 @@ SELECT * FROM insert_select_testtable;
 
 In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default.
 
-If a list of columns does not include all existing columns, the rest of the columns are filled with:
+If a list of columns doesn't include all existing columns, the rest of the columns are filled with:
 
 -   The values calculated from the `DEFAULT` expressions specified in the table definition.
 -   Zeros and empty strings, if `DEFAULT` expressions are not defined.
@@ -105,8 +105,6 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
 `FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../../sql-reference/table-functions/input.md).
 
-To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.   
-
 ### Performance Considerations {#performance-considerations}
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
@@ -119,3 +117,4 @@ Performance will not decrease if:
 -   Data is added in real time.
 -   You upload data that is usually sorted by time.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->

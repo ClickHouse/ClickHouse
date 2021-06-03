@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatSettings.h>
@@ -19,7 +19,7 @@ class FunctionVisibleWidth : public IFunction
 {
 public:
     static constexpr auto name = "visibleWidth";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionVisibleWidth>();
     }
@@ -58,12 +58,11 @@ public:
 
         String tmp;
         FormatSettings format_settings;
-        auto serialization = src.type->getDefaultSerialization();
         for (size_t i = 0; i < size; ++i)
         {
             {
                 WriteBufferFromString out(tmp);
-                serialization->serializeText(*src.column, i, out, format_settings);
+                src.type->serializeAsText(*src.column, i, out, format_settings);
             }
 
             res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());

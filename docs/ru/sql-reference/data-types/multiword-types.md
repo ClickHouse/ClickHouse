@@ -26,3 +26,4 @@ toc_title: Составные типы
 | BINARY LARGE OBJECT                 | [String](../../sql-reference/data-types/string.md)        |
 | BINARY VARYING                      | [String](../../sql-reference/data-types/string.md)        |
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/data-types/multiword-types/) <!--hide-->

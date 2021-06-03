@@ -1,6 +1,5 @@
 import time
 
-import logging
 import pytest
 from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
@@ -29,12 +28,6 @@ node12 = cluster.add_instance('node12', main_configs=['configs/remote_servers.xm
 def prepare_single_pair_with_setting(first_node, second_node, group):
     for node in (first_node, second_node):
         node.query("CREATE DATABASE IF NOT EXISTS test")
-
-    first_node.query("DROP TABLE IF EXISTS table_by_default")
-    second_node.query("DROP TABLE IF EXISTS table_by_default")
-    first_node.query("DROP TABLE IF EXISTS table_with_fixed_granularity")
-    second_node.query("DROP TABLE IF EXISTS table_with_fixed_granularity")
-
 
     # Two tables with adaptive granularity
     first_node.query(
@@ -279,13 +272,6 @@ def test_mixed_granularity_single_node(start_dynamic_cluster, node):
         "INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 1, 333), (toDate('2018-10-02'), 2, 444)")
     node.query(
         "INSERT INTO table_with_default_granularity VALUES (toDate('2018-09-01'), 1, 333), (toDate('2018-09-02'), 2, 444)")
-
-    path_to_part = node.query(
-        "SELECT path FROM system.parts WHERE table = 'table_with_default_granularity' AND active=1 ORDER BY partition DESC LIMIT 1").strip()
-
-    result = node.exec_in_container(["bash", "-c", "find {p} -name '*.mrk*'".format(
-        p=path_to_part)])  # check that we have non adaptive files
-    logging.info(f"path {path_to_part} result\n {result}")
 
     def callback(n):
         new_config = """

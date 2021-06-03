@@ -1,5 +1,4 @@
 #include <Common/ZooKeeper/Types.h>
-#include "Access/IAccessEntity.h"
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
@@ -52,17 +51,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     {
         case GET_PART:
             out << "get\n" << new_part_name;
-            break;
-
-        case CLONE_PART_FROM_SHARD:
-            out << "clone_part_from_shard\n"
-                << new_part_name << "\n"
-                << "source_shard: " << source_shard;
-            break;
-
-        case ATTACH_PART:
-            out << "attach\n" << new_part_name << "\n"
-                << "part_checksum: " << part_checksum;
             break;
 
         case MERGE_PARTS:
@@ -148,12 +136,8 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << metadata_str;
             break;
 
-        case SYNC_PINNED_PART_UUIDS:
-            out << "sync_pinned_part_uuids\n";
-            break;
-
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", static_cast<int>(type));
+            throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
     }
 
     out << '\n';
@@ -173,16 +157,13 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     in >> "format version: " >> format_version >> "\n";
 
     if (format_version < 1 || format_version >= FORMAT_LAST)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown ReplicatedMergeTreeLogEntry format version: {}",
-                DB::toString(format_version));
+        throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
     if (format_version >= FORMAT_WITH_CREATE_TIME)
     {
         LocalDateTime create_time_dt;
         in >> "create_time: " >> create_time_dt >> "\n";
-        create_time = DateLUT::instance().makeDateTime(
-            create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
-            create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
+        create_time = create_time_dt;
     }
 
     in >> "source replica: " >> source_replica >> "\n";
@@ -195,16 +176,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     in >> type_str >> "\n";
 
     bool trailing_newline_found = false;
-
     if (type_str == "get")
     {
         type = GET_PART;
         in >> new_part_name;
-    }
-    else if (type_str == "attach")
-    {
-        type = ATTACH_PART;
-        in >> new_part_name >> "\npart_checksum: " >> part_checksum;
     }
     else if (type_str == "merge")
     {
@@ -315,16 +290,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in >> metadata_size >> "\n";
         metadata_str.resize(metadata_size);
         in.readStrict(&metadata_str[0], metadata_size);
-    }
-    else if (type_str == "sync_pinned_part_uuids")
-    {
-        type = SYNC_PINNED_PART_UUIDS;
-    }
-    else if (type_str == "clone_part_from_shard")
-    {
-        type = CLONE_PART_FROM_SHARD;
-        in >> new_part_name;
-        in >> "\nsource_shard: " >> source_shard;
     }
 
     if (!trailing_newline_found)
@@ -453,14 +418,6 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
             res.emplace_back(*drop_range);
         return res;
     }
-
-    /// Doesn't produce any part.
-    if (type == SYNC_PINNED_PART_UUIDS)
-        return {};
-
-    /// Doesn't produce any part by itself.
-    if (type == CLONE_PART_FROM_SHARD)
-        return {};
 
     return {new_part_name};
 }

@@ -14,7 +14,6 @@ SRCS(
     DiskFactory.cpp
     DiskLocal.cpp
     DiskMemory.cpp
-    DiskRestartProxy.cpp
     DiskSelector.cpp
     IDisk.cpp
     IVolume.cpp

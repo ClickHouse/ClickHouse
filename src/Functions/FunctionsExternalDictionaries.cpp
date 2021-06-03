@@ -24,8 +24,6 @@ void registerFunctionsExternalDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionDictGetString>();
     factory.registerFunction<FunctionDictGetHierarchy>();
     factory.registerFunction<FunctionDictIsIn>();
-    factory.registerFunction<FunctionDictGetChildren>();
-    factory.registerFunction<FunctionDictGetDescendants>();
     factory.registerFunction<FunctionDictGetUInt8OrDefault>();
     factory.registerFunction<FunctionDictGetUInt16OrDefault>();
     factory.registerFunction<FunctionDictGetUInt32OrDefault>();
@@ -42,7 +40,6 @@ void registerFunctionsExternalDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionDictGetStringOrDefault>();
     factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>();
     factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>();
-    factory.registerFunction<FunctionDictGetOrNull>();
 }
 
 }

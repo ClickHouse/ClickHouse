@@ -1,24 +1,23 @@
 #pragma once
-
+#include <regex>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <common/types.h>
 #include <Core/DecimalFunctions.h>
-#include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/Exception.h>
 #include <common/DateLUTImpl.h>
 
 /// The default mode value to use for the WEEK() function
 #define DEFAULT_WEEK_MODE 0
 
-
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -26,16 +25,39 @@ namespace ErrorCodes
  * CustomWeek Transformations.
   */
 
+static inline UInt32 dateIsNotSupported(const char * name)
+{
+    throw Exception("Illegal type Date of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
+/// This factor transformation will say that the function is monotone everywhere.
+struct ZeroTransform
+{
+    static inline UInt16 execute(UInt32, UInt8, const DateLUTImpl &) { return 0; }
+    static inline UInt16 execute(UInt16, UInt8, const DateLUTImpl &) { return 0; }
+};
+
+struct ToWeekImpl
+{
+    static constexpr auto name = "toWeek";
+
+    static inline UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        return yw.second;
+    }
+    static inline UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
+        return yw.second;
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToYearWeekImpl
 {
     static constexpr auto name = "toYearWeek";
-
-    static inline UInt32 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        // TODO: ditch toDayNum()
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
-    }
 
     static inline UInt32 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -55,52 +77,22 @@ struct ToStartOfWeekImpl
 {
     static constexpr auto name = "toStartOfWeek";
 
-    static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-//        return time_zone.toFirstDayNumOfWeek(t, week_mode);
-    }
     static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-//        return time_zone.toFirstDayNumOfWeek(t, week_mode);
     }
     static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
     }
 
     using FactorTransform = ZeroTransform;
 };
 
-struct ToWeekImpl
-{
-    static constexpr auto name = "toWeek";
-
-    static inline UInt8 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        // TODO: ditch conversion to DayNum, since it doesn't support extended range.
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
-        return yw.second;
-    }
-    static inline UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
-        return yw.second;
-    }
-    static inline UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
-        return yw.second;
-    }
-
-    using FactorTransform = ToStartOfYearImpl;
-};
-
 template <typename FromType, typename ToType, typename Transform>
-struct WeekTransformer
+struct Transformer
 {
-    explicit WeekTransformer(Transform transform_)
+    explicit Transformer(Transform transform_)
         : transform(std::move(transform_))
     {}
 
@@ -126,7 +118,7 @@ struct CustomWeekTransformImpl
     template <typename Transform>
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
     {
-        const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
+        const auto op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
 
         UInt8 week_mode = DEFAULT_WEEK_MODE;
         if (arguments.size() > 1)

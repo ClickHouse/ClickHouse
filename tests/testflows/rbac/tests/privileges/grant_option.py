@@ -1,3 +1,5 @@
+from multiprocessing.dummy import Pool
+
 from testflows.core import *
 from testflows.asserts import error
 
@@ -124,7 +126,8 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
     if stress is not None:
         self.context.stress = stress
 
-    with Pool(12) as pool:
+    pool = Pool(12)
+    try:
         tasks = []
         try:
             for example in self.examples:
@@ -132,3 +135,5 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
                 run_scenario(pool, tasks, Suite(test=grant_option, name=privilege, setup=instrument_clickhouse_server_log), {"table_type": "MergeTree", "privilege": privilege})
         finally:
             join(tasks)
+    finally:
+        pool.close()

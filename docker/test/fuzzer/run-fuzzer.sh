@@ -4,9 +4,7 @@
 set -eux
 set -o pipefail
 trap "exit" INT TERM
-# The watchdog is in the separate process group, so we have to kill it separately
-# if the script terminates earlier.
-trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
+trap 'kill $(jobs -pr) ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -16,28 +14,35 @@ BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-11_debug_none_bundled_unsplitted
 
 function clone
 {
-    # The download() function is dependent on CI binaries anyway, so we can take
-    # the repo from the CI as well. For local runs, start directly from the "fuzz"
-    # stage.
+(
     rm -rf ch ||:
-    mkdir ch ||:
-    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
-    tar -C ch --strip-components=1 -xf clickhouse_no_subs.tar.gz
-    ls -lath ||:
+    mkdir ch
+    cd ch
+
+    git init
+    git remote add origin https://github.com/ClickHouse/ClickHouse
+
+    # Network is unreliable. GitHub neither.
+    for _ in {1..100}; do git fetch --depth=100 origin "$SHA_TO_TEST" && break; sleep 1; done
+    # Used to obtain the list of modified or added tests
+    for _ in {1..100}; do git fetch --depth=100 origin master && break; sleep 1; done
+
+    # If not master, try to fetch pull/.../{head,merge}
+    if [ "$PR_TO_TEST" != "0" ]
+    then
+        for _ in {1..100}; do git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*" && break; sleep 1; done
+    fi
+
+    git checkout "$SHA_TO_TEST"
+)
 }
 
 function download
 {
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse" &
-    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/ci-changed-files.txt" &
-    wait
-
+    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
-
-    # clickhouse-server is in the current dir
-    export PATH="$PWD:$PATH"
 }
 
 function configure
@@ -56,53 +61,38 @@ function watchdog
     sleep 3600
 
     echo "Fuzzing run has timed out"
+    killall clickhouse-client ||:
     for _ in {1..10}
     do
-        # Only kill by pid the particular client that runs the fuzzing, or else
-        # we can kill some clickhouse-client processes this script starts later,
-        # e.g. for checking server liveness.
-        if ! kill $fuzzer_pid
+        if ! pgrep -f clickhouse-client
         then
             break
         fi
         sleep 1
     done
 
-    kill -9 -- $fuzzer_pid ||:
-}
-
-function filter_exists
-{
-    local path
-    for path in "$@"; do
-        if [ -e "$path" ]; then
-            echo "$path"
-        else
-            echo "'$path' does not exists" >&2
-        fi
-    done
+    killall -9 clickhouse-client ||:
 }
 
 function fuzz
 {
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
-    # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
-    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\)$!ch/\1!p' ci-changed-files.txt | sort -R)"
-    # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
-    NEW_TESTS="$(filter_exists $NEW_TESTS)"
+    cd ch
+    NEW_TESTS=$(git diff --name-only "$(git merge-base origin/master "$SHA_TO_TEST"~)" "$SHA_TO_TEST" | grep -P 'tests/queries/0_stateless/.*\.sql' | sed -r -e 's!^!ch/!' | sort -R)
+    cd ..
     if [[ -n "$NEW_TESTS" ]]
     then
-        NEW_TESTS_OPT="${NEW_TESTS_OPT:---interleave-queries-file ${NEW_TESTS}}"
+        NEW_TESTS_OPT="--interleave-queries-file ${NEW_TESTS}"
     else
-        NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
+        NEW_TESTS_OPT=""
     fi
 
-    clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
+    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
 
     server_pid=$!
     kill -0 $server_pid
-    while ! clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
-    clickhouse-client --query "select 1"
+    while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
+    ./clickhouse-client --query "select 1"
     kill -0 $server_pid
     echo Server started
 
@@ -117,50 +107,18 @@ continue
 
     gdb -batch -command script.gdb -p "$(pidof clickhouse-server)" &
 
+    fuzzer_exit_code=0
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
+    ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
-        2>&1 &
-    fuzzer_pid=$!
-    echo "Fuzzer pid is $fuzzer_pid"
+        2>&1 \
+        || fuzzer_exit_code=$?
 
-    # Start a watchdog that should kill the fuzzer on timeout.
-    # The shell won't kill the child sleep when we kill it, so we have to put it
-    # into a separate process group so that we can kill them all.
-    set -m
-    watchdog &
-    watchdog_pid=$!
-    set +m
-    # Check that the watchdog has started.
-    kill -0 $watchdog_pid
-
-    # Wait for the fuzzer to complete.
-    # Note that the 'wait || ...' thing is required so that the script doesn't
-    # exit because of 'set -e' when 'wait' returns nonzero code.
-    fuzzer_exit_code=0
-    wait "$fuzzer_pid" || fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
 
-    kill -- -$watchdog_pid ||:
-
-    # If the server dies, most often the fuzzer returns code 210: connetion
-    # refused, and sometimes also code 32: attempt to read after eof. For
-    # simplicity, check again whether the server is accepting connections, using
-    # clickhouse-client. We don't check for existence of server process, because
-    # the process is still present while the server is terminating and not
-    # accepting the connections anymore.
-    if clickhouse-client --query "select 1 format Null"
-    then
-        server_died=0
-    else
-        echo "Server live check returns $?"
-        server_died=1
-    fi
-
-    # Stop the server.
-    clickhouse-client --query "select elapsed, query from system.processes" ||:
+    ./clickhouse-client --query "select elapsed, query from system.processes" ||:
     killall clickhouse-server ||:
     for _ in {1..10}
     do
@@ -171,41 +129,6 @@ continue
         sleep 1
     done
     killall -9 clickhouse-server ||:
-
-    # Debug.
-    date
-    sleep 10
-    jobs
-    pstree -aspgT
-
-    # Make files with status and description we'll show for this check on Github.
-    task_exit_code=$fuzzer_exit_code
-    if [ "$server_died" == 1 ]
-    then
-        # The server has died.
-        task_exit_code=210
-        echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
-        then
-            echo "Lost connection to server. See the logs." > description.txt
-        fi
-    elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
-    then
-        # Variants of a normal run:
-        # 0 -- fuzzing ended earlier than timeout.
-        # 143 -- SIGTERM -- the fuzzer was killed by timeout.
-        task_exit_code=0
-        echo "success" > status.txt
-        echo "OK" > description.txt
-    else
-        # The server was alive, but the fuzzer returned some error. Probably this
-        # is a problem in the fuzzer itself. Don't grep the server log in this
-        # case, because we will find a message about normal server termination
-        # (Received signal 15), which is confusing.
-        task_exit_code=$fuzzer_exit_code
-        echo "failure" > status.txt
-        echo "Fuzzer failed ($fuzzer_exit_code). See the logs." > description.txt
-    fi
 }
 
 case "$stage" in
@@ -234,7 +157,50 @@ case "$stage" in
     time configure
     ;&
 "fuzz")
-    time fuzz
+    # Start a watchdog that should kill the fuzzer on timeout.
+    # The shell won't kill the child sleep when we kill it, so we have to put it
+    # into a separate process group so that we can kill them all.
+    set -m
+    watchdog &
+    watchdog_pid=$!
+    set +m
+    # Check that the watchdog has started
+    kill -0 $watchdog_pid
+
+    fuzzer_exit_code=0
+    time fuzz || fuzzer_exit_code=$?
+    kill -- -$watchdog_pid ||:
+
+    # Debug
+    date
+    sleep 10
+    jobs
+    pstree -aspgT
+
+    # Make files with status and description we'll show for this check on Github
+    task_exit_code=$fuzzer_exit_code
+    if [ "$fuzzer_exit_code" == 143 ]
+    then
+        # SIGTERM -- the fuzzer was killed by timeout, which means a normal run.
+        echo "success" > status.txt
+        echo "OK" > description.txt
+        task_exit_code=0
+    elif [ "$fuzzer_exit_code" == 210 ]
+    then
+        # Lost connection to the server. This probably means that the server died
+        # with abort.
+        echo "failure" > status.txt
+        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        then
+            echo "Lost connection to server. See the logs." > description.txt
+        fi
+    else
+        # Something different -- maybe the fuzzer itself died? Don't grep the
+        # server log in this case, because we will find a message about normal
+        # server termination (Received signal 15), which is confusing.
+        echo "failure" > status.txt
+        echo "Fuzzer failed ($fuzzer_exit_code). See the logs." > description.txt
+    fi
     ;&
 "report")
 cat > report.html <<EOF ||:
