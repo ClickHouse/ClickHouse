@@ -1,7 +1,7 @@
 import os
 import subprocess
 import time
-
+import logging
 import docker
 
 
@@ -129,12 +129,12 @@ class _NetworkManager:
     def add_iptables_rule(self, **kwargs):
         cmd = ['iptables', '-I', 'DOCKER-USER', '1']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
-        self._exec_run(cmd, privileged=True)
+        self._exec_run_with_retry(cmd, retry_count=3, privileged=True)
 
     def delete_iptables_rule(self, **kwargs):
         cmd = ['iptables', '-D', 'DOCKER-USER']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
-        self._exec_run(cmd, privileged=True)
+        self._exec_run_with_retry(cmd, retry_count=3, privileged=True)
 
     @staticmethod
     def _iptables_cmd_suffix(
@@ -159,12 +159,12 @@ class _NetworkManager:
 
     def __init__(
             self,
-            container_expire_timeout=50, container_exit_timeout=60):
+            container_expire_timeout=50, container_exit_timeout=60, docker_api_version=os.environ.get("DOCKER_API_VERSION")):
 
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
 
-        self._docker_client = docker.from_env(version=os.environ.get("DOCKER_API_VERSION"))
+        self._docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=docker_api_version, timeout=600)
 
         self._container = None
 
@@ -206,6 +206,13 @@ class _NetworkManager:
             self._container_expire_time = time.time() + self.container_expire_timeout
 
         return self._container
+
+    def _exec_run_with_retry(self, cmd, retry_count, **kwargs):
+        for i in range(retry_count):
+            try:
+                self._exec_run(cmd, **kwargs)
+            except subprocess.CalledProcessError as e:
+                logging.error(f"_exec_run failed for {cmd}, {e}")
 
     def _exec_run(self, cmd, **kwargs):
         container = self._ensure_container()
