@@ -20,7 +20,7 @@ ${CLICKHOUSE_CLIENT} -q "create row policy t_01889_filter ON t_01889 FOR SELECT 
 ${CLICKHOUSE_CLIENT} -q "grant r_01889 to u_01889"
 ${CLICKHOUSE_CLIENT} -q "alter user u_01889 default role r_01889 settings none"
 
-${CLICKHOUSE_CLIENT_BINARY} --user=u_01889 --password=dfsdffdf5t123 --query="select count() from t_01889"
+${CLICKHOUSE_CLIENT_BINARY} --database=${CLICKHOUSE_DATABASE} --user=u_01889 --password=dfsdffdf5t123 --query="select count() from t_01889"
 
 ${CLICKHOUSE_CLIENT} -q "drop user u_01889"
 ${CLICKHOUSE_CLIENT} -q "drop policy t_01889_filter on t_01889"
