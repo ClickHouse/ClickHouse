@@ -23,6 +23,9 @@ class StorageReplicatedMergeTree;
  * Cross shard part movement workflow orchestration.
  *
  * TODO(nv) Issues:
+ *  * Instead of looking for log entries by their contents (fragile) just store
+ *      log znode_name. Better to infrequently send duplicate log entries even
+ *      if it comes with a risk than relying on serialized log entry state comparison.
  *  * Add ACL, implement as separate PR to avoid conflicts as there is a small
  *      refactoring opportunity in InterpretAlterQuery.
  *  * Usage of `format_version` when acting on the behalf of the remote shard.
@@ -30,6 +33,10 @@ class StorageReplicatedMergeTree;
  *  * Entry POCO JSON ser/de may fail on contents serialized by POCO itself.
  *      Example: https://gist.github.com/nvartolomei/75373514a94835be4218e0f6b44bff79
  *  * Hard to test thoroughly, need to introduce failpoints.
+ *  * Only one movement at a time can be coordinated. This can easily be fixed
+ *      by cycling through different tasks and checking their status w/ an extra.
+ *      Add a priority queue and back-off for failing tasks
+ *          `min(backoff * num_tries, max_backoff)`.
  */
 class PartMovesBetweenShardsOrchestrator
 {

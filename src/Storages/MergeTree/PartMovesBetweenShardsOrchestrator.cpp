@@ -299,6 +299,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
         case EntryState::DESTINATION_FETCH:
         {
+
             if (entry.rollback)
             {
                 // TODO(nv): Do we want to cleanup fetched data on the destination?
@@ -312,28 +313,42 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             {
                 /// Note: Table structure shouldn't be changed while there are part movements in progress.
 
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+                ReplicatedMergeTreeLogEntryData fetch_log_entry;
 
-                /// Log entry.
-                ReplicatedMergeTreeLogEntryData log_entry;
-                log_entry.type = ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD;
-                log_entry.create_time = std::time(nullptr);
-                log_entry.new_part_name = entry.part_name;
-                log_entry.source_replica = storage.replica_name;
-                log_entry.source_shard = zookeeper_path;
-                ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
-                ops.emplace_back(zkutil::makeCreateRequest(
-                    entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+                String fetch_log_entry_barrier_path = fs::path(entry.znode_path) / ("log_" + entry.state.toString());
+                Coordination::Stat fetch_log_entry_stat;
+                String fetch_log_entry_str;
+                if (zk->tryGet(fetch_log_entry_barrier_path, fetch_log_entry_str, &fetch_log_entry_stat))
+                {
+                    LOG_DEBUG(log, "Log entry was already created will try and watch existing one.");
 
-                Coordination::Responses responses;
-                Coordination::Error rc = zk->tryMulti(ops, responses);
-                zkutil::KeeperMultiException::check(rc, ops, responses);
+                    fetch_log_entry = *ReplicatedMergeTreeLogEntry::parse(fetch_log_entry_str, fetch_log_entry_stat);
+                    fetch_log_entry.znode_name = "queue--fake-name";
+                }
+                else
+                {
+                    Coordination::Requests ops;
+                    ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
-                String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
-                log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+                    fetch_log_entry.type = ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD;
+                    fetch_log_entry.create_time = std::time(nullptr);
+                    fetch_log_entry.new_part_name = entry.part_name;
+                    fetch_log_entry.source_replica = storage.replica_name;
+                    fetch_log_entry.source_shard = zookeeper_path;
+                    ops.emplace_back(zkutil::makeCreateRequest(fetch_log_entry_barrier_path, fetch_log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
+                    ops.emplace_back(zkutil::makeCreateRequest(
+                        entry.to_shard + "/log/log-", fetch_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
 
-                Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true, make_stop_wait_cond());
+                    Coordination::Responses responses;
+                    Coordination::Error rc = zk->tryMulti(ops, responses);
+                    zkutil::KeeperMultiException::check(rc, ops, responses);
+
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+                    fetch_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+                }
+
+                Strings unwaited = storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, fetch_log_entry, true, make_stop_wait_cond());
                 if (!unwaited.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Requested to stop while waiting for log entry to be processed. Replicas that didn't finish: {}.", toString(unwaited));
 

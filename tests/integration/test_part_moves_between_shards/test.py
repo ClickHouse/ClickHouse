@@ -43,6 +43,7 @@ def test_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
             r.query("""
+            DROP TABLE IF EXISTS test_move;
             CREATE TABLE test_move(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_move', '{}')
             ORDER BY tuple()
