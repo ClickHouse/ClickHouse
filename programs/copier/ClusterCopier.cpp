@@ -638,6 +638,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         catch (...)
         {
             LOG_INFO(log, "Error while moving partition {} piece {} to original table", partition_name, toString(current_piece_number));
+            LOG_WARNING(log, "In case of non-replicated tables it can cause duplicates.");
             throw;
         }
 
@@ -1119,7 +1120,7 @@ TaskStatus ClusterCopier::tryCreateDestinationTable(const ConnectionTimeouts & t
         String query = queryToString(create_query_push_ast);
 
         LOG_INFO(log, "Create destination tables. Query: \n {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push,  ClusterExecutionMode::ON_EACH_NODE);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
             "Destination tables {} have been created on {} shards of {}",
@@ -1368,14 +1369,14 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         UInt64 num_shards_drop_partition = executeQueryOnCluster(task_table.cluster_push, ss.str(), task_cluster->settings_push, ClusterExecutionMode::ON_EACH_SHARD);
 
-        LOG_INFO(log, "Drop partiton {} in original table {} have been executed successfully on {} shards of {}",
+        LOG_INFO(log, "Drop partition {} in original table {} have been executed successfully on {} shards of {}",
             task_partition.name, getQuotedTable(original_table), num_shards_drop_partition, task_table.cluster_push->getShardCount());
     }
 
 
     /// Try create table (if not exists) on each shard
     /// We have to create this table even in case that partition piece is empty
-    /// This is significant, because we will have simplier code
+    /// This is significant, because we will have simpler code
     {
         /// 1) Get columns description from any replica of destination cluster
         /// 2) Change ENGINE, database and table name
@@ -1388,9 +1389,11 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         ParserCreateQuery parser_create_query;
         auto create_query_ast = parseQuery(parser_create_query, create_query, settings_push.max_query_size, settings_push.max_parser_depth);
         /// Define helping table database and name for current partition piece
-        DatabaseAndTableName database_and_table_for_current_piece{
-                task_table.table_push.first,
-                task_table.table_push.second + "_piece_" + toString(current_piece_number)};
+        DatabaseAndTableName database_and_table_for_current_piece
+        {
+            task_table.table_push.first,
+            task_table.table_push.second + "_piece_" + toString(current_piece_number)
+        };
 
 
         auto new_engine_push_ast = task_table.engine_push_ast;
@@ -1402,7 +1405,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         String query = queryToString(create_query_push_ast);
 
         LOG_INFO(log, "Create destination tables. Query: \n {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push,  ClusterExecutionMode::ON_EACH_NODE);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
             "Destination tables {} have been created on {} shards of {}",
