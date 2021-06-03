@@ -196,7 +196,7 @@ private:
     BackgroundSchedulePool::TaskHolder task;
 
     mutable std::mutex state_mutex;
-    std::map<String, Entry> entries;
+    std::vector<Entry> entries;
 
 public:
     String entries_znode_path;

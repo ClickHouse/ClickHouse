@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <boost/range/adaptor/map.hpp>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -64,9 +63,7 @@ void PartMovesBetweenShardsOrchestrator::fetchStateFromZK()
 {
     std::lock_guard lock(state_mutex);
 
-    // TODO(nv): Make this exception safe. Don't clear local state if parsing
-    //      from ZK fails.
-    entries.clear();
+    std::vector<Entry> new_entries;
 
     auto zk = storage.getZooKeeper();
 
@@ -84,8 +81,11 @@ void PartMovesBetweenShardsOrchestrator::fetchStateFromZK()
         e.version = stat.version;
         e.znode_name = task_name;
 
-        entries[task_name] = std::move(e);
+        new_entries.push_back(std::move(e));
     }
+
+    // Replace in-memory state.
+    entries = new_entries;
 }
 
 bool PartMovesBetweenShardsOrchestrator::step()
@@ -101,7 +101,7 @@ bool PartMovesBetweenShardsOrchestrator::step()
     {
         std::lock_guard lock(state_mutex);
 
-        for (auto const & entry : entries | boost::adaptors::map_values)
+        for (auto const & entry : entries)
         {
             if (entry.state.value == EntryState::DONE || entry.state.value == EntryState::CANCELLED)
                 continue;
@@ -612,12 +612,7 @@ std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrc
 
     std::lock_guard lock(state_mutex);
 
-    std::vector<Entry> res;
-
-    for (const auto & e : entries)
-        res.push_back(e.second);
-
-    return res;
+    return entries;
 }
 
 std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntryByUUID(const UUID & task_uuid)
@@ -626,7 +621,7 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
     fetchStateFromZK();
 
     std::lock_guard lock(state_mutex);
-    for (auto const & entry : entries | boost::adaptors::map_values)
+    for (auto const & entry : entries)
     {
         if (entry.task_uuid == task_uuid)
         {
