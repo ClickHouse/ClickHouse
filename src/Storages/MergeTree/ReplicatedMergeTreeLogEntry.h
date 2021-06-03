@@ -147,6 +147,9 @@ struct ReplicatedMergeTreeLogEntryData
         return res;
     }
 
+    /// Returns fake part for drop range (for DROP_RANGE and REPLACE_RANGE)
+    std::optional<String> getDropRange(MergeTreeDataFormatVersion format_version) const;
+
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.
     bool removed_by_other_entry = false;
