@@ -16,21 +16,33 @@ postgres_table_template = """
     key Integer NOT NULL, value Integer, PRIMARY KEY(key))
     """
 
-
-def get_postgres_conn(database=False):
+def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name='postgres_database'):
     if database == True:
-        conn_string = "host='localhost' dbname='postgres_database' user='postgres' password='mysecretpassword'"
+        conn_string = "host={} port={} dbname='{}' user='postgres' password='mysecretpassword'".format(ip, port, database_name)
     else:
-        conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
+        conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(ip, port)
+
     conn = psycopg2.connect(conn_string)
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    conn.autocommit = True
+    if auto_commit:
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        conn.autocommit = True
     return conn
 
 
 def create_postgres_db(cursor, name):
     cursor.execute("CREATE DATABASE {}".format(name))
 
+def create_clickhouse_postgres_db(ip, port, name='postgres_database'):
+    instance.query('''
+            CREATE DATABASE {}
+            ENGINE = PostgreSQL('{}:{}', '{}', 'postgres', 'mysecretpassword')'''.format(name, ip, port, name))
+
+def create_materialized_table(ip, port):
+    instance.query('''
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
+            ENGINE = MaterializePostgreSQL(
+            '{}:{}', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key; '''.format(ip, port))
 
 def create_postgres_table(cursor, table_name, replica_identity_full=False):
     cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
@@ -52,12 +64,13 @@ def postgresql_replica_check_result(result, check=False, ref_file='test_postgres
 def started_cluster():
     try:
         cluster.start()
-        conn = get_postgres_conn()
+        conn = get_postgres_conn(ip=cluster.postgres_ip,
+                                 port=cluster.postgres_port)
         cursor = conn.cursor()
         create_postgres_db(cursor, 'postgres_database')
-        instance.query('''
-                CREATE DATABASE postgres_database
-                ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')''')
+        create_clickhouse_postgres_db(ip=cluster.postgres_ip,
+                                      port=cluster.postgres_port)
+
         instance.query('CREATE DATABASE test')
         yield cluster
 
@@ -65,25 +78,23 @@ def started_cluster():
         cluster.shutdown()
 
 @pytest.fixture(autouse=True)
-def rabbitmq_setup_teardown():
+def postgresql_setup_teardown():
     yield  # run test
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
 
 
 @pytest.mark.timeout(320)
 def test_initial_load_from_snapshot(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     while postgresql_replica_check_result(result) == False:
@@ -96,18 +107,16 @@ def test_initial_load_from_snapshot(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_no_connection_at_startup(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
     time.sleep(3)
 
     instance.query('DETACH TABLE test.postgresql_replica')
@@ -129,18 +138,16 @@ def test_no_connection_at_startup(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_detach_attach_is_ok(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
     while (int(result) == 0):
@@ -164,19 +171,17 @@ def test_detach_attach_is_ok(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_replicating_insert_queries(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(10)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
     while (int(result) != 10):
@@ -206,19 +211,17 @@ def test_replicating_insert_queries(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_replicating_delete_queries(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     while postgresql_replica_check_result(result) == False:
@@ -245,19 +248,17 @@ def test_replicating_delete_queries(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_replicating_update_queries(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number + 10 from numbers(50)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
     while (int(result) != 50):
@@ -277,18 +278,16 @@ def test_replicating_update_queries(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_resume_from_written_version(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number + 10 from numbers(50)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
     while (int(result) != 50):
@@ -320,18 +319,16 @@ def test_resume_from_written_version(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_many_replication_messages(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(100000)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, PRIMARY KEY(key))
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            SETTINGS materialize_postgresql_max_block_size = 50000;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
     while (int(result) != 100000):
@@ -375,18 +372,16 @@ def test_many_replication_messages(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_connection_loss(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key;
-        ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     i = 50
     while i < 100000:
@@ -412,17 +407,16 @@ def test_connection_loss(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_clickhouse_restart(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key; ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     i = 50
     while i < 100000:
@@ -442,16 +436,15 @@ def test_clickhouse_restart(started_cluster):
 
 
 def test_rename_table(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key; ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(25)")
 
@@ -477,16 +470,15 @@ def test_rename_table(started_cluster):
 
 
 def test_virtual_columns(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
 
     instance.query('DROP TABLE IF EXISTS test.postgresql_replica')
-    instance.query('''
-        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
-            ENGINE = MaterializePostgreSQL(
-            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key; ''')
+    create_materialized_table(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port)
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(10)")
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
