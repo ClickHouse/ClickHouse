@@ -63,7 +63,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block_,
-    ContextPtr context_)
+    ContextConstPtr context_)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , dict_struct{dict_struct_}
     , implicit_key{config.getBool(config_prefix + ".implicit_key", false)}
@@ -140,7 +140,7 @@ namespace
     {
     public:
         BlockInputStreamWithBackgroundThread(
-            ContextPtr context,
+            ContextConstPtr context,
             const std::string & format,
             const Block & sample_block,
             const std::string & command_str,
@@ -265,7 +265,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextConstPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {

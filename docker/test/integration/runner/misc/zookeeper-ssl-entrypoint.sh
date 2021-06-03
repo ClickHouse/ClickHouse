@@ -81,8 +81,8 @@ if [[ ! -f "$ZOO_DATA_DIR/myid" ]]; then
     echo "${ZOO_MY_ID:-1}" > "$ZOO_DATA_DIR/myid"
 fi
 
-mkdir -p $(dirname $ZOO_SSL_KEYSTORE_LOCATION)
-mkdir -p $(dirname $ZOO_SSL_TRUSTSTORE_LOCATION)
+mkdir -p "$(dirname $ZOO_SSL_KEYSTORE_LOCATION)"
+mkdir -p "$(dirname $ZOO_SSL_TRUSTSTORE_LOCATION)"
 
 if [[ ! -f "$ZOO_SSL_KEYSTORE_LOCATION" ]]; then
     keytool -genkeypair -alias zookeeper -keyalg RSA -validity 365 -keysize 2048 -dname "cn=zookeeper" -keypass password -keystore $ZOO_SSL_KEYSTORE_LOCATION -storepass password -deststoretype pkcs12
