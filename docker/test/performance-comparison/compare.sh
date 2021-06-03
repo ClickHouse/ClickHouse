@@ -554,12 +554,6 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
 " 2> >(tee -a analyze/errors.log 1>&2)
 
 # Fetch historical query variability thresholds from the CI database
-clickhouse-local --query "
-    left join file('analyze/report-thresholds.tsv', TSV,
-            'test text, report_threshold float') thresholds
-        on query_metric_stats.test = thresholds.test
-"
-
 if [ -v CHPC_DATABASE_URL ]
 then
     set +x # Don't show password in the log
@@ -577,7 +571,8 @@ then
         --date_time_input_format=best_effort)
 
 
-# Precision is going to be 1.5 times worse for PRs. How do I know it? I ran this:
+# Precision is going to be 1.5 times worse for PRs, because we run the queries
+# less times. How do I know it? I ran this:
 # SELECT quantilesExact(0., 0.1, 0.5, 0.75, 0.95, 1.)(p / m)
 # FROM
 # (
@@ -592,14 +587,21 @@ then
 #         query_display_name
 #     HAVING count(*) > 100
 # )
-# The file can be empty if the server is inaccessible, so we can't use TSVWithNamesAndTypes.
+#
+# The file can be empty if the server is inaccessible, so we can't use
+# TSVWithNamesAndTypes.
+#
     "${client[@]}" --query "
             select test, query_index,
-                quantileExact(0.99)(abs(diff)) max_diff,
+                quantileExact(0.99)(abs(diff)) max_diff * 1.5,
                 quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 max_stat_threshold,
                 query_display_name
             from query_metrics_v2
-            where event_date > now() - interval 1 month
+            -- We use results at least one week in the past, so that the current
+            -- changes do not immediately influence the statistics, and we have
+            -- some time to notice that something is wrong.
+            where event_date between now() - interval 1 month - interval 1 week
+                    and now() - interval 1 week
                 and metric = 'client_time'
                 and pr_number = 0
             group by test, query_index, query_display_name
@@ -1224,6 +1226,50 @@ unset IFS
 
 function upload_results
 {
+    # Prepare info for the CI checks table.
+    rm ci-checks.tsv
+    clickhouse-local --query "
+create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes,
+    'changed_fail int, changed_show int, unstable_fail int, unstable_show int,
+        left float, right float, diff float, stat_threshold float,
+        test text, query_index int, query_display_name text');
+
+create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
+    as select
+        $PR_TO_TEST pull_request_number,
+        '$SHA_TO_TEST' commit_sha,
+        'Performance' check_name,
+        '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' check_status,
+        -- TODO toDateTime() can't parse output of 'date', so no time for now.
+        3600 * 1000 check_duration_ms,
+        now() - check_duration_ms / 1000 check_start_time,
+        test_name,
+        test_status,
+        test_duration_ms,
+        'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url,
+        $PR_TO_TEST = 0
+            ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
+            : 'https://github.com/ClickHouse/ClickHouse/pull/$PR_TO_TEST' pull_request_url,
+        '' commit_url,
+        '' task_url,
+        '' base_ref,
+        '' base_repo,
+        '' head_ref,
+        '' head_repo
+    from (
+        select '' test_name,
+            '$(sed -n 's/.*<!--message: \(.*\)-->/\1/p' report.html)' test_status,
+            0 test_duration_ms
+        union all
+            select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms
+            from queries where changed_fail != 0 and diff > 0
+        union all
+            select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms
+            from queries where unstable_fail != 0
+    )
+;
+    "
+
     if ! [ -v CHPC_DATABASE_URL ]
     then
         echo Database for test results is not specified, will not upload them.
@@ -1291,6 +1337,10 @@ function upload_results
 $REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
 $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
 EOF
+
+    # Also insert some data about the check into the CI checks table.
+    "${client[@]}" --query "INSERT INTO "'"'"gh-data"'"'".checks FORMAT TSVWithNamesAndTypes" \
+        < ci-checks.tsv
 
     set -x
 }
