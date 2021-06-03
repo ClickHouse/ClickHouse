@@ -286,8 +286,8 @@ public:
                 serialize = [&](size_t col_idx, const Array & values)
                 {
                     const auto & type = values_types[col_idx];
-                    if (isInteger(type))
-                        SerializationNumber<Int64>().serializeBinary(values[col_idx], buf);
+                    if (!type->isNullable())
+                        type->promoteNumericType()->getDefaultSerialization()->serializeBinary(values[col_idx], buf);
                     else
                         values_serializations[col_idx]->serializeBinary(values[col_idx], buf);
                 };
@@ -325,8 +325,8 @@ public:
                 deserialize = [&](size_t col_idx, Array & values)
                 {
                     const auto & type = values_types[col_idx];
-                    if (isInteger(type))
-                        SerializationNumber<Int64>().deserializeBinary(values[col_idx], buf);
+                    if (!type->isNullable())
+                        type->promoteNumericType()->getDefaultSerialization()->deserializeBinary(values[col_idx], buf);
                     else
                         values_serializations[col_idx]->deserializeBinary(values[col_idx], buf);
                 };
