@@ -13,6 +13,7 @@
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
@@ -181,6 +182,99 @@ public:
         }
 
         return res;
+    }
+
+    bool getConstant(Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
+    {
+        if (ast)
+        {
+            // Constant expr should use alias names if any
+            String column_name = ast->getColumnName();
+
+            if (const auto * lit = ast->as<ASTLiteral>())
+            {
+                /// By default block_with_constants has only one column named "_dummy".
+                /// If block contains only constants it's may not be preprocessed by
+                //  ExpressionAnalyzer, so try to look up in the default column.
+                if (!block_with_constants.has(column_name))
+                    column_name = "_dummy";
+
+                /// Simple literal
+                out_value = lit->value;
+                out_type = block_with_constants.getByName(column_name).type;
+                return true;
+            }
+            else if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
+            {
+                /// An expression which is dependent on constants only
+                const auto & expr_info = block_with_constants.getByName(column_name);
+                out_value = (*expr_info.column)[0];
+                out_type = expr_info.type;
+                return true;
+            }
+        }
+        else
+        {
+            if (dag->column && isColumnConst(*dag->column))
+            {
+                out_value = (*dag->column)[0];
+                out_type = dag->result_type;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    ConstSetPtr tryGetPreparedSet(
+        const PreparedSets & sets,
+        const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
+        const DataTypes & data_types) const
+    {
+        if (ast)
+        {
+            if (ast->as<ASTSubquery>() || ast->as<ASTIdentifier>())
+            {
+                auto set_it = sets.find(PreparedSetKey::forSubquery(*ast));
+                if (set_it != sets.end())
+                    return set_it->second;
+            }
+            else
+            {
+                /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
+                /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
+                /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
+                /// that the types it was prepared with are compatible with the types of the primary key.
+                auto set_ast_hash = ast->getTreeHash();
+                auto set_it = std::find_if(
+                    sets.begin(), sets.end(),
+                    [&](const auto & candidate_entry)
+                    {
+                        if (candidate_entry.first.ast_hash != set_ast_hash)
+                            return false;
+
+                        for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                            if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
+                                return false;
+
+                        return true;
+                });
+                if (set_it != sets.end())
+                    return set_it->second;
+            }
+        }
+        else
+        {
+            if (dag->column)
+            {
+                const auto * col_set = typeid_cast<const ColumnSet *>(dag->column.get());
+                auto set = col_set->getData();
+                if (set->isCreated())
+                    return set;
+            }
+        }
+
+        return nullptr;
     }
 
     FunctionTree asFunction() const;
@@ -929,18 +1023,18 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 }
 
 bool KeyCondition::tryPrepareSetIndex(
-    const ASTs & args,
+    const FunctionTree & func,
     ContextPtr context,
     RPNElement & out,
     size_t & out_key_column_num)
 {
-    const ASTPtr & left_arg = args[0];
+    const auto & left_arg = func.getArgumentAt(0);
 
     out_key_column_num = 0;
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     DataTypes data_types;
 
-    auto get_key_tuple_position_mapping = [&](const ASTPtr & node, size_t tuple_index)
+    auto get_key_tuple_position_mapping = [&](const Tree & node, size_t tuple_index)
     {
         MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
         index_mapping.tuple_index = tuple_index;
@@ -956,13 +1050,17 @@ bool KeyCondition::tryPrepareSetIndex(
     };
 
     size_t left_args_count = 1;
-    const auto * left_arg_tuple = left_arg->as<ASTFunction>();
-    if (left_arg_tuple && left_arg_tuple->name == "tuple")
+    if (left_arg.isFunction())
     {
-        const auto & tuple_elements = left_arg_tuple->arguments->children;
-        left_args_count = tuple_elements.size();
-        for (size_t i = 0; i < left_args_count; ++i)
-            get_key_tuple_position_mapping(tuple_elements[i], i);
+        /// Note: in case of ActionsDAG, tuple may be a constant.
+        /// In this case, there is no keys in tuple. So, we don't have to check it.
+        auto left_arg_tuple = left_arg.asFunction();
+        if (left_arg_tuple.getFunctionName() == "tuple")
+        {
+            left_args_count = left_arg_tuple.numArguments();
+            for (size_t i = 0; i < left_args_count; ++i)
+                get_key_tuple_position_mapping(left_arg_tuple.getArgumentAt(i), i);
+        }
     }
     else
         get_key_tuple_position_mapping(left_arg, 0);
@@ -970,42 +1068,11 @@ bool KeyCondition::tryPrepareSetIndex(
     if (indexes_mapping.empty())
         return false;
 
-    const ASTPtr & right_arg = args[1];
+    const auto right_arg = func.getArgumentAt(1);
 
-    SetPtr prepared_set;
-    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
-    {
-        auto set_it = prepared_sets.find(PreparedSetKey::forSubquery(*right_arg));
-        if (set_it == prepared_sets.end())
-            return false;
-
-        prepared_set = set_it->second;
-    }
-    else
-    {
-        /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-        /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-        /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-        /// that the types it was prepared with are compatible with the types of the primary key.
-        auto set_ast_hash = right_arg->getTreeHash();
-        auto set_it = std::find_if(
-            prepared_sets.begin(), prepared_sets.end(),
-            [&](const auto & candidate_entry)
-            {
-                if (candidate_entry.first.ast_hash != set_ast_hash)
-                    return false;
-
-                for (size_t i = 0; i < indexes_mapping.size(); ++i)
-                    if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
-                        return false;
-
-                return true;
-        });
-        if (set_it == prepared_sets.end())
-            return false;
-
-        prepared_set = set_it->second;
-    }
+    auto prepared_set = right_arg.tryGetPreparedSet(prepared_sets, indexes_mapping, data_types);
+    if (!prepared_set)
+        return false;
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
@@ -1107,28 +1174,26 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        auto func = *it;
-        auto func_builder = FunctionFactory::instance().tryGet(func.getFunctionName(), context);
+        auto function = *it;
+        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), context);
         if (!func_builder)
             return false;
         ColumnsWithTypeAndName arguments;
         ColumnWithTypeAndName const_arg;
         FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
-        if (func.numArguments() == 2)
+        if (function.numArguments() == 2)
         {
-            if (const auto * arg_left = args[0]->as<ASTLiteral>())
+            if (function.getArgumentAt(0).isConstant())
             {
-                auto left_arg_type = applyVisitor(FieldToDataType(), arg_left->value);
-                const_arg = { left_arg_type->createColumnConst(0, arg_left->value), left_arg_type, "" };
+                const_arg = function.getArgumentAt(0).getConstant();
                 arguments.push_back(const_arg);
                 arguments.push_back({ nullptr, key_column_type, "" });
                 kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;
             }
-            else if (const auto * arg_right = args[1]->as<ASTLiteral>())
+            else if (function.getArgumentAt(1).isConstant())
             {
                 arguments.push_back({ nullptr, key_column_type, "" });
-                auto right_arg_type = applyVisitor(FieldToDataType(), arg_right->value);
-                const_arg = { right_arg_type->createColumnConst(0, arg_right->value), right_arg_type, "" };
+                const_arg = function.getArgumentAt(1).getConstant();
                 arguments.push_back(const_arg);
                 kind = FunctionWithOptionalConstArg::Kind::RIGHT_CONST;
             }
@@ -1277,7 +1342,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
 
             if (functionIsInOrGlobalInOperator(func_name))
             {
-                if (tryPrepareSetIndex(args, context, out, key_column_num))
+                if (tryPrepareSetIndex(func, context, out, key_column_num))
                 {
                     key_arg_pos = 0;
                     is_set_const = true;
