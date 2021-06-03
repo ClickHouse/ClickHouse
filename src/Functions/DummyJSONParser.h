@@ -41,7 +41,7 @@ struct DummyJSONParser
         Object getObject() const { return {}; }
 
         Element getElement() { return {}; }
-        std::ostream & operator<<(std::ostream & os) { return os; }
+        std::ostream & operator<<(std::ostream & os) const { return os; }
     };
 
     /// References an array in a JSON document.
@@ -99,5 +99,10 @@ struct DummyJSONParser
     void reserve(size_t max_size);
 #endif
 };
+
+ALWAYS_INLINE std::ostream& operator<<(std::ostream& out, DummyJSONParser::Element)
+{
+    return out;
+}
 
 }
