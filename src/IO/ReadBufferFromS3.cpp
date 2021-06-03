@@ -75,8 +75,8 @@ bool ReadBufferFromS3::nextImpl()
             impl = initialize();
         }
 
-        std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);      
-        sleep_time_with_backoff_milliseconds *= 2;      
+        std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
+        sleep_time_with_backoff_milliseconds *= 2;
     }
 
     watch.stop();
