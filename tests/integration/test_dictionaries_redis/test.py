@@ -1,5 +1,5 @@
 import os
-
+import shutil
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
@@ -93,15 +93,18 @@ def setup_module(module):
     global node
     global dict_configs_path
 
-    for f in os.listdir(dict_configs_path):
-        os.remove(os.path.join(dict_configs_path, f))
+    cluster = ClickHouseCluster(__file__)
+
+    if os.path.exists(dict_configs_path):
+        shutil.rmtree(dict_configs_path)
+    os.mkdir(dict_configs_path)
 
     for i, field in enumerate(FIELDS):
         DICTIONARIES.append([])
         sources = []
-        sources.append(SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "clickhouse", i * 2,
+        sources.append(SourceRedis("RedisSimple", "localhost", cluster.redis_port, cluster.redis_host, "6379", "", "clickhouse", i * 2,
                                    storage_type="simple"))
-        sources.append(SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "clickhouse", i * 2 + 1,
+        sources.append(SourceRedis("RedisHash", "localhost", cluster.redis_port, cluster.redis_host, "6379", "", "clickhouse", i * 2 + 1,
                                    storage_type="hash_map"))
         for source in sources:
             for layout in LAYOUTS:
@@ -117,7 +120,6 @@ def setup_module(module):
     for fname in os.listdir(dict_configs_path):
         dictionaries.append(os.path.join(dict_configs_path, fname))
 
-    cluster = ClickHouseCluster(__file__)
     node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_redis=True)
 
 
