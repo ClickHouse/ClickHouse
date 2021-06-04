@@ -420,7 +420,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
             ColumnPtr column;
             {
-                const auto is_nullable = actual_type->isNullable();
+                const bool is_nullable = actual_type->isNullable();
                 auto mutable_column = actual_type->createColumn();
 
                 for (const auto & f : value_field.get<Array>())
