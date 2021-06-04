@@ -125,7 +125,7 @@ protected:
 
     static constexpr UInt64 max_table_tries = 3;
     static constexpr UInt64 max_shard_partition_tries = 3;
-    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 3;
+    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 10;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
