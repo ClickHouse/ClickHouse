@@ -112,11 +112,10 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/util/units/length-units.cc"
 )
 
-
 add_library(s2 ${S2_SRCS})
 
 target_include_directories(s2 SYSTEM PUBLIC "${S2_SOURCE_DIR}/")
-target_include_directories(s2 SYSTEM PUBLIC "${S2_SOURCE_DIR}/")
+target_include_directories(s2 SYSTEM PUBLIC "${S2_BINARY_DIR}/")
 
 if(M_LIBRARY)
     target_link_libraries(s2 PRIVATE ${M_LIBRARY})
