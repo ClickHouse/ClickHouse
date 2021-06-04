@@ -29,14 +29,14 @@ namespace
 {
 
 /// TODO: Comment this
-class FunctionS2RectIntersecion : public IFunction
+class FunctionS2RectIntersection : public IFunction
 {
 public:
-    static constexpr auto name = "S2RectIntersecion";
+    static constexpr auto name = "S2RectIntersection";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionS2RectIntersecion>();
+        return std::make_shared<FunctionS2RectIntersection>();
     }
 
     std::string getName() const override
@@ -139,9 +139,9 @@ public:
 
 }
 
-void registerFunctionS2RectIntersecion(FunctionFactory & factory)
+void registerFunctionS2RectIntersection(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionS2RectIntersecion>();
+    factory.registerFunction<FunctionS2RectIntersection>();
 }
 
 

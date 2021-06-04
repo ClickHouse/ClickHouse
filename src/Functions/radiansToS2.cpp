@@ -101,7 +101,7 @@ public:
 
 }
 
-void registerRadiansDegreesToS2(FunctionFactory & factory)
+void registerRadianssToS2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRadiansToS2>();
 }
