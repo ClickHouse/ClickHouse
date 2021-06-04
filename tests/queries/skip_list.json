@@ -402,6 +402,7 @@
         "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
         "01823_explain_json",
         "01852_cast_operator",
+        "01889_postgresql_protocol_null_fields",
         "01852_cast_operator_bad_cases"
     ],
     "parallel":
@@ -724,6 +725,7 @@
         "01821_table_comment",
         "01710_projection_fetch",
         "01870_modulo_partition_key",
-        "01870_buffer_flush" // creates database
+        "01870_buffer_flush", // creates database
+        "01889_postgresql_protocol_null_fields"
     ]
 }
