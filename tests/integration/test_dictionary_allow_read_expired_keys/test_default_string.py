@@ -9,8 +9,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="string")
 
 dictionary_node = cluster.add_instance('dictionary_node', stay_alive=True)
 main_node = cluster.add_instance('main_node', dictionaries=['configs/dictionaries/cache_ints_dictionary.xml',
