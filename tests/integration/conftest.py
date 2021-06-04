@@ -8,7 +8,7 @@ from helpers.network import _NetworkManager
 def cleanup_environment():
     _NetworkManager.clean_all_user_iptables_rules()
     try:
-        result = subprocess.run(['docker', 'container', 'list', '-a'])
+        result = subprocess.run(['docker', 'container', 'list', '-a', '|', 'wc', '-l'])
         if result.returncode != 0:
             logging.error(f"docker ps returned error:{str(result.stderr)}")
         else:
