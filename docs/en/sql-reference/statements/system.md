@@ -64,11 +64,23 @@ SELECT name, status FROM system.dictionaries;
 
 ## RELOAD MODELS {#query_language-system-reload-models}
 
-Reloads all [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) models if the configuration was updated without restarting the server. The configuration for CatBoost models is the same as for dictionaries.
+Reloads all [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) models if the configuration was updated without restarting the server.
+
+**Syntax**
+
+```sql
+SYSTEM RELOAD MODELS
+```
 
 ## RELOAD MODEL {#query_language-system-reload-model}
 
 Completely reloads a CatBoost model `model_name` if the configuration was updated without restarting the server.
+
+**Syntax**
+
+```sql
+SYSTEM RELOAD MODEL [db.]<model_name>
+```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
