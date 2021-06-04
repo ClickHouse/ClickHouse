@@ -61,6 +61,25 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDa
     return nullptr;
 }
 
+template <typename ToType>
+static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
+{
+    if constexpr (std::is_same_v<ToType, Int8> || std::is_same_v<ToType, UInt8>)
+        return builder.getInt8Ty();
+    else if constexpr (std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16>)
+        return builder.getInt16Ty();
+    else if constexpr (std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32>)
+        return builder.getInt32Ty();
+    else if constexpr (std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64>)
+        return builder.getInt64Ty();
+    else if constexpr (std::is_same_v<ToType, Float32>)
+        return builder.getFloatTy();
+    else if constexpr (std::is_same_v<ToType, Float64>)
+        return builder.getDoubleTy();
+
+    return nullptr;
+}
+
 static inline bool canBeNativeType(const IDataType & type)
 {
     WhichDataType data_type(type);
@@ -79,38 +98,60 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const Dat
     return toNativeType(builder, *type);
 }
 
-static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value)
+static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataTypePtr & from_type, llvm::Value * value)
 {
-    if (from->isNullable())
+    if (from_type->isNullable())
     {
-        auto * inner = nativeBoolCast(b, removeNullable(from), b.CreateExtractValue(value, {0}));
+        auto * inner = nativeBoolCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
         return b.CreateAnd(b.CreateNot(b.CreateExtractValue(value, {1})), inner);
     }
     auto * zero = llvm::Constant::getNullValue(value->getType());
+
     if (value->getType()->isIntegerTy())
         return b.CreateICmpNE(value, zero);
     if (value->getType()->isFloatingPointTy())
         return b.CreateFCmpONE(value, zero); /// QNaN is false
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from->getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from_type->getName());
 }
 
-static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, llvm::Type * to)
+static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, llvm::Type * to_type)
 {
-    auto * n_from = value->getType();
+    auto * from_type = value->getType();
 
-    if (n_from == to)
+    if (from_type == to_type)
         return value;
-    else if (n_from->isIntegerTy() && to->isFloatingPointTy())
-        return typeIsSigned(*from) ? b.CreateSIToFP(value, to) : b.CreateUIToFP(value, to);
-    else if (n_from->isFloatingPointTy() && to->isIntegerTy())
-        return typeIsSigned(*from) ? b.CreateFPToSI(value, to) : b.CreateFPToUI(value, to);
-    else if (n_from->isIntegerTy() && to->isIntegerTy())
-        return b.CreateIntCast(value, to, typeIsSigned(*from));
-    else if (n_from->isFloatingPointTy() && to->isFloatingPointTy())
-        return b.CreateFPCast(value, to);
+    else if (from_type->isIntegerTy() && to_type->isFloatingPointTy())
+        return typeIsSigned(*from) ? b.CreateSIToFP(value, to_type) : b.CreateUIToFP(value, to_type);
+    else if (from_type->isFloatingPointTy() && to_type->isIntegerTy())
+        return typeIsSigned(*from) ? b.CreateFPToSI(value, to_type) : b.CreateFPToUI(value, to_type);
+    else if (from_type->isIntegerTy() && to_type->isIntegerTy())
+        return b.CreateIntCast(value, to_type, typeIsSigned(*from));
+    else if (from_type->isFloatingPointTy() && to_type->isFloatingPointTy())
+        return b.CreateFPCast(value, to_type);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast {} to requested type", from->getName());
+}
+
+template <typename FromType>
+static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, llvm::Value * value, llvm::Type * to_type)
+{
+    auto * from_type = value->getType();
+
+    static constexpr bool from_type_is_signed = std::numeric_limits<FromType>::is_signed;
+
+    if (from_type == to_type)
+        return value;
+    else if (from_type->isIntegerTy() && to_type->isFloatingPointTy())
+        return from_type_is_signed ? b.CreateSIToFP(value, to_type) : b.CreateUIToFP(value, to_type);
+    else if (from_type->isFloatingPointTy() && to_type->isIntegerTy())
+        return from_type_is_signed ? b.CreateFPToSI(value, to_type) : b.CreateFPToUI(value, to_type);
+    else if (from_type->isIntegerTy() && to_type->isIntegerTy())
+        return b.CreateIntCast(value, to_type, from_type_is_signed);
+    else if (from_type->isFloatingPointTy() && to_type->isFloatingPointTy())
+        return b.CreateFPCast(value, to_type);
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast {} to requested type", TypeName<FromType>);
 }
 
 static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, const DataTypePtr & to)

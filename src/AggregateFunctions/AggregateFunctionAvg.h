@@ -166,5 +166,110 @@ public:
     }
 
     String getName() const final { return "avg"; }
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override
+    {
+        bool can_be_compiled = true;
+
+        for (const auto & argument : this->argument_types)
+            can_be_compiled &= canBeNativeType(*argument);
+
+        return can_be_compiled;
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * numerator_type = toNativeType<AvgFieldType<T>>(b);
+        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
+
+        auto * denominator_type = toNativeType<UInt64>(b);
+        auto * denominator_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, sizeof(AvgFieldType<T>));
+        auto * denominator_ptr = b.CreatePointerCast(denominator_offset_ptr, denominator_type->getPointerTo());
+
+        b.CreateStore(llvm::Constant::getNullValue(numerator_type), numerator_ptr);
+        b.CreateStore(llvm::Constant::getNullValue(denominator_type), denominator_ptr);
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * numerator_type = toNativeType<AvgFieldType<T>>(b);
+
+        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
+        auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
+
+        const auto & argument_type = arguments_types[0];
+        const auto & argument_value = argument_values[0];
+        auto * value_cast_to_numerator = nativeCast(b, argument_type, argument_value, numerator_type);
+        auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_numerator) : b.CreateFAdd(numerator_value, value_cast_to_numerator);
+        b.CreateStore(numerator_result_value, numerator_ptr);
+
+        auto * denominator_type = toNativeType<UInt64>(b);
+
+        auto * denominator_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, sizeof(AvgFieldType<T>));
+        auto * denominator_ptr = b.CreatePointerCast(denominator_offset_ptr, denominator_type->getPointerTo());
+
+        auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
+        auto * denominator_value_updated = b.CreateAdd(denominator_value, llvm::ConstantInt::get(denominator_type, 1));
+
+        b.CreateStore(denominator_value_updated, denominator_ptr);
+    }
+
+    void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * numerator_type = toNativeType<AvgFieldType<T>>(b);
+
+        auto * numerator_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, numerator_type->getPointerTo());
+        auto * numerator_dst_value = b.CreateLoad(numerator_type, numerator_dst_ptr);
+
+        auto * numerator_src_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, numerator_type->getPointerTo());
+        auto * numerator_src_value = b.CreateLoad(numerator_type, numerator_src_ptr);
+
+        auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_dst_value, numerator_src_value) : b.CreateFAdd(numerator_dst_value, numerator_src_value);
+        b.CreateStore(numerator_result_value, numerator_dst_ptr);
+
+        auto * denominator_type = toNativeType<UInt64>(b);
+
+        auto * denominator_dst_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_dst_ptr, sizeof(AvgFieldType<T>));
+        auto * denominator_src_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, sizeof(AvgFieldType<T>));
+
+        auto * denominator_dst_ptr = b.CreatePointerCast(denominator_dst_offset_ptr, denominator_type->getPointerTo());
+        auto * denominator_src_ptr = b.CreatePointerCast(denominator_src_offset_ptr, denominator_type->getPointerTo());
+
+        auto * denominator_dst_value = b.CreateLoad(denominator_type, denominator_dst_ptr);
+        auto * denominator_src_value = b.CreateLoad(denominator_type, denominator_src_ptr);
+
+        auto * denominator_result_value = b.CreateAdd(denominator_src_value, denominator_dst_value);
+        b.CreateStore(denominator_result_value, denominator_dst_ptr);
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        auto * numerator_type = toNativeType<AvgFieldType<T>>(b);
+        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
+        auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
+
+        auto * denominator_type = toNativeType<UInt64>(b);
+        auto * denominator_offset_ptr = b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, sizeof(AvgFieldType<T>));
+        auto * denominator_ptr = b.CreatePointerCast(denominator_offset_ptr, denominator_type->getPointerTo());
+        auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
+
+        auto * double_numerator = nativeCast<AvgFieldType<T>>(b, numerator_value, b.getDoubleTy());
+        auto * double_denominator = nativeCast<UInt64>(b, denominator_value, b.getDoubleTy());
+
+        return b.CreateFDiv(double_numerator, double_denominator);
+    }
+
+#endif
+
 };
 }
