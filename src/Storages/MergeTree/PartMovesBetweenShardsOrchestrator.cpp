@@ -651,7 +651,11 @@ String PartMovesBetweenShardsOrchestrator::Entry::toString() const
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
-    json.stringify(oss);
+
+    // Always escape unicode to make last_exception_msg json safe.
+    // It may contain random binary data when exception is a parsing error
+    // of unexpected contents.
+    Poco::JSON::Stringifier::stringify(json, oss, 0, -1, Poco::JSON_WRAP_STRINGS | Poco::JSON_ESCAPE_UNICODE);
 
     return oss.str();
 }

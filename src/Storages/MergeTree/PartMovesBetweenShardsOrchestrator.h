@@ -30,8 +30,6 @@ class StorageReplicatedMergeTree;
  *      refactoring opportunity in InterpretAlterQuery.
  *  * Usage of `format_version` when acting on the behalf of the remote shard.
  *      There needs to be sort of an API to coordinate with remote replicas.
- *  * Entry POCO JSON ser/de may fail on contents serialized by POCO itself.
- *      Example: https://gist.github.com/nvartolomei/75373514a94835be4218e0f6b44bff79
  *  * Hard to test thoroughly, need to introduce failpoints.
  *  * Only one movement at a time can be coordinated. This can easily be fixed
  *      by cycling through different tasks and checking their status w/ an extra.
