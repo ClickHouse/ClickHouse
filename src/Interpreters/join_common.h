@@ -44,9 +44,8 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 
-/// Return mask array for specified column. Column should be UInt8 or Nullable(UInt8).
-/// If column type is Nullable(UInt8), new column is created and data stored in res, for UInt8 data returned as is.
-UInt8ColumnDataPtr getColumnAsMask(const Block & block, const String & column_name, ColumnUInt8::MutablePtr & res);
+/// Return mask array of type ColumnUInt8 for specified column. Source should have type UInt8 or Nullable(UInt8).
+ColumnPtr getColumnAsMask(const Block & block, const String & column_name);
 
 /// Split key and other columns by keys name list
 void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others);

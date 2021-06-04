@@ -349,7 +349,7 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
-UInt8ColumnDataPtr getColumnAsMask(const Block & block, const String & column_name, ColumnUInt8::MutablePtr & res)
+ColumnPtr getColumnAsMask(const Block & block, const String & column_name)
 {
     if (column_name.empty())
         return nullptr;
@@ -359,17 +359,16 @@ UInt8ColumnDataPtr getColumnAsMask(const Block & block, const String & column_na
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
         /// Return nested column with NULL set to false
-        res = ColumnUInt8::create(nullable_col->size(), 0);
-
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
         const auto & null_map = nullable_col->getNullMapColumn();
 
+        auto res = ColumnUInt8::create(nullable_col->size(), 0);
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
-        return &res->getData();
+        return res;
     }
     else
-        return &assert_cast<const ColumnUInt8 &>(*join_condition_col).getData();
+        return join_condition_col;
 }
 
 

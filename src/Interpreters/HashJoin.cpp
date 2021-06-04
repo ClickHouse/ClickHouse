@@ -636,9 +636,6 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    ColumnUInt8::MutablePtr mask_col;
-    UInt8ColumnDataPtr join_mask = JoinCommon::getColumnAsMask(block, condition_mask_column_name_right, mask_col);
-
     /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
     UInt8 save_nullmap = 0;
     if (isRightOrFull(kind) && null_map)
@@ -649,16 +646,19 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
     }
 
+    auto join_mask_col = JoinCommon::getColumnAsMask(block, condition_mask_column_name_right);
+
     /// Save blocks that do not hold conditions in ON section
     ColumnUInt8::MutablePtr not_joined_map = nullptr;
-    if (isRightOrFull(kind) && join_mask)
+    if (isRightOrFull(kind) && join_mask_col)
     {
+        const auto & join_mask = assert_cast<const ColumnUInt8 &>(*join_mask_col).getData();
         /// Save rows that do not hold conditions
         not_joined_map = ColumnUInt8::create(block.rows(), 0);
-        for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+        for (size_t i = 0, sz = join_mask.size(); i < sz; ++i)
         {
             /// Condition hold, do not save row
-            if ((*join_mask)[i])
+            if (join_mask[i])
                 continue;
 
             /// NULL key will be saved anyway because, do not save twice
@@ -689,7 +689,9 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             joinDispatch(kind, strictness, data->maps, [&](auto kind_, auto strictness_, auto & map)
             {
                 size_t size = insertFromBlockImpl<strictness_>(
-                                 *this, data->type, map, rows, key_columns, key_sizes, stored_block, null_map, join_mask, data->pool);
+                                 *this, data->type, map, rows, key_columns, key_sizes, stored_block, null_map,
+                                 join_mask_col ? &assert_cast<const ColumnUInt8 &>(*join_mask_col).getData() : nullptr,
+                                 data->pool);
                 /// Number of buckets + 1 value from zero storage
                 used_flags.reinit<kind_, strictness_>(size + 1);
             });
@@ -1111,8 +1113,7 @@ void HashJoin::joinBlockImpl(
       */
 
     /// Only rows where mask == true can be joined
-    ColumnUInt8::MutablePtr mask_col;
-    UInt8ColumnDataPtr join_mask_column = JoinCommon::getColumnAsMask(block, condition_mask_column_name_left, mask_col);
+    ColumnPtr join_mask_column = JoinCommon::getColumnAsMask(block, condition_mask_column_name_left);
 
     AddedColumns added_columns(
         block_with_columns_to_add,
@@ -1121,7 +1122,7 @@ void HashJoin::joinBlockImpl(
         *this,
         left_key_columns,
         key_sizes,
-        join_mask_column,
+        join_mask_column ? &assert_cast<const ColumnUInt8 &>(*join_mask_column).getData() : nullptr,
         is_asof_join);
 
     bool has_required_right_keys = (required_right_keys.columns() != 0);
