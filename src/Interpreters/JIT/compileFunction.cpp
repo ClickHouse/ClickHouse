@@ -299,8 +299,6 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
         aggregate_function->compileCreate(b, aggregation_place_with_offset);
     }
 
-    module.print(llvm::errs(), nullptr);
-
     b.CreateRetVoid();
 }
 
@@ -328,12 +326,29 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", aggregate_loop_func_definition);
     b.SetInsertPoint(entry);
 
-    std::vector<ColumnDataPlaceholder> columns(functions.size());
+    std::vector<ColumnDataPlaceholder> columns;
+    size_t previous_columns_size = 0;
+
     for (size_t i = 0; i < functions.size(); ++i)
     {
-        auto argument_type = functions[i].function->getArgumentTypes()[0];
-        auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, i));
-        columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(argument_type))->getPointerTo());
+        auto argument_types = functions[i].function->getArgumentTypes();
+
+        ColumnDataPlaceholder data_placeholder;
+
+        std::cerr << "Function " << functions[i].function->getName() << std::endl;
+
+        size_t function_arguments_size = argument_types.size();
+
+        for (size_t column_argument_index = 0; column_argument_index < function_arguments_size; ++column_argument_index)
+        {
+            const auto & argument_type = argument_types[previous_columns_size + column_argument_index];
+            auto * data = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_32(column_data_type, columns_arg, column_argument_index));
+            std::cerr << "Argument type " << argument_type->getName() << std::endl;
+            data_placeholder.data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(argument_type))->getPointerTo());
+            columns.emplace_back(data_placeholder);
+        }
+
+        previous_columns_size += function_arguments_size;
     }
 
     /// Initialize loop
@@ -356,16 +371,28 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
 
     auto * aggregation_place = b.CreateCall(get_place_func_declaration, get_place_function_arg, { get_place_function_context_arg, counter_phi });
 
-    for (size_t i = 0; i < functions.size(); ++i)
+    previous_columns_size = 0;
+    for (const auto & function : functions)
     {
-        size_t aggregate_function_offset = functions[i].aggregate_data_offset;
-        const auto * aggregate_function_ptr = functions[i].function;
+        size_t aggregate_function_offset = function.aggregate_data_offset;
+        const auto * aggregate_function_ptr = function.function;
+
+        auto arguments_types = function.function->getArgumentTypes();
+        std::vector<llvm::Value *> arguments_values;
+
+        size_t function_arguments_size = arguments_types.size();
+        arguments_values.resize(function_arguments_size);
+
+        for (size_t column_argument_index = 0; column_argument_index < function_arguments_size; ++column_argument_index)
+        {
+            auto * column_argument_data = columns[previous_columns_size + column_argument_index].data;
+            arguments_values[column_argument_index] = b.CreateLoad(toNativeType(b, arguments_types[column_argument_index]), column_argument_data);
+        }
 
         auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_32(nullptr, aggregation_place, aggregate_function_offset);
+        aggregate_function_ptr->compileAdd(b, aggregation_place_with_offset, arguments_types, arguments_values);
 
-        auto column_type = functions[i].function->getArgumentTypes()[0];
-        auto * column_data = b.CreateLoad(toNativeType(b, column_type), columns[i].data);
-        aggregate_function_ptr->compileAdd(b, aggregation_place_with_offset, column_type, column_data);
+        previous_columns_size += function_arguments_size;
     }
 
     /// End of loop
@@ -374,12 +401,13 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module, const 
     for (auto & col : columns)
     {
         col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
+
         if (col.null)
             col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
     }
 
     auto * value = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1));
-    counter_phi->addIncoming(value, loop);
+    counter_phi->addIncoming(value, cur_block);
 
     b.CreateCondBr(b.CreateICmpEQ(value, rows_count_arg), end, loop);
 

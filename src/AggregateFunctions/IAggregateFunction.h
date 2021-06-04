@@ -260,7 +260,7 @@ public:
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const DataTypePtr & /*value_type*/, llvm::Value * /*value*/) const
+    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const DataTypes & /*arguments_types*/, const std::vector<llvm::Value *> & /*arguments_values*/) const
     {
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
