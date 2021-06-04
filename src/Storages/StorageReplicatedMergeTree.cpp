@@ -2662,7 +2662,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             break;
         }
 
-        event->wait();
+        event->tryWait(3000);
     }
 
     /// The order of the following three actions is important.
