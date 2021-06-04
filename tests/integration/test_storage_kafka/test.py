@@ -1285,7 +1285,9 @@ def test_kafka_recreate_kafka_table(kafka_cluster):
     '''
         Checks that materialized view work properly after dropping and recreating the Kafka table.
     '''
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    # line for backporting:
+    # admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
 
     topic_list = []
     topic_list.append(NewTopic(name="recreate_kafka_table", num_partitions=6, replication_factor=1))
