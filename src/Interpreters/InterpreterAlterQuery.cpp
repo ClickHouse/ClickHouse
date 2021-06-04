@@ -289,15 +289,20 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::MOVE_PARTITION:
         {
-            if ((command.move_destination_type == DataDestinationType::DISK)
-                || (command.move_destination_type == DataDestinationType::VOLUME))
+            switch (command.move_destination_type)
             {
-                required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
-            }
-            else if (command.move_destination_type == DataDestinationType::TABLE)
-            {
-                required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
-                required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
+                case DataDestinationType::DISK: [[fallthrough]];
+                case DataDestinationType::VOLUME:
+                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
+                    break;
+                case DataDestinationType::TABLE:
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
+                    break;
+                case DataDestinationType::SHARD:
+                    break;
+                case DataDestinationType::DELETE:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected destination type for command.");
             }
             break;
         }
