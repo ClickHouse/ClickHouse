@@ -593,7 +593,7 @@ then
 #
     "${client[@]}" --query "
             select test, query_index,
-                quantileExact(0.99)(abs(diff)) max_diff * 1.5,
+                quantileExact(0.99)(abs(diff)) * 1.5 max_diff,
                 quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 max_stat_threshold,
                 query_display_name
             from query_metrics_v2
@@ -607,6 +607,7 @@ then
             group by test, query_index, query_display_name
             having count(*) > 100
             " > analyze/historical-thresholds.tsv
+    set -x
 else
     touch analyze/historical-thresholds.tsv
 fi
@@ -1246,7 +1247,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         test_name,
         test_status,
         test_duration_ms,
-        'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url,
+        report_url,
         $PR_TO_TEST = 0
             ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
             : 'https://github.com/ClickHouse/ClickHouse/pull/$PR_TO_TEST' pull_request_url,
@@ -1259,12 +1260,17 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     from (
         select '' test_name,
             '$(sed -n 's/.*<!--message: \(.*\)-->/\1/p' report.html)' test_status,
-            0 test_duration_ms
+            0 test_duration_ms,
+            'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
         union all
-            select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms
+            select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms,
+                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
+                    || test || '.' || toString(query_index) report_url
             from queries where changed_fail != 0 and diff > 0
         union all
-            select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms
+            select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms,
+                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
+                    || test || '.' || toString(query_index) report_url
             from queries where unstable_fail != 0
     )
 ;
