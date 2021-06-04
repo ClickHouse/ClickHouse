@@ -261,7 +261,7 @@ class ClickhouseIntegrationTestsRunner:
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
-        cmd = "cd {}/tests/integration && ./runner --tmpfs {} ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' | sort -u  > all_tests.txt".format(repo_path, image_cmd)
+        cmd = "cd {}/tests/integration && ./runner --tmpfs {} ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' | grep -v 'SKIPPED' | sort -u  > all_tests.txt".format(repo_path, image_cmd)
         logging.info("Getting all tests with cmd '%s'", cmd)
         subprocess.check_call(cmd, shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
@@ -491,7 +491,7 @@ class ClickhouseIntegrationTestsRunner:
 
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
         i = 0
-        for par_group in  chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
+        for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
             grouped_tests["parallel{}".format(i)] = par_group
             i+=1
         logging.info("Found %s tests groups", len(grouped_tests))
