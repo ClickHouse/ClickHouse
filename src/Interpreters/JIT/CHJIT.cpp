@@ -80,6 +80,28 @@ private:
     llvm::TargetMachine & target_machine;
 };
 
+// class AssemblyPrinter
+// {
+// public:
+
+//     explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
+//     : target_machine(target_machine_)
+//     {
+//     }
+
+//     void print(llvm::Module & module)
+//     {
+//         llvm::legacy::PassManager pass_manager;
+//         target_machine.Options.MCOptions.AsmVerbose = true;
+//         if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+//             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
+
+//         pass_manager.run(module);
+//     }
+// private:
+//     llvm::TargetMachine & target_machine;
+// };
+
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
   * Actual compiled code memory is stored in llvm::SectionMemoryManager member, we cannot use ZeroBase optimization here
@@ -215,9 +237,6 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
     runOptimizationPassesOnModule(*module);
 
     auto buffer = compiler->compile(*module);
-
-    // llvm::errs() << "Module after optimizations " << "\n";
-    // module->print(llvm::errs(), nullptr);
 
     llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> object = llvm::object::ObjectFile::createObjectFile(*buffer);
 
