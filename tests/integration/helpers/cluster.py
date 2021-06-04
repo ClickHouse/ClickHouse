@@ -2048,7 +2048,6 @@ class ClickHouseInstance:
 
         instance_config_dir = p.abspath(p.join(self.path, 'configs'))
         os.makedirs(instance_config_dir)
-        os.chmod(instance_config_dir, stat.S_IRWXO)
 
         print(f"Copy common default production configuration from {self.base_config_dir}. Files: {self.main_config_name}, {self.users_config_name}")
 
